@@ -46,8 +46,11 @@ const CLI_BIN_REL: &str = "apps/cli/lib/bin.js";
 /// session-registry / domain-events / live-context 一并入列;
 /// 2026-08-21 起 memory-context 入列(pre-step 长期记忆注入);
 /// 2026-08-22 起 commit-message 入列(分支胶囊「AI 生成提交信息」的
-/// host 侧 one-shot LLM HTTP 端点)。
-const LOCAL_PACKAGES: [&str; 10] = [
+/// host 侧 one-shot LLM HTTP 端点);
+/// 2026-08-22 起 memory-sink 入列(agent/turn-stopping 自动沉淀;与
+/// package-dsh-runtime.ts 的 WEB_LOCAL_PACKAGE_DIRS 对齐,漏列即安装包
+/// 启动 ERR_MODULE_NOT_FOUND —— v0.92.2 事故)。
+const LOCAL_PACKAGES: [&str; 11] = [
     "client-nav",
     "host-static",
     "tool-context",
@@ -57,6 +60,7 @@ const LOCAL_PACKAGES: [&str; 10] = [
     "domain-events",
     "live-context",
     "memory-context",
+    "memory-sink",
     "commit-message",
 ];
 

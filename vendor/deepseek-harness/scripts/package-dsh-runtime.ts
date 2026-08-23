@@ -16,7 +16,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import type { Dirent } from 'node:fs'
 import {
   chmod,
@@ -117,6 +117,8 @@ const WEB_STATIC_RELS = [
  * session-registry / domain-events / live-context 一并入列,
  * 2026-08-21 起 memory-context 入列(pre-step 长期记忆注入),
  * 2026-08-22 起 commit-message 入列(分支胶囊「AI 生成提交信息」端点),
+ * 2026-08-22 起 memory-sink 入列(agent/turn-stopping 自动沉淀,v0.92.2 事故:
+ * 模板已引用而此清单漏列,导致安装包启动 ERR_MODULE_NOT_FOUND),
  * 不入包则 profile 启动时按 fail-loud 拒绝缺失插件。 */
 const WEB_LOCAL_PACKAGE_DIRS = [
   'client-nav',
@@ -128,6 +130,7 @@ const WEB_LOCAL_PACKAGE_DIRS = [
   'domain-events',
   'live-context',
   'memory-context',
+  'memory-sink',
   'commit-message',
 ]
 
@@ -521,6 +524,7 @@ class DshRuntimePackage {
       await cp(join(root, 'packages', 'starhub', dir), destination, { recursive: true })
     }
     await this.installWebRuntimePackages()
+    this.verifyProfilePatchClosure()
     this.verifyWebFrontendDist()
     // 产物裁剪:删除 node_modules 内全部 .d.ts / .d.ts.map / .js.map——运行时
     // 只 import lib/index.js,不读类型与 sourcemap。一举两得:①安装包显著变小;
@@ -528,6 +532,28 @@ class DshRuntimePackage {
     // 路径上限(still 有 11 个 runtime .js 超限,根治见 release.yml 的 subst 短路径)。
     await this.stripTypeArtifacts(join(this.outDir, 'node_modules'))
     return this.outDir
+  }
+
+  /** fail-loud 校验:starhub-web profile 引用的每个插件包都已随闭包入包。
+   * examples/starhub-web/cordis.patch.yml 的 insert 行直接决定 web 组合的
+   * 插件树;其中任一 `@deepseek-ai/*` 包缺失于产物顶层 node_modules,安装包
+   * 启动即 ERR_MODULE_NOT_FOUND、插件树加载失败、dsh web 进程崩溃(v0.92.2
+   * 的 dsh-starhub-memory-sink 事故:模板已引用而 WEB_LOCAL_PACKAGE_DIRS 漏列)。
+   * 在打包期拦截,把「模板引用与入包清单漂移」变成构建失败而非运行时崩溃。 */
+  private verifyProfilePatchClosure(): void {
+    const patchPath = join(root, 'examples', 'starhub-web', 'cordis.patch.yml')
+    const patch = readFileSync(patchPath, 'utf8')
+    const referenced = [...patch.matchAll(/name:\s*['"](@deepseek-ai\/[^'"]+)['"]/g)]
+      .map(match => match[1])
+      .filter((name): name is string => name !== undefined)
+      .filter((name, index, all) => all.indexOf(name) === index)
+    const missing = referenced.filter(name => !existsSync(join(this.outDir, 'node_modules', ...name.split('/'))))
+    if (missing.length > 0) {
+      throw new Error(
+        `package-dsh-runtime: starhub-web profile 引用的插件包未随闭包入包: ${missing.join(', ')}。`
+        + '请加入 WEB_LOCAL_PACKAGE_DIRS(本地包)或 dsh-jsonrpc-agent-pkg 依赖(闭包包)后重新打包。',
+      )
+    }
   }
 
   /** fail-loud 校验:dsh web 浏览器入口必须已随闭包入包。

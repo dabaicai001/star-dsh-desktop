@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.92.3-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.92.4-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -148,6 +148,9 @@
 
 ## 当前版本
 
+### v0.92.4 (2026-08-23)
+- 🐛 **修复 v0.92.2 安装包启动崩溃(根因级,替代 v0.92.3 的产物级缓解)**:`examples/starhub-web/cordis.patch.yml` 引用的 `@deepseek-ai/dsh-starhub-memory-sink` 未随 dsh-runtime 入包(三处入包清单漏列),安装包启动即 `ERR_MODULE_NOT_FOUND` → 插件树加载失败 → dsh web 进程崩溃(浏览器侧表现为 `session-log-export` client bundle failed to load,系崩溃下游症状)。修复:`package-dsh-runtime.ts` 的 `WEB_LOCAL_PACKAGE_DIRS` / `web.rs` 的 `LOCAL_PACKAGES` / `examples/starhub-web/package.json` 三处补 memory-sink;memory-sink `apply()` 改为 `ctx.settings.get()` 只读 memory-context 的 namespace(不再重复 register,消除组合下 settings duplicate-registration 硬失败);`package-dsh-runtime.ts` 新增 `verifyProfilePatchClosure()` 打包门禁——starhub-web profile 引用的每个 `@deepseek-ai/*` 包必须已随闭包入包,漏列即构建失败(本地与 GitHub CI 均生效)。
+
 ### v0.92.2 (2026-08-23)
 - 🔧 全量清零 dsh 仓库(fork)存量门禁债:oxlint 全仓从 ~1955 条错误降到 0(先自动修复 ~1188 条,再逐文件手工补类型清零 unsafe-* / no-non-null-assertion 等);修复过程中顺带修正 client-nav 各服务层的 any 泄漏、被误删的运行时守卫(如 db-dashboard-service 的 null 行守卫)与 tauriListen 泛型签名。
 - 🔧 退役四类门禁:上游 `website/` 文档站点投影(脚本/门禁/workspace 条目全删)、`verify-md-wrap`、`verify-doc-budgets`、`verify-translation-pairing`(脚本/lefthook 钩子/run-gates 叶子/文档引用全摘除);`scripts/ci-workflow.spec.ts` 因上游 `.github/workflows` 未 vendored 从 vitest exclude 排除。AGENTS.md 与 docs/AGENTS.md 同步更新门禁策略(只保留 lint、覆盖率、README limitations/model-experience 及剩余 doc-sync 叶子)。
@@ -166,24 +169,6 @@
 - ✅ `memory-context` / `memory-sink` 两包补齐至 per-file 100% 覆盖率门禁:`isAutoReviewEnabled` 默认关语义、cardTitle global/未知 scope 兜底、pull/写入/抽取三路超时降级、pre-step 与 turn-stopping 钩子、`wireLlmExtractor` 全分支、invariant 伴生注册。
 - ✅ client-nav 设置相关文件(`ai.tsx` / `aiSettings.ts` / `memory-context.ts`)补至 100%:api 在场时两个记忆开关同步 host namespace、同步拒绝静默、folder scope 标签文案。
 - ✅ ui-deliverables 新增 drawer 规格 7 例(分组/打开器/三种关闭/折叠/底栏门禁/焦点),数据派生补 1 例(diff 空文本行数、diffs 缺省时 locations 兜底),全包 100%。
-
-### v0.92.0 (2026-08-22)
-- ✨ AI 长期记忆自动沉淀:新增 host 包 `@deepseek-ai/dsh-starhub-memory-sink`,agent 回合结束(turn-stopping)后调一次独立 LLM 抽取当轮持久事实,经新增反向 RPC `starhub/memory.write` 写入 ai_memories(folder:<cwd> 或 global scope)。
-- 🔧 「启用长期记忆」与「自动沉淀记忆」两开关默认关闭:需在设置 → AI 助手显式打开后才有记忆预读注入或自动沉淀。
-- 🔧 「管理记忆」弹窗在纯浏览器会话(:3085)也可打开,IPC 失败以错误文本展示,不再整体禁用。
-
-### v0.91.0 (2026-08-22)
-- 🔧 AI 产物点击改为壳内查看窗优先:每轮末尾的产物文件行(ProducedFiles 徽章)与收尾正文里的行内代码文件提及(chatFileMentions)改为走与 Read/Edit 工具卡同一 `viewFile` 通道(`{ kind: 'read' }`),查看服务缺失(纯 dsh web)时退回 OS 默认打开;同时修复 chat view 的 `viewFile` 注入未按会话 cwd 解析相对路径就交给查看窗的问题(产物/提及多为工作区相对路径,Tauri 直读需要绝对路径)。
-- 🔧 产物行升级为改动文件清单:条目标注「新增/修改」与 +/- 行数估计,点击「+ N 个文件」展开全部产物逐行清单(可逐个壳内查看),产物多时不再只看得到前几个。
-- 🔧 壳内文件查看窗「变更前/变更后」红绿色块对比:逐 hunk 行级 diff,变更行带红(-)/绿(+)底色,编辑改为右栏「编辑」开关切换。
-- 🔧 会话头部 git 分支胶囊支持同步线上分支:新增「同步远程」(`git fetch --all --prune`)与「拉取(git pull)」;远程跟踪分支单独成组列出(过滤 `origin/HEAD` 与本地已有同名分支),点击即 `git checkout -b <名> --track` 拉取为本地跟踪分支。
-- 🔧 修复分支胶囊面板遮挡与溢出:胶囊根以 z-index 9 自建堆叠上下文压过粘性 composer 遮罩;面板加宽到 340px 并按视口限高限宽,三个同步按钮均分不换行,仅分支列表滚动。
-
-### v0.90.0 (2026-08-22)
-- 🔧 会话头部 git 分支胶囊新增「✨ AI」生成提交信息:点击后采集 `git status --porcelain` / `git diff HEAD --stat` / 近期提交主题,经新增 host 插件 `@deepseek-ai/dsh-starhub-commit-message`(POST `/starhub/git/commit-message`,按 GUI 默认模型路由做 one-shot LLM 调用,输入/输出/超时预算走 cordis 配置)返回草稿并回填输入框,确认或编辑后再提交;草稿对齐仓库近期提交的语言与 Conventional Commits 风格。
-- 🔧 修复 Windows 下切换会话/工作区时闪出系统终端黑窗:`local_shell_exec` 在 Windows 经 `powershell.exe` 跑命令(分支胶囊每次会话切换都会调 git)但未带 `CREATE_NO_WINDOW`,GUI 进程 spawn 控制台子进程即弹窗;为 `local_shell_exec` 及 harness 的 `mklink` junction/诊断 spawn 统一补上 `CREATE_NO_WINDOW`。
-- 🔧 壳内文件查看窗(Read/Edit 工具卡点开)内容区撑满弹窗:共享 `Modal` 的 content/body 现参与拉伸与内部滚动,查看窗调整为近全屏(1080px 宽、视口高减 64px),长文件不再挤在小区域里看。
-- 🔧 设置 → AI 助手「管理记忆」弹窗:多条记忆时列表区独立上下滚动(原 grid 三行模板被错误/空态行挤占且列表无 overflow),弹窗加宽加高、条目排版放宽。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

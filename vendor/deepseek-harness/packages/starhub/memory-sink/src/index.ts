@@ -226,15 +226,12 @@ export async function runTurnReview(params: {
  */
 export function apply(ctx: Context): void {
   const ns: SettingsNamespace = settingsNamespace(MEMORY_CONTEXT_NAMESPACE)
-  const scope = ctx.settings.register(ns, z.object({
-    enabled: z.boolean().default(false),
-    autoReview: z.boolean().default(false),
-  }))
-
   ctx.effect(() => {
     const transport = ctx.get('sdk-transport') as JsonRpcTransportPeer | undefined
     return ctx.on('agent/turn-stopping', async ({ agent, signal }): Promise<void> => {
-      const value = scope.get() as MemoryContextValue | undefined
+      // namespace 由 dsh-starhub-memory-context 注册,本插件只读 autoReview;
+      // 重复 register 会触发 settings duplicate-registration 硬失败(v0.92.2 事故)。
+      const value = ctx.settings.get(ns) as MemoryContextValue | undefined
       await runTurnReview({
         agent,
         signal,

@@ -359,7 +359,12 @@ describe('apply (turn-stopping hook)', () => {
         return () => undefined
       },
       effect: (callback: () => unknown) => callback(),
-      settings: { register: () => ({ get: () => namespaceValue }) },
+      settings: {
+        get: () => namespaceValue,
+        // memory-context 已注册该 namespace;再 register 即 duplicate-registration
+        // 硬失败(v0.92.2 组合事故),这里让 register 抛错以断言本插件不再调用它。
+        register: () => { throw new Error('settings namespace "starhub-memory-context" is already registered') },
+      },
     } as unknown as Context
     return { ctx, listeners }
   }
@@ -396,6 +401,19 @@ describe('apply (turn-stopping hook)', () => {
     await listeners[0]!({ agent: busyAgent(), signal: new AbortController().signal })
     expect(generate).not.toHaveBeenCalled()
     expect(request).not.toHaveBeenCalled()
+  })
+
+  it('reads the memory-context namespace without re-registering it (v0.92.2 collision)', async () => {
+    const request = vi.fn(async () => ({}))
+    const generate = vi.fn(async () => ({ facts: [{ content: 'kept' }] }))
+    const { ctx, listeners } = makeSinkCtx(
+      { 'sdk-transport': { request }, llm: { generate } },
+      { autoReview: true },
+    )
+    // memory-context 已注册该 namespace:register 再被调用即抛,apply 不得调用它。
+    expect(() => apply(ctx)).not.toThrow()
+    await listeners[0]!({ agent: busyAgent(), signal: new AbortController().signal })
+    expect(generate).toHaveBeenCalledOnce()
   })
 })
 

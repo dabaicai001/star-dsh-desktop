@@ -30,6 +30,11 @@
 
 ---
 
+## [0.92.4] - 2026-08-23
+
+### 修复
+- **修复 v0.92.2 安装包启动崩溃(根因级,替代 v0.92.3 的产物级缓解)**:`examples/starhub-web/cordis.patch.yml` 引用的 `@deepseek-ai/dsh-starhub-memory-sink` 未随 dsh-runtime 入包(三处入包清单漏列),安装包启动即 `ERR_MODULE_NOT_FOUND` → 插件树加载失败 → dsh web 进程崩溃(浏览器侧表现为 `session-log-export` client bundle failed to load,系崩溃下游症状)。修复:`package-dsh-runtime.ts` 的 `WEB_LOCAL_PACKAGE_DIRS` / `web.rs` 的 `LOCAL_PACKAGES` / `examples/starhub-web/package.json` 三处补 memory-sink;memory-sink `apply()` 改为 `ctx.settings.get()` 只读 memory-context 的 namespace(不再重复 register,消除组合下 settings duplicate-registration 硬失败);`package-dsh-runtime.ts` 新增 `verifyProfilePatchClosure()` 打包门禁——starhub-web profile 引用的每个 `@deepseek-ai/*` 包必须已随闭包入包,漏列即构建失败(本地与 GitHub CI 均生效)。
+
 ## [0.92.3] - 2026-08-23
 
 ### 修复

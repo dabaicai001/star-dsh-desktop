@@ -13,6 +13,7 @@
     "@deepseek-ai/dsh-starhub-domain-events": "workspace:*",
     "@deepseek-ai/dsh-starhub-live-context": "workspace:*",
     "@deepseek-ai/dsh-starhub-memory-context": "workspace:*",
+    "@deepseek-ai/dsh-starhub-memory-sink": "workspace:*",
     "@deepseek-ai/dsh-starhub-commit-message": "workspace:*"
   },
   "dsh": {
