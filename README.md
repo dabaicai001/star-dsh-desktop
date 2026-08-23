@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.92.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.92.2-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -147,6 +147,15 @@
 ---
 
 ## 当前版本
+
+### v0.92.2 (2026-08-23)
+- 🔧 全量清零 dsh 仓库(fork)存量门禁债:oxlint 全仓从 ~1955 条错误降到 0(先自动修复 ~1188 条,再逐文件手工补类型清零 unsafe-* / no-non-null-assertion 等);修复过程中顺带修正 client-nav 各服务层的 any 泄漏、被误删的运行时守卫(如 db-dashboard-service 的 null 行守卫)与 tauriListen 泛型签名。
+- 🔧 退役四类门禁:上游 `website/` 文档站点投影(脚本/门禁/workspace 条目全删)、`verify-md-wrap`、`verify-doc-budgets`、`verify-translation-pairing`(脚本/lefthook 钩子/run-gates 叶子/文档引用全摘除);`scripts/ci-workflow.spec.ts` 因上游 `.github/workflows` 未 vendored 从 vitest exclude 排除。AGENTS.md 与 docs/AGENTS.md 同步更新门禁策略(只保留 lint、覆盖率、README limitations/model-experience 及剩余 doc-sync 叶子)。
+- 🔧 `verify-archived-agent-notes` 修复嵌套仓库路径(外层 starhub git 仓库内按前缀解析 manifest)。
+- 🔧 目录册门禁修复:重新生成 client/tool/config 目录与 doc-graphs;`gen-tool-catalog` 排除 starhub 组(其工具由包 README 记录);commit-message/approval-bridge 的 Config 改为命名类型;8 个 starhub 包 README 补全 Model Experience 规范结构,client-nav/tool-context 补上缺失 README(含 Known Limitations),export-jsdoc 353 条 @param/@returns 全部补齐。
+- 🔧 starhub 三包(approval-bridge / host-static / tools)补上 `./invariant` 伴生;8 个 client-nav CSS 高位面滚动容器补滚动条 l2 重绑定;icons 规格按 fork 实际集更新(73);THIRD_PARTY_NOTICES.md 重生成对齐清单;清理子代理遗留的 oxlint 探针临时文件。
+- ✅ client-nav terminal 四模块(terminal-cwd / xshell-quick-command / quick-commands / sftp-service)测试补齐至 per-file 100% 覆盖(新增 4 规格 86 例)。
+- ✅ 全仓 vitest 13634 通过;仅剩 1 条存量失败(tool-pwsh 沙箱升级测试,stash 验证为 HEAD 既有)与 1 条负载偶发(credentials-local 并发写,隔离通过);fork CI 不跑 vitest。
 
 ### v0.92.1 (2026-08-22)
 - ✨ 产物行「+ N 个文件」改为打开右侧贴边 drawer(撤回 v0.91.0 行内展开):按新增/修改分组列出本轮全部变更文件(完整路径 + +/- 行数),分组标题可折叠,行点击走与徽章相同的壳内查看窗优先打开器;Esc / 遮罩 / × 三种方式关闭且焦点回到「+ N」按钮;「在文件夹中显示」移入 drawer 底栏(loopback + `canOpenPath` 门禁不变);v0.91.0 的 `.list` / `.collapse` / `.listRow` / 新增修改标记等行内展开代码与样式全部删除。

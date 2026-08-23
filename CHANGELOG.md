@@ -30,6 +30,19 @@
 
 ---
 
+## [0.92.2] - 2026-08-23
+
+### 变更
+- 全量清零 dsh 仓库(fork)存量门禁债:oxlint 全仓从 ~1955 条错误降到 0(先自动修复 ~1188 条,再逐文件手工补类型清零 unsafe-* / no-non-null-assertion 等);修复过程中顺带修正 client-nav 各服务层的 any 泄漏、被误删的运行时守卫(如 db-dashboard-service 的 null 行守卫)与 tauriListen 泛型签名。
+- 退役四类门禁:上游 `website/` 文档站点投影(脚本/门禁/workspace 条目全删)、`verify-md-wrap`、`verify-doc-budgets`、`verify-translation-pairing`(脚本/lefthook 钩子/run-gates 叶子/文档引用全摘除);`scripts/ci-workflow.spec.ts` 因上游 `.github/workflows` 未 vendored 从 vitest exclude 排除。AGENTS.md 与 docs/AGENTS.md 同步更新门禁策略(只保留 lint、覆盖率、README limitations/model-experience 及剩余 doc-sync 叶子)。
+- `verify-archived-agent-notes` 修复嵌套仓库路径(外层 starhub git 仓库内按前缀解析 manifest)。
+- 目录册门禁修复:重新生成 client/tool/config 目录与 doc-graphs;`gen-tool-catalog` 排除 starhub 组(其工具由包 README 记录);commit-message/approval-bridge 的 Config 改为命名类型;8 个 starhub 包 README 补全 Model Experience 规范结构,client-nav/tool-context 补上缺失 README(含 Known Limitations),export-jsdoc 353 条 @param/@returns 全部补齐。
+- starhub 三包(approval-bridge / host-static / tools)补上 `./invariant` 伴生;8 个 client-nav CSS 高位面滚动容器补滚动条 l2 重绑定;icons 规格按 fork 实际集更新(73);THIRD_PARTY_NOTICES.md 重生成对齐清单;清理子代理遗留的 oxlint 探针临时文件。
+
+### 测试
+- client-nav terminal 四模块(terminal-cwd / xshell-quick-command / quick-commands / sftp-service)测试补齐至 per-file 100% 覆盖(新增 4 规格 86 例)。
+- 全仓 vitest 13634 通过;仅剩 1 条存量失败(tool-pwsh 沙箱升级测试,stash 验证为 HEAD 既有)与 1 条负载偶发(credentials-local 并发写,隔离通过);fork CI 不跑 vitest。
+
 ## [0.92.0] - 2026-08-22
 
 ### 新增
