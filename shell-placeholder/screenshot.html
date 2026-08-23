@@ -25,6 +25,16 @@
     padding: 0 6px; margin: 0 3px; font-size: 12px; line-height: 18px;
   }
 
+  /* 常驻取消按钮:遮罩初始即可见,任何状态下都能退出(不依赖选区/工具栏) */
+  #exitBtn {
+    position: fixed; top: 20px; right: 20px; z-index: 50;
+    width: 34px; height: 34px; border: none; border-radius: 8px;
+    background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 16px;
+    line-height: 1; cursor: pointer; display: flex; align-items: center;
+    justify-content: center;
+  }
+  #exitBtn:hover { background: rgba(0, 0, 0, 0.85); }
+
   #sizeTag {
     position: fixed; background: rgba(0,0,0,0.72); color: #fff; font-size: 12px;
     padding: 2px 8px; border-radius: 4px; pointer-events: none; z-index: 32;
@@ -71,6 +81,7 @@
   <canvas id="overlay"></canvas>
 </div>
 <div id="hint"></div>
+<div id="exitBtn" title="取消截图 (Esc)">✕</div>
 <div id="sizeTag"></div>
 <div id="toolbar"></div>
 <div id="wins"></div>
@@ -145,8 +156,18 @@ function normRect(x1, y1, x2, y2) {
 function fitImageToCanvas(img) {
   baseCanvas.width = img.naturalWidth
   baseCanvas.height = img.naturalHeight
+  // 区域模式:canvas 必须铺满窗口视口(CSS 100%)。否则画布按物理像素当
+  // CSS 尺寸渲染(4K 底图 = 3840px 宽),超出窗口视口被裁、鼠标坐标换算
+  // 全错 → 拖拽无效画面异常(用户反馈「卡死/点不动」的根因)。
+  baseCanvas.style.width = '100%'
+  baseCanvas.style.height = '100%'
+  annoCanvas.style.width = '100%'
+  annoCanvas.style.height = '100%'
+  overlayCanvas.style.width = '100%'
+  overlayCanvas.style.height = '100%'
   baseCtx.clearRect(0, 0, baseCanvas.width, baseCanvas.height)
   baseCtx.drawImage(img, 0, 0)
+  syncCanvasSizes()
 }
 function fitImageWindowMode(img) {
   // 窗口截图:画布 = 截图物理尺寸,居中显示,留出暗色余量
@@ -603,11 +624,28 @@ function cancelCapture() {
   invoke('screenshot_cancel', {})
 }
 
-// ---- 键盘 ----
-document.addEventListener('keydown', function (e) {
+// ---- 键盘(Esc 取消 / 回车确认)----
+// 双绑定 + 页面抢焦点:遮罩窗口若未获得焦点,键盘事件不会落到本页,
+// 这是用户反馈「退出不了」的潜在原因之一。
+function onKeyDown(e) {
   if (e.key === 'Escape') { e.preventDefault(); cancelCapture() }
   if (e.key === 'Enter') { e.preventDefault(); confirmCapture() }
+}
+document.addEventListener('keydown', onKeyDown)
+window.addEventListener('keydown', onKeyDown)
+window.addEventListener('load', function () { window.focus() })
+
+// 常驻取消按钮(任何状态可退出)
+document.getElementById('exitBtn').addEventListener('click', function () {
+  cancelCapture()
 })
+
+// 初始化兜底:底图/窗口列表 8s 内没就绪也保持可退出(顶部取消按钮 + Esc 始终可用)。
+setTimeout(function () {
+  if (!baseImage && windowsList.length === 0) {
+    hintEl.textContent = '截图初始化超时,点右上角 ✕ 或按 Esc 退出'
+  }
+}, 8000)
 
 // ---- 启动 ----
 function initRegion() {

@@ -83,9 +83,12 @@ fn monitor_descs() -> Result<Vec<ScreenshotMonitor>, String> {
     Ok(descs)
 }
 
+/// 桌面底图负载:(拼接 JPEG 字节, 显示器列表, 虚拟屏物理原点)。
+type DesktopCapture = (Vec<u8>, Vec<ScreenshotMonitor>, (i32, i32));
+
 /// 截取全部显示器并拼接成一张虚拟屏底图(物理像素)。
 /// @returns (JPEG 字节, 显示器列表, 虚拟屏物理原点)。
-fn capture_desktop() -> Result<(Vec<u8>, Vec<ScreenshotMonitor>, (i32, i32)), String> {
+fn capture_desktop() -> Result<DesktopCapture, String> {
     let descs = monitor_descs()?;
     let x_min = descs.iter().map(|d| d.x).min().unwrap_or(0);
     let y_min = descs.iter().map(|d| d.y).min().unwrap_or(0);
@@ -214,13 +217,35 @@ pub fn screenshot_list_monitors() -> Result<Vec<ScreenshotMonitor>, String> {
 }
 
 /// 开始区域截图:隐藏主窗口 → 截桌面底图 → 弹出遮罩窗口。
+/// 截屏走 blocking 线程 + 10s 超时:WGC/GPU 异常卡住时不能把用户锁死在
+/// 「主窗口已隐藏、遮罩未弹出」的黑屏态,任何失败都恢复主窗口。
 #[tauri::command]
-pub fn screenshot_begin_region(
+pub async fn screenshot_begin_region(
     app: AppHandle,
     state: tauri::State<'_, ScreenshotSession>,
 ) -> Result<(), String> {
     hide_main(&app);
-    let (jpeg, monitors, origin) = capture_desktop()?;
+    const CAPTURE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+    let captured = tokio::time::timeout(
+        CAPTURE_TIMEOUT,
+        tokio::task::spawn_blocking(capture_desktop),
+    )
+    .await;
+    let (jpeg, monitors, origin) = match captured {
+        Ok(Ok(Ok(v))) => v,
+        Ok(Ok(Err(e))) => {
+            restore_main(&app);
+            return Err(format!("截屏失败: {e}"));
+        }
+        Ok(Err(e)) => {
+            restore_main(&app);
+            return Err(format!("截屏线程异常: {e}"));
+        }
+        Err(_) => {
+            restore_main(&app);
+            return Err("截屏超时(10s)".to_string());
+        }
+    };
     let scale = monitors
         .iter()
         .find(|d| d.is_primary)
@@ -231,17 +256,27 @@ pub fn screenshot_begin_region(
     *state.monitors.lock().unwrap() = monitors;
     *state.origin.lock().unwrap() = origin;
     *state.scale.lock().unwrap() = scale;
-    create_overlay(&app, &state)
+    create_overlay(&app, &state).inspect_err(|_| restore_main(&app))
 }
 
 /// 开始窗口截图:隐藏主窗口 → 弹出遮罩窗口(前端提示点击目标窗口)。
 #[tauri::command]
-pub fn screenshot_begin_window(
+pub async fn screenshot_begin_window(
     app: AppHandle,
     state: tauri::State<'_, ScreenshotSession>,
 ) -> Result<(), String> {
     hide_main(&app);
-    let monitors = monitor_descs()?;
+    let monitors = match tokio::task::spawn_blocking(monitor_descs).await {
+        Ok(Ok(m)) => m,
+        Ok(Err(e)) => {
+            restore_main(&app);
+            return Err(format!("枚举显示器失败: {e}"));
+        }
+        Err(e) => {
+            restore_main(&app);
+            return Err(format!("枚举显示器线程异常: {e}"));
+        }
+    };
     let x_min = monitors.iter().map(|d| d.x).min().unwrap_or(0);
     let y_min = monitors.iter().map(|d| d.y).min().unwrap_or(0);
     let scale = monitors
@@ -254,7 +289,7 @@ pub fn screenshot_begin_window(
     *state.monitors.lock().unwrap() = monitors;
     *state.origin.lock().unwrap() = (x_min, y_min);
     *state.scale.lock().unwrap() = scale;
-    create_overlay(&app, &state)
+    create_overlay(&app, &state).inspect_err(|_| restore_main(&app))
 }
 
 /// 遮罩页面取底图:区域模式返回缓存的全屏 JPEG + 显示器列表 + 虚拟屏原点;
@@ -262,7 +297,7 @@ pub fn screenshot_begin_window(
 #[tauri::command]
 pub fn screenshot_get_desktop(
     state: tauri::State<'_, ScreenshotSession>,
-) -> Result<(Vec<u8>, Vec<ScreenshotMonitor>, (i32, i32)), String> {
+) -> Result<DesktopCapture, String> {
     let desktop = state.desktop.lock().unwrap().clone();
     let monitors = state.monitors.lock().unwrap().clone();
     let origin = *state.origin.lock().unwrap();
@@ -297,8 +332,23 @@ pub fn screenshot_list_windows() -> Result<Vec<ScreenshotWindow>, String> {
 }
 
 /// 按 id 截取单个窗口(含标题栏边框),返回 PNG 字节。
+/// blocking 线程 + 10s 超时,避免 WGC 卡住时遮罩页面失去响应。
 #[tauri::command]
-pub fn screenshot_capture_window(id: u32) -> Result<Vec<u8>, String> {
+pub async fn screenshot_capture_window(id: u32) -> Result<Vec<u8>, String> {
+    let captured = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::task::spawn_blocking(move || capture_window_png(id)),
+    )
+    .await;
+    match captured {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => Err(format!("窗口截图线程异常: {e}")),
+        Err(_) => Err("窗口截图超时(10s)".to_string()),
+    }
+}
+
+/// 阻塞式窗口截图(xcap Window::all + capture_image + PNG 编码)。
+fn capture_window_png(id: u32) -> Result<Vec<u8>, String> {
     let windows = Window::all().map_err(|e| format!("enumerate windows failed: {e}"))?;
     let target = windows
         .into_iter()
