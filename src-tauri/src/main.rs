@@ -167,7 +167,7 @@ fn main() {
                     }
                 });
                 match started {
-                    // dev 流里 devUrl 的 3085 是占位等待页(真实服务在 3086+),
+                    // dev 流里 devUrl 的 3185 是占位等待页(真实服务在 3186+),
                     // 跳转由占位页轮询脚本完成;prod 由 shell-placeholder 跳板页
                     // 轮询 dsh_web_url 后 location.replace。Rust 不参与窗口导航
                     // (取舍见 docs/踩坑记录.md 第 20 节)。

@@ -2,11 +2,13 @@
 # boot.mjs 把它拷到 $DSH_HOME/profiles/web/cordis.patch.yml;patch 会整段替换
 # 目标行的 config,所以 webserver 行在此完整重述自己的 host/port。
 
-# 固定端口,避开默认 3080 上与既有实例的冲突。
+# webserver 端口模板(避开默认 3080):Rust 物化 profile 时由
+# rewrite_patch_port 改写为实际端口——开发(debug)实例 3185 起、正式
+# (release)实例 3085,见 src-tauri/src/harness/web.rs 的 DEFAULT_PORT。
 - id: webserver
   config:
     host: 127.0.0.1
-    port: 3085
+    port: 3185
 
 # StarHub 壳导航由 client-nav 注册 DSH React 原生工作台入口。
 # starhub-host-static 将 React 资产工作台托管在 /starhub-react/，dist 路径由

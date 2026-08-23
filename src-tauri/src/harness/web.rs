@@ -9,7 +9,8 @@
 //! 3. spawn 便携 Node + `apps/cli/lib/bin.js web`,kill_on_drop 随应用退出回收
 //!    (与 HarnessManager / SidecarManager 同一约定)。
 //!
-//! 端口:默认 3085,占用则递增重试(上限 +10);实际端口写回状态,经
+//! 端口:正式(release)实例默认 3085,开发(debug)实例默认 3185 —— 与本机
+//! 常驻正式实例的 3085 隔离;占用则递增重试(上限 +10);实际端口写回状态,经
 //! `dsh_web_url` command 暴露。就绪探测:轮询 GET / 直到 200(超时 30s)。
 //! P4a 起 dsh web 是唯一主壳(旧外壳与 STARHUB_DSH_WEB=0 逃生门已退役)。
 
@@ -28,9 +29,15 @@ use super::{handle_inbound_request, HarnessPaths, HostBridgeState};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-/// dsh web 默认端口(与 examples/starhub-web/cordis.patch.yml 一致)。
+/// dsh web 默认端口(与 examples/starhub-web/cordis.patch.yml 的 webserver
+/// 模板一致;实际端口由 rewrite_patch_port 写回)。开发(debug)实例用 3185 起,
+/// 与「本机常驻正式实例的 3085」隔离;正式(release)实例保持 3085(历史默认)。
+#[cfg(debug_assertions)]
+pub const DEFAULT_PORT: u16 = 3185;
+/// 正式(release)实例默认端口:3085(历史默认,升级不变)。
+#[cfg(not(debug_assertions))]
 pub const DEFAULT_PORT: u16 = 3085;
-/// 端口递增重试上限:3085..=3095。
+/// 端口递增重试上限:`DEFAULT_PORT..=DEFAULT_PORT + MAX_PORT_OFFSET`。
 const MAX_PORT_OFFSET: u16 = 10;
 /// 就绪探测总超时。
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -81,8 +88,8 @@ pub enum DshWebError {
     Spawn(String),
     #[error("dsh web 就绪探测超时({0}s),进程日志见 tracing")]
     ReadyTimeout(u64),
-    #[error("3085..=3095 端口全部被占用")]
-    NoFreePort,
+    #[error("dsh web 端口全部被占用({start}..={end})")]
+    NoFreePort { start: u16, end: u16 },
     #[error("dsh web 未运行")]
     NotRunning,
 }
@@ -114,7 +121,8 @@ pub fn dsh_home_dir(app: &tauri::AppHandle) -> Result<PathBuf, DshWebError> {
     }
 }
 
-/// 在 base..=base+max_offset 里找第一个可绑定端口(占位进程占着 3085 时递增)。
+/// 在 base..=base+max_offset 里找第一个可绑定端口(开发实例的占位页占着
+/// DEFAULT_PORT 时递增到下一空闲端口)。
 fn find_free_port(base: u16, max_offset: u16) -> Option<u16> {
     (0..=max_offset).find_map(|offset| {
         let port = base.checked_add(offset)?;
@@ -244,7 +252,10 @@ impl DshWebManager {
         .map_err(|e| DshWebError::PathResolve(format!("物化 profile package.json 失败: {e}")))?;
 
         // 2. 选端口并改写 patch
-        let port = find_free_port(DEFAULT_PORT, MAX_PORT_OFFSET).ok_or(DshWebError::NoFreePort)?;
+        let port = find_free_port(DEFAULT_PORT, MAX_PORT_OFFSET).ok_or(DshWebError::NoFreePort {
+            start: DEFAULT_PORT,
+            end: DEFAULT_PORT + MAX_PORT_OFFSET,
+        })?;
         let patch_template = std::fs::read_to_string(example_dir.join("cordis.patch.yml"))
             .map_err(|e| {
                 DshWebError::PathResolve(format!("读取 cordis.patch.yml 模板失败: {e}"))
@@ -727,18 +738,18 @@ mod tests {
     #[test]
     fn rewrite_patch_port_only_touches_webserver_block() {
         let template = "# comment with port: 9999\n\
-                        - id: webserver\n  config:\n    host: 127.0.0.1\n    port: 3085\n\n\
+                        - id: webserver\n  config:\n    host: 127.0.0.1\n    port: 3185\n\n\
                         - insert:\n    - id: client-nav\n      name: '@x'\n";
-        let out = rewrite_patch_port(template, 3087).unwrap();
-        assert!(out.contains("    port: 3087"), "改写结果: {out}");
+        let out = rewrite_patch_port(template, 3187).unwrap();
+        assert!(out.contains("    port: 3187"), "改写结果: {out}");
         assert!(out.contains("port: 9999"), "注释里的 port 不应被动: {out}");
-        assert!(!out.contains("port: 3085"), "旧端口应被替换: {out}");
+        assert!(!out.contains("port: 3185"), "旧端口应被替换: {out}");
     }
 
     #[test]
     fn rewrite_patch_port_missing_webserver_fails() {
         let template = "- id: other\n  config:\n    port: 1\n";
-        assert!(rewrite_patch_port(template, 3085).is_err());
+        assert!(rewrite_patch_port(template, 3185).is_err());
     }
 
     /// 动态基准端口:让 OS 分一个空闲端口后立刻释放,作为测试的 base。

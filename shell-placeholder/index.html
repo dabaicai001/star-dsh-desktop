@@ -12,7 +12,7 @@
   <div id="msg">STARHUB dsh 壳启动中…</div>
   <script>
     // 生产环境跳板页(P4a):frontendDist 指向本目录,窗口秒开;
-    // 真实 dsh web GUI 由 Rust DshWebManager 在 setup 拉起(端口 3085,占用递增),
+    // 真实 dsh web GUI 由 Rust DshWebManager 在 setup 拉起(端口 3185,占用递增),
     // 本页轮询 dsh_web_url command,拿到地址后整窗跳转。
     // 取舍:不直接 frontendDist=remote URL —— 配置窗口在 setup 完成前就开始加载,
     // 远程地址此时未就绪会落在错误页且不会自动重试(见 docs/踩坑记录.md)。

@@ -225,7 +225,7 @@ pnpm --dir vendor/deepseek-harness install   # DSH 主壳依赖
 # scripts/dev-dsh-shell.mjs 启动 DSH 主壳 →
 # sidecar:build 构建 Go Sidecar →
 # build:window 构建 React 工作台 →
-# tauri dev 启动桌面壳并加载 127.0.0.1:3085
+# tauri dev 启动桌面壳并加载 127.0.0.1:3185(开发实例端口;正式实例 3085)
 npm run tauri:dev
 
 # 单独构建 React 资产工作台（输出 dist-starhub-react/，由 Tauri resources 打包）

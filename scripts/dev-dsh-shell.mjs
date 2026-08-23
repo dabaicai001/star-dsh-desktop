@@ -7,12 +7,15 @@
  *    vendor 构建需要 PATH 里有 pnpm,取仓库根 tmp/pnpm-home;严禁 CI=true)
  * 2. sidecar:build(setup 钩子对 sidecar 版本 fail loud)
  * 3. build:window(StarHub React workbench dist → dist-starhub-react/,host-static 托管)
- * 4. 前台占位等待页 server 监听 3085:tauri dev 要等 devUrl 可访问才启动应用,
- *    而真实 dsh web 由 Rust DshWebManager 在 setup 里拉起——3085 被本占位进程
- *    占用,管理器递增到 3086+。占位页自身轮询 `/__dsh_url`(由本 server 扫描
- *    3086..3095 找到含 __DSH_BOOT__ 标记的服务)并 location.replace 过去——
+ * 4. 前台占位等待页 server 监听 3185:tauri dev 要等 devUrl 可访问才启动应用,
+ *    而真实 dsh web 由 Rust DshWebManager 在 setup 里拉起——3185 被本占位进程
+ *    占用,管理器递增到 3186+。占位页自身轮询 `/__dsh_url`(由本 server 扫描
+ *    3186..3195 找到含 __DSH_BOOT__ 标记的服务)并 location.replace 过去——
  *    不依赖 Rust 侧 window.url()/eval 的时序(取舍见 docs/踩坑记录.md 第 20 节)。
  *    应用退出时 tauri 回收本进程树。
+ * 端口(2026-08-23 起)与正式实例隔离:本脚本是 dev 专属,占位页固定 3185
+ * (正式 release 实例保持 3085,见 web.rs DEFAULT_PORT 的 debug/release 分支),
+ * 避免与本机常驻正式实例的 dsh web(3085)冲突。
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -22,7 +25,7 @@ import { spawnSync } from 'node:child_process'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const vendorRoot = join(repoRoot, 'vendor', 'deepseek-harness')
-const WAIT_PORT = 3085
+const WAIT_PORT = 3185
 
 function run(label, command, args, options = {}) {
   console.log(`[dev-dsh-shell] ${label}`)
@@ -63,7 +66,7 @@ if (needHost || needClient || needWeb) {
 run('sidecar:build', 'npm', ['run', 'sidecar:build'], { cwd: repoRoot })
 run('build:window', 'npm', ['run', 'build:window'], { cwd: repoRoot })
 
-// 4. 占位等待页(前台常驻;tauri 等待 devUrl=3085 可访问后才启动应用)
+// 4. 占位等待页(前台常驻;tauri 等待 devUrl=3185 可访问后才启动应用)
 const page = `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><title>StarHub</title>
 <style>
@@ -72,7 +75,7 @@ const page = `<!DOCTYPE html>
 </style></head>
 <body><div>STARHUB dsh 壳启动中…(若长时间停留请查看终端日志)</div>
 <script>
-  // 真实 dsh web 由 Rust 在 setup 拉起(3085 被本占位页占用,故在 3086+);
+  // 真实 dsh web 由 Rust 在 setup 拉起(3185 被本占位页占用,故在 3186+);
   // 轮询发现后立即跳转,用户基本无感。
   const poll = async () => {
     try {
@@ -88,7 +91,7 @@ const page = `<!DOCTYPE html>
 </script></body>
 </html>`
 
-// 扫描 3086..3095,找 GET / 返回体含 __DSH_BOOT__ 的 dsh web 服务;结果缓存。
+// 扫描 3186..3195,找 GET / 返回体含 __DSH_BOOT__ 的 dsh web 服务;结果缓存。
 let discoveredUrl = null
 async function discoverDshWeb() {
   if (discoveredUrl !== null) return discoveredUrl
