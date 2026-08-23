@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.92.4-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.93.0-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -148,6 +148,9 @@
 
 ## 当前版本
 
+### v0.93.0 (2026-08-23)
+- ✨ ✨ AI 对话输入框新增截图功能(微信同款交互):输入框工具行「剪刀」按钮 → 区域截图 / 窗口截图。区域截图:隐藏主窗口后弹出全屏遮罩,拖拽框选选区(8 方向调整 / 整体移动 / 尺寸提示),支持红色矩形标注与撤销,回车/双击确认、Esc 取消;窗口截图:点击目标窗口整窗截取(含标题栏边框,自动过滤 StarHub 自身窗口)。确认后截图直接进输入框附件栏,随消息发送;超过 3MB 自动压缩到 3MB 以内。Rust 侧基于 xcap 跨平台截图(Windows WGC / macOS ScreenCaptureKit / Linux X11+Wayland),遮罩交互为独立置顶透明窗口加载的静态页,结果经 Tauri 事件回传主窗口并复用现有图片附件管线。
+
 ### v0.92.4 (2026-08-23)
 - 🐛 **修复 v0.92.2 安装包启动崩溃(根因级,替代 v0.92.3 的产物级缓解)**:`examples/starhub-web/cordis.patch.yml` 引用的 `@deepseek-ai/dsh-starhub-memory-sink` 未随 dsh-runtime 入包(三处入包清单漏列),安装包启动即 `ERR_MODULE_NOT_FOUND` → 插件树加载失败 → dsh web 进程崩溃(浏览器侧表现为 `session-log-export` client bundle failed to load,系崩溃下游症状)。修复:`package-dsh-runtime.ts` 的 `WEB_LOCAL_PACKAGE_DIRS` / `web.rs` 的 `LOCAL_PACKAGES` / `examples/starhub-web/package.json` 三处补 memory-sink;memory-sink `apply()` 改为 `ctx.settings.get()` 只读 memory-context 的 namespace(不再重复 register,消除组合下 settings duplicate-registration 硬失败);`package-dsh-runtime.ts` 新增 `verifyProfilePatchClosure()` 打包门禁——starhub-web profile 引用的每个 `@deepseek-ai/*` 包必须已随闭包入包,漏列即构建失败(本地与 GitHub CI 均生效)。
 
@@ -159,16 +162,6 @@
 - 🔧 starhub 三包(approval-bridge / host-static / tools)补上 `./invariant` 伴生;8 个 client-nav CSS 高位面滚动容器补滚动条 l2 重绑定;icons 规格按 fork 实际集更新(73);THIRD_PARTY_NOTICES.md 重生成对齐清单;清理子代理遗留的 oxlint 探针临时文件。
 - ✅ client-nav terminal 四模块(terminal-cwd / xshell-quick-command / quick-commands / sftp-service)测试补齐至 per-file 100% 覆盖(新增 4 规格 86 例)。
 - ✅ 全仓 vitest 13634 通过;仅剩 1 条存量失败(tool-pwsh 沙箱升级测试,stash 验证为 HEAD 既有)与 1 条负载偶发(credentials-local 并发写,隔离通过);fork CI 不跑 vitest。
-
-### v0.92.1 (2026-08-22)
-- ✨ 产物行「+ N 个文件」改为打开右侧贴边 drawer(撤回 v0.91.0 行内展开):按新增/修改分组列出本轮全部变更文件(完整路径 + +/- 行数),分组标题可折叠,行点击走与徽章相同的壳内查看窗优先打开器;Esc / 遮罩 / × 三种方式关闭且焦点回到「+ N」按钮;「在文件夹中显示」移入 drawer 底栏(loopback + `canOpenPath` 门禁不变);v0.91.0 的 `.list` / `.collapse` / `.listRow` / 新增修改标记等行内展开代码与样式全部删除。
-- 🐛 修复 v0.92.0 打包构建失败:`settings-tabs.client.spec.tsx` 残留未使用的 `waitFor` import(tsc TS6133,`package-dsh-runtime` build 中断)。
-- 🐛 修复「启用长期记忆」host 侧门禁与 v0.92.0「默认关」策略相反:memory-context pre-step 在 namespace 未写过时按开启处理(默认注入记忆卡),改为 explicit-true(未写过 = 关闭),与设置面板默认值一致;同步修正 memory-context / memory-sink / client-nav 三处「未写过视为开启」的过期注释与 README。
-- 🐛 修复 memory-sink LLM 抽取的 abort 竞态:已中止 signal 在 `Promise.race` 中会输给立即 resolve 的 generate(abortPromise 的拒绝反应排在 generate 已完成微任务之后),改为调用 generate 前检查 `signal.aborted`。
-- 🐛 修复 dsh 源面解析缺口:`tsconfig.base.json` 缺 `dsh-starhub-commit-message` / `dsh-starhub-memory-context` / `dsh-starhub-memory-sink` 三个显式映射(连字符包名越过 `dsh-*` wildcard 的单捕获),vitest 此前把 `@deepseek-ai/dsh-starhub-memory-context` 静默解析到过期构建产物(lib);并补 `memory-sink/tsconfig.json` 对 memory-context 的 project reference。
-- ✅ `memory-context` / `memory-sink` 两包补齐至 per-file 100% 覆盖率门禁:`isAutoReviewEnabled` 默认关语义、cardTitle global/未知 scope 兜底、pull/写入/抽取三路超时降级、pre-step 与 turn-stopping 钩子、`wireLlmExtractor` 全分支、invariant 伴生注册。
-- ✅ client-nav 设置相关文件(`ai.tsx` / `aiSettings.ts` / `memory-context.ts`)补至 100%:api 在场时两个记忆开关同步 host namespace、同步拒绝静默、folder scope 标签文案。
-- ✅ ui-deliverables 新增 drawer 规格 7 例(分组/打开器/三种关闭/折叠/底栏门禁/焦点),数据派生补 1 例(diff 空文本行数、diffs 缺省时 locations 兜底),全包 100%。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

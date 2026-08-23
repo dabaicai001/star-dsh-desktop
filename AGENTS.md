@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.92.4(**修复 v0.92.2 安装包启动崩溃(根因级,替代 v0.92.3 的产物级缓解)**:`examples/starhub-web/cordis.patch.yml` 引用的 `@deepseek-ai/dsh-starhub-memory-sink` 未随 dsh-runtime 入包(三处入包清单漏列),安装包启动即 `ERR_MODULE_NOT_FOUND` → 插件树加载失败 → dsh web 进程崩溃(浏览器侧表现为 `session-log-export` client bundle failed to load,系崩溃下游症状)。修复:`package-dsh-runtime.ts` 的 `WEB_LOCAL_PACKAGE_DIRS` / `web.rs` 的 `LOCAL_PACKAGES` / `examples/starhub-web/package.json` 三处补 memory-sink;memory-sink `apply()` 改为 `ctx.settings.get()` 只读 memory-context 的 namespace(不再重复 register,消除组合下 settings duplicate-registration 硬失败);`package-dsh-runtime.ts` 新增 `verifyProfilePatchClosure()` 打包门禁——starhub-web profile 引用的每个 `@deepseek-ai/*` 包必须已随闭包入包,漏列即构建失败(本地与 GitHub CI 均生效)。) |
+| 当前版本 | v0.93.0(✨ AI 对话输入框新增截图功能(微信同款交互):输入框工具行「剪刀」按钮 → 区域截图 / 窗口截图。区域截图:隐藏主窗口后弹出全屏遮罩,拖拽框选选区(8 方向调整 / 整体移动 / 尺寸提示),支持红色矩形标注与撤销,回车/双击确认、Esc 取消;窗口截图:点击目标窗口整窗截取(含标题栏边框,自动过滤 StarHub 自身窗口)。确认后截图直接进输入框附件栏,随消息发送;超过 3MB 自动压缩到 3MB 以内。Rust 侧基于 xcap 跨平台截图(Windows WGC / macOS ScreenCaptureKit / Linux X11+Wayland),遮罩交互为独立置顶透明窗口加载的静态页,结果经 Tauri 事件回传主窗口并复用现有图片附件管线。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-23 (v0.92.4)*
+*最后更新: 2026-08-23 (v0.93.0)*
