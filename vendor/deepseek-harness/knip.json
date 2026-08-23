@@ -231,18 +231,6 @@
         "tests/**/*.tsx"
       ]
     },
-    "website": {
-      "project": [
-        "**/*.ts"
-      ],
-      "ignoreDependencies": [
-        "@braintree/sanitize-url",
-        "cytoscape",
-        "cytoscape-cose-bilkent",
-        "dayjs",
-        "debug"
-      ]
-    },
     "packages/*/*": {
       "entry": [
         "tests/**/*.spec.ts"

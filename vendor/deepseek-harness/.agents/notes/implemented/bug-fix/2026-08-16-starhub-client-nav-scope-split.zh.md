@@ -12,7 +12,7 @@ Status: implemented
 
 ## Decision
 
-`client-nav` 只保留一个注册侧 store:`createStarHubNavStore()`(root scope),由 `sidebar.navigation` 与 `shell.overlay` 共享。session-maybe 席位需要共享的一切——资产列表(`get_assets` 结果 + loading/error)与跨 scope 的工具选择(当前子类 + 打开的资产实例)——都住在插件 `apply` 里创建的 apply 持有裸 snapshot source(`createStarHubAssets`、`createToolSelectionBridge`),经各注册的 inject `hooks` 舱位下发为绑定的 `useAssets`/`useSelection` 选择器钩子;写入走注入回调(`openAsset`、`closeAsset`、`selectSubcategory`、`refreshAssets`)。这是 `ui-agent-preset` controller 范式扩展到两份 holder。`openAsset` 按资产派生实例路由前缀(`routePrefixForAsset`——PostgreSQL/Redis 资产不得继承数据库子类的 `/db/mysql` 前缀),并一次性生成 instance id,overlay 重渲染不会重建 iframe src。tool-context 的 settings 同步始终写全量四字段、空串清除,取消选中的资产不会滞留成过期 AI 上下文。[会话作用域架构 note](../../architecture/2026-07-25-web-client-session-scope-and-provide-channel.md) 拥有 session-maybe 收养语义;本 note 只拥有 client-nav 的状态拓扑。
+`client-nav` 只保留一个注册侧 store:`createStarHubNavStore()`(root scope),由 `sidebar.navigation` 与 `shell.overlay` 共享。session-maybe 席位需要共享的一切——资产列表(`get_assets` 结果 + loading/error)与跨 scope 的工具选择(当前子类 + 打开的资产实例)——都住在插件 `apply` 里创建的 apply 持有裸 snapshot source(`createStarHubAssets`、`createToolSelectionBridge`),经各注册的 inject `hooks` 舱位下发为绑定的 `useAssets`/`useSelection` 选择器钩子;写入走注入回调(`openAsset`、`closeAsset`、`selectSubcategory`、`refreshAssets`)。这是 `ui-agent-preset` controller 范式扩展到两份 holder。`openAsset` 按资产派生实例路由前缀(`routePrefixForAsset`——PostgreSQL/Redis 资产不得继承数据库子类的 `/db/mysql` 前缀),并一次性生成 instance id,overlay 重渲染不会重建 iframe src。tool-context 的 settings 同步始终写全量四字段、空串清除,取消选中的资产不会滞留成过期 AI 上下文。[会话作用域架构 note](../architecture/2026-07-25-web-client-session-scope-and-provide-channel.md) 拥有 session-maybe 收养语义;本 note 只拥有 client-nav 的状态拓扑。
 
 ## Alternatives considered
 

@@ -14,13 +14,13 @@ Separately, every canonical page carries lines written for its GitHub reader —
 
 ## Decision
 
-[website/docs.ts](../../../../website/docs.ts) owns section placement. `sections` declares the groups per locale, and `sectionSpec(locale, label)` returns a group's position and collapse behavior, throwing when a locale declares no placement for a label. A group absent from the declaration now fails the build instead of sorting silently to the top. Placement is per locale because the two sidebars name their groups independently, and a label both use — `SDK` — cannot hold one rank against `入门` and against `Guide` at once.
+The upstream `website/docs.ts` owns section placement. `sections` declares the groups per locale, and `sectionSpec(locale, label)` returns a group's position and collapse behavior, throwing when a locale declares no placement for a label. A group absent from the declaration now fails the build instead of sorting silently to the top. Placement is per locale because the two sidebars name their groups independently, and a label both use — `SDK` — cannot hold one rank against `入门` and against `Guide` at once.
 
 Subsystem pages are grouped by concern — overview, core and scopes, sessions and persistence, model and context, execution and tools, policy and interaction, platform and access — and the six topical groups render collapsed until one holds the page being read. The groups sort last within the reference sidebar: expanded, they outnumber every other group combined, so anything placed after them is reachable only by scrolling past the whole list. Page `order` derives from array position rather than a hand-written number.
 
 `landingLink(locale, collection)` derives each navigation item's target from `orderedPages`, the same ordering the sidebar renders, so an item always opens its collection's first published page.
 
-`projectedPageContent` in [scripts/project-doc-site.ts](../../../../scripts/project-doc-site.ts) drops the language-switcher line and the repository badge. The switcher match is confined to the first eight lines so a tutorial that shows the convention still renders its example.
+`projectedPageContent` in `scripts/project-doc-site.ts` drops the language-switcher line and the repository badge. The switcher match is confined to the first eight lines so a tutorial that shows the convention still renders its example.
 
 The navigation-bar title is the DeepSeek wordmark inlined into `siteTitle`, which VitePress renders as HTML. Inlining is what lets the mark's `currentColor` fills follow the active theme; `themeConfig.logo` renders an `<img>`, which freezes the mark at the colors its file declares and would need one asset per theme. The sidebar scrollbar rests invisible and appears while scrolling, marked by a `data-` attribute rather than a class because Vue rewrites `class` wholesale when it patches the element.
 

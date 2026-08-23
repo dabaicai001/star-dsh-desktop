@@ -364,7 +364,6 @@ function ciStaticGates(options: { ownsBuild: boolean }): Gate[] {
           docTypecheckScript: 'doc-typecheck:contracts-ready',
         }
         : {},
-      docsBuildScript: 'docs:build:mpa',
     }),
     pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
     pnpmScript('knip', 'knip'),
@@ -422,19 +421,15 @@ function webSnapshotGate(needs: string[]): Gate {
 function ciWindowsBlockingGates(): Gate[] {
   return [
     pnpmScript('windows-build', 'build', { label: 'build' }),
-    pnpmScript('windows-site', 'docs:build', { label: 'production site' }),
   ]
 }
 
 function ciWindowsCompleteGates(): Gate[] {
   const observational = ciWindowsObservationalGates()
-    // The required production site replaces the observational MPA build; both
-    // VitePress modes write the same output directory and cannot overlap.
-    .filter(gate => gate.id !== 'build' && gate.id !== 'docs-site-build')
+    .filter(gate => gate.id !== 'build')
     .map(gate => ({ ...gate, allowFailure: true }))
   return [
     pnpmScript('build', 'build'),
-    pnpmScript('windows-site', 'docs:build', { label: 'production site' }),
     ...coverageGates(),
     ...observational,
   ]
@@ -573,7 +568,6 @@ function docSyncLeafGates(options: {
   docTypecheckNeeds?: string[]
   docTypecheckEnv?: Record<string, string | undefined>
   docTypecheckScript?: 'doc-typecheck' | 'doc-typecheck:contracts-ready'
-  docsBuildScript?: 'docs:build' | 'docs:build:mpa'
 } = {}): Gate[] {
   const docTypecheckOptions: Partial<Gate> = {}
   if (options.docTypecheckNeeds !== undefined) docTypecheckOptions.needs = options.docTypecheckNeeds
@@ -590,7 +584,6 @@ function docSyncLeafGates(options: {
     pnpmScript('persistence-catalog', 'verify-persistence-catalog', { label: 'persistence catalog' }),
     pnpmScript('doc-graphs', 'verify-doc-graphs', { label: 'doc graphs' }),
     pnpmScript('scoped-events', 'verify-scoped-events', { label: 'scoped events' }),
-    pnpmScript('markdown-wrap', 'verify-md-wrap', { label: 'markdown wrap' }),
     pnpmScript('markdown-links', 'verify-md-links', { label: 'markdown links' }),
     pnpmScript('public-repository-links', 'verify-public-repository-links', { label: 'public repository links' }),
     pnpmScript('doc-refs', 'verify-doc-refs', { label: 'doc refs' }),
@@ -604,13 +597,8 @@ function docSyncLeafGates(options: {
     pnpmScript('type-equivalence', 'verify-type-equiv', { label: 'type equivalence' }),
     pnpmScript('skill-invocation-metadata', 'verify-skill-invocation-metadata', { label: 'skill invocation metadata' }),
     pnpmScript('translation-prompt', 'verify-translation-prompt', { label: 'translation prompt' }),
-    pnpmScript('translation-pairing', 'verify-translation-pairing', { label: 'translation pairing' }),
-    pnpmScript('doc-budgets', 'verify-doc-budgets', { label: 'doc budgets' }),
-    pnpmExec('docs-site-projection', ['vitest', 'run', 'scripts/project-doc-site.spec.ts', 'scripts/verify-doc-site-fragments.spec.ts'], {
-      label: 'documentation site checks',
-    }),
-    // Keep the VitePress build itself in one gate because projection rewrites website/.generated.
-    pnpmScript('docs-site-build', options.docsBuildScript ?? 'docs:build', { label: 'documentation build' }),
+    // The StarHub vendor copy retires the style-only markdown-wrap and doc-budgets
+    // gates and the bilingual translation-pairing gate; only functional doc gates stay.
     pnpmScript('package-readme-limitations', 'verify-package-readme-limitations', { label: 'package README limitations' }),
   ]
 }

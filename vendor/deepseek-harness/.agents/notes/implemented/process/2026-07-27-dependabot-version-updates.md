@@ -10,7 +10,7 @@ Maintained registry and GitHub Actions dependencies need a regular update path. 
 
 ## Decision
 
-The default branch carries [`.github/dependabot.yml`](../../../../.github/dependabot.yml) with weekly version-update checks for the root pnpm workspace, including `native/landlock-run`, the `python/sdk` uv project, and GitHub Actions. Every entry sets `cooldown.default-days` to `30`, so a version release becomes eligible only after it is at least 30 days old and is proposed on the next weekly check. The [in-repository Landlock release decision](2026-08-06-in-repository-landlock-release.md) owns the shared-workspace boundary.
+The default branch carries the upstream `.github/dependabot.yml` with weekly version-update checks for the root pnpm workspace, including `native/landlock-run`, the `python/sdk` uv project, and GitHub Actions. Every entry sets `cooldown.default-days` to `30`, so a version release becomes eligible only after it is at least 30 days old and is proposed on the next weekly check. The [in-repository Landlock release decision](2026-08-06-in-repository-landlock-release.md) owns the shared-workspace boundary.
 
 The root pnpm version-update scan excludes `vendor/**`, whose source and manifests move only through the [vendoring procedure](../../../../vendor/README.md). GitHub applies `exclude-paths` only to version updates; a security pull request that touches a vendored manifest is replaced through the vendoring procedure instead of being merged as generated. Dependabot pull requests receive the repository's `kind/dependency` kind and `area/infra` area labels, run the normal pull-request checks, and remain subject to maintainer review; this automation does not merge them.
 

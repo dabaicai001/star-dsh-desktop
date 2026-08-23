@@ -21,7 +21,6 @@
     "**/.oxlint-contract-*/**", // Scratch files created by the executable lint-contract tests.
     "**/oxlint-contract-*", // Flat probes use real TypeScript project include paths.
     "packages/typert/generator/tests/fixtures/type-model/**", // tsgolint rejects this fixture's preserved project shapes before rules run.
-    "website/.generated/**",
     "vendor/**", // Vendored source keeps upstream style and idioms.
     "native/**", // The imported landlock-run subtree has its own gates; see native/README.md.
     "**/*.js",
@@ -38,8 +37,7 @@
         "apps/*/src/**/*.{ts,tsx}",
         "apps/*/tests/**/*.{ts,tsx}",
         "examples/**/*.{ts,tsx}",
-        "scripts/**/*.{ts,tsx}",
-        "website/**/*.{ts,tsx}"
+        "scripts/**/*.{ts,tsx}"
       ],
       "rules": {
         "no-var": "error",
@@ -145,8 +143,7 @@
         "packages/*/*/src/**/*.{ts,tsx}",
         "apps/*/src/**/*.{ts,tsx}",
         "examples/**/*.{ts,tsx}",
-        "scripts/**/*.{ts,tsx}",
-        "website/**/*.{ts,tsx}"
+        "scripts/**/*.{ts,tsx}"
       ],
       "rules": {
         "typescript/no-non-null-assertion": "error",
@@ -211,8 +208,7 @@
         "packages/**/*.{ts,tsx}",
         "apps/**/*.{ts,tsx}",
         "examples/**/*.{ts,tsx}",
-        "scripts/**/*.{ts,tsx}",
-        "website/**/*.{ts,tsx}"
+        "scripts/**/*.{ts,tsx}"
       ],
       "rules": {
         "sonarjs/duplicates-in-character-class": "error",
@@ -233,8 +229,7 @@
         "packages/**/*.{ts,tsx}",
         "apps/**/*.{ts,tsx}",
         "examples/**/*.{ts,tsx}",
-        "scripts/**/*.{ts,tsx}",
-        "website/**/*.{ts,tsx}"
+        "scripts/**/*.{ts,tsx}"
       ],
       "rules": {
         "@stylistic/indent": [

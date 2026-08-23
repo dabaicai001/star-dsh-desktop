@@ -8,11 +8,11 @@ Status: implemented
 
 根据策略，harness 高度依赖真实 API 测试：[docs/testing.md](../../../../docs/testing.md) 指出，无密钥套件证明的是管线，而非产品；[ACP（Agent Client Protocol）inject 事故复盘（postmortem）](../../../../docs/postmortem/0001-acp-default-export-drops-inject.md)则是常设证据——178 项无密钥测试保持绿色时，真实 ACP 客户端会话却立即崩溃。真实 API e2e 套件（`pnpm run test:e2e`，即 `*.e2e.ts` 文件）的存在正是为了弥合这一缺口：它针对线上 DeepSeek API 驱动 agent（智能体）——真实模型调用、真实 bash 工具、多轮次、恢复、ACP-over-stdio。
 
-默认门禁（[.github/workflows/ci.yml](../../../../.github/workflows/ci.yml)）刻意无密钥：不携带 secret，可供 fork 运行。`test:e2e` 在无密钥时自动跳过（`describe.skipIf(!process.env.DEEPSEEK_API_KEY)`），因此将其加入该工作流只会报绿而不会真正执行真实套件。要让真实 API 覆盖率成为合并信号，需要一个独立的、携带 secret 的工作流。
+默认门禁——上游 keyless CI 工作流（`.github/workflows/ci.yml`）——刻意无密钥：不携带 secret，可供 fork 运行。`test:e2e` 在无密钥时自动跳过（`describe.skipIf(!process.env.DEEPSEEK_API_KEY)`），因此将其加入该工作流只会报绿而不会真正执行真实套件。要让真实 API 覆盖率成为合并信号，需要一个独立的、携带 secret 的工作流。
 
 ## 决策
 
-一个与 ci.yml 分离的专用工作流 [.github/workflows/e2e.yml](../../../../.github/workflows/e2e.yml) 使用 repo secret 对外部 API 运行且仅运行 `pnpm run test:e2e`，仅在可信事件上触发，并带有一个 preflight 检查：将缺失的 secret 转化为明确的失败而非虚假的绿色。无密钥工作流保持独立，使可 fork 的质量门禁与消费 secret 的真实 API 门禁各自拥有不同的触发和凭证策略。
+一个与 ci.yml 分离的专用工作流 `.github/workflows/e2e.yml`（上游文件，本 fork 未随源码引入）使用 repo secret 对外部 API 运行且仅运行 `pnpm run test:e2e`，仅在可信事件上触发，并带有一个 preflight 检查：将缺失的 secret 转化为明确的失败而非虚假的绿色。无密钥工作流保持独立，使可 fork 的质量门禁与消费 secret 的真实 API 门禁各自拥有不同的触发和凭证策略。
 
 ### 独立工作流，而非 ci.yml 中的一个 job
 

@@ -51,8 +51,9 @@ examples/    Runnable cordis.yml leaves over packages/examples bundles (see exam
 .agents/     Agent workflows and Agent Notes (`notes/`)
 docs/        architecture, generated catalogs, postmortems, cookbook (see docs/AGENTS.md)
 scripts/     repo gates and generators
-website/     VitePress projection of selected bilingual docs/ sources
 ```
+
+The StarHub vendor copy omits the upstream `website/` docs site and retires its projection/build gates, plus the style-only markdown-wrap and doc-budgets gates and the bilingual translation-pairing gate. Enforced gates stay: lint (oxlint), per-file 100% test coverage, package README limitations and model-experience, and the remaining doc-sync leaves.
 
 Package groups: [packages/README.md](packages/README.md).
 
@@ -73,7 +74,6 @@ pnpm run build          # tsc emits lib/types, tsdown bundles runtime
 pnpm run hygiene        # knip + publint + workspace constraints + NodeNext consumer check
 pnpm run check:windows-wine  # ONLY when diagnosing a known Windows failure (needs wine); CI owns this signal
 pnpm run doc-sync       # all documentation gates; leaf list in scripts/run-gates.ts
-pnpm run website:build  # VitePress build (doubles as dead-link check)
 pnpm dsh --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
 pnpm run demo:cordis    # the agent modifies its own runtime (needs key)
 pnpm run demo:acp       # ACP automation server (needs DEEPSEEK_API_KEY)
@@ -142,7 +142,7 @@ Docs accompany every code change: update affected README and JSDoc contracts tog
 
 ## Editing these instructions
 
-`CLAUDE.md` symlinks `AGENTS.md` at root, `packages/`, and `examples/`; edit the real file. Keep each rule self-contained while linking high-level docs. Condense when clarity survives; raise a `verify-doc-budgets` ceiling when the required content genuinely needs more space.
+`CLAUDE.md` symlinks `AGENTS.md` at root, `packages/`, and `examples/`; edit the real file. Keep each rule self-contained while linking high-level docs. Condense when clarity survives.
 
 ## Vendoring policy
 

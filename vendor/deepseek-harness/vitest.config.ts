@@ -114,6 +114,14 @@ const processBoundTests = [
   'packages/workflow/workflow-worker-thread/tests/session.spec.ts',
 ]
 
+// The StarHub vendor copy does not ship the upstream .github/workflows trees,
+// so ci-workflow.spec.ts (which loads them) can never pass here; the fork's CI
+// lives in the outer StarHub repository instead. Excluded like the platform
+// suites rather than edited, because the spec is upstream-valid.
+const starhubForkExcludedTests = [
+  'scripts/ci-workflow.spec.ts',
+]
+
 export default defineConfig({
   plugins: [pathsPlugin(), standardDecoratorPlugin()],
   test: {
@@ -139,6 +147,7 @@ export default defineConfig({
             ...windowsUnsupportedTests,
             ...processBoundTests,
             ...coverageExemptExcludes,
+            ...starhubForkExcludedTests,
           ],
         },
       },

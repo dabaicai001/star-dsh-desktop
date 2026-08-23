@@ -87,9 +87,7 @@
     "examples/*/start.ts",
     "examples/*/tests/**/*.ts",
     "packages/*/*/tests/**/*.ts",
-    "scripts/**/*.ts",
-    "website/**/*.ts",
-    "website/.vitepress/**/*.ts"
+    "scripts/**/*.ts"
   ],
   // Under packages/client a test file names the face it covers: `*.client.*`
   // belongs to the Client aggregate, `*.host.spec.ts` to this one. The two
@@ -102,10 +100,6 @@
     "packages/*/*/tests/**/*.client.spec.ts",
     "packages/*/*/tests/**/*.client.spec.tsx",
     "packages/client/tsdown.client.ts",
-    // StarHub vendor copy omits the website/ workspace; the doc-site projection
-    // scripts import ../website/docs.ts and cannot type-check without it.
-    "scripts/project-doc-site.ts",
-    "scripts/project-doc-site.spec.ts",
     "scripts/client-bundle-css.spec.ts",
     "packages/typert/generator/tests/fixtures/**",
     "scripts/client-bundle-purity.spec.ts"
