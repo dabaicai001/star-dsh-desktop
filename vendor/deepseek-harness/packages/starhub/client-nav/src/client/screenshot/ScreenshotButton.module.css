@@ -37,10 +37,12 @@
   flex-direction: column;
   min-width: 220px;
   padding: 4px;
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-overlay);
-  box-shadow: var(--dsw-shadow-lv2);
+  /* 对齐 DSH 标准菜单(ui-primitives Menu):menu 专用背景 + 反色细边 +
+     lv3 阴影,深浅主题自动适配 */
+  border: 1px solid var(--dsw-alias-border-inverted);
+  border-radius: 12px;
+  background: var(--dsw-specific-menu);
+  box-shadow: var(--dsw-shadow-lv3);
 }
 
 .item {

@@ -29,12 +29,14 @@ export type ScreenshotButtonProps = PropsRuntime<'conversation.input.left'> & {
   startWindow: () => Promise<void>
 }
 
+// Lucide 标准剪刀(线条风格,与 DSH 图标集一致);stroke=currentColor。
 const SCISSORS_ICON = (
-  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden>
-    <path
-      d="M5.2 5.6a2.4 2.4 0 1 0-1.4-2.1l-2.4 1.4A1 1 0 0 0 1.8 6l4.7 4.2a2 2 0 0 1 .5.6v.2a2.2 2.2 0 1 0 2.2-2.2h-.3l3.5-3.1a1 1 0 0 0 .1-1.5l-.5-.4a1 1 0 0 0-1.3.1L8.7 5.5 7.4 4.5l1.2-1.1a1 1 0 0 0 .1-1.5l-.5-.4a1 1 0 0 0-1.3.1L5.2 5.6Zm-1.8-1.2.7-.4a1 1 0 1 1-.7.4Zm8 7.2a1.2 1.2 0 1 1-2.4 0 1.2 1.2 0 0 1 2.4 0Z"
-      fill="currentColor"
-    />
+  <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="6" cy="6" r="3" />
+    <circle cx="6" cy="18" r="3" />
+    <line x1="20" y1="4" x2="8.12" y2="15.88" />
+    <line x1="14.47" y1="14.48" x2="20" y2="20" />
+    <line x1="8.12" y1="8.12" x2="12" y2="12" />
   </svg>
 )
 
