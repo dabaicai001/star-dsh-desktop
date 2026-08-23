@@ -418,7 +418,11 @@ baseCanvas.addEventListener('click', function (e) {
 })
 
 function blobToImage(bytes, type) {
-  var blob = new Blob([bytes], { type: type })
+  // Tauri IPC 把 Rust Vec<u8> 序列化为 JSON 数组(number[]),必须转成
+  // Uint8Array 才能作为 BlobPart——否则 new Blob([number[]]) 按字符串
+  // 处理,图片数据损坏 → 底图黑屏(v0.93.1 黑屏根因)。
+  var arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  var blob = new Blob([arr], { type: type })
   var url = URL.createObjectURL(blob)
   return new Promise(function (resolve, reject) {
     var img = new Image()
