@@ -40,6 +40,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 xcap = { version = "0.9.8", features = ["image", "wgc"] }
 # 截图编码(PNG/JPEG)与多显示器拼接
 image = "0.25.10"
+base64 = "0.23.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = "1.1.0"

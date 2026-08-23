@@ -11,6 +11,7 @@
 use std::io::Cursor;
 use std::sync::Mutex;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use xcap::{Monitor, Window};
@@ -46,8 +47,8 @@ pub struct ScreenshotWindow {
 /// 截图会话状态(挂在 Tauri state 上):区域模式缓存的全屏底图。
 #[derive(Default)]
 pub struct ScreenshotSession {
-    /// 拼接好的桌面底图 JPEG 字节(区域模式;窗口模式为 None)。
-    desktop: Mutex<Option<Vec<u8>>>,
+    /// 拼接好的桌面底图 base64 dataURL(区域模式;窗口模式为 None)。
+    desktop: Mutex<Option<String>>,
     /// 底图对应的显示器列表(物理坐标)。
     monitors: Mutex<Vec<ScreenshotMonitor>>,
     /// 虚拟屏物理原点(拼接图左上角 = 各显示器坐标最小值)。
@@ -83,11 +84,13 @@ fn monitor_descs() -> Result<Vec<ScreenshotMonitor>, String> {
     Ok(descs)
 }
 
-/// 桌面底图负载:(拼接 JPEG 字节, 显示器列表, 虚拟屏物理原点)。
-type DesktopCapture = (Vec<u8>, Vec<ScreenshotMonitor>, (i32, i32));
+/// 桌面底图负载:(base64 dataURL JPEG, 显示器列表, 虚拟屏物理原点)。
+/// 用 base64 字符串传输:IPC 的 JSON 通道对 `Vec<u8>` 会序列化成巨型
+/// number[],前端转换/解码容易出错(黑屏根因);字符串零歧义。
+type DesktopCapture = (String, Vec<ScreenshotMonitor>, (i32, i32));
 
 /// 截取全部显示器并拼接成一张虚拟屏底图(物理像素)。
-/// @returns (JPEG 字节, 显示器列表, 虚拟屏物理原点)。
+/// @returns (base64 dataURL JPEG, 显示器列表, 虚拟屏物理原点)。
 fn capture_desktop() -> Result<DesktopCapture, String> {
     let descs = monitor_descs()?;
     let x_min = descs.iter().map(|d| d.x).min().unwrap_or(0);
@@ -124,7 +127,8 @@ fn capture_desktop() -> Result<DesktopCapture, String> {
     DynamicImage::ImageRgba8(canvas)
         .write_to(&mut buf, ImageFormat::Jpeg)
         .map_err(|e| format!("encode desktop jpeg failed: {e}"))?;
-    Ok((buf.into_inner(), descs, (x_min, y_min)))
+    let data_url = format!("data:image/jpeg;base64,{}", BASE64.encode(buf.into_inner()));
+    Ok((data_url, descs, (x_min, y_min)))
 }
 
 /// 把一张 Rgba 图编码为 PNG 字节。
@@ -331,10 +335,10 @@ pub fn screenshot_list_windows() -> Result<Vec<ScreenshotWindow>, String> {
     Ok(out)
 }
 
-/// 按 id 截取单个窗口(含标题栏边框),返回 PNG 字节。
+/// 按 id 截取单个窗口(含标题栏边框),返回 base64 dataURL PNG。
 /// blocking 线程 + 10s 超时,避免 WGC 卡住时遮罩页面失去响应。
 #[tauri::command]
-pub async fn screenshot_capture_window(id: u32) -> Result<Vec<u8>, String> {
+pub async fn screenshot_capture_window(id: u32) -> Result<String, String> {
     let captured = tokio::time::timeout(
         std::time::Duration::from_secs(10),
         tokio::task::spawn_blocking(move || capture_window_png(id)),
@@ -348,7 +352,7 @@ pub async fn screenshot_capture_window(id: u32) -> Result<Vec<u8>, String> {
 }
 
 /// 阻塞式窗口截图(xcap Window::all + capture_image + PNG 编码)。
-fn capture_window_png(id: u32) -> Result<Vec<u8>, String> {
+fn capture_window_png(id: u32) -> Result<String, String> {
     let windows = Window::all().map_err(|e| format!("enumerate windows failed: {e}"))?;
     let target = windows
         .into_iter()
@@ -357,15 +361,21 @@ fn capture_window_png(id: u32) -> Result<Vec<u8>, String> {
     let img = target
         .capture_image()
         .map_err(|e| format!("capture window failed: {e}"))?;
-    encode_png(img)
+    let bytes = encode_png(img)?;
+    Ok(format!("data:image/png;base64,{}", BASE64.encode(bytes)))
 }
 
-/// 确认截图:关闭遮罩、恢复主窗口、把最终 PNG 字节发往主窗口。
+/// 确认截图:关闭遮罩、恢复主窗口、把最终 base64 PNG 发往主窗口
+/// (解码回字节后经事件传回,主窗口侧收到 Uint8Array 转 File)。
 #[tauri::command]
-pub fn screenshot_finish(app: AppHandle, data: Vec<u8>) -> Result<(), String> {
+pub fn screenshot_finish(app: AppHandle, data: String) -> Result<(), String> {
+    // 前端传裸 base64(去 dataURL 前缀)。
+    let bytes = BASE64
+        .decode(data.as_bytes())
+        .map_err(|e| format!("decode screenshot data failed: {e}"))?;
     let result = ScreenshotResult {
         ok: true,
-        data: Some(data),
+        data: Some(bytes),
     };
     let _ = app.emit(RESULT_EVENT, result);
     close_overlay(&app);

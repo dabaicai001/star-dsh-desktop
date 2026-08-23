@@ -401,7 +401,7 @@ baseCanvas.addEventListener('click', function (e) {
   var id = hoverWin.id
   hintEl.textContent = '正在截取窗口…'
   invoke('screenshot_capture_window', { id: id })
-    .then(function (bytes) { return blobToImage(bytes, 'image/png') })
+    .then(function (dataUrl) { return dataUrlToImage(dataUrl) })
     .then(function (img) {
       baseImage = img
       fitImageWindowMode(img)
@@ -417,18 +417,14 @@ baseCanvas.addEventListener('click', function (e) {
     })
 })
 
-function blobToImage(bytes, type) {
-  // Tauri IPC 把 Rust Vec<u8> 序列化为 JSON 数组(number[]),必须转成
-  // Uint8Array 才能作为 BlobPart——否则 new Blob([number[]]) 按字符串
-  // 处理,图片数据损坏 → 底图黑屏(v0.93.1 黑屏根因)。
-  var arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
-  var blob = new Blob([arr], { type: type })
-  var url = URL.createObjectURL(blob)
+function dataUrlToImage(src) {
+  // 图片经 base64 dataURL 传输(Rust 侧编码),直接赋给 Image.src——
+  // 不再经过 IPC 的 Vec<u8>→number[]→Uint8Array 链路,零转换歧义。
   return new Promise(function (resolve, reject) {
     var img = new Image()
-    img.onload = function () { URL.revokeObjectURL(url); resolve(img) }
-    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode image failed')) }
-    img.src = url
+    img.onload = function () { resolve(img) }
+    img.onerror = function () { reject(new Error('decode image failed')) }
+    img.src = src
   })
 }
 
@@ -541,7 +537,7 @@ function buildWinList(list) {
     el.addEventListener('click', function () {
       hintEl.textContent = '正在截取窗口…'
       invoke('screenshot_capture_window', { id: w.id })
-        .then(function (bytes) { return blobToImage(bytes, 'image/png') })
+        .then(function (dataUrl) { return dataUrlToImage(dataUrl) })
         .then(function (img) {
           baseImage = img
           fitImageWindowMode(img)
@@ -562,32 +558,31 @@ function buildWinList(list) {
 }
 
 // ---- 确认 / 取消 ----
-function canvasToBlob(canvas, type, quality) {
-  return new Promise(function (resolve, reject) {
-    canvas.toBlob(function (b) { b ? resolve(b) : reject(new Error('toBlob failed')) }, type, quality)
-  })
-}
+// dataURL 长度 → 字节数(base64 编码 4 字符 ≈ 3 字节)。
+function dataUrlBytes(d) { return Math.floor(d.length * 0.75) }
+function toBareBase64(d) { var i = d.indexOf(','); return d.slice(i + 1) }
 
 // 压缩到 3MB 内:先 PNG,超限转 JPEG 降质量,仍超限再降分辨率。
-async function compressToLimit(canvas) {
-  var blob = await canvasToBlob(canvas, 'image/png')
-  if (blob.size <= MAX_BYTES) return blob
+// 返回裸 base64(Rust 侧解码,避免 Vec<u8> IPC 的 number[] 链路)。
+async function compressToLimitDataUrl(canvas) {
+  var d = canvas.toDataURL('image/png')
+  if (dataUrlBytes(d) <= MAX_BYTES) return toBareBase64(d)
   var quality = 0.9
-  while (quality >= 0.3 && blob.size > MAX_BYTES) {
-    blob = await canvasToBlob(canvas, 'image/jpeg', quality)
+  while (quality >= 0.3 && dataUrlBytes(d) > MAX_BYTES) {
+    d = canvas.toDataURL('image/jpeg', quality)
     quality -= 0.1
   }
   var scale = 0.9
-  while (blob.size > MAX_BYTES && scale > 0.3) {
+  while (dataUrlBytes(d) > MAX_BYTES && scale > 0.3) {
     var w = Math.max(1, Math.round(canvas.width * scale))
     var h = Math.max(1, Math.round(canvas.height * scale))
     var tmp = document.createElement('canvas')
     tmp.width = w; tmp.height = h
     tmp.getContext('2d').drawImage(canvas, 0, 0, w, h)
-    blob = await canvasToBlob(tmp, 'image/jpeg', 0.85)
+    d = tmp.toDataURL('image/jpeg', 0.85)
     scale -= 0.1
   }
-  return blob
+  return toBareBase64(d)
 }
 
 function confirmCapture() {
@@ -613,10 +608,8 @@ function confirmCapture() {
     ctx.strokeRect(ax + 1.5, ay + 1.5, a.w - 3, a.h - 3)
   })
   hintEl.textContent = '正在处理…'
-  compressToLimit(final).then(function (blob) {
-    return blob.arrayBuffer()
-  }).then(function (buf) {
-    return invoke('screenshot_finish', { data: new Uint8Array(buf) })
+  compressToLimitDataUrl(final).then(function (b64) {
+    return invoke('screenshot_finish', { data: b64 })
   }).catch(function (err) {
     // 回传失败不能卡死遮罩:直接取消恢复主窗口
     hintEl.textContent = '确认失败:' + err
@@ -654,11 +647,11 @@ setTimeout(function () {
 // ---- 启动 ----
 function initRegion() {
   mode = MODE.REGION
-  hintEl.textContent = '拖拽选择截图区域,回车确认, Esc 取消'
+  hintEl.textContent = '正在加载截图底图…'
   invoke('screenshot_get_desktop')
     .then(function (res) {
       var jpeg = res[0], monitors = res[1], origin = res[2]
-      return blobToImage(jpeg, 'image/jpeg').then(function (img) {
+      return dataUrlToImage(jpeg).then(function (img) {
         baseImage = img
         // 底图 = 虚拟屏物理尺寸
         fitImageToCanvas(img)
@@ -667,9 +660,9 @@ function initRegion() {
         updateChrome()
       })
     })
-    .catch(function () {
-      // 无底图 = 窗口模式
-      initWindow()
+    .catch(function (err) {
+      // 不再静默转窗口模式:显式报错,右上角 ✕ / Esc 始终可退出
+      hintEl.textContent = '截图初始化失败:' + err + '(按 Esc 或点右上角 ✕ 退出)'
     })
 }
 
