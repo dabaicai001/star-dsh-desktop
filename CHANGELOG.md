@@ -30,6 +30,13 @@
 
 ---
 
+## [0.92.3] - 2026-08-23
+
+### 修复
+- **修复 v0.92.2 启动偶发「Failed to load plugins」报错**:v0.92.2 的 oxlint 清零修改了 `dsh-client-modules` 等包的源码并重新构建了 vendor bundle,但 `src-tauri/binaries/dsh-runtime`(打包产物,被 gitignore)未同步重建,导致从源码运行或旧打包产物中 `dsh-client-modules` 版本不一致。现重新运行 `npm run package:dsh-runtime` 生成最新的 dsh-runtime,确保 vendor 与 binaries 中的 client bundle 完全一致。
+
+---
+
 ## [0.92.2] - 2026-08-23
 
 ### 变更
@@ -38,9 +45,6 @@
 - `verify-archived-agent-notes` 修复嵌套仓库路径(外层 starhub git 仓库内按前缀解析 manifest)。
 - 目录册门禁修复:重新生成 client/tool/config 目录与 doc-graphs;`gen-tool-catalog` 排除 starhub 组(其工具由包 README 记录);commit-message/approval-bridge 的 Config 改为命名类型;8 个 starhub 包 README 补全 Model Experience 规范结构,client-nav/tool-context 补上缺失 README(含 Known Limitations),export-jsdoc 353 条 @param/@returns 全部补齐。
 - starhub 三包(approval-bridge / host-static / tools)补上 `./invariant` 伴生;8 个 client-nav CSS 高位面滚动容器补滚动条 l2 重绑定;icons 规格按 fork 实际集更新(73);THIRD_PARTY_NOTICES.md 重生成对齐清单;清理子代理遗留的 oxlint 探针临时文件。
-
-### 修复
-- **修复 v0.92.2 启动偶发「Failed to load plugins」报错**:v0.92.2 的 oxlint 清零修改了 `dsh-client-modules` 等包的源码并重新构建了 vendor bundle,但 `src-tauri/binaries/dsh-runtime`(打包产物,被 gitignore)未同步重建,导致从源码运行或旧打包产物中 `dsh-client-modules` 版本不一致。现重新运行 `npm run package:dsh-runtime` 生成最新的 dsh-runtime,确保 vendor 与 binaries 中的 client bundle 完全一致。
 
 ### 测试
 - client-nav terminal 四模块(terminal-cwd / xshell-quick-command / quick-commands / sftp-service)测试补齐至 per-file 100% 覆盖(新增 4 规格 86 例)。
