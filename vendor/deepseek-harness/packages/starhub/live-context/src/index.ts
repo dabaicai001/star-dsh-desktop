@@ -134,7 +134,7 @@ function renderTransferLine(transfer: Record<string, unknown>): string {
 
 /** 渲染一条最近 AI 执行行(含输出尾部)。 */
 function renderExecLine(exec: Record<string, unknown>): string {
-  const tail = exec.tail === undefined || exec.tail === '' ? '' : ` tail: ${String(exec.tail)}`
+  const tail = typeof exec.tail === 'string' && exec.tail !== '' ? ` tail: ${exec.tail}` : ''
   return `- ${String(exec.assetId)} ${String(exec.toolName)}: ${String(exec.summary)}${tail}`
 }
 
@@ -159,12 +159,17 @@ function renderSnapshotSections(snapshot: LiveSnapshot | undefined): string {
   const trails = snapshot.taskTrails
   if (Array.isArray(trails) && trails.length > 0) {
     sections.push('[Task trails]')
-    sections.push(...trails.map((trail) => `- ${String(trail.sessionId)}: ${Array.isArray(trail.assetIds) ? trail.assetIds.map(String).join(' → ') : 'none'}`))
+    sections.push(...trails.map(trail => `- ${String(trail.sessionId)}: ${Array.isArray(trail.assetIds) ? trail.assetIds.map(String).join(' → ') : 'none'}`))
   }
   return sections.join('\n')
 }
 
-/** 截断到字符上限;超长时尾部加省略号(总长仍 ≤ maxChars)。 */
+/**
+ * 截断到字符上限;超长时尾部加省略号(总长仍 ≤ maxChars)。
+ * @param text - 原始文本。
+ * @param maxChars - 结果总长上限(含省略号)。
+ * @returns 截断后的文本。
+ */
 export function truncateText(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text
   return `${text.slice(0, Math.max(0, maxChars - TRUNCATION_ELLIPSIS.length))}${TRUNCATION_ELLIPSIS}`
@@ -201,7 +206,7 @@ export async function composeLiveContext(
         transport.request(LIVE_SNAPSHOT_METHOD, {}),
         timeoutPromise,
       ])
-      snapshot = typeof result === 'object' && result !== null ? result as LiveSnapshot : undefined
+      snapshot = typeof result === 'object' && result !== null ? result : undefined
     } catch {
       // pull 失败/超时(宿主报错、进程断开或未实现)降级为本地 registry+events,不打断 pre-step。
     } finally {
@@ -223,7 +228,7 @@ export async function composeLiveContext(
  */
 export function apply(ctx: Context, config: Config): void {
   const resolved = config as Config & { enabled: boolean; maxEvents: number; maxSnapshotChars: number }
-  if (resolved.enabled === false) return
+  if (!resolved.enabled) return
   validateConfig(resolved)
   ctx.effect(() => {
     // 宿主私有服务名(sdk-transport / starhub-session-registry / starhub-domain-events)

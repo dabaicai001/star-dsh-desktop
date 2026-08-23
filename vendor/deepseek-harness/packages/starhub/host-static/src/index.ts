@@ -78,9 +78,9 @@ export function resolveDist(
   const candidates = fromEnv !== undefined
     ? [resolve(fromEnv)]
     : (() => {
-        const repoRoot = findRepoRoot()
-        return repoRoot === undefined ? [] : fallbackDirs.map((d) => join(repoRoot, d))
-      })()
+      const repoRoot = findRepoRoot()
+      return repoRoot === undefined ? [] : fallbackDirs.map(d => join(repoRoot, d))
+    })()
   for (const distRoot of candidates) {
     const distIndex = join(distRoot, 'index.html')
     if (!existsSync(distIndex)) continue

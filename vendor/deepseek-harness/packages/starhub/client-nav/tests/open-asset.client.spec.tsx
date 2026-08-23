@@ -7,6 +7,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createStarHubAssets, type RustAsset } from '../src/client/store.ts'
+import type { StarHubAsset } from '../src/client/sections.ts'
 import {
   createOpenAssetHandler, subscribeHostEvents, type OpenAssetPayload,
 } from '../src/client/host-events.ts'
@@ -55,7 +56,7 @@ afterEach(() => {
 
 describe('createOpenAssetHandler', () => {
   function harness(assets: ReturnType<typeof createStarHubAssets>, focusWindow: (key: string) => Promise<boolean>) {
-    const openAssetPage = vi.fn()
+    const openAssetPage = vi.fn<(asset: StarHubAsset) => void>()
     const handler = createOpenAssetHandler({ assets, openAssetPage, focusWindow })
     return { openAssetPage, handler }
   }
@@ -67,7 +68,7 @@ describe('createOpenAssetHandler', () => {
     const { openAssetPage, handler } = harness(assets, focusWindow)
     handler({ assetId: 'a1', tool: 'auto', action: 'open' })
     expect(openAssetPage).toHaveBeenCalledTimes(1)
-    expect(openAssetPage.mock.calls[0]![0]!.id).toBe('a1')
+    expect(openAssetPage.mock.calls[0]![0].id).toBe('a1')
     expect(focusWindow).not.toHaveBeenCalled()
   })
 
@@ -88,7 +89,7 @@ describe('createOpenAssetHandler', () => {
     const focusWindow = vi.fn(() => Promise.resolve(false))
     const { openAssetPage, handler } = harness(assets, focusWindow)
     handler({ assetId: 'a1', action: 'focus' })
-    await vi.waitFor(() => expect(openAssetPage).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() =>{  expect(openAssetPage).toHaveBeenCalledTimes(1) })
     expect(focusWindow).toHaveBeenCalledWith('a1')
   })
 

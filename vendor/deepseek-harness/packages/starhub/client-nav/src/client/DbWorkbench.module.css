@@ -73,8 +73,10 @@
 .sqlRunBtn:not(:disabled):hover { filter: brightness(1.08); }
 .sqlBarBtnActive { color: var(--dsw-accent); border-color: var(--dsw-accent); background: var(--dsw-accent-soft); }
 .historyPanel { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); padding: 6px; max-height: 140px; }
-.historyHeader { display: flex; align-items: center; gap: 8px; }
-.historyList { display: flex; flex-direction: column; gap: 2px; overflow: auto; scrollbar-width: thin; scrollbar-color: #557997 transparent; }
+.historyHeader { display: flex; align-items: center; gap: 8px; }.historyList{ display: flex; flex-direction: column; gap: 2px; overflow: auto; scrollbar-width: thin; scrollbar-color: #557997 transparent; 
+  /* Elevated scroll container: rebind the scrollbar indirection to the l2 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);}
 .historyItem { display: flex; align-items: center; gap: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-primary); font-size: 11px; text-align: left; padding: 4px 8px; cursor: pointer; }
 .historyItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .historySql { font-family: 'JetBrains Mono', Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

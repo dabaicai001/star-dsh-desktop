@@ -20,7 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { RustAsset } from './store.ts'
 import { tauriInvoke } from './tauri.ts'
-import { DbDataGrid } from './DbDataGrid.tsx'
+import { DbDataGrid, cellText } from './DbDataGrid.tsx'
 import { SqlEditor, type SqlCompletionSchema } from './SqlEditor.tsx'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
 import {
@@ -47,7 +47,7 @@ const columnCache = new Map<string, string[]>()
 function extractColumnNames(rows: unknown): string[] {
   if (!Array.isArray(rows)) return []
   return rows
-    .map((r) => (typeof r === 'object' && r !== null ? (r as Record<string, unknown>).name : undefined))
+    .map(r => (typeof r === 'object' && r !== null ? (r as Record<string, unknown>).name : undefined))
     .filter((n): n is string => typeof n === 'string')
 }
 
@@ -74,9 +74,9 @@ function TableRow({ table, selected, database, supportsAlter, actions }: {
     { id: 'ddl', label: '查看 DDL' },
     ...(supportsAlter
       ? [
-          { id: 'columns', label: '编辑列' },
-          { id: 'indexes', label: '索引' },
-        ]
+        { id: 'columns', label: '编辑列' },
+        { id: 'indexes', label: '索引' },
+      ]
       : []),
     { id: 'truncate', label: '清空表' },
     { id: 'drop', label: '删除表', danger: true },
@@ -299,7 +299,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     try {
       // list_databases 直接返回库名字符串数组(非 [{name}] 对象行)。
       const names = await tauriInvoke<string[]>(`${cmdPrefix}_list_databases`, { connId: id })
-      setDbs((names ?? []).map((name) => ({ kind: 'database', name, expanded: false, tables: [], loading: false })))
+      setDbs(names.map(name => ({ kind: 'database', name, expanded: false, tables: [], loading: false })))
     } catch (e) {
       setConnectError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -336,7 +336,6 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
       if (connRef.current !== null) disconnect(connRef.current)
     }
     // 只随资产 id 变化;connectCommand 对同类型恒定,不列入依赖避免重连。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asset.id])
 
   const refreshDatabases = useCallback(() => {
@@ -350,25 +349,25 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
   const normalizedTreeSearch = treeSearch.trim().toLocaleLowerCase()
   const visibleDbs = normalizedTreeSearch === ''
     ? dbs
-    : dbs.filter((node) => node.kind === 'database' && (
+    : dbs.filter(node => node.kind === 'database' && (
       node.name.toLocaleLowerCase().includes(normalizedTreeSearch)
-      || node.tables.some((table) => table.toLocaleLowerCase().includes(normalizedTreeSearch))
+      || node.tables.some(table => table.toLocaleLowerCase().includes(normalizedTreeSearch))
     ))
 
   /** 展开库并懒加载表列表(expanded 立即置位,供树记忆持久化即时可见)。 */
   const expandDb = useCallback(async (name: string) => {
     const id = connRef.current
-    setDbs((prev) => prev.map((d) => (d.kind === 'database' && d.name === name ? { ...d, expanded: true, loading: true } : d)))
+    setDbs(prev => prev.map(d => (d.kind === 'database' && d.name === name ? { ...d, expanded: true, loading: true } : d)))
     if (id === null) return
     try {
       const rows = await tauriInvoke<DbObjectRow[]>(`${cmdPrefix}_list_tables`, { connId: id, database: name })
-      setDbs((prev) => prev.map((d) => (
+      setDbs(prev => prev.map(d => (
         d.kind === 'database' && d.name === name
-          ? { ...d, loading: false, tables: (rows ?? []).map((r) => r.name) }
+          ? { ...d, loading: false, tables: rows.map(r => r.name) }
           : d
       )))
     } catch (e) {
-      setDbs((prev) => prev.map((d) => (d.kind === 'database' && d.name === name ? { ...d, loading: false } : d)))
+      setDbs(prev => prev.map(d => (d.kind === 'database' && d.name === name ? { ...d, loading: false } : d)))
       setConnectError(e instanceof Error ? e.message : String(e))
     }
   }, [cmdPrefix])
@@ -376,14 +375,14 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
   const toggleDb = useCallback(async (node: TreeNode) => {
     if (node.kind !== 'database') return
     if (node.expanded) {
-      setDbs((prev) => prev.map((d) => (d.kind === 'database' && d.name === node.name ? { ...d, expanded: false } : d)))
+      setDbs(prev => prev.map(d => (d.kind === 'database' && d.name === node.name ? { ...d, expanded: false } : d)))
       return
     }
     if (node.tables.length === 0 && !node.loading) {
       await expandDb(node.name)
       return
     }
-    setDbs((prev) => prev.map((d) => (d.kind === 'database' && d.name === node.name ? { ...d, expanded: true } : d)))
+    setDbs(prev => prev.map(d => (d.kind === 'database' && d.name === node.name ? { ...d, expanded: true } : d)))
   }, [expandDb])
 
   // ---- 左侧树记忆(localStorage,按资产隔离):展开库 / 选中表 / 当前库 ----
@@ -410,7 +409,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
 
   useEffect(() => {
     if (!restoredRef.current) return
-    const expanded = dbs.filter((d) => d.kind === 'database' && d.expanded).map((d) => d.name)
+    const expanded = dbs.filter(d => d.kind === 'database' && d.expanded).map(d => d.name)
     try {
       localStorage.setItem(treeStoreKey, JSON.stringify({ expanded, selected, currentDb, monitor: showMonitor }))
     } catch { /* 存储不可用(隐私模式等)时静默降级 */ }
@@ -454,7 +453,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
   /** 查询历史弹层:打开时刷新条目;再次点击关闭。 */
   const toggleHistory = (): void => {
     if (!historyOpen) setHistoryEntries(loadHistory())
-    setHistoryOpen((open) => !open)
+    setHistoryOpen(open => !open)
   }
 
   /** 点历史条目 → 回填到 SQL 编辑器并收起弹层。 */
@@ -496,9 +495,9 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     if (id === null) return
     try {
       await tauriInvoke(`${cmdPrefix}_drop_table`, { connId: id, table, ...(database !== undefined ? { database } : {}) })
-      setDbs((prev) => prev.map((d) => {
+      setDbs(prev => prev.map((d) => {
         if (d.kind !== 'database' || !d.tables.includes(table)) return d
-        return { ...d, tables: d.tables.filter((t) => t !== table) }
+        return { ...d, tables: d.tables.filter(t => t !== table) }
       }))
       if (selected !== null && selected.table === table) setSelected(null)
     } catch (e) {
@@ -522,16 +521,16 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
   const refreshDbTables = useCallback(async (database: string) => {
     const id = connRef.current
     if (id === null) return
-    setDbs((prev) => prev.map((d) => (d.kind === 'database' && d.name === database ? { ...d, loading: true, expanded: true } : d)))
+    setDbs(prev => prev.map(d => (d.kind === 'database' && d.name === database ? { ...d, loading: true, expanded: true } : d)))
     try {
       const rows = await tauriInvoke<DbObjectRow[]>(`${cmdPrefix}_list_tables`, { connId: id, database })
-      setDbs((prev) => prev.map((d) => (
+      setDbs(prev => prev.map(d => (
         d.kind === 'database' && d.name === database
-          ? { ...d, loading: false, tables: (rows ?? []).map((r) => r.name) }
+          ? { ...d, loading: false, tables: rows.map(r => r.name) }
           : d
       )))
     } catch (e) {
-      setDbs((prev) => prev.map((d) => (d.kind === 'database' && d.name === database ? { ...d, loading: false } : d)))
+      setDbs(prev => prev.map(d => (d.kind === 'database' && d.name === database ? { ...d, loading: false } : d)))
       setConnectError(e instanceof Error ? e.message : String(e))
     }
   }, [cmdPrefix])
@@ -539,7 +538,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
   /** 建表成功:把新表并入该库节点(若已展开)并清掉列缓存。 */
   const onTableCreated = useCallback((database: string, tableName: string) => {
     columnCache.delete(tableName)
-    setDbs((prev) => prev.map((d) => (
+    setDbs(prev => prev.map(d => (
       d.kind === 'database' && d.name === database && !d.tables.includes(tableName)
         ? { ...d, expanded: true, tables: [...d.tables, tableName] }
         : d
@@ -574,7 +573,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
         args.orderDir = orderDir
       }
       const res = await tauriInvoke<{ filePath: string; totalRows?: number; durationMs?: number }>(cmd, args)
-      const rows = res?.totalRows ?? 0
+      const rows = res.totalRows ?? 0
       setConnectError(null)
       window.alert(`导出完成:${rows.toLocaleString()} 行 → ${res.filePath}`)
     } catch (e) {
@@ -602,7 +601,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
       for (const table of db.tables) {
         if (columnCache.has(table)) continue
         void tauriInvoke<unknown>(`${cmdPrefix}_list_columns`, {
-          connId: id, table, ...(db.name !== undefined ? { database: db.name } : {}),
+          connId: id, table, database: db.name,
         })
           .then((cols) => { columnCache.set(table, extractColumnNames(cols)) })
           .catch(() => { /* 补全失败静默 */ })
@@ -633,7 +632,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
               type="search"
               className={css.treeSearch}
               value={treeSearch}
-              onChange={(event) => setTreeSearch(event.target.value)}
+              onChange={(event) =>{  setTreeSearch(event.target.value) }}
               placeholder="搜索数据库或表"
               aria-label="搜索数据库或表"
             />
@@ -649,19 +648,19 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                 const databaseMatches = node.name.toLocaleLowerCase().includes(normalizedTreeSearch)
                 const visibleTables = normalizedTreeSearch === '' || databaseMatches
                   ? node.tables
-                  : node.tables.filter((table) => table.toLocaleLowerCase().includes(normalizedTreeSearch))
+                  : node.tables.filter(table => table.toLocaleLowerCase().includes(normalizedTreeSearch))
                 return (
                   <li key={node.name}>
                     <DatabaseRow
                       node={{ ...node, expanded: normalizedTreeSearch !== '' || node.expanded }}
                       actions={{
                         onToggle: () => void toggleDb(node),
-                        onNewTable: () => setDialog({ kind: 'new-table', database: node.name }),
+                        onNewTable: () =>{  setDialog({ kind: 'new-table', database: node.name }) },
                         onRefresh: () => void refreshDbTables(node.name),
                       }}
                     >
                       <ul className={css.treeList}>
-                        {visibleTables.map((t) => (
+                        {visibleTables.map(t => (
                           <TableRow
                             key={t}
                             table={t}
@@ -671,8 +670,8 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                             actions={{
                               onSelect: () => { setSelected({ table: t, database: node.name }); setCurrentDb(node.name) },
                               onShowDdl: () => void showTableDdl(t, node.name),
-                              onColumns: () => setDialog({ kind: 'columns', database: node.name, table: t }),
-                              onIndexes: () => setDialog({ kind: 'indexes', database: node.name, table: t }),
+                              onColumns: () =>{  setDialog({ kind: 'columns', database: node.name, table: t }) },
+                              onIndexes: () =>{  setDialog({ kind: 'indexes', database: node.name, table: t }) },
                               onDrop: () => void dropTable(t, node.name),
                               onTruncate: () => void truncateTable(t, node.name),
                             }}
@@ -694,7 +693,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                 <button
                   type="button"
                   className={`${css.iconButton} ${showMonitor ? css.monitorActive : ''}`}
-                  onClick={() => setShowMonitor((v) => !v)}
+                  onClick={() =>{  setShowMonitor(v => !v) }}
                   title={showMonitor ? '收起监控面板' : '展开监控面板'}
                   aria-label="监控面板"
                   aria-pressed={showMonitor}
@@ -708,20 +707,20 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                   <select
                     className={css.dbSelect}
                     value={currentDb}
-                    onChange={(event) => setCurrentDb(event.target.value)}
+                    onChange={(event) =>{  setCurrentDb(event.target.value) }}
                     title="执行 SQL 的当前数据库"
                     aria-label="当前数据库"
                   >
                     <option value="">(未选库)</option>
-                    {dbs.map((d) => d.kind === 'database' && (
+                    {dbs.map(d => d.kind === 'database' && (
                       <option key={d.name} value={d.name}>{d.name}</option>
                     ))}
                   </select>
                   <span className={css.hint}>Mod-Enter 执行 · Shift-Mod-e EXPLAIN · Tab 缩进</span>
                   {sqlLoading && <span className={css.hint}>执行中…</span>}
                   <span className={css.spacer} />
-                  <button type="button" className={css.sqlRunBtn} onClick={() => executeSql(sql, false)} disabled={sqlLoading || sql.trim() === ''} title="执行 SQL (Mod-Enter)" aria-label="执行 SQL"><IconPlayOutline16 size={13} /></button>
-                  <button type="button" className={css.sqlBarBtn} onClick={() => executeSql(sql, true)} disabled={sqlLoading || sql.trim() === ''} title="执行 EXPLAIN (Shift-Mod-e)" aria-label="执行 EXPLAIN"><IconInspectOutline12 size={13} /></button>
+                  <button type="button" className={css.sqlRunBtn} onClick={() => void executeSql(sql, false)} disabled={sqlLoading || sql.trim() === ''} title="执行 SQL (Mod-Enter)" aria-label="执行 SQL"><IconPlayOutline16 size={13} /></button>
+                  <button type="button" className={css.sqlBarBtn} onClick={() => void executeSql(sql, true)} disabled={sqlLoading || sql.trim() === ''} title="执行 EXPLAIN (Shift-Mod-e)" aria-label="执行 EXPLAIN"><IconInspectOutline12 size={13} /></button>
                   <button type="button" className={css.sqlBarBtn} onClick={formatCurrentSql} title="格式化 SQL" aria-label="格式化 SQL"><IconCodeOutline16 size={13} /></button>
                   <button type="button" className={`${css.sqlBarBtn} ${historyOpen ? css.sqlBarBtnActive : ''}`} onClick={toggleHistory} title="查询历史" aria-label="查询历史"><MetricIcon name="clock" size={13} /></button>
                 </div>
@@ -741,7 +740,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                             key={idx}
                             type="button"
                             className={css.historyItem}
-                            onClick={() => useHistoryEntry(entry)}
+                            onClick={() =>{  useHistoryEntry(entry) }}
                             title={`${entry.db !== '' ? `[${entry.db}] ` : ''}${entry.sql}`}
                           >
                             <span className={css.historySql}>{entry.sql}</span>
@@ -756,7 +755,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                   value={sql}
                   onChange={setSql}
                   dialect={dialect === 'postgresql' ? 'postgresql' : 'mysql'}
-                  onExecute={executeSql}
+                  onExecute={(statement, explain) => void executeSql(statement, explain)}
                   schema={sqlSchema}
                   placeholder="SELECT * FROM users WHERE …"
                 />
@@ -767,7 +766,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
             )}
             {/* 数据栏:执行过 SQL 时展示查询结果(可关闭回到表数据),否则展示选中表。 */}
             {sqlResult !== null && sqlError === null ? (
-              <SqlQueryResultView result={sqlResult} onClose={() => setSqlResult(null)} />
+              <SqlQueryResultView result={sqlResult} onClose={() =>{  setSqlResult(null) }} />
             ) : selected === null ? (
               <div className={css.placeholder}>选择左侧一个表查看数据(排序 / 分页 / NULL 高亮已就位)</div>
             ) : (
@@ -800,7 +799,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
               <header className={css.ddlHeader}>
                 <span className={css.title}>DDL · {ddl.table}</span>
                 <span className={css.spacer} />
-                <button type="button" className={css.closeBtn} onClick={() => setDdl(null)}>关闭</button>
+                <button type="button" className={css.closeBtn} onClick={() =>{  setDdl(null) }}>关闭</button>
               </header>
               <pre className={css.ddlBody}>{ddl.loading === true ? '加载中…' : (ddl.content || '')}</pre>
             </div>
@@ -811,8 +810,8 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
             connId={connId}
             database={dialog.database}
             dialect={dialect}
-            onClose={() => setDialog(null)}
-            onCreated={(name) => onTableCreated(dialog.database, name)}
+            onClose={() =>{  setDialog(null) }}
+            onCreated={(name) =>{  onTableCreated(dialog.database, name) }}
           />
         )}
         {dialog !== null && dialog.kind === 'columns' && (
@@ -828,7 +827,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
             connId={connId}
             database={dialog.database}
             table={dialog.table}
-            onClose={() => setDialog(null)}
+            onClose={() =>{  setDialog(null) }}
           />
         )}
       </div>
@@ -872,9 +871,7 @@ function SqlQueryResultView({ result, onClose }: { result: SqlQueryResult; onClo
                 <tr key={ri}>
                   {columns.map((_c, ci) => (
                     <td key={ci} className={row[ci] === null || row[ci] === undefined ? css.tdNull : undefined}>
-                      {row[ci] === null || row[ci] === undefined
-                        ? 'NULL'
-                        : typeof row[ci] === 'object' ? JSON.stringify(row[ci]) : String(row[ci])}
+                      {cellText(row[ci])}
                     </td>
                   ))}
                 </tr>

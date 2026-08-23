@@ -106,13 +106,14 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
       connectedRef.current = false
       return
     }
-    let cancelled = false
+    const abort = new AbortController()
+    const isAborted = (): boolean => abort.signal.aborted
     setConnecting(true)
     setError(null)
     void (async () => {
       try {
         const info = await sftpEnsureSession(sessionId)
-        if (cancelled) return
+        if (isAborted()) return
         connectedRef.current = true
         setConnected(true)
         // Prefer the terminal cwd so an opened SFTP panel immediately mirrors the live SSH shell.
@@ -124,20 +125,19 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
             if (dir.startsWith('/')) initialPath = dir
           } catch { /* home lookup is optional; root remains usable */ }
         }
-        if (!cancelled) void loadDir(initialPath)
+        if (!isAborted()) void loadDir(initialPath)
         if (info?.mode === 'fallback_exec' && info.server_path) {
           // non-fatal diagnostic; surface in the toolbar title if needed
         }
       } catch (caught) {
-        if (!cancelled) {
+        if (!abort.signal.aborted) {
           setError(caught instanceof Error ? caught.message : String(caught))
         }
       } finally {
-        if (!cancelled) setConnecting(false)
+        if (!abort.signal.aborted) setConnecting(false)
       }
     })()
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { abort.abort() }
   }, [sessionId, sshConnected])
 
   // ---- transfer event listeners (global; filter by our session) ----
@@ -146,9 +146,8 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
     let unprogress: TauriUnlisten | undefined
     void tauriListen<TransferStatusEvent>('sftp://transfer-status', (ev) => {
       if (ev.sessionId !== sessionId) return
-      if (ev.status === undefined) return
       setTransfers((prev) => {
-        const found = prev.findIndex((t) => t.id === ev.transferId)
+        const found = prev.findIndex(t => t.id === ev.transferId)
         if (found === -1) {
           return [...prev, {
             id: ev.transferId, sessionId, direction: ev.direction, files: [],
@@ -172,14 +171,14 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
         // completed/cancelled/failed transfers clear from the list after a beat
         if (ev.status === 'done' || ev.status === 'cancelled' || ev.status === 'failed') {
           setTimeout(() => {
-            setTransfers((cur) => cur.filter((t) => t.id !== ev.transferId))
+            setTransfers(cur => cur.filter(t => t.id !== ev.transferId))
           }, 4000)
         }
         return next
       })
     }).then((off) => { unstatus = off })
     void tauriListen<TransferProgressEvent>('sftp://transfer-progress', (ev) => {
-      setTransfers((prev) => prev.map((t) => t.id === ev.transferId
+      setTransfers(prev => prev.map(t => t.id === ev.transferId
         ? { ...t, transferredBytes: ev.transferred, totalBytes: ev.total || t.totalBytes }
         : t))
     }).then((off) => { unprogress = off })
@@ -189,11 +188,10 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
       void unstatus?.()
       void unprogress?.()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
   const visibleEntries = useMemo(
-    () => showHidden ? entries : entries.filter((e) => !e.name.startsWith('.')),
+    () => showHidden ? entries : entries.filter(e => !e.name.startsWith('.')),
     [entries, showHidden],
   )
 
@@ -239,7 +237,6 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
     if (!followTerminal || !connectedRef.current) return
     if (sshCwd === undefined || !sshCwd.startsWith('/') || sshCwd === path) return
     void loadDir(sshCwd)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sshCwd, followTerminal])
 
   // ---- selection ----
@@ -363,7 +360,7 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
       {!connected && !connecting && error !== null && (
         <div className={`${css.stateOverlay} ${css.error}`}>
           <pre role="alert">{error}</pre>
-          <button type="button" onClick={() => setError(null)}>RETRY</button>
+          <button type="button" onClick={() =>{  setError(null) }}>RETRY</button>
         </div>
       )}
       {!connected && !connecting && error === null && (
@@ -381,17 +378,17 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
             <div className={css.toolGroup}>
               <button type="button" className={css.tbBtn} title="上级目录" aria-label="上级目录" onClick={navigateUp}><IconFolderOpenOutline16 size={15} /></button>
               <button type="button" className={css.tbBtn} title="刷新" aria-label="刷新" disabled={loading} onClick={refresh}><IconRefreshOutline16 size={15} /></button>
-              <button type="button" className={`${css.tbBtn} ${showHidden ? css.active : ''}`} title="显示隐藏文件" aria-label="显示隐藏文件" onClick={() => setShowHidden(v => !v)}><IconLinkOutline16 size={15} /></button>
+              <button type="button" className={`${css.tbBtn} ${showHidden ? css.active : ''}`} title="显示隐藏文件" aria-label="显示隐藏文件" onClick={() =>{  setShowHidden(v => !v) }}><IconLinkOutline16 size={15} /></button>
             </div>
             <div className={css.toolGroup}>
-              <button type="button" className={css.tbBtn} title="上传文件" aria-label="上传文件" onClick={uploadFiles}><IconPlusOutline16 size={15} /></button>
-              <button type="button" className={css.tbBtn} title="上传文件夹" aria-label="上传文件夹" onClick={uploadFolder}><IconFolderOpenOutline16 size={15} /></button>
+              <button type="button" className={css.tbBtn} title="上传文件" aria-label="上传文件" onClick={() => void uploadFiles()}><IconPlusOutline16 size={15} /></button>
+              <button type="button" className={css.tbBtn} title="上传文件夹" aria-label="上传文件夹" onClick={() => void uploadFolder()}><IconFolderOpenOutline16 size={15} /></button>
               <button type="button" className={css.tbBtn} title="下载" aria-label="下载" disabled={selected.size === 0} onClick={() => void download(null, null)}><IconDownloadOutline16 size={15} /></button>
               <button type="button" className={css.tbBtn} title="新建文件夹" aria-label="新建文件夹" onClick={newFolder}><IconPlusOutline16 size={15} /></button>
             </div>
             <div className={`${css.toolGroup} ${css.toolsEnd}`}>
               <button type="button" className={`${css.tbBtn} ${followTerminal ? css.active : ''}`} title={followTerminal ? '已跟随终端路径' : '跟随终端路径'} aria-label="跟随终端路径" disabled={!sshConnected} onClick={toggleFollow}><IconLinkOutline16 size={15} /></button>
-              <button type="button" className={css.tbBtn} title="传输任务" aria-label="传输任务" onClick={() => setShowTransfers(v => !v)}><IconFolderOpenOutline16 size={15} /></button>
+              <button type="button" className={css.tbBtn} title="传输任务" aria-label="传输任务" onClick={() =>{  setShowTransfers(v => !v) }}><IconFolderOpenOutline16 size={15} /></button>
             </div>
           </div>
 
@@ -404,12 +401,12 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
                 value={pathInput}
                 spellCheck={false}
                 autoFocus
-                onChange={(e) => setPathInput(e.target.value)}
+                onChange={(e) =>{  setPathInput(e.target.value) }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') { setPathEditing(false); const t = pathInput.trim(); if (t && t !== path) void loadDir(t.startsWith('/') || t.startsWith('~') ? t : `/${t}`) }
                   if (e.key === 'Escape') setPathEditing(false)
                 }}
-                onBlur={() => setPathEditing(false)}
+                onBlur={() =>{  setPathEditing(false) }}
               />
             </div>
           ) : (
@@ -432,11 +429,11 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
           )}
 
           {/* file list */}
-          <div className={css.fileList} onClick={() => setMenu(null)} onContextMenu={(e) => onContextMenu(e, null)}>
+          <div className={css.fileList} onClick={() =>{  setMenu(null) }} onContextMenu={(e) =>{  onContextMenu(e, null) }}>
             {loading && <div className={css.listLoading}>加载中…</div>}
             {!loading && visibleEntries.length === 0 && <div className={css.listEmpty}>空目录</div>}
             {!loading && visibleEntries.length > 0 && path !== '/' && (
-              <div className={css.fileRow} onClick={navigateUp} onContextMenu={(e) => onContextMenu(e, null)}>
+              <div className={css.fileRow} onClick={navigateUp} onContextMenu={(e) =>{  onContextMenu(e, null) }}>
                 <span className={`${css.fileIcon} ${css.dir}`}><IconFolderOpenOutline16 size={15} /></span>
                 <span className={css.fileName}>..</span>
               </div>
@@ -445,8 +442,8 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
               <div
                 key={entry.path}
                 className={`${css.fileRow} ${selected.has(entry.path) ? css.selected : ''}`}
-                onClick={(e) => onFileClick(entry, index, e)}
-                onContextMenu={(e) => onContextMenu(e, entry)}
+                onClick={(e) =>{  onFileClick(entry, index, e) }}
+                onContextMenu={(e) =>{  onContextMenu(e, entry) }}
               >
                 <span className={`${css.fileIcon} ${entry.isDir ? css.dir : ''}`}>{entry.isDir ? <IconFolderOpenOutline16 size={15} /> : <IconLinkOutline16 size={14} />}</span>
                 <span className={css.fileName}>{entry.name}</span>
@@ -481,8 +478,12 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
 
       {/* context menu */}
       {menu !== null && (
-        <div className={css.menuBackdrop} onMouseDown={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }}>
-          <div className={css.contextMenu} style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()}>
+        <div
+          className={css.menuBackdrop}
+          onMouseDown={() =>{  setMenu(null) }}
+          onContextMenu={(e) => { e.preventDefault(); setMenu(null) }}
+        >
+          <div className={css.contextMenu} style={{ left: menu.x, top: menu.y }} onMouseDown={(e) =>{  e.stopPropagation() }}>
             {menu.entry !== null && menu.entry.isDir && (
               <button type="button" className={css.menuItem} onClick={() => { const e = menu.entry; setMenu(null); if (e) navigateTo(e) }}>打开</button>
             )}
@@ -490,8 +491,8 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
             {menu.entry === null && (
               <>
                 <span className={css.menuDivider} />
-                <button type="button" className={css.menuItem} onClick={uploadFiles}>上传文件</button>
-                <button type="button" className={css.menuItem} onClick={uploadFolder}>上传文件夹</button>
+                <button type="button" className={css.menuItem} onClick={() => void uploadFiles()}>上传文件</button>
+                <button type="button" className={css.menuItem} onClick={() => void uploadFolder()}>上传文件夹</button>
                 <button type="button" className={css.menuItem} onClick={newFolder}>新建文件夹</button>
               </>
             )}
@@ -506,14 +507,14 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
         </div>
       )}
       {fileDialog !== null && (
-        <div className={css.fileDialogBackdrop} role="presentation" onMouseDown={() => setFileDialog(null)}>
-          <section className={css.fileDialog} role="dialog" aria-modal="true" aria-label={fileDialog.mode === 'delete' ? '确认删除' : fileDialog.mode === 'rename' ? '重命名' : '新建文件夹'} onMouseDown={(event) => event.stopPropagation()}>
+        <div className={css.fileDialogBackdrop} role="presentation" onMouseDown={() =>{  setFileDialog(null) }}>
+          <section className={css.fileDialog} role="dialog" aria-modal="true" aria-label={fileDialog.mode === 'delete' ? '确认删除' : fileDialog.mode === 'rename' ? '重命名' : '新建文件夹'} onMouseDown={(event) =>{  event.stopPropagation() }}>
             <div className={css.fileDialogHead}>{fileDialog.mode === 'delete' ? '确认删除' : fileDialog.mode === 'rename' ? '重命名' : '新建文件夹'}</div>
             {fileDialog.mode === 'delete' ? <p>将永久删除 {fileDialog.paths.length} 个项目，无法恢复。</p> : (
-              <input autoFocus className={css.fileDialogInput} value={fileDialog.value} onChange={(event) => setFileDialog({ ...fileDialog, value: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') void submitFileDialog(); if (event.key === 'Escape') setFileDialog(null) }} />
+              <input autoFocus className={css.fileDialogInput} value={fileDialog.value} onChange={(event) =>{  setFileDialog({ ...fileDialog, value: event.target.value }) }} onKeyDown={(event) => { if (event.key === 'Enter') void submitFileDialog(); if (event.key === 'Escape') setFileDialog(null) }} />
             )}
             <div className={css.fileDialogActions}>
-              <button type="button" onClick={() => setFileDialog(null)}>取消</button>
+              <button type="button" onClick={() =>{  setFileDialog(null) }}>取消</button>
               <button type="button" className={fileDialog.mode === 'delete' ? css.dangerAction : css.primaryAction} onClick={() => void submitFileDialog()}>{fileDialog.mode === 'delete' ? '删除' : '确认'}</button>
             </div>
           </section>

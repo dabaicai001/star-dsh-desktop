@@ -11,8 +11,10 @@
 .tabs .tabActive { border-bottom-color: var(--dsw-alias-interactive-accent); color: var(--dsw-alias-label-primary); font-weight: 650; }
 .headerBtn { align-self: center; border: 1px solid var(--dsw-alias-interactive-accent); border-radius: 5px; padding: 5px 10px; color: #07151b; background: var(--dsw-alias-interactive-accent); font-weight: 650; }
 .closeBtn { border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 5px 10px; background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; font-family: inherit; }
-.closeBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.body { min-height: 0; flex: 1; overflow: auto; padding: 14px; }
+.closeBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }.body{ min-height: 0; flex: 1; overflow: auto; padding: 14px; 
+  /* Elevated scroll container: rebind the scrollbar indirection to the l2 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);}
 .center { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
 .error { border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 36%, transparent); border-radius: 6px; padding: 10px 14px; background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, transparent); color: var(--dsw-alias-state-error-primary); font-size: 12px; }
 .indicesHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }

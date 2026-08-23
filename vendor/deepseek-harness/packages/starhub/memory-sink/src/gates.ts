@@ -19,6 +19,11 @@ export const REVIEW_MIN_MESSAGES = 4
 export const SCOPE_GLOBAL = 'global' as const
 const FOLDER_PREFIX = 'folder:'
 
+/**
+ * 判定本轮是否值得触发沉淀:user+assistant 消息总数是否达到阈值。
+ * @param messageCounts - 会话内 user 与 assistant 消息计数。
+ * @returns 总数 ≥ {@link REVIEW_MIN_MESSAGES} 时 true。
+ */
 export function shouldReview(messageCounts: { user: number; assistant: number }): boolean {
   const total = (messageCounts.user || 0) + (messageCounts.assistant || 0)
   return total >= REVIEW_MIN_MESSAGES
@@ -47,15 +52,25 @@ export interface DistilledFact {
   readonly content: string
 }
 
+/** 规范化入参的可选上限。 */
 export interface NormalizeOptions {
+  /** 会话工作区绝对路径,用于派生目标 scope;undefined 回退 global。 */
   readonly cwd: string | undefined
+  /** 整批条数上限;缺省 {@link DEFAULT_MAX_ENTRIES}。 */
   readonly maxEntries?: number
+  /** 单条内容字符上限;缺省 {@link DEFAULT_MAX_CHARS}。 */
   readonly maxCharsPerEntry?: number
 }
 
 const DEFAULT_MAX_ENTRIES = 8
 const DEFAULT_MAX_CHARS = 280
 
+/**
+ * 规范化 LLM 返回的候选事实条目(trust boundary):所有外部入参在此收敛。
+ * @param raw - LLM 输出的 JSON 字符串或已解析对象。
+ * @param options - scope 派生与条数/长度上限。
+ * @returns 净化后的条目数组(去空、去超长;scope 一律由 pickTargetScope 决定)。
+ */
 export function normalizeFacts(
   raw: unknown,
   options: NormalizeOptions,

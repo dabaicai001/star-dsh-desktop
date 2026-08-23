@@ -27,17 +27,60 @@ afterEach(() => {
   delete w.__TAURI_INTERNALS__
 })
 
+/** Register-options face the client apply passes to slots.register, typed for the call log. */
+interface RegisterOptions {
+  name: string
+  id?: string
+  order?: number
+  label?: string
+  group?: string
+  groupLabel?: string
+  store?: { create: () => unknown }
+  inject: () => RegisterInjected
+}
+
+/** Snapshot of the asset-list source the tests drive through hooks.assets. */
+interface AssetListSnapshot {
+  assets: readonly unknown[]
+  loading: boolean
+  error: unknown
+  preview: boolean
+}
+
+/** Injected face the registrations return, covering every member the tests probe. */
+interface RegisterInjected {
+  selectSubcategory: (key: string) => void
+  openConnectionManager: () => void
+  closeConnectionManager: () => void
+  refreshAssets: () => void
+  openAiAssistant: () => void
+  openAsset: (asset: unknown) => void
+  api: { settings: { update: () => Promise<unknown> } }
+  hooks: {
+    selection: { getSnapshot: () => { subcategory: string | null } }
+    connectionManager: { getSnapshot: () => { open: boolean; asset: null } }
+    assets: {
+      getSnapshot: () => AssetListSnapshot
+      set: (state: AssetListSnapshot) => void
+    }
+    sshTerminal: undefined
+    dbWorkbench: undefined
+    dockerWorkbench: undefined
+    redisWorkbench: undefined
+  }
+}
+
 /** 最小 ctx 替身:slots.inject 立即触发 register,layout/get/effect 打桩。 */
 function fakeContext() {
-  const register = vi.fn()
+  const register = vi.fn((_options: RegisterOptions, _component: unknown) => () => {})
   const inject = vi.fn((_name: string, fn: () => unknown) => fn())
   const openDetails = vi.fn()
   const closeDetails = vi.fn()
   const toggleDetails = vi.fn()
   const registerSource = vi.fn((_src: unknown) => () => {})
-  const effects: Array<() => unknown> = []
+  const effects: Array<() => (() => void) | undefined> = []
   const effect = vi.fn((fn: () => unknown) => {
-    const disposer = fn() as () => unknown
+    const disposer = fn() as () => (() => void) | undefined
     effects.push(disposer)
     return disposer
   })
@@ -77,18 +120,18 @@ function fakeContext() {
 
 describe('client-nav apply', () => {
   it('node half apply is a no-op', () => {
-    expect(() => applyHost()).not.toThrow()
+    expect(() =>{  applyHost() }).not.toThrow()
   })
 
   it('registers the eleven slots with their components in order', () => {
     const { ctx, inject, register } = fakeContext()
     applyPlugin(ctx)
-    expect(inject.mock.calls.map((c) => c[0])).toEqual([
+    expect(inject.mock.calls.map(c => c[0])).toEqual([
       'sidebar.navigation', 'shell.overlay', 'shell.overlay', 'workspace', 'details.workspace',
       'conversation.session.header.actions',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
     ])
-    const components = register.mock.calls.map((c) => c[1])
+    const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
       StarHubNav, StarHubOverlay, FileViewerOverlay, StarHubToolWorkspace, StarHubToolWorkspace,
       GitBranchPill,
@@ -101,7 +144,7 @@ describe('client-nav apply', () => {
   it('sidebar inject opens the details panel when switching subcategory (never collapses)', () => {
     const { ctx, register, openDetails, toggleDetails } = fakeContext()
     applyPlugin(ctx)
-    const navConfig = register.mock.calls[0]![0]!
+    const navConfig = register.mock.calls[0]![0]
     const injected = navConfig.inject()
     expect(typeof navConfig.store?.create).toBe('function')
     injected.selectSubcategory('terminal')
@@ -118,7 +161,7 @@ describe('client-nav apply', () => {
   it('sidebar inject toggles the details panel only on re-clicking the active subcategory', () => {
     const { ctx, register, openDetails, toggleDetails } = fakeContext()
     applyPlugin(ctx)
-    const injected = register.mock.calls[0]![0]!.inject()
+    const injected = register.mock.calls[0]![0].inject()
     injected.selectSubcategory('terminal')
     injected.selectSubcategory('terminal')
     expect(openDetails).toHaveBeenCalledTimes(1)
@@ -128,7 +171,7 @@ describe('client-nav apply', () => {
   it('overlay inject exposes the connection-dialog bridge face', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const overlayConfig = register.mock.calls[1]![0]!
+    const overlayConfig = register.mock.calls[1]![0]
     const injected = overlayConfig.inject()
     expect(injected.openConnectionManager).toBeTypeOf('function')
     expect(injected.closeConnectionManager).toBeTypeOf('function')
@@ -144,8 +187,8 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0]!.inject()
-      const overlay = register.mock.calls[1]![0]!.inject()
+      const injected = register.mock.calls[3]![0].inject()
+      const overlay = register.mock.calls[1]![0].inject()
       // 壳内 overlay 不再承载 SSH/DB/Docker/Redis 工作台桥
       expect(overlay.hooks.sshTerminal).toBeUndefined()
       expect(overlay.hooks.dbWorkbench).toBeUndefined()
@@ -170,7 +213,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0]!.inject()
+      const injected = register.mock.calls[3]![0].inject()
       const fullAsset = {
         id: 'a1', type: 'ssh', name: 'web-1', group_id: null, config: { host: '1.1.1.1' },
         key_id: null, tags: [], favorite: false, last_used_at: null, created_at: 0, updated_at: 0,
@@ -188,7 +231,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0]!.inject()
+      const injected = register.mock.calls[3]![0].inject()
       const dbAsset = {
         id: 'pg1', type: 'db', name: 'prod-db', group_id: null,
         config: { dbType: 'postgresql', host: 'h' },
@@ -209,7 +252,7 @@ describe('client-nav apply', () => {
     try {
       const { ctx, register } = fakeContext()
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0]!.inject()
+      const injected = register.mock.calls[3]![0].inject()
       const esAsset = {
         id: 'es1', type: 'db', name: 'es-1', group_id: null,
         config: { dbType: 'elasticsearch', host: 'h' },
@@ -217,7 +260,7 @@ describe('client-nav apply', () => {
       }
       injected.hooks.assets.set({ assets: [esAsset], loading: false, error: null, preview: false })
       injected.openAsset(esAsset)
-      await vi.waitFor(() => expect(errorSpy).toHaveBeenCalledWith('打开资产页面失败:', expect.any(Error)))
+      await vi.waitFor(() =>{  expect(errorSpy).toHaveBeenCalledWith('打开资产页面失败:', expect.any(Error)) })
     } finally {
       delete w.__TAURI_INTERNALS__
       errorSpy.mockRestore()
@@ -229,7 +272,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0]!.inject()
+      const injected = register.mock.calls[3]![0].inject()
       const dockerAsset = {
         id: 'd1', type: 'docker', name: 'docker-1', group_id: null,
         config: { dockerTransport: 'socket', socketPath: '/var/run/docker.sock' },
@@ -248,7 +291,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0]!.inject()
+      const injected = register.mock.calls[3]![0].inject()
       const redisAsset = {
         id: 'r1', type: 'db', name: 'redis-1', group_id: null,
         config: { dbType: 'redis', host: 'h' },
@@ -269,14 +312,14 @@ describe('client-nav apply', () => {
     try {
       const { ctx, register } = fakeContext()
       applyPlugin(ctx)
-      const workspaceConfig = register.mock.calls[3]![0]!
+      const workspaceConfig = register.mock.calls[3]![0]
       const asset = {
         id: 'a1', type: 'ssh', name: 'web-1', group_id: null,
         config: { host: 'h' },
         key_id: null, tags: [], favorite: false, last_used_at: null, created_at: 0, updated_at: 0,
       }
       workspaceConfig.inject().openAsset(asset)
-      await vi.waitFor(() => expect(errorSpy).toHaveBeenCalledWith('打开资产页面失败:', expect.any(Error)))
+      await vi.waitFor(() =>{  expect(errorSpy).toHaveBeenCalledWith('打开资产页面失败:', expect.any(Error)) })
     } finally {
       delete w.__TAURI_INTERNALS__
       errorSpy.mockRestore()
@@ -286,7 +329,7 @@ describe('client-nav apply', () => {
   it('workspace inject wires the api face, bridge callbacks and asset holder', () => {
     const { ctx, register, get } = fakeContext()
     applyPlugin(ctx)
-    const workspaceConfig = register.mock.calls[3]![0]!
+    const workspaceConfig = register.mock.calls[3]![0]
     const injected = workspaceConfig.inject()
     expect(get).toHaveBeenCalledWith('connection')
     expect(injected.api.settings.update).toBeTypeOf('function')
@@ -299,26 +342,26 @@ describe('client-nav apply', () => {
   it('workspace openAiAssistant opens the shell AI chat bridge without throwing', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const injected = register.mock.calls[3]![0]!.inject()
+    const injected = register.mock.calls[3]![0].inject()
     // 打开 AI 聊天面板桥(set snapshot);不抛错即覆盖该注入箭头。
-    expect(() => injected.openAiAssistant()).not.toThrow()
+    expect(() => { injected.openAiAssistant() }).not.toThrow()
   })
 
   it('registers the five starhub settings sections under the starhub group at orders 30-34', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const settingsConfigs = register.mock.calls.slice(6).map((c) => c[0])
-    expect(settingsConfigs.map((c) => c.id)).toEqual([
+    const settingsConfigs = register.mock.calls.slice(6).map(c => c[0])
+    expect(settingsConfigs.map(c => c.id)).toEqual([
       'starhub-ai', 'starhub-plugins', 'starhub-audit', 'starhub-alert', 'starhub-about',
     ])
-    expect(settingsConfigs.map((c) => c.order)).toEqual([30, 31, 32, 33, 34])
+    expect(settingsConfigs.map(c => c.order)).toEqual([30, 31, 32, 33, 34])
     for (const config of settingsConfigs) {
       expect(config.group).toBe('starhub')
       expect(config.groupLabel).toBe('StarHub')
       expect(config.name).toBe('settings.section')
     }
     // 组内子项不带前缀(分组头「StarHub」已承担归属标识)
-    expect(settingsConfigs.map((c) => c.label)).toEqual([
+    expect(settingsConfigs.map(c => c.label)).toEqual([
       'AI 助手', '插件', '审计日志', '告警规则', '关于',
     ])
   })
@@ -385,6 +428,6 @@ describe('invariant companion', () => {
     expect(result).toBe(disposer)
     // 空 installer 本体会执行(无运行时 invariant 的占位)
     const installer = register.mock.calls[0]![1]! as () => void
-    expect(() => installer()).not.toThrow()
+    expect(() =>{  installer() }).not.toThrow()
   })
 })

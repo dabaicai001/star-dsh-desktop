@@ -77,7 +77,7 @@ export function WindowShell() {
     tauriInvoke<RustAsset[]>('get_assets')
       .then((assets) => {
         if (cancelled) return
-        const asset = assets.find((a) => a.id === params.assetId)
+        const asset = assets.find(a => a.id === params.assetId)
         if (asset === undefined) {
           setState({ kind: 'asset-missing', assetId: params.assetId })
           return

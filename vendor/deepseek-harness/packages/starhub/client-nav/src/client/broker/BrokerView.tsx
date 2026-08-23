@@ -59,7 +59,7 @@ export function BrokerView({ asset }: BrokerViewProps) {
       const result = await loadBrokerOverview(kind, params)
       setOverview(result)
       setError(null)
-      setSampleKey((key) => key + 1)
+      setSampleKey(key => key + 1)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -72,7 +72,7 @@ export function BrokerView({ asset }: BrokerViewProps) {
   useEffect(() => {
     void refresh()
     const timer = window.setInterval(() => { void refresh() }, 30000)
-    return () => window.clearInterval(timer)
+    return () =>{  window.clearInterval(timer) }
   }, [refresh])
 
   const totalPartitions = useMemo(
@@ -91,17 +91,17 @@ export function BrokerView({ asset }: BrokerViewProps) {
   const resourceTable = useMemo<DashboardDetailTable>(() => ({
     columns: kind === 'kafka'
       ? [
-          { key: 'name', label: 'Topic', wide: true },
-          { key: 'partitions', label: '分区', align: 'right' },
-          { key: 'leader', label: 'Leader' },
-        ]
+        { key: 'name', label: 'Topic', wide: true },
+        { key: 'partitions', label: '分区', align: 'right' },
+        { key: 'leader', label: 'Leader' },
+      ]
       : [
-          { key: 'name', label: 'Topic', wide: true },
-          { key: 'channels', label: 'Channel', align: 'right' },
-          { key: 'depth', label: '积压', align: 'right' },
-          { key: 'messages', label: '累计消息', align: 'right' },
-        ],
-    rows: overview.resources.map((resource) => ({
+        { key: 'name', label: 'Topic', wide: true },
+        { key: 'channels', label: 'Channel', align: 'right' },
+        { key: 'depth', label: '积压', align: 'right' },
+        { key: 'messages', label: '累计消息', align: 'right' },
+      ],
+    rows: overview.resources.map(resource => ({
       name: resource.name,
       partitions: resource.partitions,
       leader: resource.leader,

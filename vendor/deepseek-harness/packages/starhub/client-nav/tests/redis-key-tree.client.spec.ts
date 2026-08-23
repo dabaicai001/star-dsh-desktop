@@ -10,14 +10,14 @@ const key = (k: string, type = 'string'): RedisKeyInfo => ({ key: k, type, ttl: 
 
 /** 收集一层节点的展示名(按渲染顺序)。 */
 function names(nodes: readonly KeyTreeNode[]): string[] {
-  return nodes.map((n) => n.name)
+  return nodes.map(n => n.name)
 }
 
 describe('buildKeyTree', () => {
   it('groups keys by the ":" separator into nested folders', () => {
     const tree = buildKeyTree([key('user:1001:name'), key('user:1002:name'), key('sess:abc', 'hash'), key('plain')])
     expect(names(tree)).toEqual(['sess', 'user', 'plain'])
-    const user = tree.find((n) => n.name === 'user')
+    const user = tree.find(n => n.name === 'user')
     expect(user?.keyInfo).toBeNull()
     expect(names(user?.children ?? [])).toEqual(['1001', '1002'])
     const leaf = user?.children[0]?.children[0]
@@ -33,8 +33,8 @@ describe('buildKeyTree', () => {
 
   it('keeps a leaf whose name collides with a folder (a and a:b coexist)', () => {
     const tree = buildKeyTree([key('a'), key('a:b')])
-    const folder = tree.find((n) => n.keyInfo === null)
-    const leaf = tree.find((n) => n.keyInfo !== null)
+    const folder = tree.find(n => n.keyInfo === null)
+    const leaf = tree.find(n => n.keyInfo !== null)
     expect(folder?.path).toBe('a')
     expect(leaf?.path).toBe('a')
     expect(folder?.children[0]?.path).toBe('a:b')
@@ -55,8 +55,8 @@ describe('allFolderPaths / countLeaves', () => {
 
   it('counts leaf keys under a folder', () => {
     const tree = buildKeyTree([key('a:b:c'), key('a:b:d'), key('a:e'), key('x')])
-    const a = tree.find((n) => n.name === 'a')
+    const a = tree.find(n => n.name === 'a')
     expect(countLeaves(a!)).toBe(3)
-    expect(countLeaves(a!.children.find((n) => n.name === 'b')!)).toBe(2)
+    expect(countLeaves(a!.children.find(n => n.name === 'b')!)).toBe(2)
   })
 })

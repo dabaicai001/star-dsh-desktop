@@ -17,13 +17,14 @@ function makeHub() {
 
 function makeCtx(hub: unknown) {
   const provided: Record<string, unknown> = {}
-  const effect = vi.fn((callback: () => (() => void) | void) => callback())
+  const provide = vi.fn((serviceName: string, value: unknown) => { provided[serviceName] = value })
+  const effect = vi.fn((callback: () => (() => void) | undefined) => callback())
   const ctx = {
     get: (serviceName: string) => serviceName === 'sdk-notifications' ? hub : undefined,
-    provide: vi.fn((serviceName: string, value: unknown) => { provided[serviceName] = value }),
+    provide,
     effect,
   } as unknown as Context
-  return { ctx, provided, effect }
+  return { ctx, provided, provide, effect }
 }
 
 describe('DomainEventStore', () => {
@@ -148,11 +149,11 @@ describe('DomainEventStore', () => {
 describe('starhub-domain-events plugin apply', () => {
   it('subscribes to domain.event, provides the service, and pushes on delivery', () => {
     const { handlers, subscribe } = makeHub()
-    const { ctx, provided } = makeCtx({ subscribe })
+    const { ctx, provided, provide } = makeCtx({ subscribe })
 
     apply(ctx)
 
-    expect(ctx.provide).toHaveBeenCalledWith('starhub-domain-events', expect.any(DomainEventStore))
+    expect(provide).toHaveBeenCalledWith('starhub-domain-events', expect.any(DomainEventStore))
     expect(subscribe).toHaveBeenCalledWith('starhub/domain.event', expect.any(Function))
     const store = provided['starhub-domain-events'] as DomainEventStore
     expect(store.recent()).toEqual([])
@@ -177,7 +178,7 @@ describe('starhub-domain-events plugin apply', () => {
   it('fails loud when sdk-notifications is missing from the composition', () => {
     const { ctx } = makeCtx(undefined)
 
-    expect(() => apply(ctx)).toThrow(
+    expect(() =>{  apply(ctx) }).toThrow(
       'starhub-domain-events requires sdk-jsonrpc-server (sdk-notifications service) in the same composition',
     )
   })

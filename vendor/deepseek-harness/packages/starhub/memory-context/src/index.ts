@@ -38,6 +38,8 @@ export const MEMORY_CONTEXT_NAMESPACE = 'starhub-memory-context'
 /**
  * 读取 autoReview 开关值;v0.92.0 起未写过视为关闭(默认关)。
  * memory-sink 钩子在 agent/turn-stopping 后调用本函数,关闭则整段跳过。
+ * @param value - namespace 当前值;undefined 表示从未写过(视为关闭)。
+ * @returns 是否开启自动沉淀(仅显式 true 为开启)。
  */
 export function isAutoReviewEnabled(value: MemoryContextValue | undefined): boolean {
   return value?.autoReview === true

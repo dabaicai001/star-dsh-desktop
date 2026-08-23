@@ -22,6 +22,12 @@ function asset(type: string, dbType?: string): StarHubAsset {
   return { id: `${type}-${dbType ?? 'x'}`, type, name: 'n', config: dbType === undefined ? {} : { dbType } }
 }
 
+/** 模拟未类型化的 IPC 拒绝(真实 Tauri 载荷可能是纯字符串而非 Error)。 */
+function rawRejection(reason: string): Promise<never> {
+  const reject = Promise.reject.bind(Promise)
+  return reject(reason)
+}
+
 describe('routePrefixForAsset', () => {
   it('derives the prefix from the asset type, not the subcategory', () => {
     expect(routePrefixForAsset(asset('ssh'))).toBe('/ssh')
@@ -49,7 +55,7 @@ describe('routePrefixForAsset', () => {
       asset('db', 'clickhouse'), asset('db', 'redis'), asset('db', 'elasticsearch'), asset('docker'),
     ]
     for (const sub of STARHUB_SUBCATEGORIES) {
-      for (const a of samples.filter((s) => sub.matches(s))) {
+      for (const a of samples.filter(s => sub.matches(s))) {
         expect(routePrefixForAsset(a), `${sub.key} / ${routeNameForAsset(a)}`).not.toBeNull()
       }
     }
@@ -78,8 +84,8 @@ describe('assetWindowUrl', () => {
 
 describe('STARHUB_SUBCATEGORIES', () => {
   it('puts broker under terminal and merges the five databases (plan §2.1)', () => {
-    const terminal = STARHUB_SUBCATEGORIES.find((s) => s.key === 'terminal')!
-    const database = STARHUB_SUBCATEGORIES.find((s) => s.key === 'database')!
+    const terminal = STARHUB_SUBCATEGORIES.find(s => s.key === 'terminal')!
+    const database = STARHUB_SUBCATEGORIES.find(s => s.key === 'database')!
     expect(terminal.matches(asset('db', 'kafka'))).toBe(true)
     expect(database.matches(asset('db', 'kafka'))).toBe(false)
     expect(database.matches(asset('db', 'redis'))).toBe(true)
@@ -146,7 +152,7 @@ describe('createStarHubAssets', () => {
       const holder = createStarHubAssets()
       holder.refresh()
       expect(holder.source.getSnapshot().loading).toBe(true)
-      await vi.waitFor(() => expect(holder.source.getSnapshot().loading).toBe(false))
+      await vi.waitFor(() =>{  expect(holder.source.getSnapshot().loading).toBe(false) })
       const snap = holder.source.getSnapshot()
       expect(snap.assets).toEqual(list)
       expect(snap.error).toBeNull()
@@ -160,7 +166,7 @@ describe('createStarHubAssets', () => {
     try {
       const holder = createStarHubAssets()
       holder.refresh()
-      await vi.waitFor(() => expect(holder.source.getSnapshot().loading).toBe(false))
+      await vi.waitFor(() =>{  expect(holder.source.getSnapshot().loading).toBe(false) })
       expect(holder.source.getSnapshot().error).toBe('boom')
     } finally {
       restore()
@@ -168,11 +174,11 @@ describe('createStarHubAssets', () => {
   })
 
   it('stringifies non-Error rejections into the error field', async () => {
-    const restore = stubTauriInternals(() => Promise.reject('raw'))
+    const restore = stubTauriInternals(() => rawRejection('raw'))
     try {
       const holder = createStarHubAssets()
       holder.refresh()
-      await vi.waitFor(() => expect(holder.source.getSnapshot().loading).toBe(false))
+      await vi.waitFor(() =>{  expect(holder.source.getSnapshot().loading).toBe(false) })
       expect(holder.source.getSnapshot().error).toBe('raw')
     } finally {
       restore()
@@ -188,7 +194,7 @@ describe('createStarHubAssets', () => {
       holder.refresh()
       expect(holder.source.getSnapshot().loading).toBe(true)
       resolveFetch([{ id: 'a1', type: 'ssh', name: 'n', config: {} }])
-      await vi.waitFor(() => expect(holder.source.getSnapshot().loading).toBe(false))
+      await vi.waitFor(() =>{  expect(holder.source.getSnapshot().loading).toBe(false) })
       expect(holder.source.getSnapshot().assets).toHaveLength(1)
     } finally {
       restore()
@@ -211,7 +217,7 @@ describe('createStarHubAssets', () => {
     const restore = stubTauriInternals(() => Promise.resolve([]))
     try {
       holder.refresh()
-      await vi.waitFor(() => expect(holder.source.getSnapshot().loading).toBe(false))
+      await vi.waitFor(() =>{  expect(holder.source.getSnapshot().loading).toBe(false) })
       expect(holder.source.getSnapshot().preview).toBe(false)
     } finally {
       restore()

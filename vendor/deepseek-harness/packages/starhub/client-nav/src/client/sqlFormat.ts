@@ -42,7 +42,7 @@ export function splitStatements(sql: string): string[] {
   let inBacktick = false
   let i = 0
   while (i < sql.length) {
-    const ch = sql[i]
+    const ch = sql.charAt(i)
     if (!inSingle && !inBacktick && ch === '-' && sql[i + 1] === '-') {
       // 行注释:吞到行尾,不分号切分。
       const end = findLineCommentEnd(sql, i + 2)
@@ -102,7 +102,7 @@ export function formatSql(sql: string): string {
   let i = 0
   let pendingNewline = false
   while (i < sql.length) {
-    const ch = sql[i]
+    const ch = sql.charAt(i)
     // 字符串/标识符原样透传(不换行、不大写)。
     if (ch === "'" && !inBacktick) {
       inSingle = !inSingle

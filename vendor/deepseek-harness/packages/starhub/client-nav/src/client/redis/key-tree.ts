@@ -65,7 +65,11 @@ export function buildKeyTree(keys: readonly RedisKeyInfo[], separator = ':'): Ke
   return root
 }
 
-/** 收集树中全部文件夹路径(默认全展开用)。 */
+/**
+ * 收集树中全部文件夹路径(默认全展开用)。
+ * @param nodes - 树节点数组(通常是根层)。
+ * @returns 全部文件夹路径集合。
+ */
 export function allFolderPaths(nodes: readonly KeyTreeNode[]): Set<string> {
   const out = new Set<string>()
   const walk = (list: readonly KeyTreeNode[]): void => {
@@ -80,7 +84,11 @@ export function allFolderPaths(nodes: readonly KeyTreeNode[]): Set<string> {
   return out
 }
 
-/** 文件夹下的叶子(key)总数,用于文件夹行尾计数徽标。 */
+/**
+ * 文件夹下的叶子(key)总数,用于文件夹行尾计数徽标。
+ * @param node - 树节点(文件夹或叶子)。
+ * @returns 叶子数量(叶子自身计为 1)。
+ */
 export function countLeaves(node: KeyTreeNode): number {
   if (node.keyInfo !== null) return 1
   return node.children.reduce((total, child) => total + countLeaves(child), 0)

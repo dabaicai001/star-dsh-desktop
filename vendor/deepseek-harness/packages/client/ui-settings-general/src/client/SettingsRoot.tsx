@@ -53,7 +53,7 @@ function buildNavItems(rows: readonly SettingsSectionRow[]): NavItem[] {
     kind: 'group', key, label: g.label,
     rows: [...g.rows].sort((a, b) => a.order - b.order),
   }))
-  const orderOf = (item: NavItem) => item.kind === 'row' ? item.row.order : item.rows[0]!.order
+  const orderOf = (item: NavItem) => item.kind === 'row' ? item.row.order : (item.rows[0]?.order ?? 0)
   return [...plain, ...groups].sort((a, b) => orderOf(a) - orderOf(b))
 }
 

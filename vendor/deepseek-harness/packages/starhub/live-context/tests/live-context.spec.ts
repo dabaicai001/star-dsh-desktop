@@ -14,11 +14,14 @@ type PreStepListener = (
   next: () => Promise<PreStepDecision>,
 ) => Promise<PreStepDecision>
 
-function makeTransport(result: unknown | (() => Promise<unknown>)) {
+function makeTransport(result: unknown): {
+  request: ReturnType<typeof vi.fn>
+  transport: JsonRpcTransportPeer
+} {
   const request = vi.fn(async () => (
     typeof result === 'function' ? (result as () => Promise<unknown>)() : result
   ))
-  return { request } as unknown as JsonRpcTransportPeer
+  return { request, transport: { request } as unknown as JsonRpcTransportPeer }
 }
 
 function makeCtx(services: Record<string, unknown>) {
@@ -27,7 +30,7 @@ function makeCtx(services: Record<string, unknown>) {
     listeners.push(listener)
     return () => undefined
   })
-  const effect = vi.fn((callback: () => (() => void) | void) => callback())
+  const effect = vi.fn((callback: () => (() => void) | undefined) => callback())
   const ctx = {
     get: (serviceName: string) => services[serviceName],
     on,
@@ -85,7 +88,7 @@ describe('truncateText', () => {
 
 describe('composeLiveContext', () => {
   it('renders registry, per-asset events, and the live snapshot in order', async () => {
-    const transport = makeTransport(SNAPSHOT)
+    const { request, transport } = makeTransport(SNAPSHOT)
     const text = await composeLiveContext(seedRegistry(), seedEvents(), transport, 10, 4000)
 
     expect(text).not.toBeNull()
@@ -99,7 +102,7 @@ describe('composeLiveContext', () => {
     expect(text).toContain('- a1 ssh_exec: grep error tail: line 1\nline 2')
     expect(text).toContain('[Task trails]')
     expect(text).toContain('- task-1: a1 → a2')
-    expect(transport.request).toHaveBeenCalledWith('starhub/live.snapshot', {})
+    expect(request).toHaveBeenCalledWith('starhub/live.snapshot', {})
     // Local sections precede the snapshot sections.
     expect(text?.indexOf('[Session registry]')).toBeLessThan(text?.indexOf('[Transfers]') ?? 0)
   })
@@ -132,7 +135,7 @@ describe('composeLiveContext', () => {
   })
 
   it('degrades to the local view when the pull rejects', async () => {
-    const transport = makeTransport(() => Promise.reject(new Error('host gone')))
+    const { transport } = makeTransport(() => Promise.reject(new Error('host gone')))
     const text = await composeLiveContext(seedRegistry(), seedEvents(), transport, 10, 4000)
 
     expect(text).toContain('- a1: session s1 (ssh, attached by: shell)')
@@ -140,7 +143,7 @@ describe('composeLiveContext', () => {
   })
 
   it('drops the snapshot when the pull returns a non-object', async () => {
-    const transport = makeTransport('not an object')
+    const { transport } = makeTransport('not an object')
     const text = await composeLiveContext(seedRegistry(), seedEvents(), transport, 10, 4000)
 
     expect(text).toContain('- a1: session s1 (ssh, attached by: shell)')
@@ -148,7 +151,7 @@ describe('composeLiveContext', () => {
   })
 
   it('omits snapshot sections whose fields are not arrays or are empty', async () => {
-    const transport = makeTransport({ transfers: 'nope', recentExecs: [] })
+    const { transport } = makeTransport({ transfers: 'nope', recentExecs: [] })
     const text = await composeLiveContext(seedRegistry(), seedEvents(), transport, 10, 4000)
 
     expect(text).toContain('[Session registry]')
@@ -157,7 +160,7 @@ describe('composeLiveContext', () => {
   })
 
   it('renders an exec without a tail as a bare summary', async () => {
-    const transport = makeTransport({ recentExecs: [{ assetId: 'a1', toolName: 'memory', summary: 'remembered' }] })
+    const { transport } = makeTransport({ recentExecs: [{ assetId: 'a1', toolName: 'memory', summary: 'remembered' }] })
     const text = await composeLiveContext(seedRegistry(), seedEvents(), transport, 10, 4000)
 
     expect(text).toContain('- a1 memory: remembered')
@@ -165,7 +168,7 @@ describe('composeLiveContext', () => {
   })
 
   it('truncates the composed text to maxSnapshotChars', async () => {
-    const transport = makeTransport(SNAPSHOT)
+    const { transport } = makeTransport(SNAPSHOT)
     const text = await composeLiveContext(seedRegistry(), seedEvents(), transport, 10, 60)
 
     expect(text).not.toBeNull()
@@ -178,7 +181,7 @@ describe('starhub-live-context plugin apply', () => {
   it('registers a pre-step listener that injects the composed snapshot', async () => {
     const registry = seedRegistry()
     const events = seedEvents()
-    const transport = makeTransport(SNAPSHOT)
+    const { transport } = makeTransport(SNAPSHOT)
     const { ctx, listeners, on } = makeCtx({
       'starhub-session-registry': registry,
       'starhub-domain-events': events,
@@ -205,7 +208,7 @@ describe('starhub-live-context plugin apply', () => {
     const { ctx, listeners } = makeCtx({
       'starhub-session-registry': seedRegistry(),
       'starhub-domain-events': seedEvents(),
-      'sdk-transport': makeTransport(SNAPSHOT),
+      'sdk-transport': makeTransport(SNAPSHOT).transport,
     })
     apply(ctx, { enabled: true, maxEvents: 10, maxSnapshotChars: 4000 })
 
@@ -223,7 +226,7 @@ describe('starhub-live-context plugin apply', () => {
     const { ctx, listeners } = makeCtx({
       'starhub-session-registry': seedRegistry(),
       'starhub-domain-events': seedEvents(),
-      'sdk-transport': makeTransport(SNAPSHOT),
+      'sdk-transport': makeTransport(SNAPSHOT).transport,
     })
     apply(ctx, { enabled: true, maxEvents: 10, maxSnapshotChars: 4000 })
 
@@ -263,6 +266,6 @@ describe('starhub-live-context plugin apply', () => {
     { enabled: true, maxEvents: 10, maxSnapshotChars: 2.5 },
   ])('rejects invalid config at load: %o', (config) => {
     const { ctx } = makeCtx({})
-    expect(() => apply(ctx, config)).toThrow(/starhub-live-context: (maxEvents|maxSnapshotChars) must be a positive safe integer/)
+    expect(() =>{  apply(ctx, config) }).toThrow(/starhub-live-context: (maxEvents|maxSnapshotChars) must be a positive safe integer/)
   })
 })

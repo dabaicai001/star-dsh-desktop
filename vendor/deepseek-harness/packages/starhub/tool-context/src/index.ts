@@ -48,7 +48,11 @@ export const ToolContextSchema: z<StarHubToolContextValue> = z.object({
   routePrefix: z.string(),
 })
 
-/** Render one injectable tool-context text from a non-empty selection. */
+/**
+ * Render one injectable tool-context text from a non-empty selection.
+ * @param value - the current StarHub tool selection (namespace value).
+ * @returns the injectable text, or null when neither tool nor asset is selected.
+ */
 export function renderToolContext(value: StarHubToolContextValue): string | null {
   const tool = value.subcategory ?? ''
   const asset = value.assetName ?? value.assetId ?? ''

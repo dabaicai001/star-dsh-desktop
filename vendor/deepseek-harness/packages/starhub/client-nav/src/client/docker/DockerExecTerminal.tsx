@@ -34,7 +34,6 @@ export function DockerExecTerminal({ connId, container, onClose }: {
   useEffect(() => {
     let disposed = false
     let sessionId: string | null = null
-    let resizeObserver: ResizeObserver | undefined
     let pollTimer: number | undefined
 
     const term = new Terminal({
@@ -59,7 +58,7 @@ export function DockerExecTerminal({ connId, container, onClose }: {
       }
       /* v8 ignore stop */
     }
-    resizeObserver = new ResizeObserver(() => resize())
+    const resizeObserver = new ResizeObserver(() =>{  resize() })
     /* v8 ignore start -- ref 恒挂载,observe 分支恒走;else 防御性保留 */
     if (host.current) resizeObserver.observe(host.current)
     /* v8 ignore stop */
@@ -67,7 +66,7 @@ export function DockerExecTerminal({ connId, container, onClose }: {
     const cleanup = () => {
       disposed = true
       if (pollTimer !== undefined) window.clearTimeout(pollTimer)
-      resizeObserver?.disconnect()
+      resizeObserver.disconnect()
       /* v8 ignore start -- 关闭会话 IPC 失败非致命,fire-and-forget */
       if (sessionId !== null) void dockerExecSessionClose(connId, sessionId).catch(() => {})
       /* v8 ignore stop */
@@ -82,12 +81,15 @@ export function DockerExecTerminal({ connId, container, onClose }: {
       /* v8 ignore stop */
     })
 
+    /* 卸载标志经闭包异步翻转;函数读取避免 TS 在 await 后把 disposed 窄化为 false。 */
+    const isDisposed = () => disposed
+
     const poll = async () => {
       /* v8 ignore next -- 卸载后不再轮询,防御性守卫 */
       if (disposed || sessionId === null) return
       const read = await dockerExecSessionRead(connId, sessionId, 1000)
       /* v8 ignore next -- 读取完成前已卸载,丢弃结果,防御性守卫 */
-      if (disposed) return
+      if (isDisposed()) return
       if (read.data !== '') term.write(decodeExecOutput(read.data))
       if (!read.running) {
         cleanup()
@@ -108,7 +110,6 @@ export function DockerExecTerminal({ connId, container, onClose }: {
 
     return cleanup
     // 连接与容器在弹层生命周期内恒定,只在挂载/卸载时建连一次。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connId, container.id])
 
   return (

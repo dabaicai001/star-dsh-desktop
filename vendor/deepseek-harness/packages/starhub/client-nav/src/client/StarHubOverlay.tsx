@@ -66,7 +66,7 @@ export function StarHubOverlay({
       }
     }
     window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
+    return () =>{  window.removeEventListener('message', onMessage) }
   }, [openConnectionManager])
 
   // Esc 关闭(仅在任一弹层打开时挂,避免吞掉壳内其他 Esc 语义)。
@@ -79,7 +79,7 @@ export function StarHubOverlay({
       }
     }
     document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
+    return () =>{  document.removeEventListener('keydown', onKeyDown) }
   }, [state.open, aiChatState.open, closeConnectionManager, closeAiChat])
 
   if (!state.open && !aiChatState.open) return null

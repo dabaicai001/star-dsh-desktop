@@ -62,17 +62,17 @@ describe('SftpPanel', () => {
     render(<SftpPanel asset={asset} sessionId="ssh-1" sshConnected={true} />)
 
     // ensure_session on the shared terminal session (never re-auths)
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: 'ssh-1' }))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: 'ssh-1' }) })
     // lists /home/deploy then renders entries
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/home/deploy' }))
-    await waitFor(() => expect(screen.getByText('docs')).toBeTruthy())
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/home/deploy' }) })
+    await waitFor(() =>{  expect(screen.getByText('docs')).toBeTruthy() })
     expect(screen.getByText('README.md')).toBeTruthy()
     // size formatted
     expect(screen.getByText('1.2 KB')).toBeTruthy()
 
     // click the directory row → navigates (loads the subdir)
     fireEvent.click(screen.getByText('docs'))
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/home/deploy/docs' }))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/home/deploy/docs' }) })
   })
 
   it('shows a waiting state until the terminal connects', () => {

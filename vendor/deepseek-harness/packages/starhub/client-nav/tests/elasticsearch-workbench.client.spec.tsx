@@ -25,6 +25,12 @@ function stubInvoke(handler: (cmd: string, args?: Record<string, unknown>) => un
   }
 }
 
+/** 模拟未类型化的 IPC 拒绝(真实 Tauri 载荷可能是纯字符串而非 Error)。 */
+function rawRejection(reason: string): Promise<never> {
+  const reject = Promise.reject.bind(Promise)
+  return reject(reason)
+}
+
 /** Default successful ES invoke handler. */
 function okInvoke() {
   const calls: string[] = []
@@ -107,7 +113,7 @@ describe('ElasticsearchWorkbench connect lifecycle', () => {
       const view = render(<ElasticsearchWorkbench asset={esAsset} onClose={vi.fn()} />)
       await screen.findByText('Elasticsearch · es-prod')
       view.unmount()
-      await waitFor(() => expect(calls).toContain('db_es_disconnect'))
+      await waitFor(() =>{  expect(calls).toContain('db_es_disconnect') })
     } finally {
       restore()
     }
@@ -176,7 +182,7 @@ describe('ElasticsearchWorkbench search', () => {
       fireEvent.click(screen.getByText('检索'))
       fireEvent.change(screen.getByRole('textbox'), { target: { value: '{"a":1}' } })
       fireEvent.click(screen.getByText('格式化'))
-      const editor = screen.getByRole('textbox') as HTMLTextAreaElement
+      const editor = screen.getByRole<HTMLTextAreaElement>('textbox')
       expect(editor.value).toContain('\n')
     } finally {
       restore()
@@ -202,7 +208,7 @@ describe('ElasticsearchWorkbench index detail', () => {
       expect(await screen.findByText(/确认删除索引 logs/)).toBeTruthy()
       // The confirm dialog's delete button is the last "删除" button in the DOM.
       fireEvent.click(screen.getAllByRole('button', { name: '删除' }).at(-1)!)
-      await waitFor(() => expect(calls).toContain('db_es_delete_index'))
+      await waitFor(() =>{  expect(calls).toContain('db_es_delete_index') })
     } finally {
       restore()
     }
@@ -240,7 +246,7 @@ describe('ElasticsearchWorkbench new index dialog', () => {
       fireEvent.click(screen.getByRole('button', { name: '新建索引' }))
       fireEvent.change(screen.getByPlaceholderText('index name'), { target: { value: 'newidx' } })
       fireEvent.click(screen.getByRole('button', { name: '创建' }))
-      await waitFor(() => expect(calls).toContain('db_es_create_index'))
+      await waitFor(() =>{  expect(calls).toContain('db_es_create_index') })
     } finally {
       restore()
     }
@@ -270,9 +276,9 @@ describe('ElasticsearchWorkbench edge coverage', () => {
       render(<ElasticsearchWorkbench asset={esAsset} onClose={vi.fn()} />)
       await screen.findByText(/logs/)
       fireEvent.click(screen.getByRole('button', { name: '检索' }))
-      const select = screen.getByRole('combobox')
+      const select = screen.getByRole<HTMLSelectElement>('combobox')
       fireEvent.change(select, { target: { value: 'metrics' } })
-      expect((select as HTMLSelectElement).value).toBe('metrics')
+      expect(select.value).toBe('metrics')
     } finally {
       restore()
     }
@@ -286,7 +292,7 @@ describe('ElasticsearchWorkbench edge coverage', () => {
       await screen.findByText(/logs/)
       fireEvent.click(screen.getByRole('button', { name: '检索' }))
       fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', ctrlKey: true })
-      await waitFor(() => expect(calls).toContain('db_es_search'))
+      await waitFor(() =>{  expect(calls).toContain('db_es_search') })
     } finally {
       restore()
     }
@@ -301,7 +307,7 @@ describe('ElasticsearchWorkbench edge coverage', () => {
       fireEvent.click(screen.getByRole('button', { name: '新建索引' }))
       fireEvent.change(screen.getByPlaceholderText('index name'), { target: { value: 'enter-idx' } })
       fireEvent.keyDown(screen.getByPlaceholderText('index name'), { key: 'Enter' })
-      await waitFor(() => expect(calls).toContain('db_es_create_index'))
+      await waitFor(() =>{  expect(calls).toContain('db_es_create_index') })
     } finally {
       restore()
     }
@@ -386,7 +392,7 @@ describe('ElasticsearchWorkbench edge coverage', () => {
       fireEvent.click(screen.getByText('上一页'))
       // Object-valued field renders as JSON (table view).
       fireEvent.click(screen.getByText('表格'))
-      await waitFor(() => expect(screen.getByText(/nested/)).toBeTruthy())
+      await waitFor(() =>{  expect(screen.getByText(/nested/)).toBeTruthy() })
     } finally {
       restore()
     }
@@ -401,7 +407,7 @@ describe('ElasticsearchWorkbench edge coverage', () => {
       fireEvent.click(screen.getByRole('button', { name: '检索' }))
       fireEvent.change(screen.getByRole('textbox'), { target: { value: 'not-json' } })
       fireEvent.click(screen.getByText('格式化'))
-      expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('not-json')
+      expect((screen.getByRole<HTMLTextAreaElement>('textbox')).value).toBe('not-json')
     } finally {
       restore()
     }
@@ -482,7 +488,7 @@ describe('ElasticsearchWorkbench defensive paths', () => {
       render(<ElasticsearchWorkbench asset={esAsset} onClose={vi.fn()} />)
       await screen.findByText(/logs/)
       fireEvent.click(screen.getByRole('button', { name: '刷新' }))
-      await waitFor(() => expect(calls.filter((c) => c === 'db_es_list_indices').length).toBeGreaterThanOrEqual(2))
+      await waitFor(() =>{  expect(calls.filter(c => c === 'db_es_list_indices').length).toBeGreaterThanOrEqual(2) })
     } finally {
       restore()
     }
@@ -542,8 +548,8 @@ describe('ElasticsearchWorkbench defensive paths', () => {
       fireEvent.click(screen.getAllByText('删除')[0]!)
       expect(await screen.findByText(/确认删除索引 logs/)).toBeTruthy()
       fireEvent.click(screen.getAllByRole('button', { name: '删除' }).at(-1)!)
-      await waitFor(() => expect(calls).toContain('db_es_delete_index'))
-      await waitFor(() => expect(calls.filter((c) => c === 'db_es_list_indices').length).toBeGreaterThanOrEqual(2))
+      await waitFor(() =>{  expect(calls).toContain('db_es_delete_index') })
+      await waitFor(() =>{  expect(calls.filter(c => c === 'db_es_list_indices').length).toBeGreaterThanOrEqual(2) })
     } finally {
       restore()
     }
@@ -560,8 +566,8 @@ describe('ElasticsearchWorkbench defensive paths', () => {
       fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
       // A non-Enter key must not run a search either.
       fireEvent.keyDown(screen.getByRole('textbox'), { key: 'a' })
-      await new Promise((r) => setTimeout(r, 50))
-      expect(calls.filter((c) => c === 'db_es_search').length).toBe(0)
+      await new Promise(r => setTimeout(r, 50))
+      expect(calls.filter(c => c === 'db_es_search').length).toBe(0)
     } finally {
       restore()
     }
@@ -572,7 +578,7 @@ describe('ElasticsearchWorkbench defensive paths', () => {
       if (cmd === 'db_es_connect') return Promise.resolve({ connId: 'c1' })
       if (cmd === 'db_es_list_indices') return Promise.resolve([])
       if (cmd === 'db_es_cluster_health') return Promise.resolve({ status: 'green', numberOfNodes: 1 })
-      if (cmd === 'db_es_create_index') return Promise.reject('plain string failure')
+      if (cmd === 'db_es_create_index') return rawRejection('plain string failure')
       if (cmd === 'db_es_disconnect') return Promise.resolve(null)
       return Promise.resolve(null)
     })
@@ -617,7 +623,7 @@ describe('ElasticsearchWorkbench defensive paths', () => {
       fireEvent.keyDown(input, { key: 'a' })
       // Metakey variants should also submit (the || metaKey branch).
       fireEvent.keyDown(input, { key: 'Enter', metaKey: true })
-      await waitFor(() => expect(calls).toContain('db_es_create_index'))
+      await waitFor(() =>{  expect(calls).toContain('db_es_create_index') })
     } finally {
       restore()
     }

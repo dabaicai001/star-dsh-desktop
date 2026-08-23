@@ -42,11 +42,11 @@ const BUNDLE_RETRY_DELAYS = [300, 1200] as const
 const defaultLoadBundle = async (url: string): Promise<void> => {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await fetchBundle(url)
+      await fetchBundle(url); return
     } catch (error) {
       const delay: number | undefined = BUNDLE_RETRY_DELAYS[attempt]
       if (delay === undefined) throw error
-      await new Promise<void>(resolve => { setTimeout(resolve, delay) })
+      await new Promise<void>((resolve) => { setTimeout(resolve, delay) })
     }
   }
 }

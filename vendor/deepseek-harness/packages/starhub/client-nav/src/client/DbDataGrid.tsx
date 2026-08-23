@@ -51,7 +51,8 @@ const OVERSCAN = 8
 export function cellText(value: unknown): string {
   if (value === null || value === undefined) return 'NULL'
   if (typeof value === 'object') return JSON.stringify(value)
-  return String(value)
+  const primitive = value as string | number | boolean | bigint | symbol
+  return String(primitive)
 }
 
 /** SQL 字符串字面量:null → NULL;数字原样;其余单引号包裹并转义单引号。 */
@@ -59,13 +60,14 @@ export function sqlLiteral(value: unknown): string {
   if (value === null || value === undefined) return 'NULL'
   if (typeof value === 'number') return String(value)
   if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE'
-  return `'${String(value).replace(/'/g, "''")}'`
+  const primitive = value as string | bigint | symbol
+  return `'${String(primitive).replace(/'/g, "''")}'`
 }
 
 /** 把一行拼成 INSERT 语句(列名反引号包裹,值走 sqlLiteral)。 */
 export function rowToInsert(table: string, columns: QueryColumn[], row: unknown[]): string {
-  const cols = columns.map((c) => `\`${c.name}\``).join(', ')
-  const values = row.map((v) => sqlLiteral(v)).join(', ')
+  const cols = columns.map(c => `\`${c.name}\``).join(', ')
+  const values = row.map(v => sqlLiteral(v)).join(', ')
   return `INSERT INTO \`${table}\` (${cols}) VALUES (${values});`
 }
 
@@ -77,8 +79,8 @@ export function isNumericCell(value: unknown): boolean {
 /** 把结果转 CSV(引号/逗号/换行转义;null → 空串,与 Vue 导出契约一致)。 */
 export function rowsToCsv(columns: QueryColumn[], rows: unknown[][]): string {
   const escape = (v: string): string => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
-  const header = columns.map((c) => escape(c.name)).join(',')
-  const body = rows.map((row) => row.map((cell) => escape(cell === null || cell === undefined ? '' : cellText(cell))).join(',')).join('\n')
+  const header = columns.map(c => escape(c.name)).join(',')
+  const body = rows.map(row => row.map(cell => escape(cell === null || cell === undefined ? '' : cellText(cell))).join(',')).join('\n')
   return `${header}\n${body}`
 }
 
@@ -138,7 +140,7 @@ export function DbDataGrid({
   const [saving, setSaving] = useState(false)
   const menu = useContextMenu()
 
-  const totalRows = Object.values(columnFilters).some((v) => v !== '')
+  const totalRows = Object.values(columnFilters).some(v => v !== '')
     ? (result?.totalRows ?? 0)
     : (baseCount ?? result?.totalRows ?? 0)
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize))
@@ -191,10 +193,10 @@ export function DbDataGrid({
       .then((cols) => {
         /* v8 ignore next -- 防御:表切换卸载竞态,取消后丢弃过期响应 */
         if (cancelled) return
-        const pks = (cols ?? [])
-          .filter((c) => c.key === 'PRI' || c.key === 'PRI,')
-          .map((c) => String(c.name))
-          .filter((n) => n !== '')
+        const pks = cols
+          .filter(c => c.key === 'PRI' || c.key === 'PRI,')
+          .map(c => String(c.name))
+          .filter(n => n !== '')
         setPkCols(pks)
       })
       .catch(() => { /* 主键获取失败不阻塞浏览 */ })
@@ -218,7 +220,7 @@ export function DbDataGrid({
 
   const toggleSort = (col: QueryColumn): void => {
     if (orderBy === col.name) {
-      setOrderDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      setOrderDir(d => (d === 'asc' ? 'desc' : 'asc'))
     } else {
       setOrderBy(col.name)
       setOrderDir('asc')
@@ -246,7 +248,7 @@ export function DbDataGrid({
   const applyFilter = (): void => {
     /* v8 ignore next -- 防御:弹层关闭后不会触发应用(按钮随弹层渲染) */
     if (filterCol !== null) {
-      setColumnFilters((prev) => ({ ...prev, [filterCol]: filterText }))
+      setColumnFilters(prev => ({ ...prev, [filterCol]: filterText }))
       setPage(0)
     }
     closeFilter()
@@ -255,11 +257,7 @@ export function DbDataGrid({
   const clearFilter = (): void => {
     /* v8 ignore next -- 防御:弹层关闭后不会触发清除(按钮随弹层渲染) */
     if (filterCol !== null) {
-      setColumnFilters((prev) => {
-        const next = { ...prev }
-        delete next[filterCol]
-        return next
-      })
+      setColumnFilters(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => key !== filterCol)))
       setPage(0)
     }
     closeFilter()
@@ -284,7 +282,7 @@ export function DbDataGrid({
     /* v8 ignore next -- 防御:行号来自可见行枚举,恒有对应行 */
     if (row === undefined) return
     const sql = rowToInsert(table, columns, row)
-    void navigator.clipboard?.writeText(sql).catch(() => {})
+    void navigator.clipboard.writeText(sql).catch(() => {})
   }
 
   // ─── 单元格编辑 ───
@@ -298,7 +296,9 @@ export function DbDataGrid({
   }
 
   /** 把一次编辑应用到 dirty 副本(纯函数;供失焦提交与 Ctrl+S 共用)。 */
-  const applyEditToDirty = (base: Map<string, { col: string; originalValue: unknown; newValue: unknown }>): Map<string, { col: string; originalValue: unknown; newValue: unknown }> => {
+  const applyEditToDirty = (
+    base: Map<string, { col: string; originalValue: unknown; newValue: unknown }>,
+  ): Map<string, { col: string; originalValue: unknown; newValue: unknown }> => {
     if (editing === null) return base
     const col = columns[editing.col]
     /* v8 ignore next -- 防御:col 下标由渲染映射生成,恒在 columns 范围内 */
@@ -323,7 +323,7 @@ export function DbDataGrid({
   const commitEdit = (): void => {
     /* v8 ignore next -- 防御:输入框失焦/回车仅在编辑态触发 */
     if (editing === null) return
-    setDirty((prev) => applyEditToDirty(prev))
+    setDirty(prev => applyEditToDirty(prev))
     setEditing(null)
   }
 
@@ -352,7 +352,7 @@ export function DbDataGrid({
         if (row === undefined) continue
         const pkWhere = pkCols
           .map((pk) => {
-            const idx = columns.findIndex((c) => c.name === pk)
+            const idx = columns.findIndex(c => c.name === pk)
             return idx >= 0 ? `\`${pk}\` = ${sqlLiteral(row[idx])}` : null
           })
           .filter((part): part is string => part !== null)
@@ -373,7 +373,7 @@ export function DbDataGrid({
           break
         }
         if (res.rowsAffected === 0) {
-          setError(`更新 0 行(行数据可能已被修改)`)
+          setError('更新 0 行(行数据可能已被修改)')
           failed = true
           break
         }
@@ -401,8 +401,7 @@ export function DbDataGrid({
       }
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () =>{  window.removeEventListener('keydown', onKeyDown) }
   }, [dirty, editing, editText, columns, rows, saveAll])
 
   const exportCsv = (): void => {
@@ -411,7 +410,7 @@ export function DbDataGrid({
     downloadTextFile(`${table}_page${page + 1}.csv`, rowsToCsv(columns, rows))
   }
 
-  const filteredCount = useMemo(() => Object.values(columnFilters).filter((v) => v !== '').length, [columnFilters])
+  const filteredCount = useMemo(() => Object.values(columnFilters).filter(v => v !== '').length, [columnFilters])
 
   const onRowSelect = (id: string): void => {
     // 菜单项选择分发:目前只有「复制为 INSERT」一项;menuRow 在右键时写入,
@@ -427,7 +426,7 @@ export function DbDataGrid({
         {filteredCount > 0 && <span className={css.filterBadge}>{filteredCount} 个筛选</span>}
         <span className={css.spacer} />
         {onExport !== undefined && (
-          <button type="button" className={css.exportBtn} onClick={() => onExport(orderBy, orderDir)} title="全量导出该表到 Excel(后端执行)">
+          <button type="button" className={css.exportBtn} onClick={() =>{  onExport(orderBy, orderDir) }} title="全量导出该表到 Excel(后端执行)">
             导出 Excel
           </button>
         )}
@@ -446,12 +445,12 @@ export function DbDataGrid({
         <div className={css.thead} ref={theadRef} role="row">
           <div className={css.theadRow}>
             <div className={css.th} style={{ width: 60 }}>#</div>
-            {columns.map((col) => (
+            {columns.map(col => (
               <div key={col.name} className={css.th} style={{ width: 160 }} role="columnheader">
                 <button
                   type="button"
                   className={css.thSort}
-                  onClick={() => toggleSort(col)}
+                  onClick={() =>{  toggleSort(col) }}
                   title={col.type ?? ''}
                 >
                   <span className={css.thLabel}>{col.name}</span>
@@ -460,7 +459,7 @@ export function DbDataGrid({
                 <button
                   type="button"
                   className={`${css.filterBtn} ${(columnFilters[col.name] ?? '') !== '' ? css.filterActive : ''}`}
-                  onClick={(e) => openFilter(e, col.name)}
+                  onClick={(e) =>{  openFilter(e, col.name) }}
                   title="列筛选"
                   aria-label={`筛选 ${col.name}`}
                 >
@@ -491,7 +490,7 @@ export function DbDataGrid({
                 className={css.tr}
                 role="row"
                 style={{ height: ROW_HEIGHT }}
-                onContextMenu={(e) => onRowContextMenu(e, absoluteRow)}
+                onContextMenu={(e) =>{  onRowContextMenu(e, absoluteRow) }}
               >
                 <div className={css.td} style={{ width: 60 }}>{absoluteRow + 1}</div>
                 {row.map((cell, colIndex) => {
@@ -506,7 +505,7 @@ export function DbDataGrid({
                       className={`${css.td} ${isNull ? css.null : ''} ${!isNull && col?.type?.toLowerCase().includes('int') ? css.num : ''} ${dirtyCell !== undefined ? css.dirty : ''}`}
                       style={{ width: 160 }}
                       title={cellText(displayed)}
-                      onDoubleClick={() => startEdit(absoluteRow, colIndex)}
+                      onDoubleClick={() =>{  startEdit(absoluteRow, colIndex) }}
                     >
                       {editing !== null && editing.row === absoluteRow && editing.col === colIndex ? (
                         <input
@@ -514,7 +513,7 @@ export function DbDataGrid({
                           data-testid="cell-edit-input"
                           value={editText}
                           autoFocus
-                          onChange={(e) => setEditText(e.target.value)}
+                          onChange={(e) =>{  setEditText(e.target.value) }}
                           onBlur={commitEdit}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') commitEdit()
@@ -547,7 +546,7 @@ export function DbDataGrid({
             <input
               className={css.filterInput}
               value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
+              onChange={(e) =>{  setFilterText(e.target.value) }}
               onKeyDown={onFilterKeydown}
               autoFocus
               placeholder="输入筛选值…"
@@ -560,16 +559,16 @@ export function DbDataGrid({
         </>
       )}
       <div className={css.pager}>
-        <button type="button" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>上一页</button>
+        <button type="button" disabled={page === 0} onClick={() =>{  setPage(p => Math.max(0, p - 1)) }}>上一页</button>
         <span>{page + 1} / {pageCount}</span>
-        <button type="button" disabled={page >= pageCount - 1} onClick={() => setPage((p) => p + 1)}>下一页</button>
+        <button type="button" disabled={page >= pageCount - 1} onClick={() =>{  setPage(p => p + 1) }}>下一页</button>
         <select
           className={css.sizeSelect}
           value={pageSize}
           onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0) }}
           aria-label="每页行数"
         >
-          {PAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+          {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         {result?.durationMs !== undefined && <span className={css.hint}>{result.durationMs} ms</span>}
       </div>

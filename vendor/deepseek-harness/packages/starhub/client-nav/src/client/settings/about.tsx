@@ -26,7 +26,7 @@ export function AboutTab() {
   useEffect(() => {
     if (!isTauriRuntime()) return
     tauriInvoke<string>('plugin:app|version')
-      .then((version) => setAppVersion(version))
+      .then((version) =>{  setAppVersion(version) })
       .catch(() => { /* 版本读取失败保持占位 */ })
   }, [])
 
@@ -97,7 +97,7 @@ export function AboutTab() {
             </button>
           </div>
         )}
-        {updateInfo !== null && updateInfo.available === false && updateError === null && (
+        {updateInfo !== null && ! updateInfo.available && updateError === null && (
           <div className={s.resultText}>已是最新版本</div>
         )}
         {updateError !== null && <div className={s.errorText}>{updateError}</div>}

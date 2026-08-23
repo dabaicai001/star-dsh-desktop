@@ -26,7 +26,7 @@ describe('SdkNotificationDispatcher', () => {
     const handler = vi.fn()
     dispatcher.subscribe('starhub/domain.event', handler)
 
-    expect(() => dispatcher.dispatch('starhub/other.method', {})).not.toThrow()
+    expect(() =>{  dispatcher.dispatch('starhub/other.method', {}) }).not.toThrow()
     expect(handler).not.toHaveBeenCalled()
   })
 
@@ -37,10 +37,10 @@ describe('SdkNotificationDispatcher', () => {
     dispatcher.subscribe('starhub/domain.event', throwing)
     dispatcher.subscribe('starhub/domain.event', healthy)
 
-    expect(() => dispatcher.dispatch('starhub/domain.event', { kind: 'x' })).not.toThrow()
+    expect(() =>{  dispatcher.dispatch('starhub/domain.event', { kind: 'x' }) }).not.toThrow()
     expect(healthy).toHaveBeenCalledOnce()
     // A later dispatch still reaches the throwing subscriber's siblings.
-    expect(() => dispatcher.dispatch('starhub/domain.event', { kind: 'y' })).not.toThrow()
+    expect(() =>{  dispatcher.dispatch('starhub/domain.event', { kind: 'y' }) }).not.toThrow()
     expect(healthy).toHaveBeenCalledTimes(2)
   })
 
@@ -64,7 +64,7 @@ describe('SdkNotificationDispatcher', () => {
     const dispose = dispatcher.subscribe('starhub/registry.sync', handler)
 
     dispose()
-    expect(() => dispatcher.dispatch('starhub/registry.sync', {})).not.toThrow()
+    expect(() =>{  dispatcher.dispatch('starhub/registry.sync', {}) }).not.toThrow()
     expect(handler).not.toHaveBeenCalled()
 
     // A fresh subscription on the released method works again.

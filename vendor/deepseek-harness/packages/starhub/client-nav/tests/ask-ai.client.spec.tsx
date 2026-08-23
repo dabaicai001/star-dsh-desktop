@@ -70,7 +70,7 @@ describe('createAskAiHandler', () => {
       connect: vi.fn(() => Promise.resolve('fresh1')),
     })
     handler({ text: '查一下报错' })
-    await vi.waitFor(() => expect(open).toHaveBeenCalledWith('fresh1'))
+    await vi.waitFor(() =>{  expect(open).toHaveBeenCalledWith('fresh1') })
     expect(connectWorkspace).toHaveBeenCalledWith('w1')
     expect(setDraft).toHaveBeenCalledWith('查一下报错')
   })
@@ -90,7 +90,7 @@ describe('createAskAiHandler', () => {
     })
     try {
       handler({ text: 'x' })
-      await vi.waitFor(() => expect(warn).toHaveBeenCalled())
+      await vi.waitFor(() =>{  expect(warn).toHaveBeenCalled() })
       expect(open).not.toHaveBeenCalled()
     } finally {
       warn.mockRestore()

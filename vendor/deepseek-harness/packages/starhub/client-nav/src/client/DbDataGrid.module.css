@@ -25,9 +25,10 @@
 .sortMark { flex: none; color: var(--dsw-accent); }
 .filterBtn { flex: none; width: 18px; height: 18px; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 10px; cursor: pointer; padding: 0; line-height: 1; }
 .filterBtn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-accent); }
-.filterActive { color: var(--dsw-accent); }
-
-.tbody { flex: 1; overflow: auto; position: relative; scrollbar-width: thin; scrollbar-color: #557997 transparent; }
+.filterActive { color: var(--dsw-accent); }.tbody{ flex: 1; overflow: auto; position: relative; scrollbar-width: thin; scrollbar-color: #557997 transparent; 
+  /* Elevated scroll container: rebind the scrollbar indirection to the l2 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);}
 .tbody::-webkit-scrollbar { width: 10px; height: 10px; }
 .tbody::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: #557997; background-clip: padding-box; }
 .tbody::-webkit-scrollbar-thumb:hover { background: #76a7cb; background-clip: padding-box; }

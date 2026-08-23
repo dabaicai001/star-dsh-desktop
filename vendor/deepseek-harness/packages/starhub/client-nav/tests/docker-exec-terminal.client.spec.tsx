@@ -46,7 +46,7 @@ class ResizeObserverMock {
   observe() {}
   disconnect() {}
   /** 手动触发 observer 回调(测试 resize 通知路径)。 */
-  fire() { this.callback?.([] as unknown as ResizeObserverEntry[], this as unknown as ResizeObserver) }
+  fire() { this.callback?.([], this as unknown as ResizeObserver) }
   static singleton: ResizeObserverMock | null = null
 }
 
@@ -102,13 +102,13 @@ describe('DockerExecTerminal', () => {
     ])
     installObserver()
     render(<DockerExecTerminal connId="c" container={container} onClose={vi.fn()} />)
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('docker_exec_session_start', expect.objectContaining({ containerId: 'c1' })))
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('docker_exec_session_read', expect.objectContaining({ sessionId: 's1' })))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('docker_exec_session_start', expect.objectContaining({ containerId: 'c1' })) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('docker_exec_session_read', expect.objectContaining({ sessionId: 's1' })) })
     // decoded output written to the terminal
-    await waitFor(() => expect(xterm.write).toHaveBeenCalledWith('hello\r\n'))
+    await waitFor(() =>{  expect(xterm.write).toHaveBeenCalledWith('hello\r\n') })
     // running=false → close session + dispose
-    await waitFor(() => expect(xterm.dispose).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('docker_exec_session_close', expect.anything()))
+    await waitFor(() =>{  expect(xterm.dispose).toHaveBeenCalledTimes(1) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('docker_exec_session_close', expect.anything()) })
   })
 
   it('writes terminal input back to the exec session', async () => {
@@ -116,9 +116,9 @@ describe('DockerExecTerminal', () => {
     const invoke = installTauri([{ data: '', running: true }, { data: '', running: true }, { data: '', running: false }])
     installObserver()
     render(<DockerExecTerminal connId="c" container={container} onClose={vi.fn()} />)
-    await waitFor(() => expect(xterm.input).toBeDefined())
+    await waitFor(() =>{  expect(xterm.input).toBeDefined() })
     xterm.input?.('ls\r')
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('docker_exec_session_write', { connId: 'c', sessionId: 's1', data: 'ls\r' }))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('docker_exec_session_write', { connId: 'c', sessionId: 's1', data: 'ls\r' }) })
   })
 
   it('forwards container TTY resize to the exec session', async () => {
@@ -127,11 +127,11 @@ describe('DockerExecTerminal', () => {
     const invoke = installTauri([{ data: '', running: true }])
     render(<DockerExecTerminal connId="c" container={container} onClose={vi.fn()} />)
     // 等会话建立(此时 resize 才会真正通知)
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('docker_exec_session_start', expect.anything()))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('docker_exec_session_start', expect.anything()) })
     // 组件的 effect 已创建 ResizeObserver 实例,取它来触发 resize 通知
-    await waitFor(() => expect(ResizeObserverMock.singleton).not.toBeNull())
+    await waitFor(() =>{  expect(ResizeObserverMock.singleton).not.toBeNull() })
     ResizeObserverMock.singleton?.fire()
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('docker_exec_session_resize', expect.objectContaining({ sessionId: 's1' })))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('docker_exec_session_resize', expect.objectContaining({ sessionId: 's1' })) })
   })
 
   it('cleans up on unmount (close session + dispose xterm + disconnect observer)', async () => {
@@ -139,8 +139,8 @@ describe('DockerExecTerminal', () => {
     installTauri([{ data: '', running: true }])
     installObserver()
     const { unmount } = render(<DockerExecTerminal connId="c" container={container} onClose={vi.fn()} />)
-    await waitFor(() => expect(xterm.open).toHaveBeenCalled())
+    await waitFor(() =>{  expect(xterm.open).toHaveBeenCalled() })
     unmount()
-    await waitFor(() => expect(xterm.dispose).toHaveBeenCalled())
+    await waitFor(() =>{  expect(xterm.dispose).toHaveBeenCalled() })
   })
 })

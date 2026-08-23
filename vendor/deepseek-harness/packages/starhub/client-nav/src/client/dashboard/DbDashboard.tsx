@@ -113,8 +113,9 @@ export function DbDashboard({ connId, dbType, connected, database }: DbDashboard
   const fail = useCallback((e: unknown) => {
     // Error reasons are always Error objects / strings from db_* RPC rejections;
     // the nullish fallback only guards an impossible undefined throw.
+    const reason = e as string | number | boolean | bigint | symbol | null | undefined
     /* v8 ignore next -- nullish e is unreachable (RPC rejections are Error/string) */
-    setError(String(e ?? '').slice(0, 200))
+    setError(String(reason ?? '').slice(0, 200))
   }, [])
 
   const loadRedis = useCallback(async () => {
@@ -125,7 +126,7 @@ export function DbDashboard({ connId, dbType, connected, database }: DbDashboard
       sizeP,
     ])
     if (info.status !== 'fulfilled') throw info.reason
-    const dbSize = sizeRes.status === 'fulfilled' ? sizeRes.value?.size : undefined
+    const dbSize = sizeRes.status === 'fulfilled' ? sizeRes.value.size : undefined
     setRedis(parseRedisInfo(info.value, dbSize))
   }, [connId])
 
@@ -183,8 +184,8 @@ export function DbDashboard({ connId, dbType, connected, database }: DbDashboard
       setPostgresSlowStatements(detailRecords(queryRowsToRecords(history)))
     } catch {
       setPostgresSlowStatements(sessionRows
-        .filter((s) => s.state === 'active' && Number(s.duration ?? 0) >= 1)
-        .map((s) => ({ ...s, calls: 1, rows: '--' })))
+        .filter(s => s.state === 'active' && Number(s.duration ?? 0) >= 1)
+        .map(s => ({ ...s, calls: 1, rows: '--' })))
     }
   }, [connId, database])
 
@@ -226,7 +227,6 @@ export function DbDashboard({ connId, dbType, connected, database }: DbDashboard
     void loadAll()
     // 连接切换时重置指标 tab。
     setTab('overview')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connId, dbType])
 
   const tabs = dashboardTabs(dbType)
@@ -244,7 +244,7 @@ export function DbDashboard({ connId, dbType, connected, database }: DbDashboard
       { key: 'state', label: '状态' },
       { key: 'sql', label: '当前 SQL', wide: true },
     ],
-    rows: mysqlProcesses.map((p) => ({
+    rows: mysqlProcesses.map(p => ({
       ip: p.ip, user: p.user, database: p.database, command: p.command,
       time: p.timeSeconds, state: p.state, sql: p.sql,
     })),
@@ -261,7 +261,7 @@ export function DbDashboard({ connId, dbType, connected, database }: DbDashboard
       { key: 'executions', label: '次数', align: 'right' },
       { key: 'sql', label: '慢 SQL 语句', wide: true },
     ],
-    rows: mysqlSlowQueries.map((q) => ({
+    rows: mysqlSlowQueries.map(q => ({
       startedAt: q.startedAt, duration: q.duration, database: q.database,
       userHost: q.userHost, rowsExamined: q.rowsExamined, executions: q.executions ?? 1, sql: q.sql,
     })),
@@ -314,12 +314,12 @@ export function DbDashboard({ connId, dbType, connected, database }: DbDashboard
 
       {tabs.length > 1 && (
         <div className={css.tabs}>
-          {tabs.map((t) => (
+          {tabs.map(t => (
             <button
               key={t}
               type="button"
               className={tab === t ? css.tabActive : css.tab}
-              onClick={() => setTab(t)}
+              onClick={() =>{  setTab(t) }}
             >
               {t === 'overview' ? '概览' : t === 'performance' ? '性能' : '网络'}
             </button>

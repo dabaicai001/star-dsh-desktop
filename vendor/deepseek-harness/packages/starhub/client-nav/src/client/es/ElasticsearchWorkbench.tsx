@@ -100,8 +100,7 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
         /* v8 ignore next 1 -- 卸载竞态 pair 为 undefined 时 ind 兜底为空数组 */
         const ind = pair?.[1] ?? []
         if (h) setHealth(h)
-        /* v8 ignore next 1 -- ind 恒为 truthy 数组(空数组兜底),假分支不可达 */
-        if (ind) setIndices(ind)
+        setIndices(ind)
       })
       .catch((e: unknown) => {
         /* v8 ignore next 3 -- 卸载竞态;失败态由 sync 场景的单测覆盖 */
@@ -115,8 +114,7 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
       if (connId !== null) void esDisconnect(connId).catch(() => {})
       connRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asset])
+  }, [asset, fail])
 
   const reloadIndices = useCallback(async () => {
     /* v8 ignore next 1 -- 连接未就绪防护(重载仅在有 connId 的 UI 路径触发) */
@@ -124,8 +122,7 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
     try {
       setIndices(await esListIndices(connRef.current))
     } catch (e) { fail(e) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [fail])
 
   const selectIndex = useCallback(async (name: string) => {
     setSelectedIndex(name)
@@ -135,15 +132,14 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
     if (connRef.current !== null) {
       try {
         const m = await esGetMapping(connRef.current, name)
-        setMapping({ indexName: m.indexName, fields: (m.fields ?? []).map(fieldRow) })
+        setMapping({ indexName: m.indexName, fields: (Array.isArray(m.fields) ? m.fields : []).map(fieldRow) })
         setSettings(await esGetSettings(connRef.current, name)
           /* v8 ignore next 1 -- settings 拉取失败兜底:保持 null */
           .catch(() => null))
         setError(null)
       } catch (e) { fail(e) }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [fail])
 
   const executeSearch = useCallback(async () => {
     const connId = connRef.current
@@ -164,8 +160,7 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
     } catch (e) { fail(e) } finally {
       setSearchLoading(false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dsl, searchIndex, searchFrom])
+  }, [dsl, searchIndex, searchFrom, fail])
 
   const prevPage = useCallback(() => {
     // 上一页按钮在当前页 disabled;此处仅为护栏
@@ -198,8 +193,7 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
       await reloadIndices()
       setError(null)
     } catch (e) { fail(e) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIndex, searchIndex, reloadIndices])
+  }, [selectedIndex, searchIndex, reloadIndices, fail])
 
   const searchColumns = useMemo(() => {
     /* v8 ignore next 1 -- 无结果时无搜索列(结果存在时才渲染表格) */
@@ -215,7 +209,10 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
     const val = source[field]
     /* v8 ignore next 1 -- 缺失字段渲染为空串 */
     if (val === null || val === undefined) return ''
-    return typeof val === 'object' ? JSON.stringify(val) : String(val)
+    if (typeof val === 'object') return JSON.stringify(val)
+    // 非对象即原始值(null/undefined/object 已在上行排除)。
+    const primitive = val as string | number | boolean | bigint | symbol
+    return String(primitive)
   }, [])
 
   if (connState === 'connecting') {
@@ -244,10 +241,10 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
           <span className={css.muted}>· {health?.numberOfNodes ?? 0} nodes</span>
         </div>
         <nav className={css.tabs}>
-          <button type="button" className={tab === 'overview' ? css.tabActive : ''} onClick={() => setTab('overview')}>概览</button>
-          <button type="button" className={tab === 'search' ? css.tabActive : ''} onClick={() => setTab('search')}>检索</button>
-          <button type="button" className={tab === 'index' ? css.tabActive : ''} onClick={() => setTab('index')}>索引</button>
-          <button type="button" className={css.headerBtn} onClick={() => setShowNewIndex(true)}>新建索引</button>
+          <button type="button" className={tab === 'overview' ? css.tabActive : ''} onClick={() =>{  setTab('overview') }}>概览</button>
+          <button type="button" className={tab === 'search' ? css.tabActive : ''} onClick={() =>{  setTab('search') }}>检索</button>
+          <button type="button" className={tab === 'index' ? css.tabActive : ''} onClick={() =>{  setTab('index') }}>索引</button>
+          <button type="button" className={css.headerBtn} onClick={() =>{  setShowNewIndex(true) }}>新建索引</button>
         </nav>
         <button type="button" className={css.closeBtn} onClick={onClose}>关闭</button>
       </header>
@@ -263,13 +260,13 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
           <table className={css.table}>
             <thead><tr><th>索引</th><th>文档数</th><th>存储</th><th>健康</th><th></th></tr></thead>
             <tbody>
-              {indices.map((idx) => (
+              {indices.map(idx => (
                 <tr key={idx.name}>
                   <td className={css.mono}><button type="button" className={css.link} onClick={() => void selectIndex(idx.name)}>{idx.name}</button></td>
                   <td className={css.mono}>{idx.docsCount.toLocaleString()}</td>
                   <td className={css.mono}>{idx.storeSize}</td>
                   <td><span className={css.dot} style={{ background: healthColor(idx.health) }} />{idx.health}</td>
-                  <td><button type="button" className={css.dangerBtn} onClick={() => setConfirmDelete(idx.name)}>删除</button></td>
+                  <td><button type="button" className={css.dangerBtn} onClick={() =>{  setConfirmDelete(idx.name) }}>删除</button></td>
                 </tr>
               ))}
               {indices.length === 0 && <tr><td colSpan={5} className={css.empty}>无索引</td></tr>}
@@ -284,15 +281,15 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
             <div className={css.panelHead}>
               <span>DSL 查询</span>
               <div className={css.panelActions}>
-                <select className={css.input} value={searchIndex} onChange={(e) => setSearchIndex(e.target.value)}>
+                <select className={css.input} value={searchIndex} onChange={(e) =>{  setSearchIndex(e.target.value) }}>
                   <option value="">所有索引</option>
-                  {indices.map((idx) => <option key={idx.name} value={idx.name}>{idx.name}</option>)}
+                  {indices.map(idx => <option key={idx.name} value={idx.name}>{idx.name}</option>)}
                 </select>
                 <button type="button" className={css.smallBtn} onClick={formatDsl}>格式化</button>
               </div>
             </div>
             <textarea className={css.dslEditor} value={dsl} spellCheck={false}
-              onChange={(e) => setDsl(e.target.value)}
+              onChange={(e) =>{  setDsl(e.target.value) }}
               onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void executeSearch() }} />
             <button type="button" className={css.primaryBtn} disabled={searchLoading} onClick={() => void executeSearch()}>
               {searchLoading ? '查询中…' : '执行查询'}
@@ -304,27 +301,33 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
                 <div className={css.resultToolbar}>
                   <span className={css.muted}>{result.totalHits.toLocaleString()} hits · {result.took}ms</span>
                   <div>
-                    <button type="button" className={viewMode === 'table' ? css.toggleActive : css.toggle} onClick={() => setViewMode('table')}>表格</button>
-                    <button type="button" className={viewMode === 'json' ? css.toggleActive : css.toggle} onClick={() => setViewMode('json')}>JSON</button>
+                    <button type="button" className={viewMode === 'table' ? css.toggleActive : css.toggle} onClick={() =>{  setViewMode('table') }}>表格</button>
+                    <button type="button" className={viewMode === 'json' ? css.toggleActive : css.toggle} onClick={() =>{  setViewMode('json') }}>JSON</button>
                   </div>
                 </div>
                 {viewMode === 'table' ? (
                   <div className={css.tableWrap}>
                     <table className={css.table}>
-                      <thead><tr>{searchColumns.map((c) => <th key={c} className={css.mono}>{c}</th>)}</tr></thead>
+                      <thead><tr>{searchColumns.map(c => <th key={c} className={css.mono}>{c}</th>)}</tr></thead>
                       <tbody>
                         {result.hits.map((hit, hi) => (
-                          <tr key={hi}>{searchColumns.map((c) => <td key={c} className={css.mono}>{c === '_id' ? hit.id : getFieldValue(hit.source, c)}</td>)}</tr>
+                          <tr key={hi}>{searchColumns.map(c => <td key={c} className={css.mono}>{c === '_id' ? hit.id : getFieldValue(hit.source, c)}</td>)}</tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
                 ) : (
-                  <pre className={css.jsonView}>{JSON.stringify(result.hits.map((h) => ({ _id: h.id, _index: h.index, _score: h.score, _source: h.source })), null, 2)}</pre>
+                  <pre className={css.jsonView}>{JSON.stringify(
+                    result.hits.map(h => ({ _id: h.id, _index: h.index, _score: h.score, _source: h.source })),
+                    null,
+                    2,
+                  )}</pre>
                 )}
                 <div className={css.pagination}>
                   <button type="button" className={css.smallBtn} disabled={searchFrom === 0} onClick={prevPage}>上一页</button>
-                  <span className={css.mono}>{searchFrom + 1}-{Math.min(searchFrom + searchSize, result.totalHits)} / {result.totalHits.toLocaleString()}</span>
+                  <span className={css.mono}>
+                    {searchFrom + 1}-{Math.min(searchFrom + searchSize, result.totalHits)} / {result.totalHits.toLocaleString()}
+                  </span>
                   <button type="button" className={css.smallBtn} disabled={searchFrom + searchSize >= result.totalHits} onClick={nextPage}>下一页</button>
                 </div>
               </>
@@ -339,10 +342,13 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
           <h3 className={css.sectionTitle}>{selectedIndex}</h3>
           <h4 className={css.subTitle}>映射</h4>
           <div className={css.mappingTree}>
-            {mapping.fields.map((f) => (
+            {mapping.fields.map(f => (
               <div key={f.name}>
-                <div className={css.fieldRow}><span className={css.mono}>{f.name}</span><span className={css.badge} style={{ color: fieldTypeColor(f.type), borderColor: fieldTypeColor(f.type) }}>{f.type}</span></div>
-                {f.children?.map((ch) => (
+                <div className={css.fieldRow}>
+                  <span className={css.mono}>{f.name}</span>
+                  <span className={css.badge} style={{ color: fieldTypeColor(f.type), borderColor: fieldTypeColor(f.type) }}>{f.type}</span>
+                </div>
+                {f.children?.map(ch => (
                   <div key={ch.name} className={`${css.fieldRow} ${css.childRow}`}><span className={css.mono}>↳ {ch.name}</span><span className={css.badge} style={{ color: fieldTypeColor(ch.type), borderColor: fieldTypeColor(ch.type) }}>{ch.type}</span></div>
                 ))}
               </div>
@@ -362,7 +368,7 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
         <NewIndexDialog
           /* v8 ignore next 1 -- 对话框仅 connected 态可开(connRef 非空),空串回退不可达 */
           connId={connRef.current ?? ''}
-          onClose={() => setShowNewIndex(false)}
+          onClose={() =>{  setShowNewIndex(false) }}
           onCreated={() => { setShowNewIndex(false); void reloadIndices() }}
         />
       )}
@@ -372,7 +378,7 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
           <div className={css.dialog}>
             <p>确认删除索引 {confirmDelete}?</p>
             <div className={css.dialogActions}>
-              <button type="button" className={css.smallBtn} onClick={() => setConfirmDelete(null)}>取消</button>
+              <button type="button" className={css.smallBtn} onClick={() =>{  setConfirmDelete(null) }}>取消</button>
               <button type="button" className={css.dangerBtn} onClick={() => void deleteIndex(confirmDelete)}>删除</button>
             </div>
           </div>
@@ -383,12 +389,16 @@ export function ElasticsearchWorkbench({ asset, onClose }: ElasticsearchWorkbenc
 }
 
 /** Normalize a mapping field row (pure, unit-tested). */
-function fieldRow(f: { name: string; type: string; children?: unknown[] }): { name: string; type: string; children?: { name: string; type: string }[] | undefined } {
+function fieldRow(f: { name: string; type: string; children?: unknown[] }): {
+  name: string
+  type: string
+  children?: { name: string; type: string }[] | undefined
+} {
   const children = Array.isArray(f.children)
-    ? (f.children as { name?: unknown; type?: unknown }[]).map((c) => ({
-        name: typeof c.name === 'string' ? c.name : '',
-        type: typeof c.type === 'string' ? c.type : '',
-      }))
+    ? (f.children as { name?: unknown; type?: unknown }[]).map(c => ({
+      name: typeof c.name === 'string' ? c.name : '',
+      type: typeof c.type === 'string' ? c.type : '',
+    }))
     : undefined
   return { name: f.name, type: f.type, children }
 }
@@ -420,7 +430,7 @@ function NewIndexDialog({ connId, onClose, onCreated }: {
       <div className={css.dialog}>
         <p className={css.sectionTitle}>新建索引</p>
         <input className={css.input} value={name} placeholder="index name"
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) =>{  setName(e.target.value) }}
           onKeyDown={(e) => { if (e.key === 'Enter' && !busy) void create() }} />
         {err !== null && <p className={css.error}>{err}</p>}
         <div className={css.dialogActions}>

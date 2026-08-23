@@ -170,8 +170,8 @@ export interface AiChatOverlay {
 export function createAiChatOverlay(): AiChatOverlay {
   const source = createSnapshotStore<AiChatState>({ open: false })
   return {
-    open: () => source.set({ open: true }),
-    close: () => source.set({ open: false }),
+    open: () =>{  source.set({ open: true }) },
+    close: () =>{  source.set({ open: false }) },
     source,
   }
 }
@@ -221,7 +221,7 @@ export function createToolSelectionBridge(): ToolSelectionBridge {
     selectSubcategory: (key) => { source.update((d) => { d.subcategory = key }) },
     openAsset: (asset) => {
       const prefix = routePrefixForAsset(asset)
-        ?? STARHUB_SUBCATEGORIES.find((s) => s.key === source.getSnapshot().subcategory)?.routePrefix
+        ?? STARHUB_SUBCATEGORIES.find(s => s.key === source.getSnapshot().subcategory)?.routePrefix
         ?? null
       // 无功能路由的资产类型(如 local):不打开,保持现状
       if (prefix === null) return

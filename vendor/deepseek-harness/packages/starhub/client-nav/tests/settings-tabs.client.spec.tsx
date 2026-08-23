@@ -36,6 +36,11 @@ function stubTauriInternals(handlers: Record<string, (args?: unknown) => unknown
   }
 }
 
+/** 显式类型化的 objectContaining 包装(原生签名返回 any,避免 any 传播)。 */
+function objectContaining<T extends object>(expected: T): T {
+  return expect.objectContaining(expected as Record<string, unknown>) as T
+}
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -134,8 +139,8 @@ describe('AlertTab', () => {
         operator: '>', threshold: 5, duration_sec: 0, webhook_url: 'http://hook', cooldown_sec: 300,
         created_at: 0, updated_at: 0,
       }],
-      alert_update: (args) => update(args),
-      alert_delete: (args) => remove(args),
+      alert_update: args => update(args),
+      alert_delete: args => remove(args),
       alert_test_webhook: () => '✓ 发送成功',
     })
     try {
@@ -148,7 +153,7 @@ describe('AlertTab', () => {
       expect(within(dialog).getByDisplayValue('SSH 连接失败')).toBeTruthy()
       fireEvent.click(within(dialog).getByText('保存'))
       await act(async () => { await Promise.resolve() })
-      expect(update).toHaveBeenCalledWith({ id: 'r1', input: expect.objectContaining({ name: 'SSH 连接失败' }) })
+      expect(update).toHaveBeenCalledWith({ id: 'r1', input: objectContaining({ name: 'SSH 连接失败' }) })
       // 测试 webhook(编辑弹窗里有输入框与按钮)
       fireEvent.click(screen.getByLabelText('编辑'))
       fireEvent.click(within(screen.getByRole('dialog', { name: '编辑告警规则' })).getByText('测试 Webhook'))
@@ -196,7 +201,7 @@ describe('PluginsTab', () => {
           ],
         }],
       }),
-      dsh_plugin_install_url: (args) => installUrl(args),
+      dsh_plugin_install_url: args => installUrl(args),
       dsh_shutdown: () => null,
     })
     try {
@@ -208,11 +213,11 @@ describe('PluginsTab', () => {
       // URL 安装
       fireEvent.change(screen.getByPlaceholderText(/GitHub 仓库 URL/), { target: { value: 'https://github.com/a/b' } })
       fireEvent.click(screen.getByText('URL 安装'))
-      await vi.waitFor(() => expect(installUrl).toHaveBeenCalledWith({ url: 'https://github.com/a/b' }))
-      await vi.waitFor(() => expect((screen.getByPlaceholderText(/GitHub 仓库 URL/) as HTMLInputElement).value).toBe(''))
+      await vi.waitFor(() =>{  expect(installUrl).toHaveBeenCalledWith({ url: 'https://github.com/a/b' }) })
+      await vi.waitFor(() =>{  expect((screen.getByPlaceholderText<HTMLInputElement>(/GitHub 仓库 URL/)).value).toBe('') })
       // 市场安装
       fireEvent.click(screen.getByText('安装'))
-      await vi.waitFor(() => expect(installUrl).toHaveBeenCalledWith({ url: 'https://github.com/x/fresh' }))
+      await vi.waitFor(() =>{  expect(installUrl).toHaveBeenCalledWith({ url: 'https://github.com/x/fresh' }) })
       // 市场:搜索过滤
       fireEvent.change(screen.getByPlaceholderText('搜索插件…'), { target: { value: 'Cool' } })
       expect(await screen.findByText('Cool Plugin')).toBeTruthy()
@@ -226,7 +231,7 @@ describe('PluginsTab', () => {
     const install = vi.fn((..._args: unknown[]) => ({ id: 'p1', name: 'n', version: '1', source: { kind: 'local-dir' }, entry: 'i.js', enabled: false }))
     const restore = stubTauriInternals({
       'plugin:dialog|open': () => 'C:/plugins/my-plugin',
-      dsh_plugin_install_local: (args) => install(args),
+      dsh_plugin_install_local: args => install(args),
       dsh_shutdown: () => null,
     })
     try {
@@ -254,7 +259,7 @@ describe('AboutTab', () => {
     const restore = stubTauriInternals({
       'plugin:app|version': () => '9.9.9',
       'plugin:updater|check': () => ({ rid: 1, version: '10.0.0' }),
-      'plugin:updater|download_and_install': (args) => install(args),
+      'plugin:updater|download_and_install': args => install(args),
       'plugin:process|restart': () => restart(),
     })
     try {
@@ -263,8 +268,8 @@ describe('AboutTab', () => {
       fireEvent.click(screen.getByText('检查更新'))
       expect(await screen.findByText(/有新版本: v10\.0\.0/)).toBeTruthy()
       fireEvent.click(screen.getByText('下载并安装'))
-      await vi.waitFor(() => expect(install).toHaveBeenCalledWith(expect.objectContaining({ rid: 1 })))
-      await vi.waitFor(() => expect(restart).toHaveBeenCalledTimes(1))
+      await vi.waitFor(() =>{  expect(install).toHaveBeenCalledWith(expect.objectContaining({ rid: 1 })) })
+      await vi.waitFor(() =>{  expect(restart).toHaveBeenCalledTimes(1) })
     } finally {
       restore()
     }
@@ -336,15 +341,15 @@ describe('AiTab', () => {
   })
 
   it('manages memories: group by scope, edit with audit, two-step delete', async () => {
-    const invoke = vi.fn()
+    const invoke = vi.fn((_cmd: string, _args?: unknown) => undefined)
     const restore = stubTauriInternals({
       ai_memory_list: () => [
         { id: 'm1', scope: 'user', content: '用户偏好', created_at: 0, updated_at: 0 },
         { id: 'm2', scope: 'global', content: '环境事实', created_at: 0, updated_at: 0 },
       ],
-      ai_memory_update: (args) => invoke('update', args),
-      ai_memory_delete: (args) => invoke('delete', args),
-      audit_log: (args) => invoke('audit', args),
+      ai_memory_update: (args) => { invoke('update', args) },
+      ai_memory_delete: (args) => { invoke('delete', args) },
+      audit_log: (args) => { invoke('audit', args) },
     })
     try {
       render(<AiTab />)

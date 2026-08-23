@@ -39,7 +39,8 @@ import css from './StarHubToolWorkspace.module.css'
 
 /** Business face injected by the registration: the connection wire + bridge/asset writes. */
 export interface StarHubToolWorkspaceInjected {
-  api: IApiClient
+  /** 连接线面;absent 时跳过 tool-context 同步(无宿主 settings RPC 的场景)。 */
+  api?: IApiClient
   openAsset: (asset: StarHubAsset) => void
   refreshAssets: () => void
   /** 打开连接对话框:不传资产 = 新建;传资产 = 编辑(含删除入口)。 */
@@ -181,7 +182,7 @@ export function StarHubToolWorkspace({
           className={css.iconButton}
           title="AI 助手"
           aria-label="AI 助手"
-          onClick={() => openAiAssistant()}
+          onClick={() =>{  openAiAssistant() }}
         >
           <IconNewChatOutline16 size={13} />
         </button>
@@ -191,11 +192,11 @@ export function StarHubToolWorkspace({
           title="刷新"
           aria-label="刷新"
           disabled={loading}
-          onClick={() => refreshAssets()}
+          onClick={() =>{  refreshAssets() }}
         >
           <IconRefreshOutline14 size={13} />
         </button>
-        <button type="button" className={css.newButton} onClick={() => openConnectionManager()}>
+        <button type="button" className={css.newButton} onClick={() =>{  openConnectionManager() }}>
           <IconPlusOutline16 size={12} />
           <span>新建连接</span>
         </button>
@@ -211,27 +212,27 @@ export function StarHubToolWorkspace({
       {!loading && !preview && error !== null && (
         <div className={css.status}>
           <div>资产加载失败:{error}</div>
-          <button type="button" className={css.retryButton} onClick={() => refreshAssets()}>重试</button>
+          <button type="button" className={css.retryButton} onClick={() =>{  refreshAssets() }}>重试</button>
         </div>
       )}
       {!loading && !preview && error === null && matched.length === 0 && (
         <div className={css.status}>
           <div>暂无 {subcategory.label} 连接。</div>
-          <button type="button" className={css.retryButton} onClick={() => openConnectionManager()}>
+          <button type="button" className={css.retryButton} onClick={() =>{  openConnectionManager() }}>
             新建连接
           </button>
         </div>
       )}
       {!loading && !preview && error === null && matched.length > 0 && (
         <div className={css.list}>
-          {matched.map((asset) => (
+          {matched.map(asset => (
             <AssetRow
               key={asset.id}
               asset={asset}
               badgeLabel={subcategory.label}
-              onOpen={() => openAsset(asset)}
-              onEdit={() => openConnectionManager(asset)}
-              onDelete={() => openConnectionManager(asset)}
+              onOpen={() =>{  openAsset(asset) }}
+              onEdit={() =>{  openConnectionManager(asset) }}
+              onDelete={() =>{  openConnectionManager(asset) }}
             />
           ))}
         </div>

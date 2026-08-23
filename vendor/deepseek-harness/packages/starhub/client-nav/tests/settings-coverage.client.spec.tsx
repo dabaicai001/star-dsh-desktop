@@ -50,7 +50,7 @@ afterEach(() => {
 describe('services extra branches', () => {
   it('logAudit passes through detail/session/asset fields and nulls the absent ones', async () => {
     const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(1))
-    const restore = stubTauriInternals({ audit_log: (args) => invoke(args) })
+    const restore = stubTauriInternals({ audit_log: args => invoke(args) })
     try {
       await logAudit({
         category: 'db', action: 'run', target: 't', detail: { sql: 'SELECT 1' },
@@ -117,7 +117,7 @@ describe('aiSettings extra branches', () => {
   })
 
   it('saveAiSettings survives a missing store key', () => {
-    expect(() => saveAiSettings(loadAiSettings())).not.toThrow()
+    expect(() =>{  saveAiSettings(loadAiSettings()) }).not.toThrow()
     const stored = JSON.parse(localStorage.getItem(AI_STORAGE_KEY) ?? '{}') as { settings: { memoryEnabled: boolean } }
     // v0.92.0 起 memoryEnabled 默认 false。
     expect(stored.settings.memoryEnabled).toBe(false)
@@ -345,7 +345,7 @@ describe('plugins extra branches', () => {
       dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
       dsh_plugin_install_url: () => { throw new Error('url install failed') },
       'plugin:dialog|open': () => ['C:/plugins/x.zip'],
-      dsh_plugin_install_local: (args) => installLocal(args),
+      dsh_plugin_install_local: args => installLocal(args),
     })
     try {
       render(<PluginsTab />)
@@ -355,7 +355,7 @@ describe('plugins extra branches', () => {
       expect(await screen.findByText('url install failed')).toBeTruthy()
       // Zip 导入(对话框返回数组)
       fireEvent.click(screen.getByText('导入 Zip'))
-      await vi.waitFor(() => expect(installLocal).toHaveBeenCalledWith({ path: 'C:/plugins/x.zip' }))
+      await vi.waitFor(() =>{  expect(installLocal).toHaveBeenCalledWith({ path: 'C:/plugins/x.zip' }) })
     } finally {
       restore()
     }
@@ -381,7 +381,7 @@ describe('plugins extra branches', () => {
         stale: false,
         categories: [{ name: '工具', plugins: [{ name: 'Fresh', url: 'https://x/fresh', description: 'new', stars: 3, npm: 'fresh' }] }],
       }),
-      dsh_plugin_install_url: (args) => installUrl(args),
+      dsh_plugin_install_url: args => installUrl(args),
       dsh_shutdown: () => null,
     })
     try {
@@ -391,7 +391,7 @@ describe('plugins extra branches', () => {
       expect(screen.getByText('★ 3')).toBeTruthy()
       // 市场安装(Fresh 未装 → 走 onInstallUrlFromMarket)
       fireEvent.click(screen.getByText('安装'))
-      await vi.waitFor(() => expect(installUrl).toHaveBeenCalledWith({ url: 'https://x/fresh' }))
+      await vi.waitFor(() =>{  expect(installUrl).toHaveBeenCalledWith({ url: 'https://x/fresh' }) })
       // 市场刷新按钮
       fireEvent.click(screen.getByText('刷新'))
       await act(async () => { await Promise.resolve() })
@@ -467,7 +467,7 @@ describe('plugins extra branches', () => {
       render(<PluginsTab />)
       await screen.findByText('安装插件')
       fireEvent.click(screen.getByText('导入 Zip'))
-      await vi.waitFor(() => expect(releaseImport).not.toBeNull())
+      await vi.waitFor(() =>{  expect(releaseImport).not.toBeNull() })
       releaseImport!(new Error('import boom')) // Error 路径
       expect(await screen.findByText('import boom')).toBeTruthy()
       fireEvent.click(screen.getByText('导入 Zip'))

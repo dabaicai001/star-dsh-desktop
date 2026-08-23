@@ -76,8 +76,8 @@ export function createStarHubAssetSource(deps: StarHubAssetSourceDeps): InputTri
       // refresh 内部对并发拉取去重,浏览器预览落入 preview 态不发请求。
       deps.assets.refresh()
     },
-    async candidates(_session: ClientSessionContext, { query, signal }) {
-      if (signal.aborted) return []
+    candidates(_session: ClientSessionContext, { query, signal }): Promise<readonly InputTriggerCandidate[]> {
+      if (signal.aborted) return Promise.resolve([])
       const needle = query.trim().toLowerCase()
       const items: InputTriggerCandidate[] = []
       for (const asset of deps.assets.source.getSnapshot().assets) {
@@ -91,7 +91,7 @@ export function createStarHubAssetSource(deps: StarHubAssetSourceDeps): InputTri
         byCandidate.set(candidate, asset)
         items.push(candidate)
       }
-      return items
+      return Promise.resolve(items)
     },
     lexicon(_session: ClientSessionContext) {
       // 资产名清单:快照总是「已暖」(空数组 = 尚未配置资产),直接返回。

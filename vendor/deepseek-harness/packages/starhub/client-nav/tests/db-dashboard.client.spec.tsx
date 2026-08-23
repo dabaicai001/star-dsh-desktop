@@ -21,6 +21,12 @@ function stubInvoke(handler: (cmd: string, args?: Record<string, unknown>) => un
   }
 }
 
+/** 从 db_mysql_execute 参数取 SQL 文本(与 RPC 契约一致,缺失回退空串)。 */
+function sqlOf(args?: Record<string, unknown>): string {
+  const raw = args?.sql as string | number | boolean | bigint | symbol | null | undefined
+  return String(raw ?? '')
+}
+
 /** MySQL-shaped execute dispatcher keyed on the SQL text. */
 function mysqlInvoke(overrides: {
   slowFail?: boolean
@@ -34,7 +40,7 @@ function mysqlInvoke(overrides: {
   const calls: string[] = []
   const invoke = (cmd: string, args?: Record<string, unknown>): unknown => {
     if (cmd !== 'db_mysql_execute') return Promise.resolve(null)
-    const sql = String((args as Record<string, unknown> | undefined)?.sql ?? '')
+    const sql = sqlOf(args)
     calls.push(sql)
     if (sql.includes('SHOW GLOBAL STATUS')) {
       const slowQueries = overrides.slowQueries ?? '3'
@@ -86,7 +92,7 @@ function pgInvoke() {
   const calls: string[] = []
   const invoke = (cmd: string, args?: Record<string, unknown>): unknown => {
     if (cmd !== 'db_mysql_execute') return Promise.resolve(null)
-    const sql = String((args as Record<string, unknown> | undefined)?.sql ?? '')
+    const sql = sqlOf(args)
     calls.push(sql)
     if (sql.includes('pg_stat_activity') && !sql.includes('history')) {
       if (sql.includes('current_setting')) {
@@ -257,7 +263,7 @@ describe('PostgreSQL dashboard', () => {
   it('falls back to active sessions when pg_stat_statements rejects', async () => {
     const restore = stubInvoke((cmd, args) => {
       if (cmd !== 'db_mysql_execute') return Promise.resolve(null)
-      const sql = String((args as Record<string, unknown> | undefined)?.sql ?? '')
+      const sql = sqlOf(args)
       if (sql.includes('current_setting')) {
         return Promise.resolve({ columns: [{ name: 'version' }, { name: 'uptime_seconds' }, { name: 'connections' }, { name: 'active_connections' }, { name: 'max_connections' }, { name: 'database_size' }, { name: 'cache_hit_rate' }, { name: 'table_count' }, { name: 'transactions' }], rows: [['15', '50', '2', '1', '100', '0', '90', '1', '5']] })
       }
@@ -282,7 +288,7 @@ describe('PostgreSQL dashboard', () => {
   it('tolerates an empty summary row and an inactive session in the fallback', async () => {
     const restore = stubInvoke((cmd, args) => {
       if (cmd !== 'db_mysql_execute') return Promise.resolve(null)
-      const sql = String((args as Record<string, unknown> | undefined)?.sql ?? '')
+      const sql = sqlOf(args)
       if (sql.includes('current_setting')) {
         // Empty summary → falls back to the {} default metrics.
         return Promise.resolve({ columns: [{ name: 'version' }, { name: 'uptime_seconds' }], rows: [] })
@@ -313,7 +319,7 @@ describe('Redis dashboard', () => {
     const invoke = (cmd: string): unknown => {
       if (cmd === 'db_redis_info') {
         if (opts.infoFail) return Promise.reject(new Error('info down'))
-        return Promise.resolve(['# Server', 'redis_version:7.2', 'uptime_in_seconds:3600', 'connected_clients:3', 'used_memory:' + usedMemory, 'used_memory_peak:2097152', 'used_memory_human:1.00M', 'keyspace_hits:90', 'keyspace_misses:10', 'total_commands_processed:1000', 'instantaneous_ops_per_sec:12', 'role:master', 'maxmemory:' + maxmemory].join('\n'))
+        return Promise.resolve(['# Server', 'redis_version:7.2', 'uptime_in_seconds:3600', 'connected_clients:3', `used_memory:${usedMemory}`, 'used_memory_peak:2097152', 'used_memory_human:1.00M', 'keyspace_hits:90', 'keyspace_misses:10', 'total_commands_processed:1000', 'instantaneous_ops_per_sec:12', 'role:master', `maxmemory:${maxmemory}`].join('\n'))
       }
       if (cmd === 'db_redis_db_size') {
         if (opts.sizeFail) return Promise.reject(new Error('size down'))
@@ -398,7 +404,7 @@ describe('DbDashboard states', () => {
     let statusCount = 0
     const invoke = (cmd: string, args?: Record<string, unknown>): unknown => {
       if (cmd !== 'db_mysql_execute') return Promise.resolve(null)
-      const sql = String((args as Record<string, unknown> | undefined)?.sql ?? '')
+      const sql = sqlOf(args)
       if (sql.includes('SHOW GLOBAL STATUS')) {
         statusCount += 1
         return Promise.resolve({ columns: [{ name: 'Variable_name' }, { name: 'Value' }], rows: [['Uptime', String(statusCount * 100)], ['Threads_connected', '1'], ['Threads_running', '0'], ['Questions', '0'], ['Slow_queries', '0'], ['Queries', '0'], ['Bytes_received', '0'], ['Bytes_sent', '0'], ['Innodb_buffer_pool_read_requests', '0'], ['Innodb_buffer_pool_reads', '0']] })
@@ -415,7 +421,7 @@ describe('DbDashboard states', () => {
       render(<DbDashboard connId="c1" dbType="mysql" connected />)
       await screen.findByText(/8\.0/)
       fireEvent.click(screen.getByRole('button', { name: '刷新' }))
-      await waitFor(() => expect(statusCount).toBeGreaterThanOrEqual(2))
+      await waitFor(() =>{  expect(statusCount).toBeGreaterThanOrEqual(2) })
     } finally {
       restore()
     }

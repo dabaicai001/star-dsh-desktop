@@ -1542,7 +1542,7 @@ export interface JsonRpcConfig {
 
 Depends on: `Readable` (`node:stream`) · `Writable` (`node:stream`)
 
-Source: [`packages/sdk/server/src/index.ts:25`](../packages/sdk/server/src/index.ts)
+Source: [`packages/sdk/server/src/index.ts:27`](../packages/sdk/server/src/index.ts)
 
 <a id="deepseek-aidsh-session-persistence-jsonl"></a>
 
@@ -1936,6 +1936,68 @@ export interface Config {
 ```
 
 Source: [`packages/spill/spill-policy/src/index.ts:60`](../packages/spill/spill-policy/src/index.ts)
+
+<a id="deepseek-aidsh-starhub-approval-bridge"></a>
+
+## `@deepseek-ai/dsh-starhub-approval-bridge`
+
+Requires: `approval` · `settings`
+
+```ts config-catalog
+/** 审批桥插件配置(默认值语义见 {@link apply})。 */
+export interface ApprovalBridgeConfig {
+  /** 是否挂载 approval 应答桥;false 时只留权限固定与风险门。 */
+  readonly answerer?: boolean
+  /** 是否由本桥注册 `permission` 设置命名空间。 */
+  readonly ownsPermissionSettings?: boolean
+}
+```
+
+Source: [`packages/starhub/approval-bridge/src/index.ts:275`](../packages/starhub/approval-bridge/src/index.ts)
+
+<a id="deepseek-aidsh-starhub-commit-message"></a>
+
+## `@deepseek-ai/dsh-starhub-commit-message`
+
+Requires: `webServer` · `llm` · `agentDefaultModel`
+
+```ts config-catalog
+/** 提交信息生成端点的插件配置。 */
+export interface Config {
+  /** 请求体(status + diffStat + recentSubjects)允许的最大 UTF-8 字节数。 */
+  readonly maxInputBytes: number
+  /** 草稿输出的 max_tokens。 */
+  readonly maxOutputTokens: number
+  /** 单次 LLM 调用的整体超时(毫秒)。 */
+  readonly timeoutMs: number
+  /** 固定 provider 路由;与 model 必须同时出现,缺省时跟随默认模型选择。 */
+  readonly provider?: string
+  /** 固定 model;与 provider 必须同时出现。 */
+  readonly model?: string
+}
+```
+
+Source: [`packages/starhub/commit-message/src/index.ts:34`](../packages/starhub/commit-message/src/index.ts)
+
+<a id="deepseek-aidsh-starhub-live-context"></a>
+
+## `@deepseek-ai/dsh-starhub-live-context`
+
+Requires: `agents`
+
+```ts config-catalog
+/** 每步注入的活体上下文配置;非法值在加载时 fail loud。 */
+export interface Config {
+  /** 是否注入;默认 true。 */
+  enabled?: boolean
+  /** 每个相关资产最多注入的事件条数;默认 10。 */
+  maxEvents?: number
+  /** 整段注入文本的字符上限;默认 4000。 */
+  maxSnapshotChars?: number
+}
+```
+
+Source: [`packages/starhub/live-context/src/index.ts:44`](../packages/starhub/live-context/src/index.ts)
 
 <a id="deepseek-aidsh-storage-domain"></a>
 
@@ -3080,6 +3142,14 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-session-projection` ([`packages/session/session-projection/src/index.ts`](../packages/session/session-projection/src/index.ts))
 - `@deepseek-ai/dsh-session-stats` — requires `sessionProjections` ([`packages/session/session-stats/src/index.ts`](../packages/session/session-stats/src/index.ts))
 - `@deepseek-ai/dsh-skill-badge` — requires `skills` ([`packages/skill/skill-badge/src/index.ts`](../packages/skill/skill-badge/src/index.ts))
+- `@deepseek-ai/dsh-starhub-client-nav` ([`packages/starhub/client-nav/src/index.ts`](../packages/starhub/client-nav/src/index.ts))
+- `@deepseek-ai/dsh-starhub-domain-events` — requires `sdk-notifications` ([`packages/starhub/domain-events/src/index.ts`](../packages/starhub/domain-events/src/index.ts))
+- `@deepseek-ai/dsh-starhub-host-static` — requires `webServer` ([`packages/starhub/host-static/src/index.ts`](../packages/starhub/host-static/src/index.ts))
+- `@deepseek-ai/dsh-starhub-memory-context` — requires `agents` · `settings` ([`packages/starhub/memory-context/src/index.ts`](../packages/starhub/memory-context/src/index.ts))
+- `@deepseek-ai/dsh-starhub-memory-sink` — requires `agents` · `settings` ([`packages/starhub/memory-sink/src/index.ts`](../packages/starhub/memory-sink/src/index.ts))
+- `@deepseek-ai/dsh-starhub-session-registry` — requires `sdk-notifications` ([`packages/starhub/session-registry/src/index.ts`](../packages/starhub/session-registry/src/index.ts))
+- `@deepseek-ai/dsh-starhub-tool-context` — requires `agents` · `settings` ([`packages/starhub/tool-context/src/index.ts`](../packages/starhub/tool-context/src/index.ts))
+- `@deepseek-ai/dsh-starhub-tools` — requires `tools` ([`packages/starhub/tools/src/index.ts`](../packages/starhub/tools/src/index.ts))
 - `@deepseek-ai/dsh-storage` ([`packages/storage/storage/src/index.ts`](../packages/storage/storage/src/index.ts))
 - `@deepseek-ai/dsh-subagent` ([`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts))
 - `@deepseek-ai/dsh-subprocess-local` ([`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts))

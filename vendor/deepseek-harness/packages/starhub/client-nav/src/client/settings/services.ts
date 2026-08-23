@@ -10,13 +10,16 @@
 
 import { tauriInvoke } from '../tauri.ts'
 
-/** 浏览器预览判定(与 src/services 各文件的 isTauriRuntime 同语义)。 */
+/** 浏览器预览判定(与 src/services 各文件的 isTauriRuntime 同语义)。
+ * @returns 是否运行在 Tauri 桌面环境。
+ */
 export function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
 // ===== 审计(settings 审计 tab / AI tab 记忆操作记审计) =====
 
+/** 审计日志条目。 */
 export interface AuditLogEntry {
   id: number
   timestamp: number
@@ -29,6 +32,7 @@ export interface AuditLogEntry {
   success: boolean
 }
 
+/** 审计统计条目(按类别 + 日期分组)。 */
 export interface AuditStatItem {
   category: string
   date: string
@@ -37,11 +41,15 @@ export interface AuditStatItem {
   failed: number
 }
 
+/** 审计类别枚举。 */
 export type AuditCategory = 'ssh' | 'db' | 'sftp' | 'docker' | 'ai' | 'system'
 
-/** 记录一条审计日志。 */
+/** 记录一条审计日志。
+ * @param params - 审计日志参数。
+ * @returns 写入的审计日志 id(浏览器预览返回 0)。
+ */
 export async function logAudit(params: {
-  category: AuditCategory | string
+  category: string
   action: string
   target?: string | null
   detail?: Record<string, unknown> | null
@@ -61,7 +69,10 @@ export async function logAudit(params: {
   })
 }
 
-/** 查询审计日志(固定 200/0 一次拉全量,与 Vue 版一致)。 */
+/** 查询审计日志(固定 200/0 一次拉全量,与 Vue 版一致)。
+ * @param params - 查询参数(limit/offset/categoryFilter)。
+ * @returns 审计日志条目列表。
+ */
 export async function fetchAuditLogs(params: {
   limit?: number
   offset?: number
@@ -75,13 +86,18 @@ export async function fetchAuditLogs(params: {
   })
 }
 
-/** 清理审计日志(不传 beforeTimestamp 则清理全部),返回删除条数。 */
+/** 清理审计日志(不传 beforeTimestamp 则清理全部),返回删除条数。
+ * @param beforeTimestamp - 清理该时间戳之前的日志;缺省清理全部。
+ * @returns 删除的日志条数。
+ */
 export async function clearAuditLogs(beforeTimestamp?: number): Promise<number> {
   if (!isTauriRuntime()) return 0
   return tauriInvoke<number>('audit_clear', { beforeTimestamp: beforeTimestamp ?? null })
 }
 
-/** 审计统计(按类别 + 日期分组)。 */
+/** 审计统计(按类别 + 日期分组)。
+ * @returns 审计统计条目列表。
+ */
 export async function fetchAuditStats(): Promise<AuditStatItem[]> {
   if (!isTauriRuntime()) return []
   return tauriInvoke<AuditStatItem[]>('audit_stats')
@@ -89,6 +105,7 @@ export async function fetchAuditStats(): Promise<AuditStatItem[]> {
 
 // ===== 告警规则(settings 告警 tab) =====
 
+/** 告警规则。 */
 export interface AlertRule {
   id: string
   name: string
@@ -104,6 +121,7 @@ export interface AlertRule {
   updated_at: number
 }
 
+/** 告警规则创建/更新输入。 */
 export interface AlertRuleInput {
   name: string
   enabled?: boolean
@@ -116,7 +134,10 @@ export interface AlertRuleInput {
   cooldown_sec?: number
 }
 
-/** 创建告警规则;浏览器预览返回本地 mock(与 Vue 版一致)。 */
+/** 创建告警规则;浏览器预览返回本地 mock(与 Vue 版一致)。
+ * @param input - 告警规则输入。
+ * @returns 创建的告警规则。
+ */
 export async function createAlertRule(input: AlertRuleInput): Promise<AlertRule> {
   if (!isTauriRuntime()) {
     const now = Math.floor(Date.now() / 1000)
@@ -138,25 +159,36 @@ export async function createAlertRule(input: AlertRuleInput): Promise<AlertRule>
   return tauriInvoke<AlertRule>('alert_create', { input })
 }
 
-/** 更新告警规则(浏览器预览抛错,与 Vue 版一致)。 */
+/** 更新告警规则(浏览器预览抛错,与 Vue 版一致)。
+ * @param id - 告警规则 id。
+ * @param input - 告警规则输入。
+ * @returns 更新后的告警规则。
+ */
 export async function updateAlertRule(id: string, input: AlertRuleInput): Promise<AlertRule> {
   if (!isTauriRuntime()) throw new Error('请在 StarHub 桌面端更新告警规则')
   return tauriInvoke<AlertRule>('alert_update', { id, input })
 }
 
-/** 删除告警规则(浏览器预览 no-op)。 */
+/** 删除告警规则(浏览器预览 no-op)。
+ * @param id - 告警规则 id。
+ */
 export async function deleteAlertRule(id: string): Promise<void> {
   if (!isTauriRuntime()) return
   await tauriInvoke('alert_delete', { id })
 }
 
-/** 列出所有告警规则。 */
+/** 列出所有告警规则。
+ * @returns 告警规则列表。
+ */
 export async function fetchAlertRules(): Promise<AlertRule[]> {
   if (!isTauriRuntime()) return []
   return tauriInvoke<AlertRule[]>('alert_list')
 }
 
-/** 测试 webhook 连通性。 */
+/** 测试 webhook 连通性。
+ * @param url - 目标 webhook 地址。
+ * @returns 测试结果文本。
+ */
 export async function testAlertWebhook(url: string): Promise<string> {
   if (!isTauriRuntime()) throw new Error('请在 StarHub 桌面端测试 Webhook')
   return tauriInvoke<string>('alert_test_webhook', { url })
@@ -164,11 +196,13 @@ export async function testAlertWebhook(url: string): Promise<string> {
 
 // ===== dsh 插件(settings 插件 tab) =====
 
+/** 插件来源描述(kind + 可选位置)。 */
 export interface DshPluginSource {
   kind: string
   location?: string
 }
 
+/** 已安装的 dsh 插件信息。 */
 export interface DshPluginInfo {
   id: string
   name: string
@@ -186,6 +220,7 @@ export interface DshPluginInfo {
   builtin?: boolean
 }
 
+/** 插件市场中的单个插件条目。 */
 export interface DshMarketPlugin {
   name: string
   url: string
@@ -194,44 +229,62 @@ export interface DshMarketPlugin {
   npm?: string
 }
 
+/** 插件市场分类(分类名 + 该分类下的插件)。 */
 export interface DshMarketCategory {
   name: string
   plugins: DshMarketPlugin[]
 }
 
+/** 插件市场目录(抓取时间 + 各分类插件)。 */
 export interface DshMarketCatalog {
   fetchedAt?: string
   stale: boolean
   categories: DshMarketCategory[]
 }
 
-/** 已安装插件列表。 */
+/** 已安装插件列表。
+ * @returns 已安装插件信息列表。
+ */
 export async function listPlugins(): Promise<DshPluginInfo[]> {
   if (!isTauriRuntime()) return []
   return tauriInvoke<DshPluginInfo[]>('dsh_plugin_list')
 }
 
-/** 本地导入:插件目录或 .zip 文件路径,返回安装记录(默认关闭)。 */
+/** 本地导入:插件目录或 .zip 文件路径,返回安装记录(默认关闭)。
+ * @param path - 本地插件目录或 .zip 文件路径。
+ * @returns 安装后的插件信息。
+ */
 export async function installLocalPlugin(path: string): Promise<DshPluginInfo> {
   return tauriInvoke<DshPluginInfo>('dsh_plugin_install_local', { path })
 }
 
-/** URL 安装:GitHub 仓库地址(可带 /tree/<branch>)或 zip 直链。 */
+/** URL 安装:GitHub 仓库地址(可带 /tree/<branch>)或 zip 直链。
+ * @param url - 插件仓库地址或 zip 直链。
+ * @returns 安装后的插件信息。
+ */
 export async function installPluginFromUrl(url: string): Promise<DshPluginInfo> {
   return tauriInvoke<DshPluginInfo>('dsh_plugin_install_url', { url })
 }
 
-/** 逐项启停(需重启 runtime 生效)。 */
+/** 逐项启停(需重启 runtime 生效)。
+ * @param id - 插件 id。
+ * @param enabled - 是否启用该插件。
+ */
 export async function setPluginEnabled(id: string, enabled: boolean): Promise<void> {
   await tauriInvoke('dsh_plugin_set_enabled', { id, enabled })
 }
 
-/** 卸载(需重启 runtime 生效)。 */
+/** 卸载(需重启 runtime 生效)。
+ * @param id - 插件 id。
+ */
 export async function uninstallPlugin(id: string): Promise<void> {
   await tauriInvoke('dsh_plugin_uninstall', { id })
 }
 
-/** 拉取插件市场目录;抓取失败不抛错(有缓存回缓存 stale=true,无缓存空目录)。 */
+/** 拉取插件市场目录;抓取失败不抛错(有缓存回缓存 stale=true,无缓存空目录)。
+ * @param forceRefresh - 是否强制刷新(忽略缓存)。
+ * @returns 插件市场目录。
+ */
 export async function fetchPluginMarket(forceRefresh = false): Promise<DshMarketCatalog> {
   return tauriInvoke<DshMarketCatalog>('dsh_plugin_market_fetch', { forceRefresh })
 }
@@ -243,6 +296,7 @@ export async function shutdownDshRuntime(): Promise<void> {
 
 // ===== 自动更新(settings 关于 tab) =====
 
+/** 自动更新检查结果。 */
 export interface UpdateInfo {
   available: boolean
   version?: string
@@ -261,7 +315,9 @@ function updaterChannel(): { toJSON: () => string } {
   return { toJSON: () => `__CHANNEL__:${id}` }
 }
 
-/** 检查是否有可用更新;纯浏览器预览降级返回无更新。 */
+/** 检查是否有可用更新;纯浏览器预览降级返回无更新。
+ * @returns 更新信息(无可用更新时 available=false)。
+ */
 export async function checkForUpdates(): Promise<UpdateInfo> {
   if (!isTauriRuntime()) return { available: false }
   const metadata = await tauriInvoke<{ version?: string; date?: string; body?: string } | null>('plugin:updater|check')
@@ -288,6 +344,7 @@ export async function downloadAndInstall(): Promise<void> {
 
 // ===== 长期记忆(settings AI tab 记忆管理) =====
 
+/** 一条长期记忆条目。 */
 export interface AiMemoryRow {
   id: string
   scope: string
@@ -296,19 +353,28 @@ export interface AiMemoryRow {
   updated_at: number
 }
 
-/** 列出记忆条目;scope 精确过滤,不传返回全部。 */
+/** 列出记忆条目;scope 精确过滤,不传返回全部。
+ * @param scope - 可选的作用域过滤条件。
+ * @returns 记忆条目列表。
+ */
 export async function aiMemoryList(scope?: string): Promise<AiMemoryRow[]> {
   if (!isTauriRuntime()) return []
   return tauriInvoke<AiMemoryRow[]>('ai_memory_list', { scope: scope ?? null })
 }
 
-/** 按 id 更新内容(有容量检查,超限 reject)。 */
+/** 按 id 更新内容(有容量检查,超限 reject)。
+ * @param id - 记忆条目 id。
+ * @param content - 新的记忆内容。
+ * @returns 更新后的记忆条目。
+ */
 export async function aiMemoryUpdate(id: string, content: string): Promise<AiMemoryRow> {
   if (!isTauriRuntime()) throw new Error('记忆功能仅在桌面版可用')
   return tauriInvoke<AiMemoryRow>('ai_memory_update', { id, content })
 }
 
-/** 按 id 删除。 */
+/** 按 id 删除。
+ * @param id - 记忆条目 id。
+ */
 export async function aiMemoryDelete(id: string): Promise<void> {
   if (!isTauriRuntime()) return
   await tauriInvoke('ai_memory_delete', { id })

@@ -75,7 +75,7 @@ export function AiTab({ api }: { api?: IApiClient }) {
 
   /** 记忆/上下文字段:直接写 localStorage 即时持久化。 */
   const updateSettings = (patch: Partial<AiSettings>) => {
-    setAiSettings((current) => ({ ...current, ...patch }))
+    setAiSettings(current => ({ ...current, ...patch }))
   }
 
   const loadMemories = async () => {
@@ -152,7 +152,7 @@ export function AiTab({ api }: { api?: IApiClient }) {
       .map(([scope, rows]) => ({
         scope,
         rows,
-        usedChars: rows.map((row) => row.content).join('\n§\n').length,
+        usedChars: rows.map(row => row.content).join('\n§\n').length,
         limit: memoryScopeLimit(scope),
       }))
   }, [memoryRows])
@@ -169,28 +169,28 @@ export function AiTab({ api }: { api?: IApiClient }) {
           <label className={s.checkboxRow}>
             <input
               type="checkbox" checked={aiSettings.memoryStoreToolOutputs}
-              onChange={(event) => updateSettings({ memoryStoreToolOutputs: event.target.checked })}
+              onChange={(event) =>{  updateSettings({ memoryStoreToolOutputs: event.target.checked }) }}
             />
             存档 tool 消息与工具调用
           </label>
           <label className={s.checkboxRow}>
             <input
               type="checkbox" checked={aiSettings.memoryEnabled}
-              onChange={(event) => updateSettings({ memoryEnabled: event.target.checked })}
+              onChange={(event) =>{  updateSettings({ memoryEnabled: event.target.checked }) }}
             />
             启用长期记忆
           </label>
           <label className={s.checkboxRow}>
             <input
               type="checkbox" checked={aiSettings.memoryWriteNeedsConfirm}
-              onChange={(event) => updateSettings({ memoryWriteNeedsConfirm: event.target.checked })}
+              onChange={(event) =>{  updateSettings({ memoryWriteNeedsConfirm: event.target.checked }) }}
             />
             记忆写入需逐条确认
           </label>
           <label className={s.checkboxRow}>
             <input
               type="checkbox" checked={aiSettings.memoryAutoReview}
-              onChange={(event) => updateSettings({ memoryAutoReview: event.target.checked })}
+              onChange={(event) =>{  updateSettings({ memoryAutoReview: event.target.checked }) }}
             />
             自动沉淀记忆
           </label>
@@ -198,12 +198,12 @@ export function AiTab({ api }: { api?: IApiClient }) {
       </div>
 
       {memoryDialog && (
-        <div className={s.dialogBackdrop} role="presentation" onMouseDown={() => setMemoryDialog(false)}>
+        <div className={s.dialogBackdrop} role="presentation" onMouseDown={() =>{  setMemoryDialog(false) }}>
           <div
             className={`${s.dialogPanel} ${s.memoryDialogPanel}`}
             role="dialog"
             aria-label="长期记忆管理"
-            onMouseDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) =>{  event.stopPropagation() }}
           >
             <div className={s.dialogHead}>
               <span className={s.dialogTitle}>长期记忆管理</span>
@@ -213,7 +213,7 @@ export function AiTab({ api }: { api?: IApiClient }) {
               >
                 {memoryLoading ? '…' : '↻'}
               </button>
-              <button type="button" className={s.iconButton} aria-label="关闭" onClick={() => setMemoryDialog(false)}>
+              <button type="button" className={s.iconButton} aria-label="关闭" onClick={() =>{  setMemoryDialog(false) }}>
                 <IconCloseOutline16 size={14} />
               </button>
             </div>
@@ -222,7 +222,7 @@ export function AiTab({ api }: { api?: IApiClient }) {
               <div className={s.empty}>暂无记忆条目。</div>
             )}
             <div className={s.memoryGroups}>
-              {memoryGroups.map((group) => (
+              {memoryGroups.map(group => (
                 <div key={group.scope} className={s.memoryGroup}>
                   <div className={s.memoryGroupHeader}>
                     <span className={s.cardName}>{memoryScopeLabel(group.scope)}</span>
@@ -230,18 +230,18 @@ export function AiTab({ api }: { api?: IApiClient }) {
                       {group.usedChars}/{group.limit} 字符
                     </span>
                   </div>
-                  {group.rows.map((row) => (
+                  {group.rows.map(row => (
                     <div key={row.id} className={s.memoryItem}>
                       {memoryEditingId === row.id ? (
                         <>
                           <textarea
                             className={s.textarea} value={memoryEditingContent}
-                            onChange={(event) => setMemoryEditingContent(event.target.value)}
+                            onChange={(event) =>{  setMemoryEditingContent(event.target.value) }}
                           />
                           <div className={s.actionRow}>
                             <button
                               type="button" className={s.btnSecondary}
-                              onClick={() => setMemoryEditingId('')}
+                              onClick={() =>{  setMemoryEditingId('') }}
                             >
                               取消
                             </button>
@@ -259,13 +259,13 @@ export function AiTab({ api }: { api?: IApiClient }) {
                           <span className={s.cardActions}>
                             <button
                               type="button" className={s.iconButton} title="编辑" aria-label="编辑"
-                              onClick={() => startMemoryEdit(row)}
+                              onClick={() =>{  startMemoryEdit(row) }}
                             >
                               ✎
                             </button>
                             <button
                               type="button" className={s.iconButton} title="删除" aria-label="删除"
-                              onClick={() => setMemoryConfirmDeleteId(row.id)}
+                              onClick={() =>{  setMemoryConfirmDeleteId(row.id) }}
                             >
                               <IconCloseOutline16 size={13} />
                             </button>
@@ -277,7 +277,7 @@ export function AiTab({ api }: { api?: IApiClient }) {
                           <span className={s.hint}>确认删除这条记忆?</span>
                           <button
                             type="button" className={s.btnSecondary}
-                            onClick={() => setMemoryConfirmDeleteId('')}
+                            onClick={() =>{  setMemoryConfirmDeleteId('') }}
                           >
                             取消
                           </button>

@@ -176,10 +176,10 @@ describe('pure helpers', () => {
     await expect(toDockerConnectParams({ dockerTransport: 'tcp', remoteHost: 'tcp://10.0.0.9:2375' }))
       .resolves.toEqual({ transport: 'tcp', host: 'tcp://10.0.0.9:2375' })
     // tcp 但 remoteHost 缺省/非字符串 → host 空串(触发 workbench 配置不完整提示)
-    await expect(toDockerConnectParams({ dockerTransport: 'tcp' } as Record<string, unknown>))
+    await expect(toDockerConnectParams({ dockerTransport: 'tcp' }))
       .resolves.toEqual({ transport: 'tcp', host: '' })
     // 缺省退化为 socket + 默认路径
-    await expect(toDockerConnectParams({} as Record<string, unknown>)).resolves.toEqual({ transport: 'socket', socketPath: '/var/run/docker.sock' })
+    await expect(toDockerConnectParams({})).resolves.toEqual({ transport: 'socket', socketPath: '/var/run/docker.sock' })
   })
 
   it('countContainers derives dashboard counts by state', () => {

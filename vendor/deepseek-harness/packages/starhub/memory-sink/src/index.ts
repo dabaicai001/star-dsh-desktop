@@ -124,6 +124,8 @@ export async function writeFact(
 /**
  * Count user/assistant messages in the agent session for the gate check.
  * Reads `agent.session.events` if present;returns zeros on malformed input.
+ * @param agent - the stopping agent whose session events are counted.
+ * @returns user/assistant message counts;zeros when events are absent or malformed.
  */
 export function countMessages(agent: MemorySinkAgent): { user: number; assistant: number } {
   const raw: unknown = agent.session.events
@@ -146,6 +148,8 @@ export function countMessages(agent: MemorySinkAgent): { user: number; assistant
  * injecting the most recent assistant turn via the `prompt` slot, which the
  * host wires to the assistant's last message. This keeps the dependency
  * surface minimal and the call deterministic.
+ * @param agent - the stopping agent;its session cwd shapes the prompt.
+ * @returns the extractor user-prompt text.
  */
 export function buildExtractPrompt(agent: MemorySinkAgent): string {
   const cwd = agent.session.header.cwd
@@ -163,6 +167,10 @@ export function buildExtractPrompt(agent: MemorySinkAgent): string {
  * Normalize the LLM output, decide the target scope, and persist each fact.
  * Pure orchestration helper;kept separate from apply() so tests can drive
  * it without booting a Cordis context.
+ * @param transport - sdk-transport peer used for the reverse RPC;undefined skips writes.
+ * @param agent - the stopping agent;its session cwd derives the target scope.
+ * @param llmOutput - the extractor's raw JSON output (string or parsed object).
+ * @returns the normalized facts that were persisted.
  */
 export async function persistExtractedFacts(
   transport: JsonRpcTransportPeer | undefined,
@@ -180,6 +188,8 @@ export async function persistExtractedFacts(
 /**
  * The full turn-stopping pipeline: gate → extract → persist.
  * Errors at any step are swallowed and logged at warn level.
+ * @param params - gate inputs, the abort signal, and the optional extractor.
+ * @returns after the best-effort pipeline settles (never rejects).
  */
 export async function runTurnReview(params: {
   agent: MemorySinkAgent

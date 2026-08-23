@@ -64,18 +64,18 @@ export function PluginsTab() {
     const keyword = marketSearch.trim().toLowerCase()
     if (keyword === '') return catalog.categories
     return catalog.categories
-      .map((category) => ({
+      .map(category => ({
         ...category,
-        plugins: category.plugins.filter((plugin) =>
+        plugins: category.plugins.filter(plugin =>
           plugin.name.toLowerCase().includes(keyword)
           || plugin.description.toLowerCase().includes(keyword)
           || (plugin.npm ?? '').toLowerCase().includes(keyword)),
       }))
-      .filter((category) => category.plugins.length > 0)
+      .filter(category => category.plugins.length > 0)
   }, [marketCatalog, marketSearch])
 
-  const marketItems = useMemo(() => marketFiltered.flatMap((category) =>
-    category.plugins.map((plugin) => ({ category: category.name, plugin }))), [marketFiltered])
+  const marketItems = useMemo(() => marketFiltered.flatMap(category =>
+    category.plugins.map(plugin => ({ category: category.name, plugin }))), [marketFiltered])
   const marketPageCount = Math.max(1, Math.ceil(marketItems.length / marketPageSize))
   const visibleMarketItems = marketItems.slice(marketPage * marketPageSize, (marketPage + 1) * marketPageSize)
 
@@ -145,7 +145,7 @@ export function PluginsTab() {
     }
   }
 
-  const installedByUrl = (url: string) => pluginList.some((plugin) => url.includes(plugin.id))
+  const installedByUrl = (url: string) => pluginList.some(plugin => url.includes(plugin.id))
 
   return (
     <div className={s.panel}>
@@ -158,7 +158,7 @@ export function PluginsTab() {
           <input
             className={s.input} placeholder="GitHub 仓库 URL 或 zip 直链"
             value={pluginUrl}
-            onChange={(event) => setPluginUrl(event.target.value)}
+            onChange={(event) =>{  setPluginUrl(event.target.value) }}
             onKeyDown={(event) => { if (event.key === 'Enter') void onInstallUrl() }}
           />
           <button
@@ -189,7 +189,7 @@ export function PluginsTab() {
           <input
             className={`${s.input} ${s.marketSearch}`} placeholder="搜索插件…"
             value={marketSearch}
-            onChange={(event) => setMarketSearch(event.target.value)}
+            onChange={(event) =>{  setMarketSearch(event.target.value) }}
           />
           <button
             type="button" className={s.btnSecondary} disabled={marketLoading}
@@ -230,11 +230,11 @@ export function PluginsTab() {
               ))}
             </div>
             <div className={s.marketPager} aria-label="插件市场分页">
-              <button type="button" className={s.btnSecondary} disabled={marketPage === 0} onClick={() => setMarketPage((page) => page - 1)}>上一页</button>
+              <button type="button" className={s.btnSecondary} disabled={marketPage === 0} onClick={() =>{  setMarketPage(page => page - 1) }}>上一页</button>
               <span className={s.marketPageIndicator} aria-live="polite">
                 第 {marketPage + 1} / {marketPageCount} 页 · 共 {marketItems.length} 个插件
               </span>
-              <button type="button" className={s.btnSecondary} disabled={marketPage >= marketPageCount - 1} onClick={() => setMarketPage((page) => page + 1)}>下一页</button>
+              <button type="button" className={s.btnSecondary} disabled={marketPage >= marketPageCount - 1} onClick={() =>{  setMarketPage(page => page + 1) }}>下一页</button>
             </div>
           </>
         )}

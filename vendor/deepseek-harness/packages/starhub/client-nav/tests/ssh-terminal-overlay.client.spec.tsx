@@ -75,14 +75,18 @@ describe('SshTerminalOverlay', () => {
     ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver = ResizeObserverMock
 
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('ssh_connect', {
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', {
       id: 'ssh-1',
-      config: expect.objectContaining({
+      config: {
+        host: '10.0.0.5',
+        port: 22,
+        username: 'deploy',
+        password: 'secret',
+        auth: { Password: 'secret' },
         pty_cols: 80,
         pty_rows: 24,
-        auth: { Password: 'secret' },
-      }),
-    }))
+      },
+    }) })
     expect(invoke.mock.calls.findIndex(([command]) => command === 'plugin:event|listen'))
       .toBeLessThan(invoke.mock.calls.findIndex(([command]) => command === 'ssh_connect'))
 
@@ -90,7 +94,7 @@ describe('SshTerminalOverlay', () => {
     expect(xterm.write).toHaveBeenCalledTimes(1)
     expect(xterm.write).toHaveBeenCalledWith('hi')
     xterm.input?.('ls\r')
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-1', data: 'ls\r' }))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-1', data: 'ls\r' }) })
 
     unmount()
     expect(xterm.dispose).toHaveBeenCalledTimes(1)
@@ -142,13 +146,13 @@ describe('SshTerminalOverlay', () => {
     // two tabs offered: 终端 + 文件 (SFTP)
     expect(getByText('终端')).toBeTruthy()
     // wait for the terminal to connect (so the SFTP tab reuses a live session)
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
     // click the SFTP tab
     fireEvent.click(getByRole('button', { name: /文件/ }))
     // SFTP panel connects on the same session id (never a separate session)
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: 'ssh-1' }))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: 'ssh-1' }) })
     expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/home/deploy' })
-    await waitFor(() => expect(getByText('docs')).toBeTruthy())
+    await waitFor(() =>{  expect(getByText('docs')).toBeTruthy() })
     unmount()
   })
 
@@ -177,10 +181,10 @@ describe('SshTerminalOverlay', () => {
     }
 
     const { getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
     callbacks[0]?.({ event: 'ssh:data:ssh-1', id: 1, payload: Array.from(new TextEncoder().encode('\u001b]7;/srv/app\u0007')) })
     fireEvent.click(getByRole('button', { name: /文件/ }))
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/srv/app' }))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/srv/app' }) })
     expect(invoke).not.toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/home/deploy' })
     unmount()
   })
@@ -213,15 +217,15 @@ describe('SshTerminalOverlay', () => {
     }
     const { getByText, getByLabelText, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     fireEvent.click(getByText('广播'))
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('ssh_get_sessions', undefined))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_get_sessions', undefined) })
     // 只有 connected 的会话进列表(ssh-1 / ssh-2)。
     expect(screen.getByText('已选 2 / 2')).toBeTruthy()
     // 输入命令并提交 → 每个选中会话写 command\n。
     fireEvent.change(getByLabelText('广播命令'), { target: { value: 'uptime' } })
     fireEvent.click(getByText('广播 (2)'))
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-1', data: 'uptime\n' }))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-1', data: 'uptime\n' }) })
     expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-2', data: 'uptime\n' })
-    await waitFor(() => expect(screen.getByText('已广播到 2 个会话')).toBeTruthy())
+    await waitFor(() =>{  expect(screen.getByText('已广播到 2 个会话')).toBeTruthy() })
     unmount()
   })
 
@@ -247,7 +251,7 @@ describe('SshTerminalOverlay', () => {
     }
     const { getByText, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     fireEvent.click(getByText('广播'))
-    await waitFor(() => expect(screen.getByText('没有已连接的会话可用于广播')).toBeTruthy())
+    await waitFor(() =>{  expect(screen.getByText('没有已连接的会话可用于广播')).toBeTruthy() })
     unmount()
   })
 
@@ -273,7 +277,7 @@ describe('SshTerminalOverlay', () => {
     }
     const { getByText, unmount, queryByText } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     fireEvent.click(getByText('广播'))
-    await waitFor(() => expect(screen.getByText('没有已连接的会话可用于广播')).toBeTruthy())
+    await waitFor(() =>{  expect(screen.getByText('没有已连接的会话可用于广播')).toBeTruthy() })
     // 关掉通知。
     const notice = getByText('没有已连接的会话可用于广播').closest('[role="status"]') as HTMLElement
     fireEvent.click(notice.querySelector('button') as HTMLElement)
@@ -313,7 +317,7 @@ describe('SshTerminalOverlay', () => {
     expect(screen.getByLabelText('地址栏')).toBeTruthy()
     fireEvent.change(screen.getByLabelText('地址栏'), { target: { value: 'example.com' } })
     fireEvent.keyDown(screen.getByLabelText('地址栏'), { key: 'Enter' })
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('ssh_start_web_gateway', { sessionId: 'ssh-1' }))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_start_web_gateway', { sessionId: 'ssh-1' }) })
     unmount()
     if (orig !== undefined) Object.defineProperty(HTMLIFrameElement.prototype, 'src', orig)
   })
@@ -349,10 +353,10 @@ describe('SshTerminalOverlay', () => {
     }
     const { getByText, getByLabelText, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     fireEvent.click(getByText('广播'))
-    await waitFor(() => expect(screen.getByText('已选 2 / 2')).toBeTruthy())
+    await waitFor(() =>{  expect(screen.getByText('已选 2 / 2')).toBeTruthy() })
     fireEvent.change(getByLabelText('广播命令'), { target: { value: 'reboot' } })
     fireEvent.click(getByText('广播 (2)'))
-    await waitFor(() => expect(screen.getByText(/1 个会话发送失败/)).toBeTruthy())
+    await waitFor(() =>{  expect(screen.getByText(/1 个会话发送失败/)).toBeTruthy() })
     unmount()
   })
 })

@@ -26,9 +26,19 @@ Rust 内直接执行(`src-tauri/src/harness/`)。
 
 ## Model Experience
 
-工具 schema 与描述移植自旧前端实现(原 `src/utils/aiTools.ts` 与
-`aiSftpTools.ts`),模型可见描述随确认语义更新(白名单措辞改为审批措辞);
-工具结果是宿主生成的中文文本,进入会话历史。
+### Registered model tools
+
+#### What the model sees
+
+All StarHub domain tools (`ssh_exec`, `sftp_*`, `db_query`, `redis_exec`, `es_*`, `docker_*`, `excel_*`, `mcp_*`, `skill_save`) plus the global tools (`starhub_list_capabilities`, `starhub_list_assets`, `session_search`, `memory`, `bind_asset_context`, `open_connection`, `focus_terminal`) are registered with host-generated Chinese descriptions; tool results are host-produced Chinese text that enters the session history.
+
+#### Token effect
+
+One schema per registered tool; tool descriptions and results are compact host texts bounded by the owning panel, no extra prompt injection.
+
+#### KV Cache effect
+
+The tool surface is static across turns; per-call results vary normally and follow ordinary per-call caching.
 
 ## Known Limitations and Deferred Work
 

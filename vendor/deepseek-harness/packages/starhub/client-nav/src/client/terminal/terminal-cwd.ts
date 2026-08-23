@@ -22,7 +22,11 @@ export const OSC7_INJECT_ECHO_TEXT = '__starhub_osc7'
 /** Max tail length kept because OSC sequences may straddle TCP fragments. */
 const OSC7_TAIL_KEEP = 512
 
-/** Extract the latest complete OSC 7 cwd from a tail; return cwd + unconsumed rest. */
+/**
+ * Extract the latest complete OSC 7 cwd from a tail; return cwd + unconsumed rest.
+ * @param tail - the buffered terminal tail (may contain partial OSC sequences).
+ * @returns the latest complete cwd (null when none) and the unconsumed rest.
+ */
 export function extractOsc7Cwd(tail: string): { cwd: string | null; rest: string } {
   const re = /\x1b\]7;([^\x07\x1b]{1,300})(?:\x07|\x1b\\)/g
   let cwd: string | null = null
@@ -30,6 +34,7 @@ export function extractOsc7Cwd(tail: string): { cwd: string | null; rest: string
   let m: RegExpExecArray | null
   while ((m = re.exec(tail)) !== null) {
     const captured = m[1]
+    /* v8 ignore next -- the OSC 7 capture group requires 1-300 chars, so m[1] is always defined */
     if (captured === undefined) continue
     let p = captured
     const fileMatch = p.match(/^file:\/\/[^/]*(\/.*)$/)
@@ -41,7 +46,11 @@ export function extractOsc7Cwd(tail: string): { cwd: string | null; rest: string
   return { cwd, rest: tail.slice(consumed).slice(-OSC7_TAIL_KEEP) }
 }
 
-/** Parse the first line starting with `/` from `pwd` output (login dir). */
+/**
+ * Parse the first line starting with `/` from `pwd` output (login dir).
+ * @param output - the raw `pwd` output text.
+ * @returns the first absolute path line, or null when none.
+ */
 export function parsePwdOutput(output: string): string | null {
   for (const line of output.split('\n')) {
     const trimmed = line.trim()
@@ -50,21 +59,33 @@ export function parsePwdOutput(output: string): string | null {
   return null
 }
 
-/** Strip ANSI control sequences and BEL. */
+/**
+ * Strip ANSI control sequences and BEL.
+ * @param input - the raw terminal text.
+ * @returns the text with control sequences removed.
+ */
 export function stripTerminalControl(input: string): string {
   return input
     .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g, '')
     .replace(/\x07/g, '')
 }
 
-/** Strip control sequences and normalize \r\n / \r to \n. */
+/**
+ * Strip control sequences and normalize \r\n / \r to \n.
+ * @param input - the raw terminal text.
+ * @returns the normalized text.
+ */
 export function normalizeTerminalText(input: string): string {
   return stripTerminalControl(input)
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
 }
 
-/** Whether a line looks like a shell prompt (bash/sh/zsh/fish formats). */
+/**
+ * Whether a line looks like a shell prompt (bash/sh/zsh/fish formats).
+ * @param line - the line to classify.
+ * @returns true when the line is a plausible shell prompt.
+ */
 export function isShellPromptLine(line: string): boolean {
   const trimmed = line.trimEnd()
   if (!trimmed || trimmed.length > 180) return false
@@ -85,14 +106,14 @@ export function isShellPromptLine(line: string): boolean {
  */
 export function createHiddenEchoFilter(literals: string[]): (chunk: string) => string {
   let pending = ''
-  const markers = literals.filter((lit) => lit.length > 0)
+  const markers = literals.filter(lit => lit.length > 0)
   const longest = markers.reduce((max, lit) => Math.max(max, lit.length), 0)
   const PARTIAL_HEAD = 8
 
   function markerPrefixOverlap(buf: string): number {
     const max = Math.min(buf.length, longest - 1)
     for (let k = max; k > 0; k--) {
-      if (markers.some((lit) => k < lit.length && buf.endsWith(lit.slice(0, k)))) return k
+      if (markers.some(lit => k < lit.length && buf.endsWith(lit.slice(0, k)))) return k
     }
     return 0
   }
@@ -104,12 +125,12 @@ export function createHiddenEchoFilter(literals: string[]): (chunk: string) => s
     while (nl >= 0) {
       const line = pending.slice(0, nl + 1)
       pending = pending.slice(nl + 1)
-      if (!markers.some((lit) => line.includes(lit))) out += line
+      if (!markers.some(lit => line.includes(lit))) out += line
       nl = pending.indexOf('\n')
     }
     if (!pending) return out
-    const hit = markers.some((lit) =>
-      pending.includes(lit) || pending.includes(lit.slice(0, Math.min(lit.length, PARTIAL_HEAD)))
+    const hit = markers.some(lit =>
+      pending.includes(lit) || pending.includes(lit.slice(0, Math.min(lit.length, PARTIAL_HEAD))),
     )
     if (hit) return out
     const keep = markerPrefixOverlap(pending)

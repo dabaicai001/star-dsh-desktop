@@ -51,6 +51,10 @@ export type TauriUnlisten = () => Promise<void>
  * @param handler - receives each event payload until disposed.
  * @returns disposer that unlistens from the event plugin.
  */
+// T is the subscription payload type, used exactly once in the handler
+// signature — inherent to a listen API, so the single-use heuristic of
+// no-unnecessary-type-parameters is a false positive here.
+// eslint-disable-next-line typescript/no-unnecessary-type-parameters
 export async function tauriListen<T>(
   event: string,
   handler: (payload: T) => void,
@@ -129,7 +133,7 @@ export async function focusWindowByKey(key: string): Promise<boolean> {
   const internals = (window as unknown as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__
   if (internals === undefined) return false
   try {
-    const webviews = await internals.invoke('plugin:webview|get_all_webviews') as unknown
+    const webviews = await internals.invoke('plugin:webview|get_all_webviews')
     const match = (webviews as ReadonlyArray<{ label: string; windowLabel: string }>)
       .find(w => w.label.startsWith(starhubPageLabelPrefix(key)))
     if (match === undefined) return false

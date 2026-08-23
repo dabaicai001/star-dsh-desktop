@@ -312,7 +312,8 @@ class SingleExeBuild {
     const result: string[] = []
     const stack: string[] = [directory]
     while (stack.length > 0) {
-      const current = stack.pop()!
+      const current = stack.pop()
+      if (current === undefined) break
       let entries: Dirent[]
       try {
         entries = await readdir(current, { withFileTypes: true })

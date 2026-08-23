@@ -9,9 +9,19 @@ StarHub 本地 host 包(不在上游):会话头部 git 分支胶囊的「AI」�
 
 ## Model Experience
 
-- **Model-visible**:一条系统指令(起草规则:主题 ≤72 字符、对齐近期提交风格、不得虚构)+ 一条 JSON 帧用户消息(status / diffStat / recentSubjects)。
-- **Token 影响**:每次点击一次短调用;输入受 `maxInputBytes`、输出受 `maxOutputTokens` 约束,总量有界;`temperature` 固定 0.3。
-- **KV-cache**:一次性调用,无会话历史复用。
+### One-shot commit-message draft
+
+#### What the model sees
+
+One system instruction (drafting rules: subject ≤72 characters, match recent-commit style, never invent changes) plus one JSON-framed user message carrying `status` / `diffStat` / `recentSubjects`.
+
+#### Token effect
+
+One short call per click; input bounded by `maxInputBytes` and output by `maxOutputTokens`, with `temperature` fixed at 0.3.
+
+#### KV Cache effect
+
+Single-shot call; no session-history reuse.
 
 ## Known Limitations and Deferred Work
 

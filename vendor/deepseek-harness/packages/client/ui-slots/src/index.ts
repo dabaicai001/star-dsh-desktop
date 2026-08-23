@@ -564,8 +564,13 @@ type BaseOptions<
 export interface StoredEntry {
   component: unknown
   options: {
-    key?: string; id?: string; order?: number; label?: SlotLabel; priority?: number
-    group?: string; groupLabel?: SlotLabel
+    key?: string
+    id?: string
+    order?: number
+    label?: SlotLabel
+    priority?: number
+    group?: string
+    groupLabel?: SlotLabel
   }
   /** Chain routing selector (type-erased like `inject`; present exactly on chain-slot entries). */
   select?: ((owner: never) => unknown) | undefined

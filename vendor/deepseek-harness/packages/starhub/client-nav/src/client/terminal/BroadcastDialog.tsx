@@ -35,7 +35,7 @@ export interface BroadcastResult {
 export function BroadcastDialog({
   sessions, onSubmit, onClose,
 }: { sessions: BroadcastSession[]; onSubmit: (result: BroadcastResult) => void; onClose: () => void }) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(sessions.map((s) => s.sessionId)))
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(sessions.map(s => s.sessionId)))
   const [command, setCommand] = useState('')
 
   const allSelected = useMemo(
@@ -54,8 +54,8 @@ export function BroadcastDialog({
     })
   }
 
-  const selectAll = (): void => setSelectedIds(new Set(sessions.map((s) => s.sessionId)))
-  const deselectAll = (): void => setSelectedIds(new Set())
+  const selectAll = (): void =>{  setSelectedIds(new Set(sessions.map(s => s.sessionId))) }
+  const deselectAll = (): void =>{  setSelectedIds(new Set()) }
 
   const submit = (): void => {
     if (!canSubmit) return
@@ -70,7 +70,7 @@ export function BroadcastDialog({
   if (sessions.length === 0) return null
   return (
     <div className={css.backdrop} onMouseDown={onClose}>
-      <div className={css.panel} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label="命令广播">
+      <div className={css.panel} onMouseDown={(e) =>{  e.stopPropagation() }} role="dialog" aria-label="命令广播">
         <header className={css.header}>
           <div>
             <div className={css.title}>命令广播</div>
@@ -85,12 +85,12 @@ export function BroadcastDialog({
             {allSelected && <span className={css.hint}>已全选</span>}
           </div>
           <div className={css.sessionList}>
-            {sessions.map((s) => (
+            {sessions.map(s => (
               <button
                 key={s.sessionId}
                 type="button"
                 className={`${css.sessionRow} ${selectedIds.has(s.sessionId) ? css.sessionSelected : ''}`}
-                onClick={() => toggleSession(s.sessionId)}
+                onClick={() =>{  toggleSession(s.sessionId) }}
               >
                 <span className={css.checkbox}>{selectedIds.has(s.sessionId) ? '☑' : '☐'}</span>
                 <span className={css.sessionInfo}>
@@ -103,7 +103,7 @@ export function BroadcastDialog({
           <input
             className={css.commandInput}
             value={command}
-            onChange={(e) => setCommand(e.target.value)}
+            onChange={(e) =>{  setCommand(e.target.value) }}
             onKeyDown={onKeyDown}
             placeholder="输入要广播执行的命令…"
             aria-label="广播命令"

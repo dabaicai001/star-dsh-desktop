@@ -151,7 +151,7 @@ describe('createStarHubAssetSource', () => {
       const { source } = makeHarness(assets, vi.fn())
       source.warm!(proj())
       expect(assets.source.getSnapshot().loading).toBe(true)
-      await vi.waitFor(() => expect(assets.source.getSnapshot().loading).toBe(false))
+      await vi.waitFor(() =>{  expect(assets.source.getSnapshot().loading).toBe(false) })
       expect(assets.source.getSnapshot().assets).toHaveLength(1)
     } finally {
       delete w.__TAURI_INTERNALS__
@@ -223,7 +223,7 @@ describe('createStarHubAssetSource', () => {
     const { source } = makeHarness(assets, update)
     const [candidate] = await source.candidates(proj(), req(''))
     const outcome = source.onPick(pickOf(candidate!))
-    expect(outcome).toEqual({ insert: expect.objectContaining({ ref: 'a1' }) })
+    expect(outcome).toMatchObject({ insert: { ref: 'a1' } })
     expect(update).toHaveBeenCalled()
     // update 的 rejection 被 catch 吞掉:让拒绝链落定,不产生未处理拒绝
     await Promise.resolve()

@@ -30,8 +30,22 @@ export const inject = ['webServer', 'llm', 'agentDefaultModel']
 /** Exact HTTP path claimed from the dsh web server. */
 export const COMMIT_MESSAGE_PATH = '/starhub/git/commit-message'
 
+/** 提交信息生成端点的插件配置。 */
+export interface Config {
+  /** 请求体(status + diffStat + recentSubjects)允许的最大 UTF-8 字节数。 */
+  readonly maxInputBytes: number
+  /** 草稿输出的 max_tokens。 */
+  readonly maxOutputTokens: number
+  /** 单次 LLM 调用的整体超时(毫秒)。 */
+  readonly timeoutMs: number
+  /** 固定 provider 路由;与 model 必须同时出现,缺省时跟随默认模型选择。 */
+  readonly provider?: string
+  /** 固定 model;与 provider 必须同时出现。 */
+  readonly model?: string
+}
+
 /** Loader schema: byte/token/time budgets plus an optional fixed model route. */
-export const Config = z.object({
+export const Config: z<Config> = z.object({
   /** 请求体(status + diffStat + recentSubjects)允许的最大 UTF-8 字节数。 */
   maxInputBytes: z.number().step(1).min(1).required(),
   /** 草稿输出的 max_tokens。 */
@@ -69,9 +83,9 @@ interface ResolvedConfig {
 }
 
 /** 校验并固化插件配置;provider/model 必须成对出现(参照 session-title-llm)。 */
-function resolveConfig(config: unknown): ResolvedConfig {
+function resolveConfig(config: Config | null | undefined): ResolvedConfig {
   // 入参是 cordis.yml 反序列化的未信值;运行时校验由 schemastery 完成。
-  const value = Config(config as Parameters<typeof Config>[0]) as ResolvedConfig
+  const value = Config(config)
   const hasProvider = value.provider !== undefined
   if (hasProvider !== (value.model !== undefined)) {
     throw new Error('starhub-commit-message: provider and model must be supplied together')
@@ -79,7 +93,7 @@ function resolveConfig(config: unknown): ResolvedConfig {
   if (hasProvider && (value.provider === '' || value.model === '')) {
     throw new Error('starhub-commit-message: provider and model overrides must be non-empty strings')
   }
-  return Object.freeze({ ...value })
+  return Object.freeze(value)
 }
 
 /**
@@ -194,7 +208,7 @@ export function createHandler(
  * @param ctx - plugin context carrying webServer / llm / agentDefaultModel.
  * @param config - validated budgets and optional fixed route.
  */
-export function apply(ctx: Context, config: unknown): void {
+export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
   const deps: CommitMessageDeps = {
     resolveRoute: () => {

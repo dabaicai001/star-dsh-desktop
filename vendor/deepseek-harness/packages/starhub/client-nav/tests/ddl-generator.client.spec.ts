@@ -35,7 +35,17 @@ function makeMeta(name: string): ColumnMeta {
   }
 }
 
-function makeCreateCol(overrides: Partial<{ name: string; type: string; size: string; nullable: boolean; primaryKey: boolean; defaultValue: string; comment: string }> = {}) {
+type CreateColOverrides = Partial<{
+  name: string
+  type: string
+  size: string
+  nullable: boolean
+  primaryKey: boolean
+  defaultValue: string
+  comment: string
+}>
+
+function makeCreateCol(overrides: CreateColOverrides = {}) {
   return {
     name: 'col1', type: 'VARCHAR', size: '', nullable: true, primaryKey: false, defaultValue: '', comment: '', ...overrides,
   }

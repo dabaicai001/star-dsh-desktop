@@ -64,8 +64,8 @@ const PermissionSchema = z.object({
 // ── 风险词(移植自 commandGuard.ts RISKY_PATTERNS,语义硬编码、不可配置) ──
 
 const RISKY_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /\brm\s+(-[a-z]*[rfRF]+|--force|--recursive)\b.*\/(?!\s*$)/i, reason: 'rm -rf 删除系统目录' },
-  { pattern: /\brm\s+(-[a-z]*[rfRF]+|--force|--recursive)\b/i, reason: 'rm -rf 递归删除' },
+  { pattern: /\brm\s+(-[a-z]*[rf]+|--force|--recursive)\b.*\/(?!\s*$)/i, reason: 'rm -rf 删除系统目录' },
+  { pattern: /\brm\s+(-[a-z]*[rf]+|--force|--recursive)\b/i, reason: 'rm -rf 递归删除' },
   { pattern: /\brm\s+-[a-z]*r/i, reason: 'rm -r 递归删除' },
   { pattern: /\bdd\s+if=/i, reason: 'dd 命令会覆写磁盘' },
   { pattern: /\bmkfs\./i, reason: 'mkfs 格式化文件系统' },
@@ -98,7 +98,7 @@ const RISKY_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bdocker\s+network\s+rm\b/i, reason: 'docker network rm 删除网络' },
   { pattern: /\bdocker\s+exec\b.*\b(rm|mkfs|dd|shutdown|reboot)\b/i, reason: '容器内执行危险命令' },
   { pattern: /\bkubectl\s+delete\s+(namespace|node)\b/i, reason: 'kubectl 删除 namespace/node' },
-  { pattern: /\bchmod\s+(-[a-z]*[rR]+|--recursive)\b.*\b7{3,}\b/i, reason: 'chmod 777 公开权限' },
+  { pattern: /\bchmod\s+(-[a-z]*[r]+|--recursive)\b.*\b7{3,}\b/i, reason: 'chmod 777 公开权限' },
   { pattern: /\bchown\s+-R\b.*\b(root|0)\b/i, reason: 'chown 改属主为 root' },
   { pattern: /\bcurl\b.*\|\s*(bash|sh|zsh)\b/i, reason: '远程脚本管道执行' },
   { pattern: /\bwget\b.*\|\s*(bash|sh|zsh)\b/i, reason: '远程脚本管道执行' },
@@ -121,14 +121,18 @@ function riskReason(command: string): string | null {
 const SQL_WRITE_KEYWORDS = /\b(insert|update|delete|drop|alter|truncate|create|replace|grant|revoke|call|use|lock|unlock|rename|set)\b/i
 const SQL_READ_START = /^(select|show|desc|describe|explain)\b/i
 
-/** 只读 SQL:去注释后每条语句以 SELECT/SHOW/DESC/EXPLAIN 开头(或纯 CTE)且不含写关键字。 */
+/**
+ * 只读 SQL 判定:去注释后每条语句以 SELECT/SHOW/DESC/EXPLAIN 开头(或纯 CTE)且不含写关键字。
+ * @param sql - 待判定的完整 SQL 文本。
+ * @returns 全部语句均只读时为 true;空文本为 false。
+ */
 export function isReadOnlySql(sql: string): boolean {
   const cleaned = sql
     .replace(/--[^\n]*/g, ' ')
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
   const statements = cleaned.split(';').map(s => s.trim()).filter(s => s.length > 0)
   if (statements.length === 0) return false
-  return statements.every(s => {
+  return statements.every((s) => {
     if (SQL_WRITE_KEYWORDS.test(s)) return false
     if (SQL_READ_START.test(s)) return true
     return /^with\b/i.test(s) && !SQL_WRITE_KEYWORDS.test(s)
@@ -157,11 +161,15 @@ const READ_ONLY_SHELL_PAIRS = new Set([
   'redis-cli zrange', 'redis-cli dbsize', 'redis-cli ping',
 ])
 
-/** 只读 Shell:按 && / || / | / ; 切段,每段无重定向/命令替换/提权且首词在只读清单。 */
+/**
+ * 只读 Shell 判定:按 && / || / | / ; 切段,每段无重定向/命令替换/提权且首词在只读清单。
+ * @param command - 待判定的完整 shell 命令文本。
+ * @returns 所有切段均为只读清单内命令时为 true;空文本为 false。
+ */
 export function isReadOnlyShellCommand(command: string): boolean {
   const segments = command.split(/&&|\|\||[|;]/).map(s => s.trim()).filter(s => s.length > 0)
   if (segments.length === 0) return false
-  return segments.every(seg => {
+  return segments.every((seg) => {
     if (/[>`]|\$\(|`/.test(seg)) return false
     const parts = seg.split(/\s+/)
     const first = parts[0]?.toLowerCase()
@@ -263,13 +271,21 @@ function sessionPolicy(ctx: Context, session: Session): ApprovalPolicy {
   return effectiveApprovalPolicy(session.events) ?? ctx.approval.config.policy ?? 'ask'
 }
 
+/** 审批桥插件配置(默认值语义见 {@link apply})。 */
+export interface ApprovalBridgeConfig {
+  /** 是否挂载 approval 应答桥;false 时只留权限固定与风险门。 */
+  readonly answerer?: boolean
+  /** 是否由本桥注册 `permission` 设置命名空间。 */
+  readonly ownsPermissionSettings?: boolean
+}
+
 /**
  * 注册审批桥:权限固定 + 风险门 + 应答桥。
  * `answerer: false` 时只保留权限固定与风险门(应答交给组合内其它 answerer,
  * 如 dsh web 的浏览器确认框;starhub-web 组合用),避免同一请求双应答。
  * @param ctx - plugin context;监听器随插件 fiber 卸载。
  */
-export function apply(ctx: Context, config: { answerer?: boolean; ownsPermissionSettings?: boolean } = {}): void {
+export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
   const answerer = config.answerer !== false
   const ownsPermissionSettings = config.ownsPermissionSettings !== false
   const transport = ctx.get('sdk-transport') as JsonRpcTransportPeer | undefined
@@ -287,13 +303,13 @@ export function apply(ctx: Context, config: { answerer?: boolean; ownsPermission
   //    permission-presets 在组合内)只读消费其解析值,绝不重复注册。
   const readDefaultPreset: () => string | undefined = ownsPermissionSettings
     ? (() => {
-        const permissionScope = ctx.settings.register(PERMISSION_NAMESPACE, PermissionSchema)
-        return () => permissionScope.get().defaultPreset
-      })()
+      const permissionScope = ctx.settings.register(PERMISSION_NAMESPACE, PermissionSchema)
+      return () => permissionScope.get().defaultPreset
+    })()
     : () => {
-        const value = ctx.settings.get(PERMISSION_NAMESPACE) as { defaultPreset?: unknown } | undefined
-        return typeof value?.defaultPreset === 'string' ? value.defaultPreset : undefined
-      }
+      const value = ctx.settings.get(PERMISSION_NAMESPACE) as { defaultPreset?: unknown } | undefined
+      return typeof value?.defaultPreset === 'string' ? value.defaultPreset : undefined
+    }
   ctx.on('session/created', (session) => {
     if (effectiveApprovalPolicy(session.events) !== undefined) return
     const preset = readDefaultPreset()

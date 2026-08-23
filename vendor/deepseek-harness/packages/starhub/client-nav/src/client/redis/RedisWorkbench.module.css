@@ -37,8 +37,10 @@
 .miniDanger:hover { background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); color: var(--dsw-alias-state-error-primary); }
 .miniButton:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-interactive-accent); }
 .main { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; }
-.renameBar, .cliBar { display: flex; align-items: center; gap: 7px; padding: 9px 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); }
-.cliOutput { max-height: 180px; margin: 0; overflow: auto; border-bottom: 1px solid var(--dsw-alias-border-l2); padding: 10px 14px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-mono); font-size: 12px; white-space: pre-wrap; }
+.renameBar, .cliBar { display: flex; align-items: center; gap: 7px; padding: 9px 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); }.cliOutput{ max-height: 180px; margin: 0; overflow: auto; border-bottom: 1px solid var(--dsw-alias-border-l2); padding: 10px 14px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-mono); font-size: 12px; white-space: pre-wrap; 
+  /* Elevated scroll container: rebind the scrollbar indirection to the l2 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);}
 .placeholder { display: flex; flex: 1; align-items: center; justify-content: center; padding: 24px; color: var(--dsw-alias-label-tertiary); font-size: 13px; }
 .modalBackdrop { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; background: var(--dsw-alias-bg-mask-3); }
 .modal { display: flex; width: min(380px, calc(100vw - 32px)); flex-direction: column; gap: 10px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 7px; padding: 16px; background: var(--dsw-alias-bg-layer-2); box-shadow: var(--dsw-shadow-popover); }

@@ -101,7 +101,7 @@ export function apply(ctx: ClientContext): void {
             rowsVersion = version
             rowsRevision = revision
             rows = ctx.slots.entries('settings.section')
-              .map(e => {
+              .map((e) => {
                 const groupLabel = e.options.groupLabel === undefined
                   ? undefined
                   : resolveSlotLabel(e.options.groupLabel)

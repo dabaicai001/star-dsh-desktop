@@ -65,8 +65,10 @@ describe('sqlHistory', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(boom)
     vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(boom)
     expect(loadHistory()).toEqual([])
-    expect(saveHistory([{ sql: 'S', db: '', time: 1 }])).toBeUndefined()
-    expect(addHistory('S', '')).toEqual([{ sql: 'S', db: '', time: expect.any(Number) }])
-    expect(clearHistory()).toBeUndefined()
+    // saveHistory / clearHistory return void; a thrown storage error fails the test.
+    saveHistory([{ sql: 'S', db: '', time: 1 }])
+    const timeMatcher: unknown = expect.any(Number)
+    expect(addHistory('S', '')).toEqual([{ sql: 'S', db: '', time: timeMatcher }])
+    clearHistory()
   })
 })

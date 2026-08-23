@@ -125,7 +125,7 @@ async function bindAssetContext(
   }
   const result: unknown = await transport.request(BIND_ASSET_METHOD, { assetId, sessionId: String(sessionId) })
   const record = typeof result === 'object' && result !== null ? result as Record<string, unknown> : undefined
-  if (record?.ok !== true || record?.action !== 'bound') {
+  if (record?.ok !== true || record.action !== 'bound') {
     throw new Error(`starhub host returned an invalid ${BIND_ASSET_METHOD} result for asset ${assetId}`)
   }
   return { text: `StarHub: asset ${assetId} bound without opening a window` }

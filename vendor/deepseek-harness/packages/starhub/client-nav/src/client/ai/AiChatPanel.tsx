@@ -35,7 +35,7 @@ export interface AiChatPanelProps {
 export function AiChatPanel({ sessions, workspaces, onClose }: AiChatPanelProps) {
   // The session list is a stable bare source — bind once per render is safe.
   const list = bindSnapshotSelector(sessions.list)(s => s)
-  const currentId = list?.current
+  const currentId = list.current
   return (
     <div className={css.backdrop} role="dialog" aria-label="AI 聊天">
       <section className={css.panel}>
@@ -116,7 +116,7 @@ function ConversationBody({ session }: {
   session: SessionFace
 }) {
   const snap = bindSnapshotSelector(session)(s => s)
-  const gate = openStateView(snap?.openState, snap?.openError)
+  const gate = openStateView(snap.openState, snap.openError)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
@@ -125,15 +125,14 @@ function ConversationBody({ session }: {
   useEffect(() => {
     const el = listRef.current
     if (el !== null) el.scrollTop = el.scrollHeight
-  }, [snap?.nodes, snap?.partial, snap?.running])
+  }, [snap.nodes, snap.partial, snap.running])
 
-  /* v8 ignore next -- the bound session snapshot is always present; the optional chain is defensive */
-  const nodes = (snap?.nodes ?? []).map(nodeRenderData)
+  const nodes = snap.nodes.map(nodeRenderData)
 
   const canSend = draft.trim() !== '' && !sending
   const send = (): void => {
     const text = draft.trim()
-    /* v8 ignore next -- reentrancy guard: the send button is disabled while a draft is blank or a prompt is in flight, so these arms are unreachable from the UI */
+    /* v8 ignore next -- unreachable from the UI: the send button is disabled while the draft is blank or a prompt is in flight */
     if (text === '' || sending) return
     setSending(true)
     setDraft('')
@@ -141,31 +140,31 @@ function ConversationBody({ session }: {
   }
   const stop = (): void => { void session.cancel() }
   const loadOlder = (): void => { void session.loadOlder() }
-  const promptErr = promptErrorView(snap?.promptError)
+  const promptErr = promptErrorView(snap.promptError)
 
   return (
     <>
       <div className={css.body}>
         {gate.error ? (
           <div className={css.error}>会话历史打开失败:{gate.errorText}</div>
-        ) : snap?.openState === 'cold' ? (
+        ) : snap.openState === 'cold' ? (
           <div className={css.empty}>会话尚未打开,请先在主壳选中该会话。</div>
         ) : (
           <>
             <div className={css.meta}>
-              <span>{snap?.running === true ? '● 运行中' : '空闲'}</span>
-              {snap?.hasMore === true && (
-                <button type="button" className={css.linkBtn} onClick={loadOlder} disabled={snap?.loadingOlder === true}>
-                  {snap?.loadingOlder === true ? '加载中…' : '加载更早'}
+              <span>{snap.running ? '● 运行中' : '空闲'}</span>
+              {snap.hasMore && (
+                <button type="button" className={css.linkBtn} onClick={loadOlder} disabled={snap.loadingOlder}>
+                  {snap.loadingOlder ? '加载中…' : '加载更早'}
                 </button>
               )}
             </div>
             <div className={css.list} ref={listRef}>
-              {nodes.length === 0 && snap?.running !== true && (
+              {nodes.length === 0 && ! snap.running && (
                 <div className={css.empty}>还没有消息,输入下方内容开始对话。</div>
               )}
-              {nodes.map((n) => <MessageRow key={n.key} data={n} />)}
-              {snap?.partial !== null && snap?.partial !== undefined && (
+              {nodes.map(n => <MessageRow key={n.key} data={n} />)}
+              {snap.partial !== null && (
                 <div className={`${css.row} ${css.assistant}`}>
                   <span className={css.label}>助手 …</span>
                   <MessageText text={partialText(snap.partial)} />
@@ -181,11 +180,11 @@ function ConversationBody({ session }: {
           <textarea
             className={css.input}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) =>{  setDraft(e.target.value) }}
             placeholder="输入消息,Enter 发送,Shift+Enter 换行"
             rows={2}
           />
-          {snap?.running === true ? (
+          {snap.running ? (
             <button type="button" className={css.stopBtn} onClick={stop}>停止</button>
           ) : (
             <button type="button" className={css.sendBtn} onClick={send} disabled={!canSend}>发送</button>

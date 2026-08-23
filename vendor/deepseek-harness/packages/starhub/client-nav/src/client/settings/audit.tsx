@@ -28,6 +28,21 @@ export function formatAuditTime(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+/** 详情字段渲染成单行文本:字符串原样,标量用 String(),对象 JSON 化。 */
+function detailValueString(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value === null) return 'null'
+  if (value === undefined) return 'undefined'
+  if (Array.isArray(value)) return value.map(detailValueString).join(',')
+  try {
+    const serialized = JSON.stringify(value)
+    return typeof serialized === 'string' ? serialized : ''
+  } catch {
+    return '[object Object]'
+  }
+}
+
 /** 详情字段渲染成可读单行文本;历史记录无 detail 回退 target;不识别的字段整体回退 JSON。 */
 export function formatAuditDetail(detail: Record<string, unknown> | null, target?: string | null): string {
   if (detail === null) return target ?? ''
@@ -39,12 +54,12 @@ export function formatAuditDetail(detail: Record<string, unknown> | null, target
     if (typeof detail.table === 'string' && detail.table) parts.push(`table=${detail.table}`)
     if (typeof detail.durationMs === 'number') parts.push(`${detail.durationMs}ms`)
     if (typeof detail.rows === 'number') parts.push(`rows=${detail.rows}`)
-    if (detail.source) parts.push(`source=${String(detail.source)}`)
-    if (detail.error) parts.push(`error: ${String(detail.error)}`)
+    if (detail.source) parts.push(`source=${detailValueString(detail.source)}`)
+    if (detail.error) parts.push(`error: ${detailValueString(detail.error)}`)
     if (parts.length > 0) return parts.join(' · ')
     return JSON.stringify(detail)
   } catch {
-    return String(detail)
+    return detailValueString(detail)
   }
 }
 
@@ -111,9 +126,9 @@ export function AuditTab() {
           <select
             className={s.select}
             value={auditCategoryFilter}
-            onChange={(event) => setAuditCategoryFilter(event.target.value)}
+            onChange={(event) =>{  setAuditCategoryFilter(event.target.value) }}
           >
-            {AUDIT_CATEGORIES.map((category) => (
+            {AUDIT_CATEGORIES.map(category => (
               <option key={category.value} value={category.value}>{category.label}</option>
             ))}
           </select>
@@ -151,7 +166,7 @@ export function AuditTab() {
                   <td colSpan={6} className={s.tableEmpty}>暂无审计日志</td>
                 </tr>
               ) : (
-                auditLogs.map((log) => (
+                auditLogs.map(log => (
                   <tr key={log.id} className={log.success ? undefined : s.tableFailed}>
                     <td className={s.mono}>{formatAuditTime(log.timestamp)}</td>
                     <td>{log.category}</td>
@@ -177,7 +192,7 @@ export function AuditTab() {
             <span className={s.sectionTitle}>统计</span>
           </div>
           <div className={s.statsGrid}>
-            {auditStats.map((stat) => (
+            {auditStats.map(stat => (
               <div key={`${stat.category}-${stat.date}`} className={s.statCard}>
                 <div className={s.statHead}>
                   <span className={s.cardName}>{stat.category}</span>

@@ -34,7 +34,7 @@ export interface NodeRenderData {
 interface TextyBlock { type?: unknown; kind?: unknown; text?: unknown }
 
 /** Whether a block is a text/reasoning body the chat shows as prose. */
-function isTextBlock(b: TextyBlock): boolean {
+function isTextBlock(b: TextyBlock): b is TextyBlock & { text: string } {
   const tag = b.type === 'text' || b.type === 'reasoning' || b.kind === 'text' || b.kind === 'reasoning'
   return tag && typeof b.text === 'string' && b.text !== ''
 }
@@ -46,10 +46,10 @@ function isTextBlock(b: TextyBlock): boolean {
  * @returns the concatenated text, or '' when none.
  */
 export function blocksToText(blocks: readonly TextyBlock[] | undefined): string {
-  if (!Array.isArray(blocks)) return ''
+  if (blocks === undefined) return ''
   const parts: string[] = []
   for (const b of blocks) {
-    if (isTextBlock(b)) parts.push(b.text as string)
+    if (isTextBlock(b)) parts.push(b.text)
   }
   return parts.join('\n')
 }
@@ -100,7 +100,7 @@ export function nodeRenderData(node: ConversationNode): NodeRenderData {
         label: node.call?.name ?? node.callId,
         text: blocksToText(node.content),
         ...(payload !== undefined ? { json: payload } : {}),
-        error: node.isError === true,
+        error:  node.isError,
       }
     }
     case 'command':
@@ -172,6 +172,6 @@ export interface PromptErrorView {
 export function promptErrorView(err: { op?: unknown; error: { message?: unknown } } | null | undefined): PromptErrorView {
   if (err === null || err === undefined) return { op: '', text: '' }
   const op = err.op === 'send' || err.op === 'stop' ? err.op : 'send'
-  const message = typeof err.error?.message === 'string' ? err.error.message : ''
+  const message = typeof err.error.message === 'string' ? err.error.message : ''
   return { op, text: op === 'send' ? `发送失败: ${message}` : `停止失败: ${message}` }
 }

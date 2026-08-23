@@ -339,7 +339,8 @@ class DshRuntimePackage {
     const result: string[] = []
     const stack: string[] = [directory]
     while (stack.length > 0) {
-      const current = stack.pop()!
+      const current = stack.pop()
+      if (current === undefined) break
       let entries: Dirent[]
       try {
         entries = await readdir(current, { withFileTypes: true })
@@ -364,7 +365,8 @@ class DshRuntimePackage {
     const stack: string[] = [directory]
     const dangling: string[] = []
     while (stack.length > 0) {
-      const current = stack.pop()!
+      const current = stack.pop()
+      if (current === undefined) break
       let entries: Dirent[]
       try {
         entries = await readdir(current, { withFileTypes: true })
@@ -399,7 +401,8 @@ class DshRuntimePackage {
     const stack: string[] = [directory]
     const stripped: string[] = []
     while (stack.length > 0) {
-      const current = stack.pop()!
+      const current = stack.pop()
+      if (current === undefined) break
       let entries: Dirent[]
       try {
         entries = await readdir(current, { withFileTypes: true })
@@ -461,7 +464,7 @@ class DshRuntimePackage {
       return new Promise<void>((resolvePromise, reject) => {
         const child = spawn('powershell', ['-NoProfile', '-Command', script], { stdio: 'inherit' })
         child.once('error', reject)
-        child.once('exit', code => {
+        child.once('exit', (code) => {
           if (code === 0) resolvePromise()
           else reject(new Error(`package-dsh-runtime: Expand-Archive 失败 (exit ${code})`))
         })
@@ -473,7 +476,7 @@ class DshRuntimePackage {
     return new Promise<void>((resolvePromise, reject) => {
       const child = spawn('tar', args, { stdio: 'inherit' })
       child.once('error', reject)
-      child.once('exit', code => {
+      child.once('exit', (code) => {
         if (code === 0) resolvePromise()
         else reject(new Error(`package-dsh-runtime: tar 解压失败 (exit ${code})`))
       })
@@ -590,7 +593,8 @@ class DshRuntimePackage {
     let bytes = 0
     const stack = [outDir]
     while (stack.length > 0) {
-      const dir = stack.pop()!
+      const dir = stack.pop()
+      if (dir === undefined) break
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const path = join(dir, entry.name)
         if (entry.isDirectory()) stack.push(path)

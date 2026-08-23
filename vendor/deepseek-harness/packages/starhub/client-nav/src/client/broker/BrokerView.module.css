@@ -7,6 +7,10 @@
   overflow: auto;
   background: var(--dsw-alias-bg-base);
   font-size: 13px;
+  /* 本表内存在 elevated 面(.header 用 bg-layer-2)且 .root 滚动:
+     按主题约定把滚动条间接层重绑定到 l2 对(与 Modal 对话框同款处理)。 */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 /* 极淡网格背景(grid-bg 的 dsw 版本:纯 token,无字面量颜色)。 */

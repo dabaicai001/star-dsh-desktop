@@ -5,6 +5,7 @@
  * load-older over the session face, and the gate states (loading/error).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Mock } from 'vitest'
 import { cleanup, render, screen, fireEvent } from '@testing-library/react'
 import {
   createSnapshotStore, EMPTY_CHAT_SNAPSHOT,
@@ -43,7 +44,12 @@ function makeSnap(over: Partial<ConversationSnapshot> = {}): ConversationSnapsho
   }
 }
 
-interface SessionDouble extends SessionFace { __set: (s: ConversationSnapshot) => void }
+interface SessionDouble extends SessionFace {
+  __set: (s: ConversationSnapshot) => void
+  prompt: Mock<SessionFace['prompt']>
+  cancel: Mock<SessionFace['cancel']>
+  loadOlder: Mock<SessionFace['loadOlder']>
+}
 
 /** Build a live session face (observable snapshot + behaviour verbs). */
 function makeSession(snapshot: ConversationSnapshot): SessionDouble {
@@ -54,9 +60,9 @@ function makeSession(snapshot: ConversationSnapshot): SessionDouble {
     projections: { faceOf: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }) },
     getSnapshot: () => current,
     subscribe: (fn: () => void) => { subs.add(fn); return () => { subs.delete(fn) } },
-    prompt: vi.fn().mockResolvedValue({ ok: true }),
-    cancel: vi.fn().mockResolvedValue({ ok: true }),
-    loadOlder: vi.fn().mockResolvedValue(undefined),
+    prompt: vi.fn<SessionFace['prompt']>().mockResolvedValue({ ok: true, value: { accepted: true } }),
+    cancel: vi.fn<SessionFace['cancel']>().mockResolvedValue({ ok: true, value: { accepted: true } }),
+    loadOlder: vi.fn<SessionFace['loadOlder']>().mockResolvedValue(undefined),
     rename: vi.fn(),
     command: vi.fn(),
     updateQueue: vi.fn(),
@@ -116,7 +122,7 @@ describe('AiChatPanel', () => {
     render(<AiChatPanel sessions={sessions} workspaces={workspaces} onClose={vi.fn()} />)
     fireEvent.click(screen.getByText('新建会话'))
     expect(connectWorkspace).toHaveBeenCalledWith('w1')
-    return vi.waitFor(() => expect(open).toHaveBeenCalledWith('s1'))
+    return vi.waitFor(() =>{  expect(open).toHaveBeenCalledWith('s1') })
   })
 
   it('does not connect when there is no recent workspace', () => {
@@ -134,7 +140,7 @@ describe('AiChatPanel', () => {
     const workspaces = makeWorkspaces('w1', connectWorkspace)
     render(<AiChatPanel sessions={sessions} workspaces={workspaces} onClose={vi.fn()} />)
     fireEvent.click(screen.getByText('新建会话'))
-    await vi.waitFor(() => expect(connectWorkspace).toHaveBeenCalledWith('w1'))
+    await vi.waitFor(() =>{  expect(connectWorkspace).toHaveBeenCalledWith('w1') })
     expect(screen.getByText('没有正在进行的 AI 会话')).toBeTruthy()
   })
 
@@ -183,7 +189,7 @@ describe('AiChatPanel', () => {
     const face = makeSession(makeSnap({ blank: false }))
     const sessions = makeSessions('s1', face)
     render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
-    expect((screen.getByText('发送') as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByText<HTMLButtonElement>('发送')).disabled).toBe(true)
   })
 
   it('sends on Enter with a non-empty draft', () => {
@@ -292,9 +298,9 @@ describe('AiChatPanel', () => {
   })
 
   it('prevents a second send while a prompt is in flight', () => {
-    let resolvePrompt: (v: unknown) => void = () => {}
+    let resolvePrompt: (value: Awaited<ReturnType<SessionFace['prompt']>>) => void = () => {}
     const base = makeSession(makeSnap({ blank: false }))
-    const promptMock = base.prompt as unknown as ReturnType<typeof vi.fn>
+    const promptMock = base.prompt
     promptMock.mockImplementation(() => new Promise((resolve) => { resolvePrompt = resolve }))
     const sessions = makeSessions('s1', base)
     render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
@@ -304,7 +310,7 @@ describe('AiChatPanel', () => {
     fireEvent.keyDown(input, { key: 'Enter', bubbles: true })
     fireEvent.click(screen.getByText('发送'))
     expect(promptMock).toHaveBeenCalledTimes(1)
-    resolvePrompt({ ok: true })
+    resolvePrompt({ ok: true, value: { accepted: true } })
   })
 
   it('shows the loading case for the load-older button', () => {
@@ -312,7 +318,7 @@ describe('AiChatPanel', () => {
     const sessions = makeSessions('s1', face)
     render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
     expect(screen.getByText('加载中…')).toBeTruthy()
-    expect((screen.getByText('加载中…') as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByText<HTMLButtonElement>('加载中…')).disabled).toBe(true)
   })
 
   it('does not send on Shift+Enter or other keys', () => {

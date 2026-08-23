@@ -36,6 +36,12 @@ function stubTauriInternals(invoke: (cmd: string, args?: unknown) => Promise<unk
   }
 }
 
+/** 模拟未类型化的 IPC 拒绝(真实 Tauri 载荷可能是纯字符串而非 Error)。 */
+function rawRejection(reason: string): Promise<never> {
+  const reject = Promise.reject.bind(Promise)
+  return reject(reason)
+}
+
 function brokerAsset(overrides: Partial<RustAsset['config']> = {}, dbType = 'kafka'): RustAsset {
   return {
     id: 'b1', type: 'db', name: 'prod-kafka', group_id: null,
@@ -143,7 +149,7 @@ describe('BrokerView', () => {
   })
 
   it('stringifies non-Error rejections in the error panel', async () => {
-    const restore = stubTauriInternals(() => Promise.reject('raw failure'))
+    const restore = stubTauriInternals(() => rawRejection('raw failure'))
     try {
       render(<BrokerView asset={brokerAsset()} />)
       expect(await screen.findByText('raw failure')).toBeTruthy()

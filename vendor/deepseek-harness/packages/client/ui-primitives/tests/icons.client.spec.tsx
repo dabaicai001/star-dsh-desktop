@@ -16,8 +16,10 @@ const icons = Object.fromEntries(
 const iconNames = Object.keys(icons)
 
 describe('ic_ds_ icon set', () => {
-  it('exports the full icon set (46 deepsuite + 20 figma extracts + four product glyphs outside those sets)', () => {
-    expect(iconNames.length).toBe(70)
+  // The StarHub fork extends the upstream barrel with three product glyphs
+  // (Sparkle / Inspect / Skill); keep the count pinned to the vendored set.
+  it('exports the full icon set (70 upstream + 3 StarHub glyphs)', () => {
+    expect(iconNames.length).toBe(73)
   })
 
   it.each(iconNames)('%s renders an svg with currentColor fills and no hardcoded palette', (name) => {

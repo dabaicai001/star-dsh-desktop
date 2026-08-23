@@ -68,62 +68,106 @@ export interface RedisDbSize {
   size: number
 }
 
-/** 连接 Redis。 */
+/** 连接 Redis。
+ * @param params - 连接参数。
+ * @returns 连接建立后的连接信息。
+ */
 export function redisConnect(params: RedisConnectParams): Promise<RedisConnectionInfo> {
   return tauriInvoke('db_redis_connect', { params })
 }
 
-/** 断开 Redis 会话。 */
+/** 断开 Redis 会话。
+ * @param connId - 连接 id。
+ */
 export function redisDisconnect(connId: string): Promise<void> {
   return tauriInvoke('db_redis_disconnect', { connId })
 }
 
-/** 切换到指定 DB 编号。 */
+/** 切换到指定 DB 编号。
+ * @param connId - 连接 id。
+ * @param db - 目标 DB 编号(0-15)。
+ */
 export function redisSelect(connId: string, db: number): Promise<void> {
   return tauriInvoke('db_redis_select', { connId, db })
 }
 
-/** 当前 DB 键总数。 */
+/** 当前 DB 键总数。
+ * @param connId - 连接 id。
+ * @returns 当前 DB 的键总数。
+ */
 export function redisDBSize(connId: string): Promise<RedisDbSize> {
   return tauriInvoke('db_redis_db_size', { connId })
 }
 
-/** SCAN 增量遍历(游标分页 + MATCH 过滤)。 */
+/** SCAN 增量遍历(游标分页 + MATCH 过滤)。
+ * @param connId - 连接 id。
+ * @param cursor - 游标,缺省从 0 开始。
+ * @param match - 可选的 MATCH 过滤模式。
+ * @param count - 可选的单批返回条数。
+ * @returns SCAN 结果(keys + 下一游标)。
+ */
 export function redisScan(connId: string, cursor?: number, match?: string, count?: number): Promise<RedisScanResult> {
   return tauriInvoke('db_redis_scan', { connId, cursor: cursor || 0, matchPattern: match, count })
 }
 
-/** 取一个 key 的值(按类型返回结构化数据)。 */
+/** 取一个 key 的值(按类型返回结构化数据)。
+ * @param connId - 连接 id。
+ * @param key - 目标 key。
+ * @returns key 的值(结构化)。
+ */
 export function redisGetValue(connId: string, key: string): Promise<RedisValueResult> {
   return tauriInvoke('db_redis_get_value', { connId, key })
 }
 
-/** 删除一个或多个 key。 */
+/** 删除一个或多个 key。
+ * @param connId - 连接 id。
+ * @param keys - 要删除的 key 列表。
+ * @returns 删除结果(删除数量)。
+ */
 export function redisDel(connId: string, keys: string[]): Promise<RedisDeleteResult> {
   return tauriInvoke('db_redis_del', { connId, keys })
 }
 
-/** 重命名 key。 */
+/** 重命名 key。
+ * @param connId - 连接 id。
+ * @param oldKey - 原 key 名。
+ * @param newKey - 新 key 名。
+ */
 export function redisRename(connId: string, oldKey: string, newKey: string): Promise<void> {
   return tauriInvoke('db_redis_rename', { connId, oldKey, newKey })
 }
 
-/** 写字符串 key(可带 TTL 秒;缺省持久化)。 */
+/** 写字符串 key(可带 TTL 秒;缺省持久化)。
+ * @param connId - 连接 id。
+ * @param key - 目标 key。
+ * @param value - 要写入的字符串值。
+ * @param expiration - 可选的 TTL 秒数。
+ */
 export function redisSet(connId: string, key: string, value: string, expiration?: number): Promise<void> {
   return tauriInvoke('db_redis_set', { connId, key, value, expiration })
 }
 
-/** 执行任意 Redis 命令(CLI / 结构类型字段写回)。 */
+/** 执行任意 Redis 命令(CLI / 结构类型字段写回)。
+ * @param connId - 连接 id。
+ * @param command - 要执行的命令文本。
+ * @returns 命令执行结果。
+ */
 export function redisExecute(connId: string, command: string): Promise<RedisCommandResult> {
   return tauriInvoke('db_redis_execute', { connId, command })
 }
 
-/** 清空当前 DB。 */
+/** 清空当前 DB。
+ * @param connId - 连接 id。
+ */
 export function redisFlushDB(connId: string): Promise<void> {
   return tauriInvoke('db_redis_flush_db', { connId })
 }
 
-/** 取 INFO(可限定 section)。 */
+/** 取 INFO(可限定 section)。
+ * @param connId - 连接 id。
+ * @param section - 可选的 INFO section 名。
+ * @returns INFO 原始文本。
+ */
 export function redisInfo(connId: string, section?: string): Promise<string> {
   return tauriInvoke('db_redis_info', { connId, section })
 }

@@ -87,7 +87,7 @@ export function StarHubNav({ wide, useStore, actions, selectSubcategory, useSele
         className={`${css.category} ${wide ? '' : css.rail}`}
         title="工具"
         aria-expanded={categoryOpen}
-        onClick={() => actions.toggleCategory()}
+        onClick={() =>{  actions.toggleCategory() }}
       >
         <IconDataOutline16 size={wide ? 15 : 18} />
         {wide
@@ -109,7 +109,7 @@ export function StarHubNav({ wide, useStore, actions, selectSubcategory, useSele
           active={activeSubcategory === key}
           label={label}
           Icon={Icon}
-          onSelect={() => selectSubcategory(key)}
+          onSelect={() =>{  selectSubcategory(key) }}
         />
       ))}
     </>

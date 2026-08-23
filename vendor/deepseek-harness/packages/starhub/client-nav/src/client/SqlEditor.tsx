@@ -66,12 +66,12 @@ export function tableCompletion(getSchema: () => SqlCompletionSchema | undefined
     const dot = context.matchBefore(/([\w$]+)\.([\w$-]*)$/)
     if (dot !== null) {
       const table = dot.text.slice(0, dot.text.indexOf('.'))
-      const cols = schema[table] ?? schema[Object.keys(schema).find((t) => t.toLowerCase() === table.toLowerCase()) ?? '']
+      const cols = schema[table] ?? schema[Object.keys(schema).find(t => t.toLowerCase() === table.toLowerCase()) ?? '']
       if (cols === undefined || cols.length === 0) return null
       const prefix = dot.text.slice(dot.text.indexOf('.') + 1).toLowerCase()
       const options = cols
-        .filter((c) => c.toLowerCase().includes(prefix))
-        .map((c) => ({ label: c, type: 'property' }))
+        .filter(c => c.toLowerCase().includes(prefix))
+        .map(c => ({ label: c, type: 'property' }))
       if (options.length === 0) return null
       return { from: dot.from + table.length + 1, options, validFor: /^[\w$-]*$/ }
     }
@@ -82,9 +82,9 @@ export function tableCompletion(getSchema: () => SqlCompletionSchema | undefined
     const allColumns = new Set<string>()
     for (const cols of Object.values(schema)) for (const c of cols) allColumns.add(c)
     const options = [
-      ...Object.keys(schema).map((t) => ({ label: t, type: 'class' })),
-      ...[...allColumns].map((c) => ({ label: c, type: 'property' })),
-    ].filter((o) => o.label.toLowerCase().includes(word))
+      ...Object.keys(schema).map(t => ({ label: t, type: 'class' })),
+      ...[...allColumns].map(c => ({ label: c, type: 'property' })),
+    ].filter(o => o.label.toLowerCase().includes(word))
     if (options.length === 0) return null
     return { from: before.from, options, validFor: /^[\w$-]*$/ }
   }
@@ -103,9 +103,10 @@ function buildExtensions(opts: {
 }): Extension[] {
   const dialect = dialectOf(opts.dialect ?? 'mysql')
   const language = dialect
-  const executeKeymap = opts.onExecute === undefined ? [] : [
-    { key: 'Mod-Enter', run: () => { opts.onExecute!(viewValue(opts.viewRef), false); return true } },
-    { key: 'Shift-Mod-e', run: () => { opts.onExecute!(viewValue(opts.viewRef), true); return true } },
+  const onExecute = opts.onExecute
+  const executeKeymap = onExecute === undefined ? [] : [
+    { key: 'Mod-Enter', run: () => { onExecute(viewValue(opts.viewRef), false); return true } },
+    { key: 'Shift-Mod-e', run: () => { onExecute(viewValue(opts.viewRef), true); return true } },
   ]
   return [
     language,
@@ -159,8 +160,8 @@ export function SqlEditor({ value, onChange, schema, dialect = 'mysql', onExecut
     })
     viewRef.current = view
     const host = hostRef.current
-    if (typeof ResizeObserver !== 'undefined' && host !== null) {
-      const ro = new ResizeObserver(() => view.requestMeasure())
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() =>{  view.requestMeasure() })
       ro.observe(host)
       return () => {
         ro.disconnect()
@@ -174,7 +175,6 @@ export function SqlEditor({ value, onChange, schema, dialect = 'mysql', onExecut
     }
     // 只建一次;外部 value 同步走下方 effect。buildExtensions 依赖变化由
     // 下方 dispatch 覆盖(受控文本)。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // 受控 value 同步:外部变化时更新编辑器(避免光标重置:仅当 doc 不同才 replace)。

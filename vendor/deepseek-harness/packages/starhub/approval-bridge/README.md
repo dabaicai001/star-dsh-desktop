@@ -42,8 +42,19 @@ sdk/server 的本地补丁)、`user-approval` 服务与 `settings` 服务
 
 ## Model Experience
 
-模型只看到审批结果语义:被拒绝的工具调用以 deny reason 进入结果;权限策略文本
-由 `user-approval` 的系统提示快照供给,本包不新增模型可见文本。
+### Approval outcome semantics
+
+#### What the model sees
+
+Only approval outcomes: a rejected tool call enters the result with its deny reason. The permission policy text comes from the `user-approval` system-prompt snapshot; this package adds no model-visible text of its own.
+
+#### Token effect
+
+None — no message or prompt contribution.
+
+#### KV Cache effect
+
+Not applicable — the package never participates in model requests.
 
 ## Known Limitations and Deferred Work
 

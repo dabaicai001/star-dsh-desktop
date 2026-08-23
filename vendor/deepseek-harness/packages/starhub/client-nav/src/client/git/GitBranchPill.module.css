@@ -92,6 +92,9 @@
   min-height: 0;
   max-height: 240px;
   overflow-y: auto;
+  /* Elevated menu surface: rebind the scrollbar indirection to the l2 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .groupLabel {

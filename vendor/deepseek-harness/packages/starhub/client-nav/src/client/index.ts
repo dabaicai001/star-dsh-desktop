@@ -18,6 +18,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { createElement } from 'react'
+import type { JSX } from 'react'
 // Type-only: the SlotMap rows of the target slots must be in the program for
 // the register calls to type (declared by the slots' owning packages).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -26,13 +27,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: the connection service merge (ctx.get('connection') typing).
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { IConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ISessions, IWorkspaces } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-// Type-only: the theme service merge (ctx.get('theme') typing) for the
-// legacy-token override layer below.
-import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { createStarHubAssetSource } from './asset-source.ts'
 import { createAskAiHandler, createOpenAssetHandler, subscribeHostEvents } from './host-events.ts'
 import {
@@ -93,11 +90,11 @@ export function apply(ctx: Context): void {
   const inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
   const sessions = ctx.get('sessions') as ISessions
   const workspaces = ctx.get('workspaces') as IWorkspaces
-  const conversation = ctx.get('conversation') as IConversation | undefined
+  const conversation = ctx.get('conversation')
   // StarHub 工作台的历史令牌(--dsw-accent / --dsw-font-mono / --dsw-shadow-popover
   // 等)不在 dsh 令牌表内:经主题覆盖层注入,深浅色各一值,presenter 写到 body
   // 内联样式;独立 React 窗口无插件树,同值声明在 window-shell.css。
-  const theme = ctx.get('theme') as ThemeRuntime | undefined
+  const theme = ctx.get('theme')
   if (theme !== undefined) {
     const mono = "'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo, Courier, monospace"
     ctx.effect(() => theme.overrideTokens('starhub', {
@@ -144,7 +141,7 @@ export function apply(ctx: Context): void {
     order: 100,
     label: 'StarHub',
     inject: () => ({
-      openConnectionManager: () => connectionManager.open(),
+      openConnectionManager: () =>{  connectionManager.open() },
       closeConnectionManager: connectionManager.close,
       closeAiChat: aiChat.close,
       refreshAssets: assets.refresh,
@@ -174,7 +171,7 @@ export function apply(ctx: Context): void {
     refreshAssets: assets.refresh,
     openConnectionManager: connectionManager.open,
     // 右侧栏「AI 助手」:打开壳内 AI 聊天面板(shell.overlay 承载)。
-    openAiAssistant: () => aiChat.open(),
+    openAiAssistant: () =>{  aiChat.open() },
     hooks: { selection: selection.source, assets: assets.source },
   })
   // 两座工作区席位都不声明注册侧 store:session-maybe 无会话分支不下发
@@ -224,7 +221,10 @@ export function apply(ctx: Context): void {
   // 5 个子 section 分别直渲 AI/插件/审计/告警/关于。order 30 起排在
   // 通用(0)/模型(10)/插件(15)/Agent 预设(20)之后。
   const starhubTabs: ReadonlyArray<{
-    id: string; order: number; label: string; component: () => JSX.Element
+    id: string
+    order: number
+    label: string
+    component: () => JSX.Element
   }> = [
     { id: 'starhub-ai', order: 30, label: 'AI 助手', component: () => createElement(AiTab, { api: connection.api }) },
     { id: 'starhub-plugins', order: 31, label: '插件', component: PluginsTab },

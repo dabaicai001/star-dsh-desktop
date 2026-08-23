@@ -43,7 +43,11 @@ export interface StarHubSubcategory {
   matches: (asset: StarHubAsset) => boolean
 }
 
-/** 资产 → embed 功能路由名(与 src/utils/assetRouting.ts 的 routeNameForAsset 同构;只需 type + config)。 */
+/**
+ * 资产 → embed 功能路由名(与 src/utils/assetRouting.ts 的 routeNameForAsset 同构;只需 type + config)。
+ * @param asset - 资产(只需 type + config 判定)。
+ * @returns 功能路由名(如 'ssh-terminal' / 'db-mysql');未命中的 dbType 回退 'db-mysql'。
+ */
 export function routeNameForAsset(asset: { type: string; config: Record<string, unknown> }): string {
   if (asset.type === 'ssh') return 'ssh-terminal'
   if (asset.type === 'docker') return 'docker'
@@ -123,7 +127,7 @@ export const STARHUB_SUBCATEGORIES: readonly StarHubSubcategory[] = [
     label: 'Docker',
     routePrefix: '/docker',
     Icon: IconArchiveOutline20,
-    matches: (a) => routeNameForAsset(a) === 'docker',
+    matches: a => routeNameForAsset(a) === 'docker',
   },
 ]
 
@@ -141,10 +145,10 @@ export function assetWindowUrl(asset: StarHubAsset): string {
   // 等无工作台的类型省略提示,入口按「不支持」处理而非挂 Vue。
   const hint = route === 'ssh-terminal' ? 'ssh'
     : route === 'db-broker' ? 'broker'
-    : route === 'db-redis' ? 'db-redis'
-      : route === 'db-elasticsearch' ? 'db-elasticsearch'
-        : route === 'docker' ? 'docker'
-          : (route === 'db-mysql' || route === 'db-postgresql' || route === 'db-clickhouse' || route === 'db-elasticsearch') ? route : ''
+      : route === 'db-redis' ? 'db-redis'
+        : route === 'db-elasticsearch' ? 'db-elasticsearch'
+          : route === 'docker' ? 'docker'
+            : (route === 'db-mysql' || route === 'db-postgresql' || route === 'db-clickhouse' || route === 'db-elasticsearch') ? route : ''
   if (hint !== '') params.set('workbench', hint)
   return `/starhub-react/index.html?${params.toString()}`
 }

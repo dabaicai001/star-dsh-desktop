@@ -88,7 +88,7 @@ export function DetailsPanel({ useSession, useSessions, sessionId, useStore, ren
   const noCallId = selection !== null && callId === undefined
   const title = showWorkspace
     ? t('details.workspaceTitle')
-    : material?.name ?? selection?.toolName ?? t('details.title')
+    : material?.name ?? selection.toolName ?? t('details.title')
   return (
     <div className={css.root}>
       <div className={css.header}>
@@ -112,35 +112,35 @@ export function DetailsPanel({ useSession, useSessions, sessionId, useStore, ren
           : noCallId
             ? <div className={css.empty}>{t('details.empty')}</div>
             : material == null
-            ? <div className={css.empty}>{t('details.notInWindow')}</div>
-            : (
-              <>
-                {material.argsRaw !== null && (
+              ? <div className={css.empty}>{t('details.notInWindow')}</div>
+              : (
+                <>
+                  {material.argsRaw !== null && (
+                    <section className={css.section}>
+                      <div className={css.sectionLabel}>{t('details.input')}</div>
+                      <CodeBlock code={pretty(material.argsRaw)} lang="json" copyLabel={t('copy')} copiedLabel={t('copied')} />
+                    </section>
+                  )}
                   <section className={css.section}>
-                    <div className={css.sectionLabel}>{t('details.input')}</div>
-                    <CodeBlock code={pretty(material.argsRaw)} lang="json" copyLabel={t('copy')} copiedLabel={t('copied')} />
-                  </section>
-                )}
-                <section className={css.section}>
-                  <div className={css.sectionLabel}>{t('details.output')}</div>
-                  {/* Keyed by the selected call: the body owns per-call view
+                    <div className={css.sectionLabel}>{t('details.output')}</div>
+                    {/* Keyed by the selected call: the body owns per-call view
                       state (the terminal card's expand and copy), which React
                       would otherwise carry into the next selection because the
                       panel does not unmount between calls. */}
-                  <Fragment key={callId}>
-                    {renderSlot('conversation.details.tool', { block: material.block, cwd: sessionCwd }, {
-                      fallback: 'kind' in material.block
-                        ? (
-                          <pre className={css.code} data-error={material.block.isError || undefined}>
-                            {rawResultText(material.block)}
-                          </pre>
-                        )
-                        : <div className={css.empty}>{t('details.running')}</div>,
-                    })}
-                  </Fragment>
-                </section>
-              </>
-            )}
+                    <Fragment key={callId}>
+                      {renderSlot('conversation.details.tool', { block: material.block, cwd: sessionCwd }, {
+                        fallback: 'kind' in material.block
+                          ? (
+                            <pre className={css.code} data-error={material.block.isError || undefined}>
+                              {rawResultText(material.block)}
+                            </pre>
+                          )
+                          : <div className={css.empty}>{t('details.running')}</div>,
+                      })}
+                    </Fragment>
+                  </section>
+                </>
+              )}
       </div>
     </div>
   )

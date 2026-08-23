@@ -125,7 +125,7 @@ export function DashboardCard({
     const label = new Date().toLocaleTimeString('zh-CN', {
       hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
     })
-    setSampledHistory((history) => [...history, { label, value: numeric }].slice(-20))
+    setSampledHistory(history => [...history, { label, value: numeric }].slice(-20))
   }, [value, chartValue, sampleKey])
 
   const detailRows = useMemo<DashboardDetail[]>(() => {
@@ -146,7 +146,7 @@ export function DashboardCard({
   }, [chartType, progress, chartPoints.length])
 
   const chartRange = useMemo(() => {
-    const values = chartPoints.map((point) => point.value)
+    const values = chartPoints.map(point => point.value)
     if (values.length === 0) return { min: 0, max: 0 }
     return { min: Math.min(...values), max: Math.max(...values) }
   }, [chartPoints])
@@ -162,8 +162,9 @@ export function DashboardCard({
       return `${progressWidth.toFixed(1)}% 已使用 · ${(100 - progressWidth).toFixed(1)}% 可用`
     }
     if (chartPoints.length === 0) return '等待采集'
-    // 长度 > 0 已在上行保证,末位采样点一定存在(label 为必填 string)。
-    return `${chartPoints.length} 个真实采样点 · ${chartPoints[chartPoints.length - 1]!.label}`
+    // 长度 > 0 已在上行保证;at(-1) 恒有值,?? 分支仅类型收窄。
+    const lastLabel = chartPoints.at(-1)?.label ?? ''
+    return `${chartPoints.length} 个真实采样点 · ${lastLabel}`
   }, [effectiveChartType, progressWidth, chartPoints])
 
   const trendMark = trend === 'up' ? '↑' : trend === 'down' ? '↓' : trend === 'stable' ? '→' : null
@@ -178,7 +179,7 @@ export function DashboardCard({
         style={{ '--card-accent': accent } as React.CSSProperties}
         disabled={loading}
         title={`${title}: ${value}(点击查看详情)`}
-        onClick={() => setDetailOpen(true)}
+        onClick={() =>{  setDetailOpen(true) }}
       >
         <span className={css.cardHead}>
           <span className={css.cardIcon}>{icon}</span>
@@ -211,12 +212,12 @@ export function DashboardCard({
       </button>
 
       {detailOpen && (
-        <div className={css.dialogBackdrop} role="presentation" onMouseDown={() => setDetailOpen(false)}>
+        <div className={css.dialogBackdrop} role="presentation" onMouseDown={() =>{  setDetailOpen(false) }}>
           <div
             className={css.detailPanel}
             role="dialog"
             aria-label={`${title} 实时指标详情`}
-            onMouseDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) =>{  event.stopPropagation() }}
           >
             <div className={css.detailHead}>
               <span className={css.cardIcon}>{icon}</span>
@@ -228,7 +229,7 @@ export function DashboardCard({
                 type="button"
                 className={css.closeButton}
                 aria-label="关闭"
-                onClick={() => setDetailOpen(false)}
+                onClick={() =>{  setDetailOpen(false) }}
               >
                 <IconCloseOutline16 size={14} />
               </button>
@@ -278,7 +279,7 @@ export function DashboardCard({
               </div>
             )}
             <div className={css.detailList}>
-              {detailRows.map((row) => (
+              {detailRows.map(row => (
                 <div key={row.label} className={css.detailRow}>
                   <span>{row.label}</span>
                   <code>{row.value}</code>
@@ -290,7 +291,7 @@ export function DashboardCard({
                 <table className={css.detailTable}>
                   <thead>
                     <tr>
-                      {detailTable.columns.map((column) => (
+                      {detailTable.columns.map(column => (
                         <th
                           key={column.key}
                           className={column.wide === true ? css.wide : column.align === 'right' ? css.right : undefined}
@@ -310,7 +311,7 @@ export function DashboardCard({
                     ) : (
                       detailTable.rows.map((row, index) => (
                         <tr key={index}>
-                          {detailTable.columns.map((column) => (
+                          {detailTable.columns.map(column => (
                             <td
                               key={column.key}
                               className={column.wide === true ? css.wide : column.align === 'right' ? css.right : undefined}

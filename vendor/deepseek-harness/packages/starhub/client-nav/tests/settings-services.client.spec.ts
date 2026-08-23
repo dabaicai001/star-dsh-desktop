@@ -156,7 +156,7 @@ describe('plugin services', () => {
       await uninstallPlugin('p1')
       await expect(fetchPluginMarket(true)).resolves.toEqual({ stale: false, categories: [] })
       await shutdownDshRuntime()
-      expect(invoke.mock.calls.map((c) => c[0])).toEqual([
+      expect(invoke.mock.calls.map(c => c[0])).toEqual([
         'dsh_plugin_list', 'dsh_plugin_install_local', 'dsh_plugin_install_url',
         'dsh_plugin_set_enabled', 'dsh_plugin_uninstall', 'dsh_plugin_market_fetch', 'dsh_shutdown',
       ])
@@ -187,7 +187,7 @@ describe('updater services', () => {
         available: true, version: '9.9.9', date: '2026-01-01', body: 'b',
       })
       await downloadAndInstall()
-      expect(invoke.mock.calls.map((c) => c[0])).toEqual([
+      expect(invoke.mock.calls.map(c => c[0])).toEqual([
         'plugin:updater|check', 'plugin:updater|check', 'plugin:updater|download_and_install', 'plugin:process|restart',
       ])
       const downloadArgs = invoke.mock.calls[2]![1]! as { onEvent: { toJSON: () => string }; rid: number }
@@ -290,6 +290,6 @@ describe('aiSettings persistence bridge', () => {
     localStorage.setItem(AI_STORAGE_KEY, '{broken')
     expect(loadAiSettings().memoryEnabled).toBe(false)
     localStorage.setItem(AI_STORAGE_KEY, '{broken')
-    expect(() => saveAiSettings(loadAiSettings())).not.toThrow()
+    expect(() =>{  saveAiSettings(loadAiSettings()) }).not.toThrow()
   })
 })

@@ -56,12 +56,22 @@ export interface BrokerTestResult {
   elapsed_ms?: number
 }
 
-/** 测试 Broker 连通性。 */
+/**
+ * 测试 Broker 连通性。
+ * @param kind - Broker 类型(kafka / nsq)。
+ * @param params - 连接参数。
+ * @returns 连接测试结果(ok / message / elapsed_ms)。
+ */
 export function testBroker(kind: BrokerKind, params: BrokerConnectParams): Promise<BrokerTestResult> {
   return tauriInvoke('broker_test', { kind, params })
 }
 
-/** 拉取 Broker 概览(连接状态 / 节点 / Topic 元数据)。 */
+/**
+ * 拉取 Broker 概览(连接状态 / 节点 / Topic 元数据)。
+ * @param kind - Broker 类型(kafka / nsq)。
+ * @param params - 连接参数。
+ * @returns Broker 概览数据。
+ */
 export function loadBrokerOverview(
   kind: BrokerKind,
   params: BrokerConnectParams,

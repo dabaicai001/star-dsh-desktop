@@ -99,6 +99,7 @@ export interface PostgresMetrics {
 /** 通用明细记录(值只保留可渲染的标量)。 */
 export type DetailRecord = Record<string, string | number | null | undefined>
 
+/** MySQL 默认最大连接数(max_connections 取不到时的兜底值)。 */
 export const MYSQL_DEFAULT_MAX_CONNECTIONS = 151
 
 /** MySQL 汇总指标 SQL:SHOW GLOBAL STATUS。 */
@@ -174,37 +175,60 @@ export const PG_STATEMENTS_SQL = `SELECT round(total_exec_time::numeric / 1000, 
  ORDER BY total_exec_time DESC
  LIMIT 50`
 
-/** 执行一条 SQL(db_mysql_execute;RPC 按 connId 内嵌类型分派,PG/MySQL 通用)。 */
+/**
+ * 执行一条 SQL(db_mysql_execute;RPC 按 connId 内嵌类型分派,PG/MySQL 通用)。
+ * @param connId - 连接 id。
+ * @param sql - 要执行的 SQL 语句。
+ * @param database - 可选的目标数据库名(为空时用连接默认库)。
+ * @returns 查询结果(columns 列名 + rows 二维数组)。
+ */
 export async function dbExecute(connId: string, sql: string, database?: string): Promise<DbQueryResult> {
   const args: Record<string, unknown> = { connId, sql }
   if (database !== undefined && database !== '') args.database = database
   return tauriInvoke<DbQueryResult>('db_mysql_execute', args)
 }
 
-/** 取 Redis INFO 文本。 */
+/**
+ * 取 Redis INFO 文本。
+ * @param connId - 连接 id。
+ * @param section - 可选的 INFO section(如 memory / clients)。
+ * @returns Redis INFO 原始文本。
+ */
 export function redisInfo(connId: string, section?: string): Promise<string> {
   const args: Record<string, unknown> = { connId }
   if (section !== undefined) args.section = section
   return tauriInvoke<string>('db_redis_info', args)
 }
 
-/** 取 Redis 当前 DB 键总数。 */
+/**
+ * 取 Redis 当前 DB 键总数。
+ * @param connId - 连接 id。
+ * @returns 当前 DB 的键数量(size 缺失时为空对象)。
+ */
 export function redisDbSize(connId: string): Promise<{ size?: number }> {
   return tauriInvoke<{ size?: number }>('db_redis_db_size', { connId })
 }
 
 // ─── 纯解析函数(自 Vue src/utils/dbMetrics.ts 迁移,逻辑零改动) ───
 
-/** 字节 → 可读。 */
+/**
+ * 字节 → 可读。
+ * @param bytes - 字节数。
+ * @returns 格式化后的可读大小(如 '1.5 MB');非正数返回 '0 B'。
+ */
 export function formatDbBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i] ?? ''}`
 }
 
-/** 秒 → "X天 Y小时 Z分钟"。 */
+/**
+ * 秒 → "X天 Y小时 Z分钟"。
+ * @param seconds - 秒数。
+ * @returns 格式化后的运行时长;非法值返回 '--'。
+ */
 export function formatDbUptime(seconds: number): string {
   if (!seconds || seconds < 0) return '--'
   const days = Math.floor(seconds / 86400)
@@ -217,6 +241,9 @@ export function formatDbUptime(seconds: number): string {
 
 /**
  * 解析 Redis INFO 文本(支持 `info all` / `info default` / `info memory` 任意 section)。
+ * @param text - Redis INFO 原始文本。
+ * @param dbSize - 可选的当前 DB 键总数(写入 totalKeys)。
+ * @returns 解析后的关键指标。
  */
 export function parseRedisInfo(text: string, dbSize?: number): RedisMetrics {
   const get = (key: string): string => {
@@ -252,35 +279,42 @@ export function parseRedisInfo(text: string, dbSize?: number): RedisMetrics {
 /**
  * 把 SHOW GLOBAL STATUS / SHOW GLOBAL VARIABLES / SELECT 结果(两列 name, value)
  * 转成 dict,方便按 key 查值。
+ * @param result - 两列(name, value)的查询结果。
+ * @returns 按 key 索引的值字典。
  */
 export function rowsToDict(result: DbQueryResult | undefined): Record<string, string> {
   if (!result?.rows?.length) return {}
-  const colNames = (result.columns || []).map((c) => c.name?.toLowerCase() ?? '')
-  let nameIdx = colNames.findIndex((n) => /name|variable/i.test(n))
-  let valueIdx = colNames.findIndex((n) => /value/i.test(n))
+  const colNames = (result.columns || []).map(c => c.name?.toLowerCase() ?? '')
+  let nameIdx = colNames.findIndex(n => /name|variable/i.test(n))
+  let valueIdx = colNames.findIndex(n => /value/i.test(n))
   if (nameIdx < 0) nameIdx = 0
   if (valueIdx < 0) valueIdx = 1
   const dict: Record<string, string> = {}
   for (const row of result.rows) {
-    const k = String(row[nameIdx] ?? '')
-    const v = String(row[valueIdx] ?? '')
+    const k = text(row[nameIdx])
+    const v = text(row[valueIdx])
     if (k) dict[k] = v
   }
   return dict
 }
 
-/** 把 DbQueryResult 转为以小写列名索引的对象数组(兼容驱动返回的列名大小写)。 */
+/**
+ * 把 DbQueryResult 转为以小写列名索引的对象数组(兼容驱动返回的列名大小写)。
+ * @param result - 查询结果。
+ * @returns 以小写列名为键的对象数组;无结果时为空数组。
+ */
 export function queryRowsToRecords(result?: DbQueryResult): Array<Record<string, unknown>> {
   if (!result?.rows?.length) return []
-  const columns = (result.columns || []).map((c) => c.name?.toLowerCase() ?? '')
-  return result.rows.map((row) => Object.fromEntries(
+  const columns = (result.columns || []).map(c => c.name?.toLowerCase() ?? '')
+  return result.rows.map(row => Object.fromEntries(
     columns.map((column, index) => [column, row[index]]),
   ))
 }
 
 function text(value: unknown, fallback = ''): string {
   if (value === null || value === undefined) return fallback
-  return String(value)
+  const primitive = value as string | number | boolean | bigint | symbol
+  return String(primitive)
 }
 
 function integer(value: unknown): number {
@@ -288,7 +322,11 @@ function integer(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-/** 从 PROCESSLIST 的 host:port 中拆出可直接识别的客户端 IP/主机名。 */
+/**
+ * 从 PROCESSLIST 的 host:port 中拆出可直接识别的客户端 IP/主机名。
+ * @param host - PROCESSLIST 的 HOST 字段(可能带端口或 IPv6 方括号)。
+ * @returns 客户端 IP/主机名;无法识别时返回 '--'。
+ */
 export function mysqlClientIp(host: string): string {
   const trimmed = host.trim()
   if (!trimmed) return '--'
@@ -303,7 +341,11 @@ export function mysqlClientIp(host: string): string {
   return trimmed
 }
 
-/** 解析 PROCESSLIST 会话明细。 */
+/**
+ * 解析 PROCESSLIST 会话明细。
+ * @param result - PROCESSLIST 查询结果。
+ * @returns 会话明细数组。
+ */
 export function parseMysqlProcessDetails(result?: DbQueryResult): MysqlProcessDetail[] {
   return queryRowsToRecords(result).map((row) => {
     const host = text(row.host, '--')
@@ -321,12 +363,17 @@ export function parseMysqlProcessDetails(result?: DbQueryResult): MysqlProcessDe
   })
 }
 
-/** 解析 MySQL 慢语句明细(slow_log 或 performance_schema 摘要)。 */
+/**
+ * 解析 MySQL 慢语句明细(slow_log 或 performance_schema 摘要)。
+ * @param result - 慢日志查询结果。
+ * @param source - 数据来源(slow_log 或 performance_schema)。
+ * @returns 慢语句明细数组。
+ */
 export function parseMysqlSlowQueryDetails(
   result: DbQueryResult | undefined,
   source: MysqlSlowQueryDetail['source'],
 ): MysqlSlowQueryDetail[] {
-  return queryRowsToRecords(result).map((row) => ({
+  return queryRowsToRecords(result).map(row => ({
     startedAt: text(row.started_at ?? row.first_seen, '--'),
     duration: text(row.duration ?? row.total_latency, '--'),
     lockTime: text(row.lock_time, '--'),
@@ -339,7 +386,13 @@ export function parseMysqlSlowQueryDetails(
   }))
 }
 
-/** 从 dict 取数字,缺失返回 fallback。 */
+/**
+ * 从 dict 取数字,缺失返回 fallback。
+ * @param dict - 键值字典。
+ * @param key - 要读取的键。
+ * @param fallback - 缺失或非法值时的回退值,默认 0。
+ * @returns 解析后的数字。
+ */
 export function num(dict: Record<string, string>, key: string, fallback = 0): number {
   const v = dict[key]
   if (v === undefined || v === '') return fallback
@@ -350,6 +403,8 @@ export function num(dict: Record<string, string>, key: string, fallback = 0): nu
 /**
  * 解析 MySQL 状态:status(SHOW GLOBAL STATUS)+ variables(SHOW GLOBAL VARIABLES)
  * + 可选 tableStats/sizeStats。
+ * @param opts - status / variables 查询结果,及可选的 tableStats / sizeStats。
+ * @returns 解析后的 MySQL 关键指标。
  */
 export function parseMysqlMetrics(opts: {
   status: DbQueryResult | undefined
@@ -382,16 +437,19 @@ export function parseMysqlMetrics(opts: {
   let dataSize = 0
   let indexSize = 0
   if (opts.tableStats?.rows?.length) {
-    const last = opts.tableStats.rows[0]
+    // 运行时可能返回 null 行(测试与坏数据源都喂过);经 unknown 读取让守卫真实。
+    const last: unknown = opts.tableStats.rows[0]
     if (last !== undefined && last !== null) {
-      tableCount = parseInt(String(last[last.length - 1] ?? '0'), 10) || 0
+      const row = last as ReadonlyArray<unknown>
+      tableCount = parseInt(text(row[row.length - 1], '0'), 10) || 0
     }
   }
   if (opts.sizeStats?.rows?.length) {
-    const r = opts.sizeStats.rows[0]
+    const r: unknown = opts.sizeStats.rows[0]
     if (r !== undefined && r !== null) {
-      dataSize = parseInt(String(r[0] ?? '0'), 10) || 0
-      indexSize = parseInt(String(r[1] ?? '0'), 10) || 0
+      const row = r as ReadonlyArray<unknown>
+      dataSize = parseInt(text(row[0], '0'), 10) || 0
+      indexSize = parseInt(text(row[1], '0'), 10) || 0
     }
   }
   return {
@@ -415,14 +473,18 @@ export function parseMysqlMetrics(opts: {
   }
 }
 
-/** 把 PostgreSQL 概览汇总行解析成 PostgresMetrics(缺失字段回退 0/--)。 */
+/**
+ * 把 PostgreSQL 概览汇总行解析成 PostgresMetrics(缺失字段回退 0/--)。
+ * @param row - PG_SUMMARY_SQL 返回的一行记录。
+ * @returns 解析后的 PostgreSQL 概览指标。
+ */
 export function parsePostgresMetrics(row: Record<string, unknown>): PostgresMetrics {
   const number = (value: unknown): number => {
     const parsed = Number(value ?? 0)
     return Number.isFinite(parsed) ? parsed : 0
   }
   return {
-    version: String(row.version ?? '--'),
+    version: text(row.version, '--'),
     uptimeSeconds: number(row.uptime_seconds),
     connections: number(row.connections),
     activeConnections: number(row.active_connections),
@@ -434,14 +496,18 @@ export function parsePostgresMetrics(row: Record<string, unknown>): PostgresMetr
   }
 }
 
-/** 把任意行对象转成可渲染的明细记录(对象值序列化)。 */
+/**
+ * 把任意行对象转成可渲染的明细记录(对象值序列化)。
+ * @param rows - 行对象数组。
+ * @returns 只保留可渲染标量值的明细记录数组。
+ */
 export function detailRecords(rows: Array<Record<string, unknown>>): DetailRecord[] {
-  return rows.map((row) => Object.fromEntries(
+  return rows.map(row => Object.fromEntries(
     Object.entries(row).map(([key, value]) => [
       key,
       value === null || value === undefined || typeof value === 'string' || typeof value === 'number'
         ? value
-        : String(value),
+        : text(value),
     ]),
   ))
 }

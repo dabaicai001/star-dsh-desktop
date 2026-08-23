@@ -17,9 +17,19 @@ StarHub 本地 host 包(2026-08-22,v0.92.0):agent/turn-stopping 钩子把当轮�
 
 ## Model Experience
 
-- **Model-visible**:不直接注入任何消息;只读 settings namespace + 调一次额外 LLM。
-- **Token 影响**:每 4+ 条消息触发一次独立 LLM 调用,常驻开销接近零。
-- **KV-cache**:无关(注入路径完全在 turn 结束后)。
+### Turn-review extraction
+
+#### What the model sees
+
+No direct message injection — the hook reads the `starhub-memory-context` settings namespace and issues one separate LLM completion (`ctx.llm.generate({ json: true })`) over the extracted user/assistant messages.
+
+#### Token effect
+
+One independent LLM call per 4+ message turn; steady-state cost is near zero.
+
+#### KV Cache effect
+
+Not applicable — the extraction path runs entirely after the turn ends.
 
 ## Known Limitations and Deferred Work
 

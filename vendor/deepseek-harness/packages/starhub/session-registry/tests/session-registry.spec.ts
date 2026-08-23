@@ -24,13 +24,14 @@ function makeHub() {
 
 function makeCtx(hub: unknown) {
   const provided: Record<string, unknown> = {}
-  const effect = vi.fn((callback: () => (() => void) | void) => callback())
+  const provide = vi.fn((serviceName: string, value: unknown) => { provided[serviceName] = value })
+  const effect = vi.fn((callback: () => (() => void) | undefined) => callback())
   const ctx = {
     get: (serviceName: string) => serviceName === 'sdk-notifications' ? hub : undefined,
-    provide: vi.fn((serviceName: string, value: unknown) => { provided[serviceName] = value }),
+    provide,
     effect,
   } as unknown as Context
-  return { ctx, provided, effect }
+  return { ctx, provided, provide, effect }
 }
 
 describe('SessionRegistry', () => {
@@ -106,11 +107,11 @@ describe('SessionRegistry', () => {
 describe('starhub-session-registry plugin apply', () => {
   it('subscribes to registry.sync, provides the service, and replaces on delivery', () => {
     const { handlers, subscribe } = makeHub()
-    const { ctx, provided } = makeCtx({ subscribe })
+    const { ctx, provided, provide } = makeCtx({ subscribe })
 
     apply(ctx)
 
-    expect(ctx.provide).toHaveBeenCalledWith('starhub-session-registry', expect.any(SessionRegistry))
+    expect(provide).toHaveBeenCalledWith('starhub-session-registry', expect.any(SessionRegistry))
     expect(subscribe).toHaveBeenCalledWith('starhub/registry.sync', expect.any(Function))
     const registry = provided['starhub-session-registry'] as SessionRegistry
     expect(registry.list()).toEqual([])
@@ -139,7 +140,7 @@ describe('starhub-session-registry plugin apply', () => {
   it('fails loud when sdk-notifications is missing from the composition', () => {
     const { ctx } = makeCtx(undefined)
 
-    expect(() => apply(ctx)).toThrow(
+    expect(() =>{  apply(ctx) }).toThrow(
       'starhub-session-registry requires sdk-jsonrpc-server (sdk-notifications service) in the same composition',
     )
   })

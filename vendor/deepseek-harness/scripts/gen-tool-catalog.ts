@@ -7,7 +7,7 @@
  */
 
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+import { basename, resolve, sep } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -579,7 +579,15 @@ export type ToolCatalog = CatalogPackage[]
  * `scanRoot` defaults to the repo root; a test may point it at a fixture tree.
  */
 export function assertManifestComplete(packages: ToolPackage[] = TOOL_PACKAGES, scanRoot: string = root): void {
-  const onDisk = globSync('packages/*/tool-*', { cwd: scanRoot }).map(p => basename(p)).sort()
+  // StarHub-local packages are excluded: their tools are documented in each
+  // package's README, not in the upstream tool catalog, and the fork's
+  // `starhub/tool-context` (a context injector, not a tool package) matches the
+  // upstream `tool-*` naming heuristic.
+  const onDisk = globSync('packages/*/tool-*', { cwd: scanRoot })
+    .map(path => path.split(sep).join('/'))
+    .filter(path => !path.startsWith('packages/starhub/'))
+    .map(path => basename(path))
+    .sort()
   const listed = new Set(packages.map(p => p.dir))
   const missing = onDisk.filter(dir => !listed.has(dir))
   if (missing.length > 0) {

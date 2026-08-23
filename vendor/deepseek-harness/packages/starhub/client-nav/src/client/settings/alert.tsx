@@ -149,7 +149,7 @@ export function AlertTab() {
   }
 
   const setFormField = <K extends keyof AlertRuleInput>(key: K, value: AlertRuleInput[K]) => {
-    setAlertForm((form) => ({ ...form, [key]: value }))
+    setAlertForm(form => ({ ...form, [key]: value }))
   }
 
   /* v8 ignore start -- 表单状态恒为 number/string(duration_sec/cooldown_sec/webhook_url 必填),?? 为防御分支 */
@@ -176,7 +176,7 @@ export function AlertTab() {
           <div className={s.empty}>暂无告警规则,点击「新建规则」创建。</div>
         ) : (
           <div className={s.cardList}>
-            {alertRules.map((rule) => (
+            {alertRules.map(rule => (
               <div key={rule.id} className={`${s.card} ${rule.enabled ? '' : s.disabled}`}>
                 <div className={s.cardHead}>
                   <span className={s.cardName}>{rule.name}</span>
@@ -189,7 +189,7 @@ export function AlertTab() {
                   <span className={s.cardActions}>
                     <button
                       type="button" className={s.iconButton} title="编辑" aria-label="编辑"
-                      onClick={() => openEditAlert(rule)}
+                      onClick={() =>{  openEditAlert(rule) }}
                     >
                       ✎
                     </button>
@@ -219,18 +219,18 @@ export function AlertTab() {
       </div>
 
       {alertDialog && (
-        <div className={s.dialogBackdrop} role="presentation" onMouseDown={() => setAlertDialog(false)}>
+        <div className={s.dialogBackdrop} role="presentation" onMouseDown={() =>{  setAlertDialog(false) }}>
           <div
             className={s.dialogPanel}
             role="dialog"
             aria-label={alertEditing !== null ? '编辑告警规则' : '新建告警规则'}
-            onMouseDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) =>{  event.stopPropagation() }}
           >
             <div className={s.dialogHead}>
               <span className={s.dialogTitle}>
                 {alertEditing !== null ? '编辑告警规则' : '新建告警规则'}
               </span>
-              <button type="button" className={s.iconButton} aria-label="关闭" onClick={() => setAlertDialog(false)}>
+              <button type="button" className={s.iconButton} aria-label="关闭" onClick={() =>{  setAlertDialog(false) }}>
                 <IconCloseOutline16 size={14} />
               </button>
             </div>
@@ -240,16 +240,16 @@ export function AlertTab() {
                 <input
                   className={s.input} placeholder="例如: SSH 连接失败告警"
                   value={alertForm.name}
-                  onChange={(event) => setFormField('name', event.target.value)}
+                  onChange={(event) =>{  setFormField('name', event.target.value) }}
                 />
               </div>
               <div className={s.formField}>
                 <label className={s.fieldLabel}>类别</label>
                 <select
                   className={s.select} value={alertForm.category}
-                  onChange={(event) => setFormField('category', event.target.value)}
+                  onChange={(event) =>{  setFormField('category', event.target.value) }}
                 >
-                  {ALERT_CATEGORIES.map((category) => (
+                  {ALERT_CATEGORIES.map(category => (
                     <option key={category.value} value={category.value}>{category.label}</option>
                   ))}
                 </select>
@@ -258,9 +258,9 @@ export function AlertTab() {
                 <label className={s.fieldLabel}>监控指标</label>
                 <select
                   className={s.select} value={alertForm.metric}
-                  onChange={(event) => setFormField('metric', event.target.value)}
+                  onChange={(event) =>{  setFormField('metric', event.target.value) }}
                 >
-                  {ALERT_METRICS.map((metric) => (
+                  {ALERT_METRICS.map(metric => (
                     <option key={metric.value} value={metric.value}>{metric.label}</option>
                   ))}
                 </select>
@@ -269,9 +269,9 @@ export function AlertTab() {
                 <label className={s.fieldLabel}>操作符</label>
                 <select
                   className={s.select} value={alertForm.operator}
-                  onChange={(event) => setFormField('operator', event.target.value)}
+                  onChange={(event) =>{  setFormField('operator', event.target.value) }}
                 >
-                  {ALERT_OPERATORS.map((operator) => (
+                  {ALERT_OPERATORS.map(operator => (
                     <option key={operator.value} value={operator.value}>{operator.label}</option>
                   ))}
                 </select>
@@ -280,50 +280,49 @@ export function AlertTab() {
                 <label className={s.fieldLabel}>阈值</label>
                 <input
                   className={s.input} type="number" step={0.1} value={alertForm.threshold}
-                  onChange={(event) => setFormField('threshold', Number(event.target.value))}
+                  onChange={(event) =>{  setFormField('threshold', Number(event.target.value)) }}
                 />
               </div>
               <div className={s.formField}>
                 <label className={s.fieldLabel}>持续时间(秒)</label>
                 <input
                   className={s.input} type="number" min={0} value={formDurationSec}
-                  onChange={(event) => setFormField('duration_sec', Number(event.target.value))}
+                  onChange={(event) =>{  setFormField('duration_sec', Number(event.target.value)) }}
                 />
               </div>
               <div className={s.formField}>
                 <label className={s.fieldLabel}>冷却时间(秒)</label>
                 <input
                   className={s.input} type="number" min={0} value={formCooldownSec}
-                  onChange={(event) => setFormField('cooldown_sec', Number(event.target.value))}
+                  onChange={(event) =>{  setFormField('cooldown_sec', Number(event.target.value)) }}
                 />
               </div>
               <div className={s.formField}>
                 <label className={s.fieldLabel}>Webhook URL</label>
                 <input
                   className={s.input} value={formWebhookUrl}
-                  onChange={(event) => setFormField('webhook_url', event.target.value === '' ? null : event.target.value)}
+                  onChange={(event) =>{  setFormField('webhook_url', event.target.value === '' ? null : event.target.value) }}
                 />
               </div>
             </div>
             <label className={s.checkboxRow}>
               <input
                 type="checkbox" checked={alertForm.enabled !== false}
-                onChange={(event) => setFormField('enabled', event.target.checked)}
+                onChange={(event) =>{  setFormField('enabled', event.target.checked) }}
               />
               启用此规则
             </label>
             <div className={s.actionRow}>
-              {alertForm.webhook_url !== null && alertForm.webhook_url !== '' && (
+              {formWebhookUrl !== '' && (
                 <button
                   type="button" className={s.btnSecondary}
-                  disabled={alertTesting === alertForm.webhook_url}
-                  // 按钮仅在 webhook 非空时渲染,非空断言消除防御分支
-                  onClick={() => void onTestWebhook(alertForm.webhook_url!)}
+                  disabled={alertTesting === formWebhookUrl}
+                  onClick={() => void onTestWebhook(formWebhookUrl)}
                 >
-                  {alertTesting === alertForm.webhook_url ? '测试中…' : '测试 Webhook'}
+                  {alertTesting === formWebhookUrl ? '测试中…' : '测试 Webhook'}
                 </button>
               )}
-              <button type="button" className={s.btnSecondary} onClick={() => setAlertDialog(false)}>取消</button>
+              <button type="button" className={s.btnSecondary} onClick={() =>{  setAlertDialog(false) }}>取消</button>
               <button
                 type="button" className={s.btn} disabled={alertForm.name.trim() === ''}
                 onClick={() => void onSaveAlert()}

@@ -193,6 +193,9 @@
   border-radius: 10px;
   padding: 16px;
   color: var(--dsw-alias-label-primary);
+  /* Elevated scroll container: rebind the scrollbar indirection to the l2 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .detailHead {

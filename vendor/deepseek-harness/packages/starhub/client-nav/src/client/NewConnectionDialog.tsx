@@ -164,8 +164,8 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
     ? dockerTransport === 'socket' || dockerAddress.trim() !== ''
     : kind === 'elasticsearch'
       ? (esMode === 'multi'
-          ? esNodes.split('\n').map(s => s.trim()).filter(Boolean).length > 0
-          : esMode === 'address' ? esAddress.trim() !== '' : host.trim() !== '')
+        ? esNodes.split('\n').map(s => s.trim()).filter(Boolean).length > 0
+        : esMode === 'address' ? esAddress.trim() !== '' : host.trim() !== '')
       : host.trim() !== ''
   const canSubmit = !preview && !busy && name.trim() !== ''
     && addressValid
@@ -198,7 +198,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
       setPrivateKeyName(file.name)
       setError('')
     }
-    reader.onerror = () => setError('私钥文件读取失败')
+    reader.onerror = () =>{  setError('私钥文件读取失败') }
     reader.readAsText(file)
   }
 
@@ -250,11 +250,11 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
       ssl,
       ...(kind === 'elasticsearch' && (esMode === 'address' || esMode === 'multi')
         ? {
-            address: esMode === 'address' ? esAddress.trim() : undefined,
-            addresses: esMode === 'multi'
-              ? esNodes.split('\n').map(s => s.trim()).filter(Boolean)
-              : undefined,
-          }
+          address: esMode === 'address' ? esAddress.trim() : undefined,
+          addresses: esMode === 'multi'
+            ? esNodes.split('\n').map(s => s.trim()).filter(Boolean)
+            : undefined,
+        }
         : {}),
     }
   }
@@ -455,7 +455,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
         className={s.dialogPanel}
         role="dialog"
         aria-label={editing ? '编辑连接' : '新建连接'}
-        onMouseDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) =>{  event.stopPropagation() }}
       >
         <div className={s.dialogHead}>
           <span className={s.dialogTitle}>{editing ? `编辑连接 · ${asset.name}` : '新建连接'}</span>
@@ -474,7 +474,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
               className={s.select}
               value={kind}
               disabled={editing || preview}
-              onChange={(event) => onKindChange(event.target.value as ConnKind)}
+              onChange={(event) =>{  onKindChange(event.target.value as ConnKind) }}
             >
               {CONN_KINDS.map(k => <option key={k.kind} value={k.kind}>{k.label}</option>)}
             </select>
@@ -487,7 +487,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
               value={name}
               disabled={preview}
               placeholder="连接名称"
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) =>{  setName(event.target.value) }}
             />
           </div>
           {kind === 'docker' ? (
@@ -499,7 +499,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                   className={s.select}
                   value={dockerTransport}
                   disabled={preview}
-                  onChange={(event) => setDockerTransport(event.target.value === 'tcp' ? 'tcp' : 'socket')}
+                  onChange={(event) =>{  setDockerTransport(event.target.value === 'tcp' ? 'tcp' : 'socket') }}
                 >
                   <option value="socket">本机 Socket</option>
                   <option value="tcp">远程 TCP</option>
@@ -515,7 +515,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                   value={dockerAddress}
                   disabled={preview}
                   placeholder={dockerTransport === 'tcp' ? 'tcp://127.0.0.1:2375' : '/var/run/docker.sock'}
-                  onChange={(event) => setDockerAddress(event.target.value)}
+                  onChange={(event) =>{  setDockerAddress(event.target.value) }}
                 />
               </div>
             </>
@@ -548,7 +548,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                     value={esNodes}
                     disabled={preview}
                     placeholder={'http://node1:9200\nhttp://node2:9200'}
-                    onChange={(event) => setEsNodes(event.target.value)}
+                    onChange={(event) =>{  setEsNodes(event.target.value) }}
                   />
                   <span className={s.fieldHint}>每行一个地址,支持轮询与故障转移</span>
                 </div>
@@ -561,7 +561,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                     value={esAddress}
                     disabled={preview}
                     placeholder="http://127.0.0.1:9200"
-                    onChange={(event) => setEsAddress(event.target.value)}
+                    onChange={(event) =>{  setEsAddress(event.target.value) }}
                   />
                 </div>
               ) : (
@@ -574,7 +574,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                       value={host}
                       disabled={preview}
                       placeholder="127.0.0.1"
-                      onChange={(event) => setHost(event.target.value)}
+                      onChange={(event) =>{  setHost(event.target.value) }}
                     />
                   </div>
                   <div className={s.formField}>
@@ -585,7 +585,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                       type="number"
                       value={port}
                       disabled={preview}
-                      onChange={(event) => setPort(Number(event.target.value) || kindMeta.defaultPort)}
+                      onChange={(event) =>{  setPort(Number(event.target.value) || kindMeta.defaultPort) }}
                     />
                   </div>
                 </>
@@ -601,7 +601,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                   value={host}
                   disabled={preview}
                   placeholder="127.0.0.1"
-                  onChange={(event) => setHost(event.target.value)}
+                  onChange={(event) =>{  setHost(event.target.value) }}
                 />
               </div>
               <div className={s.formField}>
@@ -612,7 +612,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                   type="number"
                   value={port}
                   disabled={preview}
-                  onChange={(event) => setPort(Number(event.target.value) || kindMeta.defaultPort)}
+                  onChange={(event) =>{  setPort(Number(event.target.value) || kindMeta.defaultPort) }}
                 />
               </div>
             </>
@@ -627,7 +627,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                 className={s.input}
                 value={username}
                 disabled={preview}
-                onChange={(event) => setUsername(event.target.value)}
+                onChange={(event) =>{  setUsername(event.target.value) }}
               />
             </div>
           )}
@@ -662,7 +662,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                   type="password"
                   value={mfaPassword}
                   disabled={preview}
-                  onChange={(event) => setMfaPassword(event.target.value)}
+                  onChange={(event) =>{  setMfaPassword(event.target.value) }}
                 />
               </div>
               <div className={s.formField}>
@@ -683,7 +683,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                 type="password"
                 value={password}
                 disabled={preview}
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(event) =>{  setPassword(event.target.value) }}
               />
             </div>
           )}
@@ -708,7 +708,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                   type="file"
                   hidden
                   aria-label="私钥文件"
-                  onChange={(event) => onKeyFile(event.target.files?.[0])}
+                  onChange={(event) =>{  onKeyFile(event.target.files?.[0]) }}
                 />
               </div>
               <div className={s.formField}>
@@ -719,7 +719,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                   type="password"
                   value={passphrase}
                   disabled={preview}
-                  onChange={(event) => setPassphrase(event.target.value)}
+                  onChange={(event) =>{  setPassphrase(event.target.value) }}
                 />
               </div>
             </>
@@ -733,7 +733,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                 value={database}
                 disabled={preview}
                 placeholder={kind === 'postgresql' ? 'postgres' : ''}
-                onChange={(event) => setDatabase(event.target.value)}
+                onChange={(event) =>{  setDatabase(event.target.value) }}
               />
             </div>
           )}
@@ -746,7 +746,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                 type="number"
                 value={redisDb}
                 disabled={preview}
-                onChange={(event) => setRedisDb(Number(event.target.value) || 0)}
+                onChange={(event) =>{  setRedisDb(Number(event.target.value) || 0) }}
               />
             </div>
           )}
@@ -758,7 +758,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
                   type="checkbox"
                   checked={ssl}
                   disabled={preview}
-                  onChange={(event) => setSsl(event.target.checked)}
+                  onChange={(event) =>{  setSsl(event.target.checked) }}
                 />
                 {' '}使用 SSL/TLS 连接
               </label>

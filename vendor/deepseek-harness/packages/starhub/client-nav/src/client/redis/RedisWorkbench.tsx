@@ -49,15 +49,15 @@ function KeyTreeRow({ node, depth, expanded, onToggle, onOpen, onRename, onDelet
     const k = node.keyInfo
     return (
       <div className={css.keyRow} style={indent}>
-        <button type="button" className={css.keyMain} onClick={() => onOpen(k.key, k.type)}>
+        <button type="button" className={css.keyMain} onClick={() =>{  onOpen(k.key, k.type) }}>
           <span className={css.keyType}>{k.type}</span>
           <span className={css.keyName} title={k.key}>{node.name}</span>
         </button>
         <div className={css.keyActions}>
           <button type="button" className={css.miniButton} title="重命名" aria-label={`重命名 ${k.key}`}
-            onClick={() => onRename(k.key)}>⟳</button>
+            onClick={() =>{  onRename(k.key) }}>⟳</button>
           <button type="button" className={css.miniDanger} title="删除" aria-label={`删除 ${k.key}`}
-            onClick={() => onDelete(k.key)}>✕</button>
+            onClick={() =>{  onDelete(k.key) }}>✕</button>
         </div>
       </div>
     )
@@ -66,19 +66,27 @@ function KeyTreeRow({ node, depth, expanded, onToggle, onOpen, onRename, onDelet
   return (
     <>
       <div className={css.keyRow} style={indent}>
-        <button type="button" className={css.keyMain} onClick={() => onToggle(node.path)}
+        <button type="button" className={css.keyMain} onClick={() =>{  onToggle(node.path) }}
           aria-expanded={open} aria-label={`文件夹 ${node.path}`}>
           <span className={css.folderChevron}>{open ? '▾' : '▸'}</span>
           <span className={css.folderName} title={node.path}>{node.name}</span>
           <span className={css.folderCount}>{countLeaves(node)}</span>
         </button>
       </div>
-      {open && node.children.map((child) => (
+      {open && node.children.map(child => (
         <KeyTreeRow key={child.path} node={child} depth={depth + 1} expanded={expanded}
           onToggle={onToggle} onOpen={onOpen} onRename={onRename} onDelete={onDelete} />
       ))}
     </>
   )
+}
+
+/** CLI 结果显示文本:对象 JSON 化(含 null),undefined 空串,其余原样。 */
+function toCliText(v: unknown): string {
+  if (typeof v === 'object') return JSON.stringify(v, null, 2)
+  if (v === undefined) return ''
+  const primitive = v as string | number | boolean | bigint | symbol
+  return String(primitive)
 }
 
 /**
@@ -109,7 +117,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
   const notify = useCallback((msg: string) => {
     setToast(msg)
     /* v8 ignore start -- toast 自动消除是时序副作用,由出现断言覆盖 */
-    window.setTimeout(() => setToast((cur) => (cur === msg ? null : cur)), 2500)
+    window.setTimeout(() =>{  setToast(cur => (cur === msg ? null : cur)) }, 2500)
     /* v8 ignore stop */
   }, [])
 
@@ -124,14 +132,12 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
 
   const loadKeys = useCallback(async (connId: string) => {
     const match = search.trim() === '' ? undefined : search.trim()
-    setList((prev) => ({ ...prev, loading: true, error: null }))
+    setList(prev => ({ ...prev, loading: true, error: null }))
     try {
       const result = await redisScan(connId, 0, match)
-      /* v8 ignore start -- 后端恒返回数组,`?? []` 类型落空防御 */
-      setList({ keys: result.keys ?? [], cursor: result.cursor ?? 0, loading: false, error: null })
-      /* v8 ignore stop */
+      setList({ keys: result.keys, cursor: result.cursor, loading: false, error: null })
     } catch (e: unknown) {
-      setList((prev) => ({ ...prev, loading: false, error: e instanceof Error ? e.message : String(e) }))
+      setList(prev => ({ ...prev, loading: false, error: e instanceof Error ? e.message : String(e) }))
     }
   }, [search])
 
@@ -150,7 +156,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
       .then(async (info) => {
         /* v8 ignore next -- 卸载竞态守卫 */
         if (cancelled) return
-        if (!info?.connId) throw new Error('Redis 连接未返回 connId')
+        if (!info.connId) throw new Error('Redis 连接未返回 connId')
         connRef.current = info.connId
         setConnected(true)
         await Promise.all([refreshSize(info.connId), loadKeys(info.connId)])
@@ -167,7 +173,6 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
       /* v8 ignore stop */
     }
     // 只随资产 id
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asset.id])
 
   const switchDb = async (db: number) => {
@@ -192,7 +197,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     try {
       await redisDel(connId, [key])
       notify(`已删除:${key}`)
-      setOpenValue((cur) => (cur?.key === key ? null : cur))
+      setOpenValue(cur => (cur?.key === key ? null : cur))
       await Promise.all([refreshSize(connId), loadKeys(connId)])
     } catch (e: unknown) {
       notify(`删除失败:${e instanceof Error ? e.message : String(e)}`)
@@ -258,14 +263,14 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     if (connId === null || command === '') return
     try {
       const res = await redisExecute(connId, command)
-      setCliOutput(res.error ?? (typeof res.result === 'object' ? JSON.stringify(res.result, null, 2) : String(res.result ?? '')))
+      setCliOutput(res.error ?? toCliText(res.result))
       await Promise.all([refreshSize(connId), loadKeys(connId)])
     } catch (e: unknown) {
       setCliOutput(e instanceof Error ? e.message : String(e))
     }
   }
 
-  const openKey = useCallback((key: string, type: string) => setOpenValue({ key, type }), [])
+  const openKey = useCallback((key: string, type: string) =>{  setOpenValue({ key, type }) }, [])
 
   // 键树:SCAN 结果按 ':' 分组;搜索态强制全展开(过滤结果直接可见)。
   const keyTree = useMemo(() => buildKeyTree(list.keys), [list.keys])
@@ -315,10 +320,10 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
               <div className={css.toolbar}>
                 <select className={css.dbSelect} value={currentDb} disabled={!connected}
                   onChange={(e) => { void switchDb(Number(e.target.value)) }}>
-                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((db) => <option key={db} value={db}>db{db}</option>)}
+                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map(db => <option key={db} value={db}>db{db}</option>)}
                 </select>
                 <input className={css.searchInput} placeholder="搜索 key…" value={search} disabled={!connected}
-                  onChange={(e) => setSearch(e.target.value)} aria-label="搜索 key" />
+                  onChange={(e) =>{  setSearch(e.target.value) }} aria-label="搜索 key" />
                 <button type="button" className={css.iconButton} title="刷新" aria-label="刷新"
                   disabled={!connected || list.loading}
                   /* v8 ignore next -- 刷新钮在未连接时 disabled,`c === null` 分支不可达 */
@@ -326,9 +331,9 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                 <button type="button" className={css.iconButton} title="清空 DB" aria-label="清空 DB"
                   disabled={!connected} onClick={() => void flushDb()}>⌀</button>
                 <button type="button" className={css.iconButton} title="CLI" aria-label="CLI"
-                  disabled={!connected} onClick={() => setCliOpen((v) => !v)}>⌨</button>
+                  disabled={!connected} onClick={() =>{  setCliOpen(v => !v) }}>⌨</button>
                 <button type="button" className={css.primaryButton} title="新建 Key" aria-label="新建 Key"
-                  disabled={!connected} onClick={() => setNewKeyOpen(true)}>＋</button>
+                  disabled={!connected} onClick={() =>{  setNewKeyOpen(true) }}>＋</button>
               </div>
 
               {list.loading && <div className={css.status}>加载键…</div>}
@@ -343,11 +348,11 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
               {!list.loading && list.error === null && list.keys.length === 0 && <div className={css.status}>暂无 key。</div>}
               {!list.loading && list.error === null && list.keys.length > 0 && (
                 <div className={css.keyList}>
-                  {keyTree.map((node) => (
+                  {keyTree.map(node => (
                     <KeyTreeRow key={node.path} node={node} depth={0} expanded={expandedFolders}
                       onToggle={toggleFolder} onOpen={openKey}
                       onRename={(key) => { setRenaming(key); setRenameTo(key) }}
-                      onDelete={(key) => void deleteKey(key)} />
+                      onDelete={key => void deleteKey(key)} />
                   ))}
                 </div>
               )}
@@ -357,15 +362,15 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
               {renaming !== null && (
                 <div className={css.renameBar}>
                   <input className={css.searchInput} value={renameTo} aria-label="新 key 名"
-                    placeholder={renaming} onChange={(e) => setRenameTo(e.target.value)} />
+                    placeholder={renaming} onChange={(e) =>{  setRenameTo(e.target.value) }} />
                   <button type="button" className={css.primaryButton} onClick={() => void doRename()}>确认</button>
-                  <button type="button" className={css.secondaryButton} onClick={() => setRenaming(null)}>取消</button>
+                  <button type="button" className={css.secondaryButton} onClick={() =>{  setRenaming(null) }}>取消</button>
                 </div>
               )}
               {cliOpen && (
                 <div className={css.cliBar}>
                   <input className={css.searchInput} placeholder="redis 命令,如 GET foo" value={cliInput} aria-label="命令输入"
-                    onChange={(e) => setCliInput(e.target.value)}
+                    onChange={(e) =>{  setCliInput(e.target.value) }}
                     onKeyDown={(e) => { if (e.key === 'Enter') void runCli() }} />
                   <button type="button" className={css.primaryButton} onClick={() => void runCli()}>执行</button>
                 </div>
@@ -388,11 +393,11 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
             <div className={css.modal}>
               <div className={css.modalTitle}>新建 Key</div>
               <input className={css.searchInput} placeholder="key 名" aria-label="key 名"
-                value={newKeyDraft.key} onChange={(e) => setNewKeyDraft((d) => ({ ...d, key: e.target.value }))} />
+                value={newKeyDraft.key} onChange={(e) =>{  setNewKeyDraft(d => ({ ...d, key: e.target.value })) }} />
               <input className={css.searchInput} placeholder="值(string)" aria-label="值(string)"
-                value={newKeyDraft.value} onChange={(e) => setNewKeyDraft((d) => ({ ...d, value: e.target.value }))} />
+                value={newKeyDraft.value} onChange={(e) =>{  setNewKeyDraft(d => ({ ...d, value: e.target.value })) }} />
               <div className={css.modalActions}>
-                <button type="button" className={css.secondaryButton} onClick={() => setNewKeyOpen(false)}>取消</button>
+                <button type="button" className={css.secondaryButton} onClick={() =>{  setNewKeyOpen(false) }}>取消</button>
                 <button type="button" className={css.primaryButton} disabled={newKeyDraft.key.trim() === ''} onClick={() => void createKey()}>创建</button>
               </div>
             </div>

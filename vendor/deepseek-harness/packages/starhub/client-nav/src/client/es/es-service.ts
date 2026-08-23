@@ -83,37 +83,62 @@ export interface EsAcknowledgedResult {
   acknowledged: boolean
 }
 
-/** Connect and return a conn id. */
+/** Connect and return a conn id.
+ * @param params - the connection parameters.
+ * @returns the new connection id.
+ */
 export async function esConnect(params: EsConnectParams): Promise<EsConnectResult> {
   return tauriInvoke('db_es_connect', { params })
 }
 
-/** Disconnect a conn id. */
+/** Disconnect a conn id.
+ * @param connId - the connection id to close.
+ */
 export async function esDisconnect(connId: string): Promise<void> {
   return tauriInvoke('db_es_disconnect', { connId })
 }
 
-/** Cluster health. */
+/** Cluster health.
+ * @param connId - the connection id.
+ * @returns the cluster health info.
+ */
 export async function esClusterHealth(connId: string): Promise<ClusterHealthInfo> {
   return tauriInvoke('db_es_cluster_health', { connId })
 }
 
-/** List indices. */
+/** List indices.
+ * @param connId - the connection id.
+ * @returns the index list.
+ */
 export async function esListIndices(connId: string): Promise<EsIndexInfo[]> {
   return tauriInvoke('db_es_list_indices', { connId })
 }
 
-/** Get an index mapping. */
+/** Get an index mapping.
+ * @param connId - the connection id.
+ * @param index - the index name.
+ * @returns the index mapping.
+ */
 export async function esGetMapping(connId: string, index: string): Promise<IndexMappingInfo> {
   return tauriInvoke('db_es_get_index_mapping', { connId, index })
 }
 
-/** Get an index settings object. */
+/** Get an index settings object.
+ * @param connId - the connection id.
+ * @param index - the index name.
+ * @returns the index settings object.
+ */
 export async function esGetSettings(connId: string, index: string): Promise<Record<string, unknown>> {
   return tauriInvoke('db_es_get_index_settings', { connId, index })
 }
 
-/** Create an index. */
+/** Create an index.
+ * @param connId - the connection id.
+ * @param index - the index name.
+ * @param mappings - optional field mappings.
+ * @param settings - optional index settings.
+ * @returns an acknowledged result.
+ */
 export async function esCreateIndex(
   connId: string, index: string,
   mappings?: Record<string, unknown>,
@@ -122,12 +147,23 @@ export async function esCreateIndex(
   return tauriInvoke('db_es_create_index', { connId, index, mappings, settings })
 }
 
-/** Delete an index. */
+/** Delete an index.
+ * @param connId - the connection id.
+ * @param index - the index name.
+ * @returns an acknowledged result.
+ */
 export async function esDeleteIndex(connId: string, index: string): Promise<EsAcknowledgedResult> {
   return tauriInvoke('db_es_delete_index', { connId, index })
 }
 
-/** Run a DSL search (paged via from/size). */
+/** Run a DSL search (paged via from/size).
+ * @param connId - the connection id.
+ * @param index - the index name.
+ * @param body - the query DSL body.
+ * @param from - the page offset.
+ * @param size - the page size.
+ * @returns the search result.
+ */
 export async function esSearch(
   connId: string, index: string, body: Record<string, unknown>,
   from?: number, size?: number,
@@ -135,7 +171,12 @@ export async function esSearch(
   return tauriInvoke('db_es_search', { connId, index, body, from, size })
 }
 
-/** Count documents matching an optional filter body. */
+/** Count documents matching an optional filter body.
+ * @param connId - the connection id.
+ * @param index - the index name.
+ * @param body - the optional filter body.
+ * @returns the document count.
+ */
 export async function esCount(
   connId: string, index: string, body?: Record<string, unknown>,
 ): Promise<{ count: number }> {
@@ -144,7 +185,10 @@ export async function esCount(
 
 /** Pure helpers (unit-tested). */
 
-/** Parse a single index "name" → { index, health, status } when NDJSON-shaped. */
+/** Parse a single index "name" → { index, health, status } when NDJSON-shaped.
+ * @param raw - the raw row to parse.
+ * @returns the parsed index info.
+ */
 export function indexRowOf(raw: unknown): EsIndexInfo {
   if (typeof raw === 'string') return { name: raw, docsCount: 0, storeSize: '-', health: 'unknown', status: '-', primaryShards: 0, replicaShards: 0 }
   const r = raw as Record<string, unknown> | null
@@ -163,7 +207,10 @@ export function indexRowOf(raw: unknown): EsIndexInfo {
   }
 }
 
-/** Health badge color: green/yellow/red, fallback muted. */
+/** Health badge color: green/yellow/red, fallback muted.
+ * @param status - the health status string.
+ * @returns the badge color hex.
+ */
 export function healthColor(status: string): string {
   if (status === 'green') return '#22c55e'
   if (status === 'yellow') return '#eab308'
@@ -171,7 +218,10 @@ export function healthColor(status: string): string {
   return '#8a94a6'
 }
 
-/** Field type badge color (mirrors Vue getFieldTypeColor). */
+/** Field type badge color (mirrors Vue getFieldTypeColor).
+ * @param type - the field type string.
+ * @returns the badge color hex.
+ */
 export function fieldTypeColor(type: string): string {
   if (type === 'text') return '#22d3ee'
   if (type === 'keyword') return '#22c55e'

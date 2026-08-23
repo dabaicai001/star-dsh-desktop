@@ -112,7 +112,7 @@ export function WebBrowser({ sessionId, assetName, sshConnected = true }: WebBro
       }
     }
     window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
+    return () =>{  window.removeEventListener('message', onMessage) }
   }, [])
 
   // 卸载时停网关(与 SSH 会话共享;SSH 断开也会由后端清理)。
@@ -129,14 +129,14 @@ export function WebBrowser({ sessionId, assetName, sshConnected = true }: WebBro
   return (
     <div className={css.root}>
       <div className={css.toolbar}>
-        <button type="button" className={css.navBtn} onClick={() => sendCmd('back')} title="后退" disabled={unavailable}>←</button>
-        <button type="button" className={css.navBtn} onClick={() => sendCmd('forward')} title="前进" disabled={unavailable}>→</button>
-        <button type="button" className={css.navBtn} onClick={() => sendCmd('reload')} title="刷新" disabled={unavailable}>⟳</button>
+        <button type="button" className={css.navBtn} onClick={() =>{  sendCmd('back') }} title="后退" disabled={unavailable}>←</button>
+        <button type="button" className={css.navBtn} onClick={() =>{  sendCmd('forward') }} title="前进" disabled={unavailable}>→</button>
+        <button type="button" className={css.navBtn} onClick={() =>{  sendCmd('reload') }} title="刷新" disabled={unavailable}>⟳</button>
         <input
           className={css.address}
           value={address}
           disabled={unavailable}
-          onChange={(e) => setAddress(e.target.value)}
+          onChange={(e) =>{  setAddress(e.target.value) }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') onAddressSubmit()
           }}

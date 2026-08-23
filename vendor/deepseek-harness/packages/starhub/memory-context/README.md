@@ -11,9 +11,19 @@ StarHub 本地 host 包(不在上游):`agent/pre-step` 注入长期记忆,补上
 
 ## Model Experience
 
-- **Model-visible**:注入一条 user message,列出该会话可见的长期记忆(user 画像 / global 环境经验 / 当前工作区文件夹 / 绑定资产),并提示用 `memory` 工具沉淀新的持久事实。
-- **Token 影响**:仅在有记忆条目时注入;每 scope 卡受 Rust 侧字符上限约束(user/folder/asset 1375,global 2200),单步注入总量有界。
-- **KV-cache**:per-step snapshot 注入,记忆变更后文本才变化。
+### Injected memory snapshot
+
+#### What the model sees
+
+One plugin-sourced user message listing the session-visible long-term memory cards (user profile / global environment experience / current-workspace folder / bound assets), with a hint to use the `memory` tool to persist new durable facts.
+
+#### Token effect
+
+Injected only when at least one card has content; each card is capped by the Rust-side character limit (`user`/`folder`/`asset` 1375, `global` 2200), so per-step injection is bounded.
+
+#### KV Cache effect
+
+Per-step snapshot; the text changes only when the memory contents change.
 
 ## Known Limitations and Deferred Work
 

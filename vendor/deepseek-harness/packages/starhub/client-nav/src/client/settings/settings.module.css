@@ -365,15 +365,16 @@
   display: flex;
   align-items: center;
   gap: 6px;
-}
+}/* ===== 表格(审计) ===== */
 
-/* ===== 表格(审计) ===== */
-
-.tableWrap {
+.tableWrap{
   overflow: auto;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-}
+
+  /* Elevated scroll container: rebind the scrollbar indirection to the l2 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);}
 
 .table {
   width: 100%;

@@ -48,24 +48,32 @@ interface KeyModel {
   rows: FieldRow[]
 }
 
+/** 单元格显示文本:nullish → 空串,对象 JSON 化,其余原样字符串化。 */
+function toCell(v: unknown): string {
+  if (v === null || v === undefined) return ''
+  if (typeof v === 'object') return JSON.stringify(v)
+  const primitive = v as string | number | boolean | bigint | symbol
+  return String(primitive)
+}
+
 /** 从 get_value 载荷解析结构类型行(list 用索引作 field)。 */
 function rowsFromValue(type: string, value: unknown): FieldRow[] {
   if (type === 'string' || value === null || value === undefined) return []
   if (Array.isArray(value)) {
     if (type === 'list') {
       return (value as unknown[]).map((item, index) => ({
-        field: String(index), value: String(item ?? ''), originalField: String(index), originalValue: String(item ?? ''), deleted: false,
+        field: String(index), value: toCell(item), originalField: String(index), originalValue: toCell(item), deleted: false,
       }))
     }
     return (value as unknown[]).map((item) => {
       const pair = Array.isArray(item) ? item : [item, '']
       return {
-        field: String(pair[0] ?? ''), value: String(pair[1] ?? ''), originalField: String(pair[0] ?? ''), originalValue: String(pair[1] ?? ''), deleted: false,
+        field: toCell(pair[0]), value: toCell(pair[1]), originalField: toCell(pair[0]), originalValue: toCell(pair[1]), deleted: false,
       }
     })
   }
   return Object.entries(value as Record<string, unknown>).map(([field, v]) => ({
-    field, value: String(v ?? ''), originalField: field, originalValue: String(v ?? ''), deleted: false,
+    field, value: toCell(v), originalField: field, originalValue: toCell(v), deleted: false,
   }))
 }
 
@@ -102,19 +110,18 @@ export function RedisValueEditor({ connId, openRef }: RedisValueEditorProps) {
     /* v8 ignore start -- openRef 只在挂载时捕获本次渲染的 openKey(闭包 tabs 恒为初始空数组),find 回调与重开分支均不可达;工作台按 key 重挂载编辑器 */
     const existing = tabs.find(t => t.key === key)
     if (existing !== undefined) {
-      setTabs((cur) => cur.map(t => t.id === existing.id ? { ...t, generation: t.generation + 1 } : t))
+      setTabs(cur => cur.map(t => t.id === existing.id ? { ...t, generation: t.generation + 1 } : t))
       setActiveId(existing.id)
       return
     }
     /* v8 ignore stop */
     const id = `key-${key}-${Date.now()}`
-    setTabs((cur) => [...cur, { id, key, type, generation: 0 }])
+    setTabs(cur => [...cur, { id, key, type, generation: 0 }])
     setActiveId(id)
   }
 
   useEffect(() => {
     if (openRef !== undefined) openRef(openKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const active = activeId === null ? undefined : tabs.find(t => t.id === activeId)
@@ -132,22 +139,21 @@ export function RedisValueEditor({ connId, openRef }: RedisValueEditorProps) {
         const textValue = str && typeof result.value === 'string'
           ? result.value
           : (str ? JSON.stringify(result.value, null, 2) : '')
-        setModels((cur) => ({ ...cur, [active.id]: {
+        setModels(cur => ({ ...cur, [active.id]: {
           loading: false, saving: false, error: '', text: textValue, originalText: textValue,
           rows: rowsFromValue(active.type, result.value),
         } }))
-        setTtls((cur) => ({ ...cur, [active.id]: { ttl: result.ttl ?? -1, ttlInput: ttlToInput(result.ttl ?? -1) } }))
+        setTtls(cur => ({ ...cur, [active.id]: { ttl: result.ttl, ttlInput: ttlToInput(result.ttl) } }))
       })
       .catch((e: unknown) => {
-        setModels((cur) => ({ ...cur, [active.id]: { ...EMPTY_MODEL, loading: false, error: e instanceof Error ? e.message : String(e) } }))
+        setModels(cur => ({ ...cur, [active.id]: { ...EMPTY_MODEL, loading: false, error: e instanceof Error ? e.message : String(e) } }))
       })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.id, active?.generation])
 
   const updateModel = (patch: Partial<KeyModel>) => {
     /* v8 ignore start -- updateModel 仅由已渲染处理函数调用,active 必然已定义;`?? EMPTY_MODEL` 只在主动 read 前首次调用触发,该路径由 load 覆盖 */
     if (active === undefined) return
-    setModels((cur) => ({ ...cur, [active.id]: { ...(cur[active.id] ?? EMPTY_MODEL), ...patch } }))
+    setModels(cur => ({ ...cur, [active.id]: { ...(cur[active.id] ?? EMPTY_MODEL), ...patch } }))
     /* v8 ignore stop */
   }
 
@@ -174,7 +180,7 @@ export function RedisValueEditor({ connId, openRef }: RedisValueEditorProps) {
       } else {
         await saveStructural(model.rows, active.type, active.key, connId)
       }
-      if (expiration !== undefined) setTtls((cur) => ({ ...cur, [active.id]: { ttl: expiration, ttlInput: ttl.ttlInput } }))
+      if (expiration !== undefined) setTtls(cur => ({ ...cur, [active.id]: { ttl: expiration, ttlInput: ttl.ttlInput } }))
       updateModel({
         saving: false, originalText: model.text,
         rows: model.rows.filter(r => !r.deleted).map(r => ({ ...r, originalField: r.field, originalValue: r.value, deleted: false })),
@@ -195,7 +201,7 @@ export function RedisValueEditor({ connId, openRef }: RedisValueEditorProps) {
           TTL
           <input className={css.ttlInput} value={ttl.ttlInput} placeholder={ttl.ttl < 0 ? '持久化' : String(ttl.ttl)} type="number"
             disabled={model.loading}
-            onChange={(e) => setTtls((cur) => ({ ...cur, [active.id]: { ...ttl, ttlInput: e.target.value } }))} />
+            onChange={(e) =>{  setTtls(cur => ({ ...cur, [active.id]: { ...ttl, ttlInput: e.target.value } })) }} />
         </label>
       </div>
 
@@ -205,7 +211,7 @@ export function RedisValueEditor({ connId, openRef }: RedisValueEditorProps) {
         <div className={css.center}>
           <div className={css.errorText}>{model.error}</div>
           <button type="button" className={css.secondaryButton}
-            onClick={() => updateModel({ error: '', loading: true })}>重试</button>
+            onClick={() =>{  updateModel({ error: '', loading: true }) }}>重试</button>
         </div>
       )}
 
@@ -213,11 +219,11 @@ export function RedisValueEditor({ connId, openRef }: RedisValueEditorProps) {
         isString
           ? (
             <textarea className={css.area} value={model.text} spellCheck={false} placeholder="值…"
-              onChange={(e) => updateModel({ text: e.target.value })} />
+              onChange={(e) =>{  updateModel({ text: e.target.value }) }} />
           )
           : (
             <StructuralRows rows={model.rows} type={active.type}
-              onChange={(rows) => updateModel({ rows })} />
+              onChange={(rows) =>{  updateModel({ rows }) }} />
           )
       )}
 
@@ -225,7 +231,7 @@ export function RedisValueEditor({ connId, openRef }: RedisValueEditorProps) {
         {model.error !== '' && <span className={css.footerError}>{model.error}</span>}
         <span className={css.spacer} />
         <button type="button" className={css.secondaryButton} disabled={!dirty}
-          onClick={() => updateModel(isString ? { text: model.originalText } : { rows: revertRows(model.rows) })}>
+          onClick={() =>{  updateModel(isString ? { text: model.originalText } : { rows: revertRows(model.rows) }) }}>
           还原
         </button>
         <button type="button" className={css.primaryButton} disabled={!dirty || model.saving} onClick={() => void save()}>
@@ -307,11 +313,11 @@ function StructuralRows({ rows, type, onChange }: {
         {rows.map((r, index) => (
           <div className={`${css.row} ${r.deleted ? css.rowDeleted : ''}`} key={`${index}-${r.field}`}>
             <input className={css.cellField} value={r.field} disabled={r.deleted} placeholder={type === 'list' ? '索引' : '字段'} spellCheck={false}
-              onChange={(e) => apply(index, { field: e.target.value })} />
+              onChange={(e) =>{  apply(index, { field: e.target.value }) }} />
             <input className={css.cellValue} value={r.value} disabled={r.deleted} placeholder="值" spellCheck={false}
-              onChange={(e) => apply(index, { value: e.target.value })} />
+              onChange={(e) =>{  apply(index, { value: e.target.value }) }} />
             <button type="button" className={css.delButton} title={r.deleted ? '撤销删除' : '删除'}
-              onClick={() => apply(index, { deleted: !r.deleted })}>
+              onClick={() =>{  apply(index, { deleted: !r.deleted }) }}>
               {r.deleted ? '↩' : '✕'}
             </button>
           </div>
@@ -319,9 +325,9 @@ function StructuralRows({ rows, type, onChange }: {
       </div>
       <div className={css.newRow}>
         <input className={css.cellField} placeholder={type === 'list' ? '索引' : '新字段'} spellCheck={false}
-          value={newField} onChange={(e) => setNewField(e.target.value)} />
+          value={newField} onChange={(e) =>{  setNewField(e.target.value) }} />
         <input className={css.cellValue} placeholder="新值" spellCheck={false}
-          value={newValue} onChange={(e) => setNewValue(e.target.value)} />
+          value={newValue} onChange={(e) =>{  setNewValue(e.target.value) }} />
         <button type="button" className={css.addButton} title="新增" disabled={newField.trim() === ''} onClick={add}>＋</button>
       </div>
     </div>

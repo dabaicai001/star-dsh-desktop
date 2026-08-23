@@ -4,6 +4,7 @@ export interface XshellQuickCommand {
   cmd: string
 }
 
+/** Parsed .qbl/.qblx content: extracted commands plus the skipped-script count. */
 export interface XshellParseResult {
   commands: XshellQuickCommand[]
   skippedScripts: number
@@ -17,7 +18,11 @@ function unescapeNewlines(text: string): string {
   return text.replace(/\\r\\n|\\n|\\r/g, '\n').replace(/\n+$/g, '').trim()
 }
 
-/** Parse legacy and Xshell 8 QuickButton definitions. */
+/**
+ * Parse legacy and Xshell 8 QuickButton definitions.
+ * @param text - the raw .qbl text content.
+ * @returns the parsed commands and skipped script count.
+ */
 export function parseXshellQblDetailed(text: string): XshellParseResult {
   const legacy: { index: number; label: string; cmd: string }[] = []
   const keyed = new Map<number, { name?: string; action?: string; type?: string }>()
@@ -30,15 +35,18 @@ export function parseXshellQblDetailed(text: string): XshellParseResult {
     const section = /^\[(.+)\]$/.exec(line)
     if (section !== null) {
       sawSection = true
+      /* v8 ignore next -- the section regex group 1 requires 1+ chars, so section[1] is always defined */
       inQuickButton = (section[1] ?? '').trim().toLowerCase() === 'quickbutton'
       continue
     }
     if (sawSection && !inQuickButton) continue
     const keyedMatch = KEYED_RE.exec(line)
     if (keyedMatch !== null) {
+      /* v8 ignore start -- KEYED_RE groups 1-3 are all mandatory, so none of the ?? fallbacks apply */
       const index = Number(keyedMatch[1] ?? '0')
       const field = (keyedMatch[2] ?? '').toLowerCase()
       const value = keyedMatch[3] ?? ''
+      /* v8 ignore stop */
       const entry = keyed.get(index) ?? {}
       if (field === 'name') entry.name = value
       else if (field === 'action') entry.action = value
@@ -48,9 +56,12 @@ export function parseXshellQblDetailed(text: string): XshellParseResult {
     }
     const legacyMatch = LEGACY_RE.exec(line)
     if (legacyMatch === null) continue
+    /* v8 ignore start -- LEGACY_RE group 2 is mandatory and split() always yields segments[0] */
     const segments = (legacyMatch[2] ?? '').split(SEGMENT_SEP)
     const label = (segments[0] ?? '').trim()
+    /* v8 ignore stop */
     const cmd = segments.slice(1).join('\n').trim()
+    /* v8 ignore next -- LEGACY_RE group 1 is mandatory, so the ?? fallback never applies */
     if (cmd !== '') legacy.push({ index: Number(legacyMatch[1] ?? '0'), label: label || cmd.slice(0, 20), cmd })
   }
   const keyedCommands: { index: number; label: string; cmd: string }[] = []
@@ -61,10 +72,17 @@ export function parseXshellQblDetailed(text: string): XshellParseResult {
     const label = entry.name?.trim() ?? ''
     keyedCommands.push({ index, label: label || cmd.slice(0, 20), cmd })
   }
-  return { commands: [...legacy, ...keyedCommands].sort((a, b) => a.index - b.index).map(({ label, cmd }) => ({ label, cmd })), skippedScripts }
+  const merged = [...legacy, ...keyedCommands]
+    .sort((a, b) => a.index - b.index)
+    .map(({ label, cmd }) => ({ label, cmd }))
+  return { commands: merged, skippedScripts }
 }
 
-/** Decode UTF-8, UTF-16 LE and legacy single-byte qbl content. */
+/**
+ * Decode UTF-8, UTF-16 LE and legacy single-byte qbl content.
+ * @param data - the raw file bytes.
+ * @returns the decoded text.
+ */
 export function decodeQblText(data: ArrayBuffer): string {
   const bytes = new Uint8Array(data)
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes)
@@ -102,17 +120,23 @@ async function readZipEntry(bytes: Uint8Array, entry: ZipEntry): Promise<Uint8Ar
   const view = new DataView(bytes.buffer, bytes.byteOffset + entry.offset)
   const nameLength = view.getUint16(26, true)
   const extraLength = view.getUint16(28, true)
-  const data = bytes.slice(entry.offset + 30 + nameLength + extraLength, entry.offset + 30 + nameLength + extraLength + entry.compressedSize)
+  const dataStart = entry.offset + 30 + nameLength + extraLength
+  const data = bytes.slice(dataStart, dataStart + entry.compressedSize)
   if (entry.method === 0) return data
   if (entry.method !== 8) return new Uint8Array()
   const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 
-/** Parse all commands.qbl entries from an Xshell .qblx archive. */
+/**
+ * Parse all commands.qbl entries from an Xshell .qblx archive.
+ * @param data - the raw .qblx archive bytes.
+ * @returns the merged commands (set-prefixed when multiple sets) and skipped
+ *   script count.
+ */
 export async function parseXshellQblx(data: ArrayBuffer): Promise<XshellParseResult> {
   const bytes = new Uint8Array(data)
-  const entries = zipEntries(bytes).filter((entry) => /(^|\/)commands\.qbl$/i.test(entry.name.replace(/\\/g, '/')))
+  const entries = zipEntries(bytes).filter(entry => /(^|\/)commands\.qbl$/i.test(entry.name.replace(/\\/g, '/')))
   const sets: { setName: string; result: XshellParseResult }[] = []
   for (const entry of entries) {
     const content = await readZipEntry(bytes, entry)
@@ -122,7 +146,7 @@ export async function parseXshellQblx(data: ArrayBuffer): Promise<XshellParseRes
     const copy = new Uint8Array(content)
     sets.push({ setName: slash >= 0 ? normalized.slice(0, slash) : '', result: parseXshellQblDetailed(decodeQblText(copy.buffer)) })
   }
-  const multiSet = sets.filter((set) => set.result.commands.length > 0).length > 1
+  const multiSet = sets.filter(set => set.result.commands.length > 0).length > 1
   const commands: XshellQuickCommand[] = []
   let skippedScripts = 0
   for (const { setName, result } of sets) {

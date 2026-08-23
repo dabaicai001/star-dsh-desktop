@@ -101,7 +101,7 @@ describe('createHandler', () => {
     const body = JSON.stringify({ status: ' M a.ts', diffStat: '', recentSubjects: [] })
     const failed = await invoke(failing, makeRequest('POST', body))
     expect(failed.status).toBe(502)
-    expect(JSON.parse(failed.body).error).toContain('provider down')
+    expect((JSON.parse(failed.body) as { error: string }).error).toContain('provider down')
     const empty = await invoke(makeDeps('   '), makeRequest('POST', body))
     expect(empty.status).toBe(502)
   })
@@ -125,6 +125,6 @@ describe('apply wiring', () => {
       webServer: { register: vi.fn() },
       effect: (callback: () => unknown) => callback(),
     } as unknown as Parameters<typeof apply>[0]
-    expect(() => apply(ctx, { ...CONFIG, provider: 'p' })).toThrow('together')
+    expect(() =>{  apply(ctx, { ...CONFIG, provider: 'p' }) }).toThrow('together')
   })
 })

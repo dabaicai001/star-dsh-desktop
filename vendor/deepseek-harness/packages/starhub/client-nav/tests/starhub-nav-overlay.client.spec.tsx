@@ -142,8 +142,8 @@ describe('StarHubOverlay (connection dialog)', () => {
     })
     render(<StarHubOverlay {...props} />)
     expect(screen.getByRole('dialog', { name: '编辑连接' })).toBeTruthy()
-    expect((screen.getByLabelText('名称 *') as HTMLInputElement).value).toBe('web-1')
-    expect((screen.getByLabelText('主机 *') as HTMLInputElement).value).toBe('1.1.1.1')
+    expect((screen.getByLabelText<HTMLInputElement>('名称 *')).value).toBe('web-1')
+    expect((screen.getByLabelText<HTMLInputElement>('主机 *')).value).toBe('1.1.1.1')
   })
 
   it('closes on Escape while open and ignores other keys', () => {

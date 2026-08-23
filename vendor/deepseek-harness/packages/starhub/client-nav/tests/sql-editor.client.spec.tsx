@@ -75,9 +75,9 @@ describe('SQL completion behavior', () => {
     })
     startCompletion(view)
     // 补全查询在 CM 的 update 周期内异步执行,等一拍再断言。
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await new Promise(resolve => setTimeout(resolve, 50))
     expect(completionStatus(view.state)).toBe('active')
-    const labels = [...parent.querySelectorAll('.cm-tooltip-autocomplete li')].map((el) => el.textContent)
+    const labels = [...parent.querySelectorAll('.cm-tooltip-autocomplete li')].map(el => el.textContent)
     expect(labels).toContain('SELECT')
     view.destroy()
     parent.remove()
@@ -88,8 +88,8 @@ describe('SQL completion behavior', () => {
     const state = EditorState.create({ doc: 'select * from ' })
     const ctx = new CompletionContext(state, 14, true)
     const result = await tableCompletion(() => schema)(ctx)
-    expect(result?.options.map((o) => o.label)).toContain('users')
-    expect(result?.options.map((o) => o.label)).toContain('id')
+    expect(result?.options.map(o => o.label)).toContain('users')
+    expect(result?.options.map(o => o.label)).toContain('id')
   })
 
   it('filters offered names by the typed prefix', async () => {
@@ -97,7 +97,7 @@ describe('SQL completion behavior', () => {
     const state = EditorState.create({ doc: 'select * from u' })
     const ctx = new CompletionContext(state, 15, true)
     const result = await tableCompletion(() => schema)(ctx)
-    expect(result?.options.map((o) => o.label)).toEqual(['users'])
+    expect(result?.options.map(o => o.label)).toEqual(['users'])
   })
 
   it('offers only the table columns after a table-dot prefix', async () => {
@@ -105,7 +105,7 @@ describe('SQL completion behavior', () => {
     const state = EditorState.create({ doc: 'select users.' })
     const ctx = new CompletionContext(state, 13, true)
     const result = await tableCompletion(() => schema)(ctx)
-    expect(result?.options.map((o) => o.label)).toEqual(['id', 'name'])
+    expect(result?.options.map(o => o.label)).toEqual(['id', 'name'])
   })
 
   it('reads the latest schema through the getter (tree expands after mount)', async () => {
@@ -118,6 +118,6 @@ describe('SQL completion behavior', () => {
     // 树展开后 schema 更新,同一 source 立即可补新表。
     schema = { users: ['id'], logs: ['level'] }
     ctx = new CompletionContext(state, 2, true)
-    expect((await source(ctx))?.options.map((o) => o.label)).toContain('logs')
+    expect((await source(ctx))?.options.map(o => o.label)).toContain('logs')
   })
 })

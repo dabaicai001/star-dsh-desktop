@@ -117,6 +117,13 @@ function buildColumnTypeDef(col: ColumnEdit): string {
 
 /**
  * 生成单列新增语句(ADD COLUMN,可带 AFTER)。
+ * @param db - 库名。
+ * @param table - 表名。
+ * @param name - 列名。
+ * @param type - 列类型(可含长度/精度)。
+ * @param nullable - 是否允许 NULL。
+ * @param defaultValue - 默认值(空串表示无默认值)。
+ * @param comment - 列注释(空串表示无注释)。
  * @param after - 可选的 AFTER 定位列。
  * @returns 单条 ALTER TABLE ADD COLUMN 语句。
  */
@@ -144,6 +151,13 @@ export function generateAddColumnDDL(
 
 /**
  * 生成单列修改语句(MODIFY COLUMN)。
+ * @param db - 库名。
+ * @param table - 表名。
+ * @param name - 列名。
+ * @param type - 列类型(可含长度/精度)。
+ * @param nullable - 是否允许 NULL。
+ * @param defaultValue - 默认值(空串表示无默认值)。
+ * @param comment - 列注释(空串表示无注释)。
  * @returns 单条 ALTER TABLE MODIFY COLUMN 语句。
  */
 export function generateModifyColumnDDL(
@@ -167,6 +181,9 @@ export function generateModifyColumnDDL(
 
 /**
  * 生成单列删除语句(DROP COLUMN)。
+ * @param db - 库名。
+ * @param table - 表名。
+ * @param name - 列名。
  * @returns 单条 ALTER TABLE DROP COLUMN 语句。
  */
 export function generateDropColumnDDL(db: string, table: string, name: string): string {
@@ -175,6 +192,12 @@ export function generateDropColumnDDL(db: string, table: string, name: string): 
 
 /**
  * 生成单条 CREATE INDEX 语句。
+ * @param db - 库名。
+ * @param table - 表名。
+ * @param indexName - 索引名。
+ * @param columns - 索引列名数组。
+ * @param unique - 是否唯一索引。
+ * @param indexType - 索引类型(如 BTREE / HASH;空串回退 BTREE)。
  * @returns CREATE [UNIQUE] INDEX ... USING <type> 语句。
  */
 export function generateCreateIndexDDL(
@@ -192,6 +215,9 @@ export function generateCreateIndexDDL(
 
 /**
  * 生成单条 DROP INDEX 语句。
+ * @param db - 库名。
+ * @param table - 表名。
+ * @param indexName - 索引名。
  * @returns 单条 DROP INDEX ON 语句。
  */
 export function generateDropIndexDDL(db: string, table: string, indexName: string): string {
@@ -294,6 +320,7 @@ function formatCreateDefault(defaultValue: string): string {
 /**
  * 生成建表语句数组。PG 的列/表注释会拆成独立的 COMMENT ON 语句,其余方言为单条
  * CREATE TABLE。
+ * @param opts - 建表选项(方言 / 库名 / 表名 / 列定义等)。
  * @returns 待执行的语句数组(逐条经 execute 运行)。
  */
 export function generateCreateTableDDL(opts: CreateTableOptions): string[] {
@@ -302,7 +329,7 @@ export function generateCreateTableDDL(opts: CreateTableOptions): string[] {
   const qualified = `${q(database)}.${q(table)}`
   const commentStmts: string[] = []
 
-  const colDefs = columns.map(c => {
+  const colDefs = columns.map((c) => {
     const rendered = renderColumnType(c.type, c.size)
     if (dbType === 'clickhouse') {
       // ClickHouse 默认非空,可空要用 Nullable(T) 包装,不支持 NOT NULL / 列级 PK。
@@ -358,6 +385,9 @@ export function generateCreateTableDDL(opts: CreateTableOptions): string[] {
 /**
  * 生成批量索引变更的语句数组:先 DROP(含脏索引重建),再 CREATE 新增/修改;
  * 会话新增(isNew)的索引不生成 DROP,避免 MySQL Error 1091。
+ * @param db - 库名。
+ * @param table - 表名。
+ * @param edits - 编辑后的索引集合。
  * @returns 待执行的语句数组。
  */
 export function generateBatchIndexDDL(db: string, table: string, edits: IndexEdit[]): string[] {
@@ -365,9 +395,7 @@ export function generateBatchIndexDDL(db: string, table: string, edits: IndexEdi
   // 先处理删除(isNew 的索引服务器上不存在,DROP 会报 Error 1091)。
   for (const e of edits) {
     if (e.isNew) continue
-    if (e.dropped) {
-      ddls.push(generateDropIndexDDL(db, table, e.name))
-    } else if (e.dirty) {
+    if (e.dropped || e.dirty) {
       ddls.push(generateDropIndexDDL(db, table, e.name))
     }
   }

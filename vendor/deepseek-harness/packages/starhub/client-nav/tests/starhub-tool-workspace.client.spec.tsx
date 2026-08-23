@@ -296,7 +296,7 @@ describe('StarHubToolWorkspace', () => {
       render(<StarHubToolWorkspace {...props} />)
       fireEvent.contextMenu(screen.getByText('prod-server'))
       fireEvent.click(screen.getByText('复制连接信息'))
-      await vi.waitFor(() => expect(write).toHaveBeenCalled())
+      await vi.waitFor(() =>{  expect(write).toHaveBeenCalled() })
       // 无副标题资产:复制文案只有名称;写失败不置 copied
       expect(write).toHaveBeenCalledWith('prod-server')
       fireEvent.contextMenu(screen.getByText('prod-server'))
