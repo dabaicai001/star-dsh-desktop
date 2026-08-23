@@ -28,6 +28,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: the connection service merge (ctx.get('connection') typing).
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { ISessions, IWorkspaces } from '@deepseek-ai/dsh-client-runtime/client'
+import type { IConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createStarHubAssetSource } from './asset-source.ts'
@@ -39,7 +40,8 @@ import { createFileViewerBridge } from './file-viewer/state.ts'
 import { FileViewerOverlay } from './file-viewer/FileViewerOverlay.tsx'
 import type { StarHubFileViewerFace } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { assetWindowUrl, type StarHubAsset } from './sections.ts'
-import { focusWindowByKey, openNewPage } from './tauri.ts'
+import { focusWindowByKey, openNewPage, tauriInvoke } from './tauri.ts'
+import { ScreenshotButton } from './screenshot/ScreenshotButton.tsx'
 import { StarHubNav } from './StarHubNav.tsx'
 import { StarHubOverlay } from './StarHubOverlay.tsx'
 import { GitBranchPill } from './git/GitBranchPill.tsx'
@@ -90,7 +92,8 @@ export function apply(ctx: Context): void {
   const inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
   const sessions = ctx.get('sessions') as ISessions
   const workspaces = ctx.get('workspaces') as IWorkspaces
-  const conversation = ctx.get('conversation')
+  // inject 声明了 required 'conversation',加载后必然存在(cordis ctx.get 返回可空)。
+  const conversation = ctx.get('conversation') as IConversation
   // StarHub 工作台的历史令牌(--dsw-accent / --dsw-font-mono / --dsw-shadow-popover
   // 等)不在 dsh 令牌表内:经主题覆盖层注入,深浅色各一值,presenter 写到 body
   // 内联样式;独立 React 窗口无插件树,同值声明在 window-shell.css。
@@ -199,6 +202,20 @@ export function apply(ctx: Context): void {
     order: 30,
     label: 'StarHub Git',
   }, GitBranchPill))
+  // AI 对话输入框截图(2026-08-23):工具行「剪刀」按钮 → 区域截图 / 窗口截图,
+  // 确认后结果作为图片附件进当前会话输入(与粘贴/拖拽同一管线)。
+  // 浏览器预览(无 Tauri IPC)下 invoke 拒绝,按钮点击打日志不弹窗。
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+    name: 'conversation.input.left',
+    id: 'starhub-screenshot',
+    order: 10,
+    label: 'StarHub 截图',
+    inject: () => ({
+      createDraftImages: (files: readonly File[]) => conversation.createDraftImages(files),
+      startRegion: () => tauriInvoke<void>('screenshot_begin_region'),
+      startWindow: () => tauriInvoke<void>('screenshot_begin_window'),
+    }),
+  }, ScreenshotButton))
   // 契约 §6.2-6.3:监听 Tauri 宿主事件(open-asset / ask-ai);订阅经
   // ctx.effect 注册,dispose 卸载监听(HMR 安全)。
   ctx.effect(() => subscribeHostEvents({

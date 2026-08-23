@@ -147,6 +147,8 @@ fn main() {
 
             // 初始化 TransferManager(需要 AppHandle 用于 emit 进度/状态事件)
             app.manage(TransferManager::new(app.handle().clone()));
+            // 截图会话状态(区域模式底图缓存)
+            app.manage(commands::screenshot::ScreenshotSession::default());
 
             // 主壳融合 P4a:dsh web GUI 是唯一主壳(旧外壳已退役,逃生门随之移除)。
             // 启动失败不致命——窗口停留在 shell-placeholder 跳板页轮询重试,错误落日志。
@@ -226,6 +228,15 @@ fn main() {
             commands::sftp::sftp_list_transfers,
             commands::sftp::sftp_set_speed_limit,
             commands::sftp::sftp_retry_transfer,
+            // 截图(区域截图 + 窗口截图)
+            commands::screenshot::screenshot_list_monitors,
+            commands::screenshot::screenshot_begin_region,
+            commands::screenshot::screenshot_begin_window,
+            commands::screenshot::screenshot_get_desktop,
+            commands::screenshot::screenshot_list_windows,
+            commands::screenshot::screenshot_capture_window,
+            commands::screenshot::screenshot_finish,
+            commands::screenshot::screenshot_cancel,
             // MySQL
             commands::db::db_mysql_connect,
             commands::db::db_mysql_test,

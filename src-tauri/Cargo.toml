@@ -1,6 +1,6 @@
 [package]
 name = "starhub"
-version = "0.92.4"
+version = "0.93.0"
 edition = "2021"
 
 [dependencies]
@@ -36,6 +36,10 @@ bytes = "1"
 keyring-core = "1.0.0"
 # dsh 用户插件安装(支线 B):GitHub codeload zip 解包;只开 deflate,关掉其余压缩格式
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# AI 对话截图(区域/窗口):跨平台屏幕与窗口捕获(Windows WGC / macOS ScreenCaptureKit / Linux X11+Wayland)
+xcap = { version = "0.9.8", features = ["image", "wgc"] }
+# 截图编码(PNG/JPEG)与多显示器拼接
+image = "0.25.10"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = "1.1.0"

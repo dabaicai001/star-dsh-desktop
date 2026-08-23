@@ -14,7 +14,7 @@
  *    不依赖 Rust 侧 window.url()/eval 的时序(取舍见 docs/踩坑记录.md 第 20 节)。
  *    应用退出时 tauri 回收本进程树。
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -116,6 +116,16 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({ url }))
     return
+  }
+  // 截图遮罩页:dev 下 WebviewUrl::App("screenshot.html") 会解析到本 devUrl,
+  // 占位 server 需要真实返回 frontendDist 里的文件(prod 由 tauri://localhost 直接读)。
+  if (req.url === '/screenshot.html') {
+    const file = join(repoRoot, 'shell-placeholder', 'screenshot.html')
+    if (existsSync(file)) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      res.end(readFileSync(file))
+      return
+    }
   }
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
   res.end(page)

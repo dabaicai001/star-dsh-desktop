@@ -56,6 +56,13 @@ export interface IConversation {
    * @returns completion of the page pull.
    */
   loadOlder(): Promise<void>
+  /**
+   * Register browser-owned draft images for the caller scope's session.
+   * @param files - browser files to register after MIME validation.
+   * @returns ordered draft descriptors; their ids feed
+   * `InputActions.addImages` to appear in the composer rail.
+   */
+  createDraftImages(files: readonly File[]): readonly ComposerAttachment[]
 }
 
 /** Create one browser-only draft descriptor; only its id enters input state. */

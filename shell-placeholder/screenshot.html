@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>StarHub 截图</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; user-select: none; cursor: crosshair; }
+
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { position: absolute; left: 0; top: 0; }
+
+  /* 窗口模式:截图居中 */
+  #stage.window-mode canvas { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+
+  #hint {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.75); color: #fff; font-size: 14px;
+    padding: 8px 18px; border-radius: 8px; pointer-events: none; z-index: 30;
+    white-space: nowrap; letter-spacing: 0.5px;
+  }
+  #hint .kbd {
+    display: inline-block; border: 1px solid rgba(255,255,255,0.5); border-radius: 4px;
+    padding: 0 6px; margin: 0 3px; font-size: 12px; line-height: 18px;
+  }
+
+  #sizeTag {
+    position: fixed; background: rgba(0,0,0,0.72); color: #fff; font-size: 12px;
+    padding: 2px 8px; border-radius: 4px; pointer-events: none; z-index: 32;
+    font-variant-numeric: tabular-nums; display: none;
+  }
+
+  #toolbar {
+    position: fixed; display: none; align-items: center; gap: 2px; z-index: 35;
+    background: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+    padding: 4px 6px; cursor: default;
+  }
+  #toolbar .sep { width: 1px; height: 20px; background: #e3e6ea; margin: 0 4px; }
+  #toolbar button {
+    border: none; background: transparent; border-radius: 6px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    padding: 6px 10px; font-size: 13px; color: #2b2f36;
+  }
+  #toolbar button:hover { background: #f2f4f7; }
+  #toolbar button.active { background: #e8f3ff; color: #1aa0f8; }
+  #toolbar button svg { width: 16px; height: 16px; }
+  #toolbar .confirm { color: #fff; background: #1aa0f8; padding: 6px 16px; font-weight: 500; }
+  #toolbar .confirm:hover { background: #178de0; }
+  #toolbar .cancel { color: #2b2f36; }
+  #toolbar button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  #wins {
+    position: fixed; top: 64px; right: 20px; z-index: 40; display: none;
+    background: rgba(20, 24, 30, 0.92); color: #dfe5ec; border-radius: 10px;
+    padding: 10px; width: 260px; max-height: 60vh; overflow: auto;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.45); font-size: 12px;
+  }
+  #wins .win {
+    display: flex; gap: 8px; align-items: baseline; padding: 7px 8px; border-radius: 6px; cursor: pointer;
+  }
+  #wins .win:hover, #wins .win.hover { background: rgba(26, 160, 248, 0.22); }
+  #wins .win .app { color: #9fb2c4; min-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #wins .win .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="base"></canvas>
+  <canvas id="anno"></canvas>
+  <canvas id="overlay"></canvas>
+</div>
+<div id="hint"></div>
+<div id="sizeTag"></div>
+<div id="toolbar"></div>
+<div id="wins"></div>
+
+<script>
+'use strict'
+/* StarHub 截图遮罩页(区域截图 / 窗口截图)。
+ * 经 window.__TAURI_INTERNALS__.invoke 与 Rust commands/screenshot.rs 通信:
+ *  - 区域模式:取全屏拼接底图 → 拖拽选区 → 矩形标注 → 确认(合成 PNG 回传)
+ *  - 窗口模式:点击目标窗口 → 整窗截图 → 矩形标注 → 确认
+ * 坐标一律为物理像素(canvas 尺寸);CSS 显示经 style 缩放,鼠标经
+ * canvas.width / getBoundingClientRect().width 换算,天然适配 DPI。
+ */
+
+var invoke = function (cmd, args) {
+  var internals = window.__TAURI_INTERNALS__
+  if (!internals || typeof internals.invoke !== 'function') {
+    return Promise.reject(new Error('Tauri IPC unavailable'))
+  }
+  return internals.invoke(cmd, args || {})
+}
+
+var MAX_BYTES = 3 * 1024 * 1024 // 超过 3MB 压缩到 3MB 内(产品要求)
+
+var stage = document.getElementById('stage')
+var baseCanvas = document.getElementById('base')
+var annoCanvas = document.getElementById('anno')
+var overlayCanvas = document.getElementById('overlay')
+var hintEl = document.getElementById('hint')
+var sizeTag = document.getElementById('sizeTag')
+var toolbar = document.getElementById('toolbar')
+var winsEl = document.getElementById('wins')
+var baseCtx = baseCanvas.getContext('2d')
+var annoCtx = annoCanvas.getContext('2d')
+var overlayCtx = overlayCanvas.getContext('2d')
+
+var MODE = { REGION: 'region', WINDOW: 'window' }
+var mode = MODE.REGION
+
+// ---- 画布管理 ----
+// 底图(物理尺寸)。region:全屏拼接;window:目标窗口截图。
+var baseImage = null // HTMLImageElement
+var baseX = 0, baseY = 0 // 底图左上角在画布上的物理坐标(region 恒为 0)
+var baseW = 0, baseH = 0
+
+// 选区(物理坐标,画布坐标)
+var sel = null // {x,y,w,h}
+var drag = null // {mode:'draw'|'move'|'resize', handle, startX, startY, orig}
+var HANDLES = ['nw','n','ne','e','se','s','sw','w']
+var HANDLE_SIZE = 8
+
+// 标注矩形(物理坐标)
+var annos = [] // [{x,y,w,h}]
+var annotating = false // 矩形工具激活
+
+var windowsList = [] // 窗口模式列表
+var hoverWin = null
+
+// ---- 工具函数 ----
+function toCanvasCoord(e) {
+  var rect = baseCanvas.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0) return { x: 0, y: 0 }
+  return {
+    x: (e.clientX - rect.left) * (baseCanvas.width / rect.width),
+    y: (e.clientY - rect.top) * (baseCanvas.height / rect.height),
+  }
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
+function normRect(x1, y1, x2, y2) {
+  return { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) }
+}
+function fitImageToCanvas(img) {
+  baseCanvas.width = img.naturalWidth
+  baseCanvas.height = img.naturalHeight
+  baseCtx.clearRect(0, 0, baseCanvas.width, baseCanvas.height)
+  baseCtx.drawImage(img, 0, 0)
+}
+function fitImageWindowMode(img) {
+  // 窗口截图:画布 = 截图物理尺寸,居中显示,留出暗色余量
+  baseCanvas.width = img.naturalWidth
+  baseCanvas.height = img.naturalHeight
+  baseCtx.clearRect(0, 0, baseCanvas.width, baseCanvas.height)
+  baseCtx.drawImage(img, 0, 0)
+  stage.classList.add('window-mode')
+  var rect = baseCanvas.getBoundingClientRect()
+  var scale = Math.min(
+    (window.innerWidth - 80) / Math.max(1, rect.width),
+    (window.innerHeight - 120) / Math.max(1, rect.height),
+    1
+  )
+  baseCanvas.style.width = (baseCanvas.width * scale) + 'px'
+  baseCanvas.style.height = (baseCanvas.height * scale) + 'px'
+  annoCanvas.style.width = baseCanvas.style.width
+  annoCanvas.style.height = baseCanvas.style.height
+  overlayCanvas.style.width = baseCanvas.style.width
+  overlayCanvas.style.height = baseCanvas.style.height
+  // 三个画布必须与 base 同尺寸同位置
+  syncCanvasSizes()
+}
+function syncCanvasSizes() {
+  annoCanvas.width = baseCanvas.width
+  annoCanvas.height = baseCanvas.height
+  overlayCanvas.width = baseCanvas.width
+  overlayCanvas.height = baseCanvas.height
+}
+
+// ---- 遮罩绘制(选区外半透明黑 + 选区边框/手柄;窗口模式画 hover 高亮) ----
+function drawWinHighlight() {
+  var ctx = overlayCtx
+  if (!(mode === MODE.WINDOW && !baseImage) || !hoverWin) return
+  var hw = hoverWin
+  ctx.strokeStyle = '#1aa0f8'
+  ctx.lineWidth = 3
+  ctx.strokeRect(hw.x + 1, hw.y + 1, hw.w - 2, hw.h - 2)
+  ctx.fillStyle = 'rgba(26, 160, 248, 0.25)'
+  ctx.fillRect(hw.x, hw.y, hw.w, hw.h)
+}
+
+function drawOverlay() {
+  var ctx = overlayCtx
+  var W = overlayCanvas.width, H = overlayCanvas.height
+  ctx.clearRect(0, 0, W, H)
+  if (mode === MODE.WINDOW && !baseImage) { drawWinHighlight(); return }
+  if (!sel) return
+  var s = sel
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+  ctx.fillRect(0, 0, W, s.y)                       // 上
+  ctx.fillRect(0, s.y + s.h, W, H - s.y - s.h)     // 下
+  ctx.fillRect(0, s.y, s.x, s.h)                   // 左
+  ctx.fillRect(s.x + s.w, s.y, W - s.x - s.w, s.h) // 右
+  // 选区边框(微信蓝色)
+  ctx.strokeStyle = '#1aa0f8'
+  ctx.lineWidth = 1
+  ctx.strokeRect(s.x + 0.5, s.y + 0.5, s.w - 1, s.h - 1)
+  // 8 方向手柄
+  ctx.fillStyle = '#ffffff'
+  ctx.strokeStyle = '#1aa0f8'
+  ctx.lineWidth = 1
+  var hs = HANDLE_SIZE
+  var pts = {
+    nw: [s.x, s.y], n: [s.x + s.w / 2, s.y], ne: [s.x + s.w, s.y],
+    e: [s.x + s.w, s.y + s.h / 2], se: [s.x + s.w, s.y + s.h], s: [s.x + s.w / 2, s.y + s.h],
+    sw: [s.x, s.y + s.h], w: [s.x, s.y + s.h / 2],
+  }
+  HANDLES.forEach(function (h) {
+    var p = pts[h]
+    ctx.fillRect(p[0] - hs / 2, p[1] - hs / 2, hs, hs)
+    ctx.strokeRect(p[0] - hs / 2 + 0.5, p[1] - hs / 2 + 0.5, hs - 1, hs - 1)
+  })
+}
+
+// ---- 标注绘制 ----
+function drawAnnos() {
+  var ctx = annoCtx
+  ctx.clearRect(0, 0, annoCanvas.width, annoCanvas.height)
+  annos.forEach(function (a) {
+    ctx.strokeStyle = '#ff3b30'
+    ctx.lineWidth = 3
+    ctx.strokeRect(a.x + 1.5, a.y + 1.5, a.w - 3, a.h - 3)
+  })
+}
+
+// ---- 选区命中 ----
+function hitTest(x, y) {
+  if (!sel) return null
+  var s = sel
+  var hs = HANDLE_SIZE
+  var pts = {
+    nw: [s.x, s.y], n: [s.x + s.w / 2, s.y], ne: [s.x + s.w, s.y],
+    e: [s.x + s.w, s.y + s.h / 2], se: [s.x + s.w, s.y + s.h], s: [s.x + s.w / 2, s.y + s.h],
+    sw: [s.x, s.y + s.h], w: [s.x, s.y + s.h / 2],
+  }
+  for (var i = 0; i < HANDLES.length; i++) {
+    var p = pts[HANDLES[i]]
+    if (Math.abs(x - p[0]) <= hs / 2 && Math.abs(y - p[1]) <= hs / 2) return HANDLES[i]
+  }
+  if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) return 'inside'
+  return null
+}
+
+// ---- 选区拖拽 ----
+function applyResize(orig, handle, dx, dy) {
+  var s = { x: orig.x, y: orig.y, w: orig.w, h: orig.h }
+  var min = 8
+  if (handle.indexOf('w') !== -1) { s.x = orig.x + dx; s.w = orig.w - dx }
+  if (handle.indexOf('e') !== -1) { s.w = orig.w + dx }
+  if (handle.indexOf('n') !== -1) { s.y = orig.y + dy; s.h = orig.h - dy }
+  if (handle.indexOf('s') !== -1) { s.h = orig.h + dy }
+  if (s.w < min) { if (handle.indexOf('w') !== -1) s.x -= (min - s.w); s.w = min }
+  if (s.h < min) { if (handle.indexOf('n') !== -1) s.y -= (min - s.h); s.h = min }
+  // 边界:不能移出画布
+  if (s.x < 0) { s.w += s.x; s.x = 0 }
+  if (s.y < 0) { s.h += s.y; s.y = 0 }
+  if (s.x + s.w > baseCanvas.width) s.w = baseCanvas.width - s.x
+  if (s.y + s.h > baseCanvas.height) s.h = baseCanvas.height - s.y
+  return s
+}
+
+// ---- 鼠标事件 ----
+baseCanvas.addEventListener('mousedown', function (e) {
+  var p = toCanvasCoord(e)
+  if (mode === MODE.WINDOW && !baseImage) { // 选窗口阶段
+    return // click 处理
+  }
+  if (annotating) {
+    // 标注范围:区域模式 = 选区内;窗口模式 = 整图
+    var bx = sel ? sel.x : 0, by = sel ? sel.y : 0
+    var bw = sel ? sel.w : baseCanvas.width, bh = sel ? sel.h : baseCanvas.height
+    if (p.x >= bx && p.x <= bx + bw && p.y >= by && p.y <= by + bh) {
+      drag = { mode: 'anno', startX: p.x, startY: p.y, bounds: { x: bx, y: by, w: bw, h: bh } }
+      baseCanvas.style.cursor = 'crosshair'
+      return
+    }
+    return // 标注模式下点击范围外忽略
+  }
+  var hit = hitTest(p.x, p.y)
+  if (hit === 'inside') {
+    drag = { mode: 'move', startX: p.x, startY: p.y, orig: { x: sel.x, y: sel.y } }
+    baseCanvas.style.cursor = 'move'
+  } else if (hit) {
+    drag = { mode: 'resize', handle: hit, startX: p.x, startY: p.y, orig: { x: sel.x, y: sel.y, w: sel.w, h: sel.h } }
+  } else {
+    // 窗口模式没有选区概念:非标注点击忽略,不触发「重画选区」
+    if (mode !== MODE.REGION) return
+    drag = { mode: 'draw', startX: p.x, startY: p.y }
+    // 重画选区 = 全新截图,清掉旧标注(微信同款行为)
+    sel = null
+    annos = []
+    drawAnnos()
+    var undoBtn = document.getElementById('undo')
+    if (undoBtn) undoBtn.disabled = true
+  }
+  drawOverlay()
+  updateChrome()
+})
+
+baseCanvas.addEventListener('mousemove', function (e) {
+  var p = toCanvasCoord(e)
+  if (mode === MODE.WINDOW && !baseImage) {
+    // 窗口模式 hover 高亮
+    hoverWin = null
+    for (var i = 0; i < windowsList.length; i++) {
+      var w = windowsList[i]
+      if (p.x >= w.x && p.x <= w.x + w.w && p.y >= w.y && p.y <= w.y + w.h) { hoverWin = w; break }
+    }
+    drawOverlay()
+    updateWinHover()
+    return
+  }
+  if (!drag) {
+    if (annotating || !sel) { baseCanvas.style.cursor = 'crosshair'; return }
+    var hit = hitTest(p.x, p.y)
+    baseCanvas.style.cursor = hit === 'inside' ? 'move' : (hit ? 'ew-resize' : 'crosshair')
+    return
+  }
+  var dx = p.x - drag.startX, dy = p.y - drag.startY
+  if (drag.mode === 'draw') {
+    sel = normRect(drag.startX, drag.startY, p.x, p.y)
+    if (sel.w < 4 && sel.h < 4) sel = null
+  } else if (drag.mode === 'move') {
+    if (sel) {
+      var nx = clamp(drag.orig.x + dx, 0, baseCanvas.width - sel.w)
+      var ny = clamp(drag.orig.y + dy, 0, baseCanvas.height - sel.h)
+      sel.x = nx; sel.y = ny
+    }
+  } else if (drag.mode === 'resize') {
+    sel = applyResize(drag.orig, drag.handle, dx, dy)
+  } else if (drag.mode === 'anno') {
+    // 标注矩形实时预览(限制在标注范围内)
+    var r = normRect(drag.startX, drag.startY, p.x, p.y)
+    var b = drag.bounds
+    r.x = clamp(r.x, b.x, b.x + b.w); r.y = clamp(r.y, b.y, b.y + b.h)
+    r.w = Math.min(r.w, b.x + b.w - r.x); r.h = Math.min(r.h, b.y + b.h - r.y)
+    drawAnnos()
+    annoCtx.strokeStyle = '#ff3b30'; annoCtx.lineWidth = 3
+    annoCtx.strokeRect(r.x + 1.5, r.y + 1.5, Math.max(0, r.w - 3), Math.max(0, r.h - 3))
+    annoCanvas._preview = r
+    return
+  }
+  drawOverlay()
+  updateChrome()
+})
+
+function endDrag(e) {
+  if (!drag) return
+  if (drag.mode === 'anno') {
+    var prev = annoCanvas._preview
+    if (prev && prev.w > 4 && prev.h > 4) { annos.push(prev); drawAnnos() }
+    delete annoCanvas._preview
+  }
+  drag = null
+  drawOverlay()
+  updateChrome()
+}
+baseCanvas.addEventListener('mouseup', endDrag)
+baseCanvas.addEventListener('mouseleave', endDrag)
+
+baseCanvas.addEventListener('dblclick', function () {
+  if (sel) confirmCapture()
+})
+
+// 窗口模式:点击窗口
+baseCanvas.addEventListener('click', function (e) {
+  if (mode !== MODE.WINDOW || baseImage) return
+  var p = toCanvasCoord(e)
+  if (!hoverWin) return
+  var id = hoverWin.id
+  hintEl.textContent = '正在截取窗口…'
+  invoke('screenshot_capture_window', { id: id })
+    .then(function (bytes) { return blobToImage(bytes, 'image/png') })
+    .then(function (img) {
+      baseImage = img
+      fitImageWindowMode(img)
+      syncCanvasSizes()
+      winsEl.style.display = 'none'
+      showRegionChrome(false)
+      hintEl.textContent = '按 回车 确认,Esc 取消'
+      enterAnnotate()
+    })
+    .catch(function (err) {
+      hintEl.textContent = '窗口截图失败:' + err
+      setTimeout(function () { hintEl.textContent = '点击要截取的窗口' }, 2000)
+    })
+})
+
+function blobToImage(bytes, type) {
+  var blob = new Blob([bytes], { type: type })
+  var url = URL.createObjectURL(blob)
+  return new Promise(function (resolve, reject) {
+    var img = new Image()
+    img.onload = function () { URL.revokeObjectURL(url); resolve(img) }
+    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode image failed')) }
+    img.src = url
+  })
+}
+
+// ---- 工具/界面 ----
+function buildToolbar() {
+  var rectBtn = document.createElement('button')
+  rectBtn.type = 'button'
+  rectBtn.id = 'annoRect'
+  rectBtn.title = '矩形标注'
+  rectBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg><span>矩形</span>'
+  rectBtn.addEventListener('click', function () {
+    annotating = !annotating
+    rectBtn.classList.toggle('active', annotating)
+    baseCanvas.style.cursor = 'crosshair'
+  })
+
+  var undoBtn = document.createElement('button')
+  undoBtn.type = 'button'
+  undoBtn.id = 'undo'
+  undoBtn.title = '撤销'
+  undoBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3 2.5 6.5 6 10"/><path d="M2.5 6.5h6.5a4 4 0 0 1 4 4v1"/></svg><span>撤销</span>'
+  undoBtn.addEventListener('click', function () {
+    if (annos.length > 0) { annos.pop(); drawAnnos() }
+    undoBtn.disabled = annos.length === 0
+  })
+
+  var okBtn = document.createElement('button')
+  okBtn.type = 'button'
+  okBtn.id = 'ok'
+  okBtn.className = 'confirm'
+  okBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 8.5 3.5 3.5 7.5-8"/></svg><span>确认</span>'
+  okBtn.addEventListener('click', confirmCapture)
+
+  var cancelBtn = document.createElement('button')
+  cancelBtn.type = 'button'
+  cancelBtn.id = 'cancel'
+  cancelBtn.className = 'cancel'
+  cancelBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 3 10 10M13 3 3 13"/></svg><span>取消</span>'
+  cancelBtn.addEventListener('click', cancelCapture)
+
+  var sep = document.createElement('div'); sep.className = 'sep'
+  toolbar.appendChild(rectBtn)
+  toolbar.appendChild(undoBtn)
+  toolbar.appendChild(sep)
+  toolbar.appendChild(cancelBtn)
+  toolbar.appendChild(okBtn)
+}
+
+function updateChrome() {
+  // 窗口截图标注态:工具栏固定在截图底部,无选区
+  if (mode === MODE.WINDOW && baseImage) {
+    sizeTag.style.display = 'none'
+    toolbar.style.display = 'flex'
+    var rect0 = baseCanvas.getBoundingClientRect()
+    toolbar.style.left = (rect0.left + rect0.width / 2 - 130) + 'px'
+    toolbar.style.top = (rect0.bottom + 12) + 'px'
+    toolbar.style.display = 'flex'
+    return
+  }
+  // 工具栏与尺寸标签跟随选区
+  if (!sel) { toolbar.style.display = 'none'; sizeTag.style.display = 'none'; return }
+  toolbar.style.display = 'flex'
+  sizeTag.style.display = 'block'
+  var rect = baseCanvas.getBoundingClientRect()
+  var scale = baseCanvas.width / rect.width
+  var tx = rect.left + sel.x / scale
+  var ty = rect.top + sel.y / scale
+  var tw = sel.w / scale, th = sel.h / scale
+  sizeTag.textContent = Math.round(sel.w) + ' × ' + Math.round(sel.h)
+  // 尺寸标签:选区上沿外(或下沿外)
+  if (ty > 40) sizeTag.style.top = (ty - 26) + 'px'
+  else sizeTag.style.top = (ty + th + 8) + 'px'
+  sizeTag.style.left = tx + 'px'
+  // 工具栏:选区下方,若放不下放上方
+  var tbH = 40
+  if (ty + th + tbH + 12 < window.innerHeight) toolbar.style.top = (ty + th + 12) + 'px'
+  else toolbar.style.top = Math.max(8, ty - tbH - 12) + 'px'
+  toolbar.style.left = Math.max(8, Math.min(tx, window.innerWidth - 320)) + 'px'
+  toolbar.style.display = 'flex'
+}
+
+function showRegionChrome(hasRegion) {
+  // 区域模式选中后:隐藏"点击窗口"列表
+  winsEl.style.display = 'none'
+}
+
+function enterAnnotate() {
+  annotating = false
+  document.getElementById('annoRect').classList.remove('active')
+  // 区域模式:进入标注状态(选区保持可调);窗口模式:无选区,直接工具栏
+}
+
+function updateWinHover() {
+  var items = winsEl.querySelectorAll('.win')
+  for (var i = 0; i < items.length; i++) {
+    items[i].classList.toggle('hover', hoverWin !== null && items[i].dataset.id === String(hoverWin.id))
+  }
+}
+
+function buildWinList(list) {
+  windowsList = list
+  winsEl.innerHTML = ''
+  list.forEach(function (w) {
+    var el = document.createElement('div')
+    el.className = 'win'
+    el.dataset.id = String(w.id)
+    var app = document.createElement('span'); app.className = 'app'; app.textContent = w.app_name || '?'
+    var title = document.createElement('span'); title.className = 'title'; title.textContent = w.title || '(无标题)'
+    el.appendChild(app); el.appendChild(title)
+    el.addEventListener('click', function () {
+      hintEl.textContent = '正在截取窗口…'
+      invoke('screenshot_capture_window', { id: w.id })
+        .then(function (bytes) { return blobToImage(bytes, 'image/png') })
+        .then(function (img) {
+          baseImage = img
+          fitImageWindowMode(img)
+          syncCanvasSizes()
+          winsEl.style.display = 'none'
+          hintEl.textContent = '按 回车 确认,Esc 取消'
+          enterAnnotate()
+          updateChrome()
+        })
+        .catch(function (err) {
+          hintEl.textContent = '窗口截图失败:' + err
+          setTimeout(function () { hintEl.textContent = '点击要截取的窗口' }, 2000)
+        })
+    })
+    winsEl.appendChild(el)
+  })
+  winsEl.style.display = 'block'
+}
+
+// ---- 确认 / 取消 ----
+function canvasToBlob(canvas, type, quality) {
+  return new Promise(function (resolve, reject) {
+    canvas.toBlob(function (b) { b ? resolve(b) : reject(new Error('toBlob failed')) }, type, quality)
+  })
+}
+
+// 压缩到 3MB 内:先 PNG,超限转 JPEG 降质量,仍超限再降分辨率。
+async function compressToLimit(canvas) {
+  var blob = await canvasToBlob(canvas, 'image/png')
+  if (blob.size <= MAX_BYTES) return blob
+  var quality = 0.9
+  while (quality >= 0.3 && blob.size > MAX_BYTES) {
+    blob = await canvasToBlob(canvas, 'image/jpeg', quality)
+    quality -= 0.1
+  }
+  var scale = 0.9
+  while (blob.size > MAX_BYTES && scale > 0.3) {
+    var w = Math.max(1, Math.round(canvas.width * scale))
+    var h = Math.max(1, Math.round(canvas.height * scale))
+    var tmp = document.createElement('canvas')
+    tmp.width = w; tmp.height = h
+    tmp.getContext('2d').drawImage(canvas, 0, 0, w, h)
+    blob = await canvasToBlob(tmp, 'image/jpeg', 0.85)
+    scale -= 0.1
+  }
+  return blob
+}
+
+function confirmCapture() {
+  var final = document.createElement('canvas')
+  var w, h, sx, sy
+  if (mode === MODE.REGION) {
+    if (!sel) return
+    w = Math.max(1, Math.round(sel.w)); h = Math.max(1, Math.round(sel.h))
+    sx = sel.x; sy = sel.y
+  } else {
+    if (!baseImage) return
+    w = baseCanvas.width; h = baseCanvas.height
+    sx = 0; sy = 0
+  }
+  final.width = w; final.height = h
+  var ctx = final.getContext('2d')
+  ctx.drawImage(baseCanvas, sx, sy, w, h, 0, 0, w, h)
+  // 合成标注矩形
+  annos.forEach(function (a) {
+    ctx.strokeStyle = '#ff3b30'
+    ctx.lineWidth = 3
+    var ax = a.x - sx, ay = a.y - sy
+    ctx.strokeRect(ax + 1.5, ay + 1.5, a.w - 3, a.h - 3)
+  })
+  hintEl.textContent = '正在处理…'
+  compressToLimit(final).then(function (blob) {
+    return blob.arrayBuffer()
+  }).then(function (buf) {
+    return invoke('screenshot_finish', { data: new Uint8Array(buf) })
+  }).catch(function (err) {
+    // 回传失败不能卡死遮罩:直接取消恢复主窗口
+    hintEl.textContent = '确认失败:' + err
+    setTimeout(function () { invoke('screenshot_cancel', {}) }, 300)
+  })
+}
+
+function cancelCapture() {
+  invoke('screenshot_cancel', {})
+}
+
+// ---- 键盘 ----
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { e.preventDefault(); cancelCapture() }
+  if (e.key === 'Enter') { e.preventDefault(); confirmCapture() }
+})
+
+// ---- 启动 ----
+function initRegion() {
+  mode = MODE.REGION
+  hintEl.textContent = '拖拽选择截图区域,回车确认, Esc 取消'
+  invoke('screenshot_get_desktop')
+    .then(function (res) {
+      var jpeg = res[0], monitors = res[1], origin = res[2]
+      return blobToImage(jpeg, 'image/jpeg').then(function (img) {
+        baseImage = img
+        // 底图 = 虚拟屏物理尺寸
+        fitImageToCanvas(img)
+        syncCanvasSizes()
+        hintEl.textContent = '拖拽选择截图区域,回车确认, Esc 取消'
+        updateChrome()
+      })
+    })
+    .catch(function () {
+      // 无底图 = 窗口模式
+      initWindow()
+    })
+}
+
+function initWindow() {
+  mode = MODE.WINDOW
+  hintEl.textContent = '点击要截取的窗口,或在右侧列表选择;Esc 取消'
+  // 选窗口阶段没有底图:把画布铺满整个虚拟屏(物理尺寸),hover 检测与
+  // 高亮绘制都工作在物理坐标,与窗口列表的物理矩形一致。
+  invoke('screenshot_list_monitors').then(function (monitors) {
+    var xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity
+    monitors.forEach(function (m) {
+      xMin = Math.min(xMin, m.x); yMin = Math.min(yMin, m.y)
+      xMax = Math.max(xMax, m.x + m.width); yMax = Math.max(yMax, m.y + m.height)
+    })
+    if (xMax === -Infinity) return
+    baseCanvas.width = xMax - xMin
+    baseCanvas.height = yMax - yMin
+    baseCanvas.style.width = '100%'
+    baseCanvas.style.height = '100%'
+    syncCanvasSizes()
+  }).catch(function () { /* 无法取显示器信息时 hover 不可用,列表选择仍可走 */ })
+  invoke('screenshot_list_windows')
+    .then(buildWinList)
+    .catch(function () { hintEl.textContent = '无法枚举窗口' })
+}
+
+buildToolbar()
+initRegion()
+</script>
+</body>
+</html>
