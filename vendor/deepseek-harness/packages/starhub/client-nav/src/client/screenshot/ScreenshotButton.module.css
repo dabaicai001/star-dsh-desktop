@@ -3,8 +3,9 @@
 .root {
   position: relative;
   display: inline-flex;
-  /* 自建堆叠上下文,让下拉菜单压过后续工具控件 */
-  z-index: 1;
+  /* 自建堆叠上下文,让下拉菜单压过会话列粘性 composer(z-index 7)的渐变
+     遮罩与消息流(同 GitBranchPill 面板的层级处理)。 */
+  z-index: 20;
 }
 
 .button {
@@ -28,7 +29,8 @@
 
 .menu {
   position: absolute;
-  top: calc(100% + 6px);
+  /* composer 卡片贴窗口底部,菜单向下展开会被视口裁掉——向上展开 */
+  bottom: calc(100% + 6px);
   left: 0;
   z-index: 100;
   display: flex;
@@ -37,8 +39,8 @@
   padding: 4px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 10px;
-  background: var(--dsw-alias-surface-popover);
-  box-shadow: var(--dsw-shadow-popover);
+  background: var(--dsw-alias-bg-overlay);
+  box-shadow: var(--dsw-shadow-lv2);
 }
 
 .item {

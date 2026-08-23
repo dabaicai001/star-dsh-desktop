@@ -30,6 +30,11 @@
 
 ---
 
+## [0.93.1] - 2026-08-23
+
+### 修复
+- 🐛 修复 v0.93.0 截图功能不可用:① `src-tauri/permissions/commands.toml`(Tauri 2 ACL 白名单)漏列 8 个 `screenshot_*` 命令,remote origin(127.0.0.1 dsh 主壳)调用被 ACL 拒绝 → 点「区域截图」无反应;② 截图菜单背景用了不存在的 token `--dsw-alias-surface-popover`(透明背景),且菜单向下展开时被窗口底部视口裁掉(只显示「区域截图」一项)——改为 `--dsw-alias-bg-overlay` + 向上展开 + 提层级压过 composer 渐变遮罩。
+
 ## [0.93.0] - 2026-08-23
 
 ### 新增

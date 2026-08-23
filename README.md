@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.93.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.93.1-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -148,20 +148,14 @@
 
 ## 当前版本
 
+### v0.93.1 (2026-08-23)
+- 🐛 🐛 修复 v0.93.0 截图功能不可用:① `src-tauri/permissions/commands.toml`(Tauri 2 ACL 白名单)漏列 8 个 `screenshot_*` 命令,remote origin(127.0.0.1 dsh 主壳)调用被 ACL 拒绝 → 点「区域截图」无反应;② 截图菜单背景用了不存在的 token `--dsw-alias-surface-popover`(透明背景),且菜单向下展开时被窗口底部视口裁掉(只显示「区域截图」一项)——改为 `--dsw-alias-bg-overlay` + 向上展开 + 提层级压过 composer 渐变遮罩。
+
 ### v0.93.0 (2026-08-23)
 - ✨ ✨ AI 对话输入框新增截图功能(微信同款交互):输入框工具行「剪刀」按钮 → 区域截图 / 窗口截图。区域截图:隐藏主窗口后弹出全屏遮罩,拖拽框选选区(8 方向调整 / 整体移动 / 尺寸提示),支持红色矩形标注与撤销,回车/双击确认、Esc 取消;窗口截图:点击目标窗口整窗截取(含标题栏边框,自动过滤 StarHub 自身窗口)。确认后截图直接进输入框附件栏,随消息发送;超过 3MB 自动压缩到 3MB 以内。Rust 侧基于 xcap 跨平台截图(Windows WGC / macOS ScreenCaptureKit / Linux X11+Wayland),遮罩交互为独立置顶透明窗口加载的静态页,结果经 Tauri 事件回传主窗口并复用现有图片附件管线。
 
 ### v0.92.4 (2026-08-23)
 - 🐛 **修复 v0.92.2 安装包启动崩溃(根因级,替代 v0.92.3 的产物级缓解)**:`examples/starhub-web/cordis.patch.yml` 引用的 `@deepseek-ai/dsh-starhub-memory-sink` 未随 dsh-runtime 入包(三处入包清单漏列),安装包启动即 `ERR_MODULE_NOT_FOUND` → 插件树加载失败 → dsh web 进程崩溃(浏览器侧表现为 `session-log-export` client bundle failed to load,系崩溃下游症状)。修复:`package-dsh-runtime.ts` 的 `WEB_LOCAL_PACKAGE_DIRS` / `web.rs` 的 `LOCAL_PACKAGES` / `examples/starhub-web/package.json` 三处补 memory-sink;memory-sink `apply()` 改为 `ctx.settings.get()` 只读 memory-context 的 namespace(不再重复 register,消除组合下 settings duplicate-registration 硬失败);`package-dsh-runtime.ts` 新增 `verifyProfilePatchClosure()` 打包门禁——starhub-web profile 引用的每个 `@deepseek-ai/*` 包必须已随闭包入包,漏列即构建失败(本地与 GitHub CI 均生效)。
-
-### v0.92.2 (2026-08-23)
-- 🔧 全量清零 dsh 仓库(fork)存量门禁债:oxlint 全仓从 ~1955 条错误降到 0(先自动修复 ~1188 条,再逐文件手工补类型清零 unsafe-* / no-non-null-assertion 等);修复过程中顺带修正 client-nav 各服务层的 any 泄漏、被误删的运行时守卫(如 db-dashboard-service 的 null 行守卫)与 tauriListen 泛型签名。
-- 🔧 退役四类门禁:上游 `website/` 文档站点投影(脚本/门禁/workspace 条目全删)、`verify-md-wrap`、`verify-doc-budgets`、`verify-translation-pairing`(脚本/lefthook 钩子/run-gates 叶子/文档引用全摘除);`scripts/ci-workflow.spec.ts` 因上游 `.github/workflows` 未 vendored 从 vitest exclude 排除。AGENTS.md 与 docs/AGENTS.md 同步更新门禁策略(只保留 lint、覆盖率、README limitations/model-experience 及剩余 doc-sync 叶子)。
-- 🔧 `verify-archived-agent-notes` 修复嵌套仓库路径(外层 starhub git 仓库内按前缀解析 manifest)。
-- 🔧 目录册门禁修复:重新生成 client/tool/config 目录与 doc-graphs;`gen-tool-catalog` 排除 starhub 组(其工具由包 README 记录);commit-message/approval-bridge 的 Config 改为命名类型;8 个 starhub 包 README 补全 Model Experience 规范结构,client-nav/tool-context 补上缺失 README(含 Known Limitations),export-jsdoc 353 条 @param/@returns 全部补齐。
-- 🔧 starhub 三包(approval-bridge / host-static / tools)补上 `./invariant` 伴生;8 个 client-nav CSS 高位面滚动容器补滚动条 l2 重绑定;icons 规格按 fork 实际集更新(73);THIRD_PARTY_NOTICES.md 重生成对齐清单;清理子代理遗留的 oxlint 探针临时文件。
-- ✅ client-nav terminal 四模块(terminal-cwd / xshell-quick-command / quick-commands / sftp-service)测试补齐至 per-file 100% 覆盖(新增 4 规格 86 例)。
-- ✅ 全仓 vitest 13634 通过;仅剩 1 条存量失败(tool-pwsh 沙箱升级测试,stash 验证为 HEAD 既有)与 1 条负载偶发(credentials-local 并发写,隔离通过);fork CI 不跑 vitest。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 
