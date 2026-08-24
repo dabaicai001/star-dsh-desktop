@@ -22,6 +22,9 @@ import {
 /** Full composed props: header-actions runtime share(sessionId + useSessions)。 */
 export type GitBranchPillProps = PropsRuntime<'conversation.session.header.actions'>
 
+/** 分支胶囊对外部 git 操作(如另一终端切换分支)的轮询间隔。 */
+const BRANCH_POLL_MS = 10_000
+
 /** 面板一次刷新的数据源:本地分支 + 远程跟踪分支 + 脏标记。 */
 async function loadPanelState(dir: string): Promise<{ local: string[]; remote: string[]; dirty: boolean }> {
   const [local, remote, dirty] = await Promise.all([
@@ -60,6 +63,29 @@ export function GitBranchPill({ sessionId, useSessions }: GitBranchPillProps) {
     return () => { cancelled = true }
   }, [cwd])
 
+  // 外部 git 操作(在其它终端/编辑器切了分支)后胶囊保持自动最新:挂载期
+  // 每 10s 轮询一次当前分支;页面重新可见时立即刷新。null(非仓库/瞬态
+  // 失败)不落状态,避免胶囊闪隐。
+  useEffect(() => {
+    if (cwd === undefined) return
+    let cancelled = false
+    const probe = (): void => {
+      void gitCurrentBranch(cwd).then((name) => {
+        if (!cancelled && name !== null) setBranch(name)
+      })
+    }
+    const timer = window.setInterval(probe, BRANCH_POLL_MS)
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') probe()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [cwd])
+
   // 面板外点击关闭(焦点可能留在搜索框,用 pointerdown 捕获)。
   useEffect(() => {
     if (!open) return
@@ -78,6 +104,8 @@ export function GitBranchPill({ sessionId, useSessions }: GitBranchPillProps) {
     setNotice(null)
     setFilter('')
     if (cwd === undefined) return
+    // 开门即刷新胶囊里的当前分支(与面板分支列表同源)。
+    await refreshBranch(cwd)
     const state = await loadPanelState(cwd)
     setBranches(state.local)
     setRemoteBranches(state.remote)

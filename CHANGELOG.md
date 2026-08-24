@@ -12,6 +12,12 @@
 - SQL 查询结果可编辑及无主键报错提示（转 K3）
 - 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
 
+## [0.95.2] - 2026-08-24
+
+### 修复
+- 🐛 会话头部 git 分支胶囊对外部分支切换不再延迟显示:挂载后每 10s 轮询当前分支、页面重新可见时立即刷新、打开面板顺带刷新——在其它终端/编辑器 checkout 后胶囊自动更新,不再需要切换会话才刷新。
+- 🐛 GitHub Linux 构建修复:截图栈 xcap 的 `libspa-sys` 需要 PipeWire 系统库,`release.yml` / `linux-compat.yml` 的 apt 依赖补 `libpipewire-0.3-dev` + `libspa-0.2-dev`(此前 Linux 构建在 `libspa-sys` build.rs 报 `Cannot find libraries: PkgConfig(libpipewire-0.3)`)。
+
 ## [0.95.1] - 2026-08-24
 
 ### 修复

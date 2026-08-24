@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.95.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.95.2-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -148,21 +148,15 @@
 
 ## 当前版本
 
+### v0.95.2 (2026-08-24)
+- 🐛 会话头部 git 分支胶囊自动追踪外部切换:每 10s 轮询 + 页面重新可见立即刷新 + 打开面板顺带刷新——在其它终端/编辑器 checkout 后胶囊不再延迟到切换会话才更新。
+- 🐛 GitHub Linux 构建修复:apt 依赖补 `libpipewire-0.3-dev` + `libspa-0.2-dev`(截图栈 xcap 的 `libspa-sys` 此前在 Linux 构建报 `Cannot find libraries: libpipewire-0.3`)。
+
 ### v0.95.1 (2026-08-24)
 - 🛡️ **SSH/Docker 删除类操作与权限预设脱钩(死规定)**:approval-bridge 风险门新增 `hard` 档——`rm`/`find -delete`/`ip link del`/`journalctl --vacuum`/Docker 删除类/`DROP`/`TRUNCATE`/Redis `DEL` 等风险词命中,即使会话策略为 never(「全访问不弹审批」)也必弹确认卡;同时补掉 find/ip/journalctl 三个「只读清单前缀但可删除」的漏拦洞。
 - 🐛 右侧栏「文件树」与侧栏子类互斥(点哪个哪个在上面);文件信息弹窗加大为 Read 卡同尺寸并用 ReadBlock 行号预览。
 - 🐛 SSH MFA 分场景修复:非 TOTP 提示不再预填主密码(堡垒机「选择机器」可正常填写),跳板机腿支持 keyboard-interactive MFA。
 - 🛡️ Docker `@` 引用特别标注 `[Docker]`(候选徽标 Docker⚠)+ AI 上下文注入删除保护硬规则。
-
-### v0.95.0 (2026-08-24)
-- ✨ ✨ 会话文件树 + 本机文件搜索:头部「文件树」按钮打开项目目录树(懒加载展开、右键「引用文件/文件夹」把 `@名称 (路径)` 追加进对话框、文件信息弹窗);`@` 触发词新增 starhub-file source,候选来自会话工作区目录树,pick 产物与文件树右键引用一致;Rust 侧新增 `local_search_files` 命令(按文件名/文件内容检索,含深度与结果上限保护)并注册 ACL 权限。
-- ✨ ✨ DB 表格快捷筛选:数据表格新增 quickFilter 快捷筛选关键字,对所有列做 `LIKE '%kw%'` 模糊匹配(sidecar MySQL/PostgreSQL/SQLite/SQL Server/ClickHouse 全部适配 + 前端筛选输入框)。
-- 🐛 🐛 文件树面板目录读取失败时不再无限重发请求(挂载自动展开 + `expand` 依赖 `[cache, loading]`,`finally` 移除 loading 会重建 `expand` 并重跑 effect,形成「失败 → 再请求 → 再失败」死循环,CPU 100% 满载导致 vitest 全量测试超时挂起):同一 cwd 只自动展开一次;目录加载失败后点击 = 重试。
-- 🐛 🐛 SSH 终端对 MFA 资产发送 `kb_interactive` 配置(镜像 Rust 侧 `authMode`/`mfaEnabled`/`mfaPassword` → `kb_interactive` 的翻译),修复真实连接「服务器要求 keyboard-interactive MFA 时 `[AUTH_FAILED]`」而测试连接弹窗正常的不一致。
-
-### v0.94.3 (2026-08-24)
-- 🎨 AI 对话截图只保留**区域截图**、移除窗口截图:输入框工具行「剪刀」按钮点击即开始区域截图(不再弹「区域截图 / 窗口截图」菜单);同步删除 Rust 侧窗口截图命令、ACL 权限与遮罩页窗口模式代码。
-- 🎨 区域截图选区拖拽改「先沿单一轴拉出第一段」:第一段必须沿横向或纵向(先横后竖 / 先竖后横均可)拉过 12px 阈值,另一轴才解锁,不能一开始就斜着拉;解锁后恢复自由拖拽与 8 方向调整。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

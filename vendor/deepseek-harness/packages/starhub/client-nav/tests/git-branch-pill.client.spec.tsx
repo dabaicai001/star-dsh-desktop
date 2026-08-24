@@ -230,4 +230,82 @@ describe('GitBranchPill', () => {
     expect(stub.calls).toContain('git pull')
     expect(await screen.findByText('Already up to date.')).toBeTruthy()
   })
+
+  it('auto-refreshes the branch pill when the branch changes externally (10s poll)', async () => {
+    vi.useFakeTimers()
+    let branch = 'feat/ai-screenshot'
+    const calls: string[] = []
+    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
+    const prev = w.__TAURI_INTERNALS__
+    w.__TAURI_INTERNALS__ = {
+      invoke: (cmd: string, args?: { command?: string }) => {
+        if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
+        const command = args?.command ?? ''
+        calls.push(command)
+        if (command.startsWith('git branch --show-current')) {
+          return Promise.resolve(branch !== '' ? ok(branch) : { stdout: '', stderr: '', exitCode: 1, elapsedMs: 1, truncated: false })
+        }
+        if (command.startsWith('git rev-parse --short HEAD')) {
+          return Promise.resolve(branch !== '' ? ok('abc1234') : { stdout: '', stderr: '', exitCode: 1, elapsedMs: 1, truncated: false })
+        }
+        return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
+      },
+    }
+    restore = () => {
+      if (prev === undefined) delete w.__TAURI_INTERNALS__
+      else w.__TAURI_INTERNALS__ = prev
+      vi.useRealTimers()
+    }
+    try {
+      render(<GitBranchPill {...pillProps(CWD)} />)
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.getByRole('button', { name: /feat\/ai-screenshot/ })).toBeTruthy()
+      // 外部(另一终端 git checkout main)→ 轮询一周期后胶囊自动更新
+      branch = 'main'
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_001) })
+      expect(screen.getByRole('button', { name: /main/ })).toBeTruthy()
+      // 瞬态失败(null)不落状态:胶囊保持显示,不闪隐
+      branch = ''
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_001) })
+      expect(screen.getByRole('button', { name: /main/ })).toBeTruthy()
+      expect(calls.filter(c => c.startsWith('git branch --show-current')).length).toBeGreaterThanOrEqual(3)
+    } finally {
+      restore()
+      restore = undefined
+    }
+  })
+
+  it('refreshes the branch pill when the page becomes visible again', async () => {
+    let branch = 'fix/one'
+    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
+    const prev = w.__TAURI_INTERNALS__
+    w.__TAURI_INTERNALS__ = {
+      invoke: (cmd: string, args?: { command?: string }) => {
+        if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
+        const command = args?.command ?? ''
+        if (command.startsWith('git branch --show-current')) return Promise.resolve(ok(branch))
+        if (command.startsWith('git rev-parse --short HEAD')) return Promise.resolve(ok('abc1234'))
+        return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
+      },
+    }
+    restore = () => {
+      if (prev === undefined) delete w.__TAURI_INTERNALS__
+      else w.__TAURI_INTERNALS__ = prev
+    }
+    try {
+      render(<GitBranchPill {...pillProps(CWD)} />)
+      fireEvent.click(await screen.findByRole('button', { name: /fix\/one/ }))
+      branch = 'fix/two'
+      // 切走(隐藏)再切回可见:visibilitychange 触发一次重读,胶囊更新
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+      document.dispatchEvent(new Event('visibilitychange'))
+      await act(async () => {})
+      expect(screen.getByRole('button', { name: /fix\/two/ })).toBeTruthy()
+    } finally {
+      restore()
+      restore = undefined
+    }
+  })
 })
