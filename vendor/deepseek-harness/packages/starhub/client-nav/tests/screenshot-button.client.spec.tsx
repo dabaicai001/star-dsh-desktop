@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ComposerAttachment } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
+import { ScreenshotButton, type ScreenshotButtonProps } from '../src/client/screenshot/ScreenshotButton.tsx'
 
 afterEach(() => {
   cleanup()
@@ -16,12 +16,23 @@ afterEach(() => {
 })
 
 function renderButton(startRegion: () => Promise<void>) {
-  render(
-    <ScreenshotButton
-      createDraftImages={() => [] as readonly ComposerAttachment[]}
-      startRegion={startRegion}
-    />,
-  )
+  // 组件只消费 createDraftImages / startRegion / inputActions(可选);slot 的
+  // 必填 share(InputZone + SessionStandardProps)给最小桩——与仓库组件测试
+  // 惯例一致(queue-dock spec 同款:直接喂 props 桩,不挂渲染机)。
+  const props: ScreenshotButtonProps = {
+    createDraftImages: () => [] as readonly ComposerAttachment[],
+    startRegion,
+    session: undefined as unknown as ScreenshotButtonProps['session'],
+    input: undefined as unknown as ScreenshotButtonProps['input'],
+    sessionId: 's-1' as unknown as ScreenshotButtonProps['sessionId'],
+    useSession: (() => undefined) as unknown as ScreenshotButtonProps['useSession'],
+    useProjection: (() => undefined) as unknown as ScreenshotButtonProps['useProjection'],
+    useInput: (() => undefined) as unknown as ScreenshotButtonProps['useInput'],
+    inputActions: undefined as unknown as ScreenshotButtonProps['inputActions'],
+    useSessions: (() => undefined) as unknown as ScreenshotButtonProps['useSessions'],
+    useWorkspaces: (() => undefined) as unknown as ScreenshotButtonProps['useWorkspaces'],
+  }
+  render(<ScreenshotButton {...props} />)
 }
 
 describe('ScreenshotButton', () => {
