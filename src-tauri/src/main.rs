@@ -228,13 +228,10 @@ fn main() {
             commands::sftp::sftp_list_transfers,
             commands::sftp::sftp_set_speed_limit,
             commands::sftp::sftp_retry_transfer,
-            // 截图(区域截图 + 窗口截图)
+            // 截图(区域截图)
             commands::screenshot::screenshot_list_monitors,
             commands::screenshot::screenshot_begin_region,
-            commands::screenshot::screenshot_begin_window,
             commands::screenshot::screenshot_get_desktop,
-            commands::screenshot::screenshot_list_windows,
-            commands::screenshot::screenshot_capture_window,
             commands::screenshot::screenshot_finish,
             commands::screenshot::screenshot_cancel,
             // MySQL

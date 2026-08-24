@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.94.2-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.94.3-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -148,6 +148,10 @@
 
 ## 当前版本
 
+### v0.94.3 (2026-08-24)
+- 🎨 AI 对话截图只保留**区域截图**、移除窗口截图:输入框工具行「剪刀」按钮点击即开始区域截图(不再弹「区域截图 / 窗口截图」菜单);同步删除 Rust 侧窗口截图命令、ACL 权限与遮罩页窗口模式代码。
+- 🎨 区域截图选区拖拽改「先沿单一轴拉出第一段」:第一段必须沿横向或纵向(先横后竖 / 先竖后横均可)拉过 12px 阈值,另一轴才解锁,不能一开始就斜着拉;解锁后恢复自由拖拽与 8 方向调整。
+
 ### v0.94.2 (2026-08-24)
 - ✨ AI 域工具会话(dsh:)遇到服务器 keyboard-interactive 请求时主壳弹出居中 MFA 验证卡(TOTP 识别扩充:authenticator / 2fa / mfa / 动态口令 / 短信验证码等);Redis 工作台 DB 树化——db0–db15 懒加载展开、键按 `:` 分组为可折叠文件夹树、单库展开语义 + 按库缓存。
 - 🐛 SSH 主机密钥确认链路修复:① 正式打开 SSH 终端首次连接新服务器时弹出「是否信任此主机?」三选项弹窗(拒绝 / 仅本次 / 信任并保存)——此前只有测试连接订阅 `ssh:hostkey-confirm` 事件,交互终端无人消费 sender,未知主机一律静默等 60s 后以 `[HOSTKEY_TIMEOUT]` 失败;② AI 域工具 `dsh:` 会话遇到未知主机密钥快速失败并指引「先在 SSH 终端连接一次并选择信任并保存」,不再干等超时。
@@ -155,10 +159,6 @@
 ### v0.94.1 (2026-08-23)
 - 🐛 修复 `apps/starhub-window` 独立 `tsc --noEmit` 的 118 个基线错误:补 project references(client-nav / ui-theme)+ 本应用 `css-modules.d.ts` + `WorkbenchErrorBoundary` 补 `override`(依赖面按 apps/web 同款边界解析到构建产物,不再把 vendor 上游源码拖进严格编译)。
 - 🐛 修复 FileViewer「变更前 / 变更后」对比:长行的 绿(+)/红(−) 变更行底色原来只到列宽、不覆盖整行文字——`diffView` 宽度改 `max-content` + 列内横向滚动,底色铺满整行。
-
-### v0.94.0 (2026-08-23)
-- ✨ ✨ AI 记忆系统引入专属记忆模型且作为硬前置:「记忆模型」下拉(provider + model,数据源 dsh 模型目录)未配置 = 记忆功能整体关闭——「启用长期记忆」「自动沉淀记忆」开关禁用(只有配置了才能勾选);host 侧三处兜底:注入跳过(warn)、自动沉淀跳过、memory 工具被 tools/pre-execute 直接拒绝;旧 localStorage 残留开启态归一化强制归零。自动沉淀抽取改走 `ctx.llm.stream` 专属路由(修复原 `generate` 便利面在 dsh-llm 不存在的静默失效)。
-- ✨ 跨项目作用域项目标注:写入 user/global 的记忆,凡属具体项目的事实必须在条目内标注项目名(`[项目名] ...`,取工作区目录名);跨项目通用的才允许不标注(memory 工具描述 + 抽取提示双落地)。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

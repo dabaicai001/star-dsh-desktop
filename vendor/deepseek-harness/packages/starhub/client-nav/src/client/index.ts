@@ -211,7 +211,7 @@ export function apply(ctx: Context): void {
     order: 30,
     label: 'StarHub Git',
   }, GitBranchPill))
-  // AI 对话输入框截图(2026-08-23):工具行「剪刀」按钮 → 区域截图 / 窗口截图,
+  // AI 对话输入框截图(2026-08-23):工具行「剪刀」按钮 → 区域截图(遮罩框选),
   // 确认后结果作为图片附件进当前会话输入(与粘贴/拖拽同一管线)。
   // 浏览器预览(无 Tauri IPC)下 invoke 拒绝,按钮点击打日志不弹窗。
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
@@ -222,7 +222,6 @@ export function apply(ctx: Context): void {
     inject: () => ({
       createDraftImages: (files: readonly File[]) => conversation.createDraftImages(files),
       startRegion: () => tauriInvoke<void>('screenshot_begin_region'),
-      startWindow: () => tauriInvoke<void>('screenshot_begin_window'),
     }),
   }, ScreenshotButton))
   // 契约 §6.2-6.3:监听 Tauri 宿主事件(open-asset / ask-ai);订阅经

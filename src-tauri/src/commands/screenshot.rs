@@ -1,12 +1,11 @@
-//! AI 对话截图:区域截图(全屏遮罩 + 拖拽选区)与窗口截图(点击整窗截取)。
+//! AI 对话截图:区域截图(全屏遮罩 + 拖拽选区)。
 //!
 //! 截图由 [xcap] 提供(Windows WGC / macOS ScreenCaptureKit / Linux X11+Wayland),
 //! 显示器坐标一律为物理像素;遮罩交互层是独立置顶窗口加载的静态页面
 //! (`shell-placeholder/screenshot.html`),确认后把最终 PNG 字节回传主窗口。
 //!
 //! 会话状态([`ScreenshotSession`])只缓存「区域模式截取的桌面底图」:
-//! 遮罩窗口创建前主窗口先隐藏,所以底图与最终截图都不含 StarHub 自身窗口;
-//! 窗口列表(xcap 的 `Window::all()`)在 Windows 上也已按进程过滤掉本应用窗口。
+//! 遮罩窗口创建前主窗口先隐藏,所以底图与最终截图都不含 StarHub 自身窗口。
 
 use std::io::Cursor;
 use std::sync::Mutex;
@@ -14,7 +13,7 @@ use std::sync::Mutex;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-use xcap::{Monitor, Window};
+use xcap::Monitor;
 
 /// 遮罩窗口 label(需出现在 capabilities 的 windows 列表里以保有 IPC 授权)。
 pub const OVERLAY_LABEL: &str = "screenshot-overlay";
@@ -32,22 +31,10 @@ pub struct ScreenshotMonitor {
     pub is_primary: bool,
 }
 
-/// 一个可截取窗口的描述(窗口截图模式的选择列表)。
-#[derive(Clone, serde::Serialize)]
-pub struct ScreenshotWindow {
-    pub id: u32,
-    pub app_name: String,
-    pub title: String,
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
-}
-
 /// 截图会话状态(挂在 Tauri state 上):区域模式缓存的全屏底图。
 #[derive(Default)]
 pub struct ScreenshotSession {
-    /// 拼接好的桌面底图 base64 dataURL(区域模式;窗口模式为 None)。
+    /// 拼接好的桌面底图 base64 dataURL(区域模式截取)。
     desktop: Mutex<Option<String>>,
     /// 底图对应的显示器列表(物理坐标)。
     monitors: Mutex<Vec<ScreenshotMonitor>>,
@@ -131,15 +118,6 @@ fn capture_desktop() -> Result<DesktopCapture, String> {
     Ok((data_url, descs, (x_min, y_min)))
 }
 
-/// 把一张 Rgba 图编码为 PNG 字节。
-fn encode_png(image: RgbaImage) -> Result<Vec<u8>, String> {
-    let mut buf = Cursor::new(Vec::new());
-    DynamicImage::ImageRgba8(image)
-        .write_to(&mut buf, ImageFormat::Png)
-        .map_err(|e| format!("encode png failed: {e}"))?;
-    Ok(buf.into_inner())
-}
-
 /// 隐藏主窗口(截图开始,避免截到 StarHub 自身)。
 fn hide_main(app: &AppHandle) {
     if let Some(main) = app.get_webview_window("main") {
@@ -162,18 +140,8 @@ fn close_overlay(app: &AppHandle) {
     }
 }
 
-/// 遮罩窗口加载的页面 URL:区域模式为裸页;窗口模式带 `?mode=window`,
-/// 页面据此选择 `initRegion` / `initWindow`(两种模式共用同一张静态页)。
-fn overlay_url(mode: &str) -> WebviewUrl {
-    if mode == "window" {
-        WebviewUrl::App("screenshot.html?mode=window".into())
-    } else {
-        WebviewUrl::App("screenshot.html".into())
-    }
-}
-
 /// 创建遮罩窗口:覆盖虚拟屏、置顶、无边框、跳过任务栏、不可关(只能确认/取消)。
-fn create_overlay(app: &AppHandle, state: &ScreenshotSession, mode: &str) -> Result<(), String> {
+fn create_overlay(app: &AppHandle, state: &ScreenshotSession) -> Result<(), String> {
     close_overlay(app);
     let scale = *state.scale.lock().unwrap();
     let (x_min, y_min) = *state.origin.lock().unwrap();
@@ -198,7 +166,7 @@ fn create_overlay(app: &AppHandle, state: &ScreenshotSession, mode: &str) -> Res
     WebviewWindowBuilder::new(
         app,
         OVERLAY_LABEL,
-        overlay_url(mode),
+        WebviewUrl::App("screenshot.html".into()),
     )
     .title("StarHub 截图")
     .inner_size(width as f64, height as f64)
@@ -270,44 +238,10 @@ pub async fn screenshot_begin_region(
     *state.monitors.lock().unwrap() = monitors;
     *state.origin.lock().unwrap() = origin;
     *state.scale.lock().unwrap() = scale;
-    create_overlay(&app, &state, "region").inspect_err(|_| restore_main(&app))
+    create_overlay(&app, &state).inspect_err(|_| restore_main(&app))
 }
 
-/// 开始窗口截图:隐藏主窗口 → 弹出遮罩窗口(前端提示点击目标窗口)。
-#[tauri::command]
-pub async fn screenshot_begin_window(
-    app: AppHandle,
-    state: tauri::State<'_, ScreenshotSession>,
-) -> Result<(), String> {
-    hide_main(&app);
-    let monitors = match tokio::task::spawn_blocking(monitor_descs).await {
-        Ok(Ok(m)) => m,
-        Ok(Err(e)) => {
-            restore_main(&app);
-            return Err(format!("枚举显示器失败: {e}"));
-        }
-        Err(e) => {
-            restore_main(&app);
-            return Err(format!("枚举显示器线程异常: {e}"));
-        }
-    };
-    let x_min = monitors.iter().map(|d| d.x).min().unwrap_or(0);
-    let y_min = monitors.iter().map(|d| d.y).min().unwrap_or(0);
-    let scale = monitors
-        .iter()
-        .find(|d| d.is_primary)
-        .or_else(|| monitors.first())
-        .map(|d| d.scale_factor)
-        .unwrap_or(1.0);
-    *state.desktop.lock().unwrap() = None;
-    *state.monitors.lock().unwrap() = monitors;
-    *state.origin.lock().unwrap() = (x_min, y_min);
-    *state.scale.lock().unwrap() = scale;
-    create_overlay(&app, &state, "window").inspect_err(|_| restore_main(&app))
-}
-
-/// 遮罩页面取底图:区域模式返回缓存的全屏 JPEG + 显示器列表 + 虚拟屏原点;
-/// 窗口模式(无底图)返回错误,前端据此切换到「点击窗口」流程。
+/// 遮罩页面取底图:返回缓存的全屏 JPEG + 显示器列表 + 虚拟屏原点。
 #[tauri::command]
 pub fn screenshot_get_desktop(
     state: tauri::State<'_, ScreenshotSession>,
@@ -317,62 +251,8 @@ pub fn screenshot_get_desktop(
     let origin = *state.origin.lock().unwrap();
     match desktop {
         Some(jpeg) => Ok((jpeg, monitors, origin)),
-        None => Err("no desktop capture cached (window mode)".to_string()),
+        None => Err("no desktop capture cached (call screenshot_begin_region first)".to_string()),
     }
-}
-
-/// 列出可截取窗口(已按进程过滤本应用窗口,含标题栏边框的物理边界)。
-#[tauri::command]
-pub fn screenshot_list_windows() -> Result<Vec<ScreenshotWindow>, String> {
-    let windows = Window::all().map_err(|e| format!("enumerate windows failed: {e}"))?;
-    let mut out = Vec::with_capacity(windows.len());
-    for w in windows {
-        // 最小化窗口截出来是空的,直接过滤。
-        let minimized = w.is_minimized().unwrap_or(false);
-        if minimized {
-            continue;
-        }
-        out.push(ScreenshotWindow {
-            id: w.id().map_err(|e| e.to_string())?,
-            app_name: w.app_name().map_err(|e| e.to_string())?,
-            title: w.title().map_err(|e| e.to_string())?,
-            x: w.x().map_err(|e| e.to_string())?,
-            y: w.y().map_err(|e| e.to_string())?,
-            width: w.width().map_err(|e| e.to_string())?,
-            height: w.height().map_err(|e| e.to_string())?,
-        });
-    }
-    Ok(out)
-}
-
-/// 按 id 截取单个窗口(含标题栏边框),返回 base64 dataURL PNG。
-/// blocking 线程 + 10s 超时,避免 WGC 卡住时遮罩页面失去响应。
-#[tauri::command]
-pub async fn screenshot_capture_window(id: u32) -> Result<String, String> {
-    let captured = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        tokio::task::spawn_blocking(move || capture_window_png(id)),
-    )
-    .await;
-    match captured {
-        Ok(Ok(v)) => v,
-        Ok(Err(e)) => Err(format!("窗口截图线程异常: {e}")),
-        Err(_) => Err("窗口截图超时(10s)".to_string()),
-    }
-}
-
-/// 阻塞式窗口截图(xcap Window::all + capture_image + PNG 编码)。
-fn capture_window_png(id: u32) -> Result<String, String> {
-    let windows = Window::all().map_err(|e| format!("enumerate windows failed: {e}"))?;
-    let target = windows
-        .into_iter()
-        .find(|w| w.id().map(|wid| wid == id).unwrap_or(false))
-        .ok_or_else(|| format!("window {id} not found"))?;
-    let img = target
-        .capture_image()
-        .map_err(|e| format!("capture window failed: {e}"))?;
-    let bytes = encode_png(img)?;
-    Ok(format!("data:image/png;base64,{}", BASE64.encode(bytes)))
 }
 
 /// 确认截图:关闭遮罩、恢复主窗口、把最终 base64 PNG 发往主窗口
