@@ -259,6 +259,33 @@
   cursor: pointer;
 }
 
+/* 记忆模型下拉(provider + model 两列,成对配置) */
+.selectRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+}
+
+.selectLabel {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.select {
+  font-size: 12px;
+  padding: 4px 6px;
+  background: var(--dsw-alias-bg-overlay, var(--dsw-alias-surface-field));
+  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+}
+
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ===== 反馈 ===== */
 
 .errorText {

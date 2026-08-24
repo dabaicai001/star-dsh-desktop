@@ -13,7 +13,7 @@ import {
   uninstallPlugin, updateAlertRule,
 } from '../src/client/settings/services.ts'
 import {
-  AI_STORAGE_KEY, loadAiSettings, normalizeAiSettings, saveAiSettings,
+  AI_STORAGE_KEY, isMemoryRouteConfigured, loadAiSettings, normalizeAiSettings, saveAiSettings,
 } from '../src/client/settings/aiSettings.ts'
 
 /** jsdom 全局下的 Tauri IPC stub 挂载/卸载。 */
@@ -238,6 +238,9 @@ describe('aiSettings persistence bridge', () => {
     // v0.92.0 起 memoryEnabled + memoryAutoReview 默认均为关闭;用户需在设置面板显式打开。
     expect(settings.memoryEnabled).toBe(false)
     expect(settings.memoryAutoReview).toBe(false)
+    // v0.94.0 起记忆模型是硬前置:默认未配置,记忆功能整体关闭。
+    expect(settings.memoryProvider).toBe('')
+    expect(settings.memoryModel).toBe('')
     // 命令白名单已移除,随「统一走 deepseek-harness 权限体系」
     expect('commandWhitelist' in settings).toBe(false)
     // 上下文预算/迭代步数/压缩阈值由 dsh harness 接管,不参与读写
@@ -258,14 +261,42 @@ describe('aiSettings persistence bridge', () => {
   it('normalizes malformed fields back to defaults', () => {
     const settings = normalizeAiSettings({
       memoryStoreToolOutputs: 'yes' as never,
+      memoryProvider: 42 as never,
+      memoryModel: null as never,
       memoryEnabled: false,
       memoryWriteNeedsConfirm: true,
       memoryAutoReview: false,
     })
     expect(settings.memoryStoreToolOutputs).toBe(false)
+    expect(settings.memoryProvider).toBe('')
+    expect(settings.memoryModel).toBe('')
     expect(settings.memoryEnabled).toBe(false)
     expect(settings.memoryWriteNeedsConfirm).toBe(true)
     expect(settings.memoryAutoReview).toBe(false)
+  })
+
+  it('forces both memory toggles off when the memory route is missing (v0.94.0 hard gate)', () => {
+    // 旧 localStorage 残留开启态但没配模型:归一化时强制归零,防漏网注入/沉淀。
+    const settings = normalizeAiSettings({
+      memoryProvider: '',
+      memoryModel: '',
+      memoryEnabled: true,
+      memoryAutoReview: true,
+    })
+    expect(settings.memoryEnabled).toBe(false)
+    expect(settings.memoryAutoReview).toBe(false)
+  })
+
+  it('keeps memory toggles when the memory route is configured', () => {
+    const settings = normalizeAiSettings({
+      memoryProvider: 'deepseek-official',
+      memoryModel: 'deepseek-chat',
+      memoryEnabled: true,
+      memoryAutoReview: true,
+    })
+    expect(settings.memoryEnabled).toBe(true)
+    expect(settings.memoryAutoReview).toBe(true)
+    expect(isMemoryRouteConfigured(settings)).toBe(true)
   })
 
   it('saveAiSettings replaces only the settings field and keeps the rest', () => {

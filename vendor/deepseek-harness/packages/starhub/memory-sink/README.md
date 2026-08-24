@@ -9,8 +9,9 @@ StarHub 本地 host 包(2026-08-22,v0.92.0):agent/turn-stopping 钩子把当轮�
   - 未写过 → 视为开启(默认开)
   - `autoReview === false` → 整段跳过
   - `enabled === false`(主开关关闭)不影响本钩子(注入关闭 ≠ 不沉淀)
+- **记忆模型硬前置(v0.94.0)**:`memoryProvider` + `memoryModel` 必须成对非空,否则整段跳过(开关打开也没用,与设置「只有配置了才能勾选」对齐)。
 - 通过门禁 `shouldReview({user, assistant})`(消息数 ≥ 4);太短的会话不调 LLM。
-- 调用 LLM 抽取(`ctx.llm.generate({json:true})`,6 秒超时):返回 `{"facts":[{"content":"..."}]}`。
+- 抽取走**专属记忆模型路由**(`ctx.llm.stream`,provider/model 取自上面两个字段);调用 LLM 抽取(6 秒超时),返回 `{"facts":[{"content":"..."}]}`;抽取提示里带工作区/项目名(目录末段)。
 - `normalizeFacts` 收敛 scope → `folder:<cwd>` 或 `global`(根据 cwd 决定);去空、限 280 字符/条、限 8 条/批。
 - 逐条经 sdk-transport 反向 RPC `starhub/memory.write` 调 Rust `ai_memory_add`(2 秒超时);失败/超时/[FULL]/[DUPLICATE] 全部吞掉,不污染 turn 链。
 - 无 sdk-transport / 无 LLM 服务时整段无操作(开发态友好)。
@@ -21,7 +22,7 @@ StarHub 本地 host 包(2026-08-22,v0.92.0):agent/turn-stopping 钩子把当轮�
 
 #### What the model sees
 
-No direct message injection — the hook reads the `starhub-memory-context` settings namespace and issues one separate LLM completion (`ctx.llm.generate({ json: true })`) over the extracted user/assistant messages.
+No direct message injection — the hook reads the `starhub-memory-context` settings namespace and issues one separate streaming completion through the dedicated memory route (`ctx.llm.stream`, provider/model from the namespace) over the just-completed turn.
 
 #### Token effect
 
@@ -36,3 +37,4 @@ Not applicable — the extraction path runs entirely after the turn ends.
 - LLM 抽取独立于主 agent 的 chat completion,目前只是 best-effort;Rust 侧 [FULL] / [DUPLICATE] 直接吞掉,不当轮合并重试(沉淀本就是低质量信号,后续 turn 自然再抽一次)。
 - 「记忆写入需逐条确认」「存档 tool 消息」仍是 UI 层状态,不在本包语义内(由 approval-bridge 与 settings UI 后续接管)。
 - 压缩点(`compaction/start`、`compaction/end`)暂未挂载;本版本只做 turn-stopping。
+- 跨项目作用域(global / user)的事实项目标注约定靠抽取提示约束,不做机械校验;无工作区的会话沉淀到 global 时,事实里提到的项目名由模型自行带出。

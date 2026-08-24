@@ -260,6 +260,40 @@ memory(action: 'add' | 'replace' | 'remove',
 - `customSkills` 与记忆系统打通
 - 观察记忆命中率,评估是否需要更强检索(FTS5 不够再考虑 `sqlite-vec`,不引外部向量库)
 
+### 实施补充(v0.94.0,2026-08-23):专属记忆模型 + 项目标注
+
+当前实现(截至 v0.94.0)在三期规划基础上的两项定型决策:
+
+**1. 记忆模型硬前置(「专属 AI 负责记忆」)**
+
+- 记忆系统里的 LLM 调用只有一处:`memory-sink` 的自动沉淀抽取(回合后 one-shot
+  提炼)。参照 Hermes Agent 的实践(`hermes_cli/config.py` 为后台任务配置独立的
+  便宜快速模型;`background_review.py` fork 后台 agent 复述对话),StarHub 让
+  记忆沉淀走**专属记忆模型路由**,与主对话模型解耦。
+- 配置:设置 → AI 助手 →「记忆模型」下拉(provider + model,数据源
+  `llm.models` 会话无关模型目录),经 `starhub-memory-context` settings
+  namespace 的 `memoryProvider` / `memoryModel` 下发。
+- **门禁语义**:provider + model 必须成对非空,否则记忆功能整体关闭——
+  - UI:「启用长期记忆」「自动沉淀记忆」开关禁用(默认关,无法勾选);
+  - 注入:memory-context `agent/pre-step` 在 `enabled && !configured` 时跳过并
+    console.warn;
+  - 沉淀:memory-sink `agent/turn-stopping` 在路由缺失时整段跳过;
+  - memory 工具:memory-context 的 `tools/pre-execute` 门禁直接 deny(不弹
+    确认卡、不进 Rust 写路径),提示先去设置里配置;
+  - 归一化兜底:localStorage 残留的开启态在 `normalizeAiSettings` 被强制归零。
+- 门槛不校验 provider 路由在 llm registry 里真实存在;配错由抽取尝试报错兜底。
+
+**2. 跨项目作用域的项目标注(global / user)**
+
+- 背景:user(用户画像)与 global(环境经验)是跨项目作用域,会注入到所有
+  项目的会话;不同项目的事实混在一起会被误套用。
+- 约定:写成 user/global 的条目,**凡只属于某个项目的事实必须在条目内标注项目
+  名**(取工作区目录名,如 `[starhub] 生产库在 10.0.0.5`);跨项目通用的偏好/
+  经验可不标注(「可以总结相同点,但不同点必须标注是哪个项目」)。
+- 落地:memory 工具描述(模型侧契约)+ memory-sink 抽取系统提示与抽取 prompt
+  (带 `project: <目录名>` 行)。folder:<工作区> 卡本身就是按项目隔离的,
+  不需要额外标注。标注靠约定约束,不做机械校验。
+
 ---
 
 ## 7. 参考资料

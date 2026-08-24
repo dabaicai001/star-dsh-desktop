@@ -35,3 +35,20 @@ export function syncMemoryAutoReview(api: IApiClient, autoReview: boolean): void
     patch: { autoReview },
   }).catch(() => {})
 }
+
+/**
+ * 同步「记忆模型」配置(provider + model)到 host 侧 namespace(v0.94.0,
+ * 2026-08-23):模型路由是记忆功能的硬前置——未成对配置时 memory-context 不
+ * 注入、memory-sink 不沉淀、memory 工具调用被 tools/pre-execute 锁死。
+ * 清空配置(空串)时 host 侧按未配置处理,UI 侧 normalizeAiSettings 会同步
+ * 把两个开关强制归零。
+ * @param api - 连接线的 settings RPC 面。
+ * @param provider - 记忆模型 provider 路由。
+ * @param model - 记忆模型 model id。
+ */
+export function syncMemoryModel(api: IApiClient, provider: string, model: string): void {
+  void api.settings.update({
+    ns: MEMORY_CONTEXT_NAMESPACE,
+    patch: { memoryProvider: provider, memoryModel: model },
+  }).catch(() => {})
+}

@@ -8,13 +8,13 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
+import type { IApiClient, ModelProviderGroup } from '@deepseek-ai/dsh-client-connection/client'
 import {
   aiMemoryDelete, aiMemoryList, aiMemoryUpdate, logAudit,
   type AiMemoryRow,
 } from './services.ts'
-import { loadAiSettings, saveAiSettings, type AiSettings } from './aiSettings.ts'
-import { syncMemoryAutoReview, syncMemoryEnabled } from './memory-context.ts'
+import { isMemoryRouteConfigured, loadAiSettings, saveAiSettings, type AiSettings } from './aiSettings.ts'
+import { syncMemoryAutoReview, syncMemoryEnabled, syncMemoryModel } from './memory-context.ts'
 import s from './settings.module.css'
 
 /** 卡容量上限(与 Rust 侧一致:user/asset=1375,global/folder=2200)。 */
@@ -38,9 +38,10 @@ function memoryScopeLabel(scope: string): string {
 /**
  * 渲染 AI 助手设置:记忆与上下文(即时生效)+ 记忆管理弹窗。
  * @param props.api - 连接线的 settings RPC 面;「启用长期记忆」「自动沉淀记忆」
- *   开关经它同步到 host 侧 memory-context / memory-sink 插件(v0.92.0 起
- *   namespace 未写过 = 关闭,与默认关一致)。浏览器预览下可为空,此时开关只写
- *   localStorage。
+ *   开关与「记忆模型」配置经它同步到 host 侧 memory-context / memory-sink
+ *   插件(v0.92.0 起 namespace 未写过 = 关闭;v0.94.0 起记忆模型是硬前置,
+ *   未配置时开关禁用且 host 侧不注入/不沉淀/memory 工具锁死)。浏览器预览下
+ *   可为空,此时记忆模型下拉不可用、开关仍受「已配置」门禁约束。
  * @returns AI tab 内容。
  */
 export function AiTab({ api }: { api?: IApiClient }) {
@@ -54,6 +55,10 @@ export function AiTab({ api }: { api?: IApiClient }) {
   const [memoryEditingId, setMemoryEditingId] = useState('')
   const [memoryEditingContent, setMemoryEditingContent] = useState('')
   const [memoryConfirmDeleteId, setMemoryConfirmDeleteId] = useState('')
+
+  // 记忆模型下拉数据(host 侧 llm.models 会话无关模型目录)
+  const [modelGroups, setModelGroups] = useState<ModelProviderGroup[]>([])
+  const [modelCatalogError, setModelCatalogError] = useState('')
 
 
   // 归一化结果持久化一次(与 Vue ensureSettingsShape 落盘一致)
@@ -72,6 +77,30 @@ export function AiTab({ api }: { api?: IApiClient }) {
   useEffect(() => {
     if (api !== undefined) syncMemoryAutoReview(api, aiSettings.memoryAutoReview)
   }, [api, aiSettings.memoryAutoReview])
+
+  // 「记忆模型」配置同步到 host 侧(v0.94.0,2026-08-23):provider + model
+  // 成对下发,host 侧 memory-context / memory-sink 据此判定记忆功能是否可用。
+  useEffect(() => {
+    if (api !== undefined) syncMemoryModel(api, aiSettings.memoryProvider, aiSettings.memoryModel)
+  }, [api, aiSettings.memoryProvider, aiSettings.memoryModel])
+
+  // 拉取模型目录(provider 分组);失败/缺失时下拉置空并展示原因。
+  useEffect(() => {
+    if (api === undefined) return
+    let cancelled = false
+    void api.llm.models({}).then((response) => {
+      if (cancelled) return
+      if (response.result.ok) {
+        setModelGroups(response.result.value.groups)
+        setModelCatalogError('')
+      } else {
+        setModelCatalogError(response.result.error.message)
+      }
+    }).catch((error: unknown) => {
+      if (!cancelled) setModelCatalogError(error instanceof Error ? error.message : String(error))
+    })
+    return () => { cancelled = true }
+  }, [api])
 
   /** 记忆/上下文字段:直接写 localStorage 即时持久化。 */
   const updateSettings = (patch: Partial<AiSettings>) => {
@@ -157,6 +186,27 @@ export function AiTab({ api }: { api?: IApiClient }) {
       }))
   }, [memoryRows])
 
+  /** 记忆模型下拉:provider 分组 + 当前 provider 的模型候选。 */
+  const providerGroups = useMemo(
+    () => modelGroups.map(group => ({ id: group.id, name: group.name })),
+    [modelGroups],
+  )
+  const selectedProviderModels = useMemo(() => {
+    const group = modelGroups.find(group => group.id === aiSettings.memoryProvider)
+    return group === undefined ? [] : group.models
+  }, [modelGroups, aiSettings.memoryProvider])
+
+  /** 记忆功能是否已配置(provider + model 均非空);未配置时开关禁用。 */
+  const memoryConfigured = isMemoryRouteConfigured(aiSettings)
+
+  /** 切换 provider:若当前 model 仍属于新 provider 则保留,否则清空待重选。 */
+  const changeMemoryProvider = (provider: string) => {
+    const group = modelGroups.find(candidate => candidate.id === provider)
+    const keepsModel = group !== undefined
+      && group.models.some(model => model.id === aiSettings.memoryModel)
+    updateSettings({ memoryProvider: provider, ...(keepsModel ? {} : { memoryModel: '' }) })
+  }
+
   return (
     <div className={s.panel}>
       <div className={s.section}>
@@ -166,6 +216,39 @@ export function AiTab({ api }: { api?: IApiClient }) {
           <button type="button" className={s.btnSecondary} onClick={openMemoryManager}>管理记忆</button>
         </div>
         <div className={s.formGrid}>
+          <div className={s.selectRow}>
+            <span className={s.selectLabel}>记忆模型</span>
+            <select
+              className={s.select}
+              aria-label="记忆模型 provider"
+              value={aiSettings.memoryProvider}
+              disabled={api === undefined || providerGroups.length === 0}
+              onChange={(event) =>{  changeMemoryProvider(event.target.value) }}
+            >
+              <option value="">未选择 provider</option>
+              {providerGroups.map(group => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+            <select
+              className={s.select}
+              aria-label="记忆模型 model"
+              value={aiSettings.memoryModel}
+              disabled={api === undefined || aiSettings.memoryProvider === '' || selectedProviderModels.length === 0}
+              onChange={(event) =>{  updateSettings({ memoryModel: event.target.value }) }}
+            >
+              <option value="">未选择模型</option>
+              {selectedProviderModels.map(model => (
+                <option key={model.id} value={model.id}>{model.name}</option>
+              ))}
+            </select>
+            {modelCatalogError !== '' && <span className={`${s.hint} ${s.errorText}`}>模型目录加载失败:{modelCatalogError}</span>}
+            <span className={s.hint}>
+              {memoryConfigured
+                ? `已配置:${aiSettings.memoryProvider} / ${aiSettings.memoryModel}`
+                : '记忆功能(注入/自动沉淀/memory 工具)在配置记忆模型后才启用'}
+            </span>
+          </div>
           <label className={s.checkboxRow}>
             <input
               type="checkbox" checked={aiSettings.memoryStoreToolOutputs}
@@ -176,6 +259,7 @@ export function AiTab({ api }: { api?: IApiClient }) {
           <label className={s.checkboxRow}>
             <input
               type="checkbox" checked={aiSettings.memoryEnabled}
+              disabled={!memoryConfigured}
               onChange={(event) =>{  updateSettings({ memoryEnabled: event.target.checked }) }}
             />
             启用长期记忆
@@ -190,6 +274,7 @@ export function AiTab({ api }: { api?: IApiClient }) {
           <label className={s.checkboxRow}>
             <input
               type="checkbox" checked={aiSettings.memoryAutoReview}
+              disabled={!memoryConfigured}
               onChange={(event) =>{  updateSettings({ memoryAutoReview: event.target.checked }) }}
             />
             自动沉淀记忆

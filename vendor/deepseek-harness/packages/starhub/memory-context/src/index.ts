@@ -5,12 +5,16 @@
  * 数据流:
  * 1. 设置 → AI 助手「启用长期记忆」开关经 settings 通道写入
  *    `starhub-memory-context` namespace(client-nav 侧,ai.tsx);
- * 2. 本插件(host)在 `agent/pre-step` 读取该 namespace,关闭则完全不注入;
- * 3. 开启时经 `sdk-transport` 反向 RPC pull `starhub/memory.cards`(Rust 侧
- *    实现见 src-tauri/src/harness/mod.rs),scopes = user + global +
+ * 2. **记忆模型是记忆功能的硬前置(v0.94.0)**:namespace 里 `memoryProvider`
+ *    + `memoryModel` 必须成对非空,记忆功能(注入 / 自动沉淀 / memory 工具)
+ *    才允许工作;未配置时本插件不注入、memory-sink 不沉淀、memory 工具调用
+ *    被 tools/pre-execute 锁死。
+ * 3. 本插件(host)在 `agent/pre-step` 读取该 namespace,关闭或未配置则完全不注入;
+ * 4. 开启且已配置时经 `sdk-transport` 反向 RPC pull `starhub/memory.cards`
+ *    (Rust 侧实现见 src-tauri/src/harness/mod.rs),scopes = user + global +
  *    `folder:<会话工作区绝对路径>`(session header.cwd,工作区文件夹独立记忆),
  *    Rust 侧顺带按 sessionId 解析资产绑定追加 `asset:<id>` 卡;
- * 4. 各卡非空段拼成一条 plugin 来源 user message 注入(形式对齐
+ * 5. 各卡非空段拼成一条 plugin 来源 user message 注入(形式对齐
  *    tool-context / live-context 的 `form: 'snapshot'`)。
  *
  * pull 失败/超时(2s)降级为不注入,不得阻断 agent turn;无工作区路径的
@@ -22,6 +26,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
+import type { PreToolDecision } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
 import { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -35,6 +40,18 @@ export const inject = ['agents', 'settings']
 /** Settings namespace holding the memory master switch (written by client-nav 的设置开关). */
 export const MEMORY_CONTEXT_NAMESPACE = 'starhub-memory-context'
 
+/** memory 工具名(宿主侧 tools 包注册);本插件在 tools/pre-execute 上锁死未配置时的调用。 */
+export const MEMORY_TOOL_NAME = 'memory'
+
+/**
+ * 记忆模型路由:自动沉淀抽取与 memory 工具锁死门禁共用的 provider/model 对。
+ * provider 与 model 必须成对非空(与 commit-message 的固定路由约定一致)。
+ */
+export interface MemoryRoute {
+  readonly provider: string
+  readonly model: string
+}
+
 /**
  * 读取 autoReview 开关值;v0.92.0 起未写过视为关闭(默认关)。
  * memory-sink 钩子在 agent/turn-stopping 后调用本函数,关闭则整段跳过。
@@ -45,28 +62,59 @@ export function isAutoReviewEnabled(value: MemoryContextValue | undefined): bool
   return value?.autoReview === true
 }
 
+/**
+ * 解析记忆模型路由;provider 或 model 任一为空(或从未配置)返回 undefined。
+ * 未配置 = 记忆功能整体关闭:预读注入不工作、自动沉淀不工作、memory 工具
+ * 调用被锁死(见 apply 的 tools/pre-execute 门)。
+ * @param value - namespace 当前值;undefined 表示从未写过。
+ * @returns 记忆模型 provider/model 对;未配置返回 undefined。
+ */
+export function memoryRouteOf(value: MemoryContextValue | undefined): MemoryRoute | undefined {
+  const provider = value?.memoryProvider?.trim() ?? ''
+  const model = value?.memoryModel?.trim() ?? ''
+  if (provider === '' || model === '') return undefined
+  return { provider, model }
+}
+
+/**
+ * 记忆功能是否已配置(专属记忆模型是否就位)。
+ * @param value - namespace 当前值。
+ * @returns 已配置(provider + model 均非空)时为 true。
+ */
+export function isMemoryConfigured(value: MemoryContextValue | undefined): boolean {
+  return memoryRouteOf(value) !== undefined
+}
+
 /** 桥方法名;Rust 侧实现见 src-tauri/src/harness/mod.rs(handle_memory_cards)。 */
 const MEMORY_CARDS_METHOD = 'starhub/memory.cards'
 
 /** 反向拉取记忆卡最多等待 2 秒;超时降级为不注入,不得阻断 agent turn。 */
 const MEMORY_CARDS_TIMEOUT_MS = 2_000
 
-/** 「启用长期记忆」与「自动沉淀记忆」开关的 namespace 值形状。
- * v0.92.0 (2026-08-22) 起两者均默认关闭:用户需在设置 → AI 助手显式打开后
+/**
+ * 「启用长期记忆」「自动沉淀记忆」开关与「记忆模型」配置的 namespace 值形状。
+ * v0.92.0 (2026-08-22) 起前两者均默认关闭:用户需在设置 → AI 助手显式打开后
  * 才有记忆预读注入或自动沉淀;关闭状态 = 完全不调 RPC / 不写库。
- * 旧版本(≤0.91.0)两者默认开启,namespace 写法需显式 patch 才能恢复关闭态。
+ * v0.94.0 (2026-08-23) 起记忆模型是硬前置:`memoryProvider` + `memoryModel`
+ * 必须成对非空,记忆功能才可能工作(未配置时即使开关打开也整体关闭)。
  */
 export interface MemoryContextValue {
   /** 是否注入长期记忆;缺省 false(v0.92.0 起)。 */
   enabled?: boolean
   /** 是否允许自动沉淀(agent/turn-stopping 后 LLM 抽摘要写入 ai_memories);缺省 false(v0.92.0 起)。 */
   autoReview?: boolean
+  /** 专属记忆模型的 provider 路由(与 memoryModel 必须成对非空)。 */
+  memoryProvider?: string
+  /** 专属记忆模型的 model id(与 memoryProvider 必须成对非空)。 */
+  memoryModel?: string
 }
 
 /** Schemastery validation for the namespace value. */
 export const MemoryContextSchema: z<MemoryContextValue> = z.object({
   enabled: z.boolean().default(false),
   autoReview: z.boolean().default(false),
+  memoryProvider: z.string().default(''),
+  memoryModel: z.string().default(''),
 })
 
 /** `starhub/memory.cards` 的单张记忆卡(与 Rust AiMemoryCard 序列化同形)。 */
@@ -141,8 +189,9 @@ export async function composeMemoryContext(
 }
 
 /**
- * 注册插件:声明 settings 命名空间一次,并在每次 agent pre-step 按开关注入
- * 长期记忆(user + global + 当前工作区文件夹 + 绑定资产)。
+ * 注册插件:声明 settings 命名空间一次,并在每次 agent pre-step 按开关 + 记忆模型
+ * 配置注入长期记忆(user + global + 当前工作区文件夹 + 绑定资产);同时挂
+ * tools/pre-execute 锁死门,未配置记忆模型时拒绝 memory 工具调用。
  * @param ctx - plugin context;监听器随插件 fiber 卸载。
  */
 export function apply(ctx: Context): void {
@@ -165,6 +214,14 @@ export function apply(ctx: Context): void {
       // 用户需在设置面板显式打开后才有记忆预读注入。
       const value = scope.get() as MemoryContextValue | undefined
       if (value?.enabled !== true) return decision
+      // v0.94.0:记忆模型是硬前置;开关打开但未配置,不注入(配置缺失不该静默)。
+      if (!isMemoryConfigured(value)) {
+        console.warn(
+          '[starhub-memory-context] 记忆开关已打开但未配置记忆模型(provider+model),'
+          + '跳过记忆注入;请到「设置 → AI 助手」配置记忆模型',
+        )
+        return decision
+      }
       const cwd = agent.session.header.cwd
       const scopes = ['user', 'global', ...(cwd === undefined ? [] : [`folder:${cwd}`])]
       const text = await composeMemoryContext(transport, scopes, String(agent.session.id))
@@ -181,4 +238,17 @@ export function apply(ctx: Context): void {
       }
     }, { prepend: true })
   }, 'starhub-memory-context: pre-step injection')
+
+  // v0.94.0:memory 工具锁死门——未配置记忆模型时拒绝调用(preset/审批门之前
+  // 短路,不弹确认卡,也不进 Rust 写路径)。配置后放行,交回链尾(approval-bridge
+  // 的 ALWAYS_ASK 风险门负责逐条确认)。独立 effect,随插件 fiber 一并卸载。
+  ctx.effect(() => ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
+    if (exec.name !== MEMORY_TOOL_NAME) return next()
+    const value = scope.get() as MemoryContextValue | undefined
+    if (isMemoryConfigured(value)) return next()
+    return {
+      kind: 'deny',
+      reason: '记忆功能未启用:请先在「设置 → AI 助手」配置记忆模型(选择 provider 与 model),之后才能使用 memory 工具',
+    }
+  }, { prepend: true }), 'starhub-memory-context: memory-tool lock gate')
 }

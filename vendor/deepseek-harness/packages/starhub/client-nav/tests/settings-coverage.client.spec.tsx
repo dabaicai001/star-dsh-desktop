@@ -38,6 +38,11 @@ function stubTauriInternals(handlers: Record<string, (args?: unknown) => unknown
   }
 }
 
+/** 空模型目录响应(llm.models 桩)。 */
+function mkEmptyCatalog() {
+  return { result: { ok: true as const, value: { groups: [], failures: [] } } }
+}
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -498,6 +503,10 @@ describe('plugins extra branches', () => {
 
 describe('ai extra branches', () => {
   it('covers asset-scope labels, all memory toggles and string failures (whitelist removed)', async () => {
+    // v0.94.0:预置记忆模型路由,两个记忆功能开关才能勾选。
+    localStorage.setItem(AI_STORAGE_KEY, JSON.stringify({
+      settings: { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
+    }))
     const restore = stubTauriInternals({
       ai_memory_list: () => [
         { id: 'm1', scope: 'asset:abc', content: 'A'.repeat(2400), created_at: 0, updated_at: 0 },
@@ -566,12 +575,23 @@ describe('ai extra branches', () => {
 
   it('syncs both memory toggles to the host namespace when an api is present', async () => {
     const update = vi.fn<(request: unknown) => Promise<void>>(() => Promise.resolve())
-    const api = { settings: { update } } as unknown as IApiClient
+    const api = {
+      settings: { update },
+      llm: { models: vi.fn(async () => mkEmptyCatalog()) },
+    } as unknown as IApiClient
+    // v0.94.0:预置路由,「启用长期记忆」才能被勾选。
+    localStorage.setItem(AI_STORAGE_KEY, JSON.stringify({
+      settings: { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
+    }))
     render(<AiTab api={api} />)
     await act(async () => { await Promise.resolve() })
     // 挂载时把 localStorage 里的两个开关(v0.92.0 起默认 false)补齐到 host namespace。
     expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: false } })
     expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { autoReview: false } })
+    expect(update).toHaveBeenCalledWith({
+      ns: 'starhub-memory-context',
+      patch: { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
+    })
     fireEvent.click(screen.getByText('启用长期记忆'))
     await act(async () => { await Promise.resolve() })
     expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: true } })
@@ -579,7 +599,10 @@ describe('ai extra branches', () => {
 
   it('keeps rendering when the host namespace sync rejects (legacy runtime)', async () => {
     const update = vi.fn<(request: unknown) => Promise<void>>(() => Promise.reject(new Error('unknown namespace')))
-    const api = { settings: { update } } as unknown as IApiClient
+    const api = {
+      settings: { update },
+      llm: { models: vi.fn(async () => mkEmptyCatalog()) },
+    } as unknown as IApiClient
     render(<AiTab api={api} />)
     await act(async () => { await Promise.resolve() })
     expect(update).toHaveBeenCalled()

@@ -9,6 +9,7 @@ import {
   countMessages,
   MEMORY_WRITE_METHOD,
   persistExtractedFacts,
+  projectNameOf,
   runTurnReview,
   wireLlmExtractor,
   writeFact,
@@ -16,6 +17,18 @@ import {
 import { apply as applyInvariant } from '../src/invariant.ts'
 import { normalizeFacts, pickTargetScope, shouldReview } from '../src/gates.ts'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
+
+/** 专属记忆模型路由(测试固定值)。 */
+const ROUTE = { provider: 'mem-provider', model: 'mem-model' } as const
+
+/** 从文本块流式返回一段文本的 llm stream 桩(finish.reason 为 FinishReason 对象)。 */
+function streamingLlm(text: string) {
+  const stream = vi.fn((_options: unknown) => (async function * () {
+    if (text !== '') yield { type: 'text-delta', index: 0, text } as const
+    yield { type: 'finish', reason: { kind: 'stop' } } as const
+  })())
+  return { stream }
+}
 
 function makeAgent(cwd?: string, events: ReadonlyArray<{ type: string }> = []) {
   return {
@@ -128,8 +141,22 @@ describe('buildExtractPrompt', () => {
     const text = buildExtractPrompt(makeAgent('E:\\ws'))
     expect(text).toContain('workspace: E:\\ws')
   })
+  it('mentions the project name derived from the cwd basename', () => {
+    const text = buildExtractPrompt(makeAgent('E:\\ws\\starhub'))
+    expect(text).toContain('project: starhub')
+  })
   it('marks blank sessions', () => {
     expect(buildExtractPrompt(makeAgent())).toContain('workspace: <none>')
+    expect(buildExtractPrompt(makeAgent())).toContain('project: <none>')
+  })
+})
+
+describe('projectNameOf', () => {
+  it('takes the last path segment as the project name', () => {
+    expect(projectNameOf('E:\\ws\\starhub')).toBe('starhub')
+    expect(projectNameOf('/home/dev/starhub/')).toBe('starhub')
+    expect(projectNameOf('C:\\x')).toBe('x')
+    expect(projectNameOf('')).toBe('')
   })
 })
 
@@ -197,6 +224,7 @@ describe('runTurnReview', () => {
       transport: undefined,
       llm,
       autoReviewEnabled: false,
+      route: ROUTE,
     })
     expect(llm).not.toHaveBeenCalled()
   })
@@ -208,6 +236,7 @@ describe('runTurnReview', () => {
       transport: undefined,
       llm,
       autoReviewEnabled: true,
+      route: ROUTE,
     })
     expect(llm).not.toHaveBeenCalled()
   })
@@ -224,6 +253,7 @@ describe('runTurnReview', () => {
       transport: undefined,
       llm,
       autoReviewEnabled: true,
+      route: ROUTE,
     })
     expect(llm).not.toHaveBeenCalled()
   })
@@ -238,8 +268,24 @@ describe('runTurnReview', () => {
       transport: { request } as unknown as JsonRpcTransportPeer,
       llm: undefined,
       autoReviewEnabled: true,
+      route: ROUTE,
     })
     expect(request).not.toHaveBeenCalled()
+  })
+  it('skips when the memory model route is missing (v0.94.0 hard gate)', async () => {
+    const llm = vi.fn()
+    await runTurnReview({
+      agent: makeAgent('/x', [
+        { type: 'message/user' }, { type: 'message/assistant' },
+        { type: 'message/user' }, { type: 'message/assistant' },
+      ]),
+      signal: new AbortController().signal,
+      transport: undefined,
+      llm,
+      autoReviewEnabled: true,
+      route: undefined,
+    })
+    expect(llm).not.toHaveBeenCalled()
   })
   it('runs the full pipeline when enabled and gated', async () => {
     const request = vi.fn(async () => ({}))
@@ -253,8 +299,10 @@ describe('runTurnReview', () => {
       transport: { request } as unknown as JsonRpcTransportPeer,
       llm,
       autoReviewEnabled: true,
+      route: ROUTE,
     })
     expect(llm).toHaveBeenCalledOnce()
+    expect(llm).toHaveBeenCalledWith(expect.objectContaining({ route: ROUTE }))
     expect(request).toHaveBeenCalledWith(MEMORY_WRITE_METHOD, {
       scope: 'folder:/x', content: 'persisted',
     })
@@ -271,6 +319,7 @@ describe('runTurnReview', () => {
       transport: { request } as unknown as JsonRpcTransportPeer,
       llm,
       autoReviewEnabled: true,
+      route: ROUTE,
     })
     expect(request).not.toHaveBeenCalled()
   })
@@ -288,6 +337,7 @@ describe('runTurnReview', () => {
         transport: { request } as unknown as JsonRpcTransportPeer,
         llm,
         autoReviewEnabled: true,
+        route: ROUTE,
       })
       await vi.advanceTimersByTimeAsync(6_000)
       await expect(reviewPromise).resolves.toBeUndefined()
@@ -308,6 +358,7 @@ describe('runTurnReview', () => {
       transport: undefined,
       llm,
       autoReviewEnabled: true,
+      route: ROUTE,
     })
     expect(warn).toHaveBeenCalledWith('[starhub-memory-sink] turn review failed:', 'plain failure')
     warn.mockRestore()
@@ -323,27 +374,43 @@ describe('wireLlmExtractor', () => {
     expect(wireLlmExtractor(ctxWith({ llm: null }))).toBeUndefined()
     expect(wireLlmExtractor(ctxWith({ llm: 'nope' }))).toBeUndefined()
     expect(wireLlmExtractor(ctxWith({ llm: {} }))).toBeUndefined()
-    expect(wireLlmExtractor(ctxWith({ llm: { generate: 1 } }))).toBeUndefined()
+    expect(wireLlmExtractor(ctxWith({ llm: { stream: 1 } }))).toBeUndefined()
   })
 
-  it('calls generate in json mode and rejects when the signal aborts', async () => {
-    const generate = vi.fn(async () => ({ facts: [] }))
-    const extractor = wireLlmExtractor(ctxWith({ llm: { generate } }))
+  it('streams through the given route and returns assembled text', async () => {
+    const { stream } = streamingLlm('{"facts":[{"content":"kept"}]}')
+    const extractor = wireLlmExtractor(ctxWith({ llm: { stream } }))
     expect(extractor).toBeDefined()
     const signal = new AbortController().signal
-    await expect(extractor!({ system: 's', prompt: 'p', signal })).resolves.toEqual({ facts: [] })
-    expect(generate).toHaveBeenCalledWith({ system: 's', prompt: 'p', json: true })
-    // An already-aborted signal rejects before generate can resolve.
+    const out = await extractor!({ route: ROUTE, system: 's', prompt: 'p', signal })
+    expect(out).toBe('{"facts":[{"content":"kept"}]}')
+    expect(stream).toHaveBeenCalledOnce()
+    const options = stream.mock.calls[0]![0] as { provider: string; model: string; system: string; messages: unknown[] }
+    expect(options.provider).toBe('mem-provider')
+    expect(options.model).toBe('mem-model')
+    expect(options.system).toBe('s')
+    // An already-aborted signal rejects before stream is called.
     const aborted = new AbortController()
     aborted.abort()
-    await expect(extractor!({ system: 's', prompt: 'p', signal: aborted.signal }))
+    await expect(extractor!({ route: ROUTE, system: 's', prompt: 'p', signal: aborted.signal }))
       .rejects.toThrow('aborted')
-    // An abort mid-flight rejects the pending race.
-    const slow = wireLlmExtractor(ctxWith({ llm: { generate: () => new Promise<never>(() => {}) } }))!
+    // An abort mid-flight rejects the pending stream consumption.
+    const slow = wireLlmExtractor(ctxWith({
+      llm: { stream: (_options: unknown) => (async function * () { yield await new Promise<never>(() => {}) })() },
+    }))!
     const controller = new AbortController()
-    const pending = slow({ system: 's', prompt: 'p', signal: controller.signal })
+    const pending = slow({ route: ROUTE, system: 's', prompt: 'p', signal: controller.signal })
     controller.abort()
     await expect(pending).rejects.toThrow('aborted')
+  })
+
+  it('surfaces a non-stop finish as a failure', async () => {
+    const stream = vi.fn(() => (async function * () {
+      yield { type: 'finish', reason: { kind: 'error', failure: { message: 'provider down' } } } as const
+    })())
+    const extractor = wireLlmExtractor(ctxWith({ llm: { stream } }))!
+    await expect(extractor({ route: ROUTE, system: 's', prompt: 'p', signal: new AbortController().signal }))
+      .rejects.toThrow('provider down')
   })
 })
 
@@ -374,46 +441,59 @@ describe('apply (turn-stopping hook)', () => {
     { type: 'message/user' }, { type: 'message/assistant' },
   ])
 
-  it('runs the review pipeline when autoReview is on', async () => {
+  it('runs the review pipeline when autoReview and the memory route are on', async () => {
     const request = vi.fn(async () => ({}))
-    const generate = vi.fn(async () => ({ facts: [{ content: 'kept' }] }))
+    const { stream } = streamingLlm('{"facts":[{"content":"kept"}]}')
     const { ctx, listeners } = makeSinkCtx(
-      { 'sdk-transport': { request }, llm: { generate } },
-      { autoReview: true },
+      { 'sdk-transport': { request }, llm: { stream } },
+      { autoReview: true, memoryProvider: 'mem-provider', memoryModel: 'mem-model' },
     )
     apply(ctx)
     expect(listeners).toHaveLength(1)
     await listeners[0]!({ agent: busyAgent(), signal: new AbortController().signal })
-    expect(generate).toHaveBeenCalledOnce()
+    expect(stream).toHaveBeenCalledOnce()
     expect(request).toHaveBeenCalledWith(MEMORY_WRITE_METHOD, {
       scope: 'folder:/x', content: 'kept',
     })
   })
 
+  it('skips auto-distill when autoReview is on but the memory route is missing (v0.94.0)', async () => {
+    const request = vi.fn(async () => ({}))
+    const { stream } = streamingLlm('{"facts":[{"content":"kept"}]}')
+    const { ctx, listeners } = makeSinkCtx(
+      { 'sdk-transport': { request }, llm: { stream } },
+      { autoReview: true },
+    )
+    apply(ctx)
+    await listeners[0]!({ agent: busyAgent(), signal: new AbortController().signal })
+    expect(stream).not.toHaveBeenCalled()
+    expect(request).not.toHaveBeenCalled()
+  })
+
   it('skips the review when the namespace never opted in (default off)', async () => {
     const request = vi.fn(async () => ({}))
-    const generate = vi.fn(async () => ({ facts: [{ content: 'kept' }] }))
+    const { stream } = streamingLlm('{"facts":[{"content":"kept"}]}')
     const { ctx, listeners } = makeSinkCtx(
-      { 'sdk-transport': { request }, llm: { generate } },
+      { 'sdk-transport': { request }, llm: { stream } },
       undefined,
     )
     apply(ctx)
     await listeners[0]!({ agent: busyAgent(), signal: new AbortController().signal })
-    expect(generate).not.toHaveBeenCalled()
+    expect(stream).not.toHaveBeenCalled()
     expect(request).not.toHaveBeenCalled()
   })
 
   it('reads the memory-context namespace without re-registering it (v0.92.2 collision)', async () => {
     const request = vi.fn(async () => ({}))
-    const generate = vi.fn(async () => ({ facts: [{ content: 'kept' }] }))
+    const { stream } = streamingLlm('{"facts":[{"content":"kept"}]}')
     const { ctx, listeners } = makeSinkCtx(
-      { 'sdk-transport': { request }, llm: { generate } },
-      { autoReview: true },
+      { 'sdk-transport': { request }, llm: { stream } },
+      { autoReview: true, memoryProvider: 'mem-provider', memoryModel: 'mem-model' },
     )
     // memory-context 已注册该 namespace:register 再被调用即抛,apply 不得调用它。
     expect(() => apply(ctx)).not.toThrow()
     await listeners[0]!({ agent: busyAgent(), signal: new AbortController().signal })
-    expect(generate).toHaveBeenCalledOnce()
+    expect(stream).toHaveBeenCalledOnce()
   })
 })
 

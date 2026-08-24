@@ -9,6 +9,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import { AuditTab, formatAuditDetail, formatAuditTime } from '../src/client/settings/audit.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
 import { PluginsTab } from '../src/client/settings/plugins.tsx'
@@ -327,6 +328,10 @@ describe('AiTab', () => {
   })
 
   it('writes memory toggles immediately', async () => {
+    // v0.94.0:记忆模型是硬前置;预置路由后开关才可用。
+    localStorage.setItem(AI_STORAGE_KEY, JSON.stringify({
+      settings: { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
+    }))
     render(<AiTab />)
     // v0.92.0 起 memoryEnabled 默认 false,点击后变 true → 写入 localStorage。
     fireEvent.click(screen.getByText('启用长期记忆'))
@@ -338,6 +343,75 @@ describe('AiTab', () => {
     expect(screen.queryByLabelText(/上下文预算/)).toBeNull()
     expect(screen.queryByLabelText(/最大工具迭代步数/)).toBeNull()
     expect(screen.queryByLabelText(/压缩触发阈值/)).toBeNull()
+  })
+
+  it('disables memory toggles until the memory model is configured (v0.94.0)', async () => {
+    localStorage.clear()
+    render(<AiTab />)
+    const inputOf = (text: string) => {
+      const label = screen.getByText(text).closest('label')
+      expect(label).not.toBeNull()
+      return label!.querySelector('input')!
+    }
+    // 未配置模型:两个记忆功能开关禁用;tool 存档开关不受影响。
+    // (「即使勾选也会被归一化强制归零」的兜底由 settings-services 的
+    // normalizeAiSettings 硬门测试覆盖。)
+    expect(inputOf('启用长期记忆').disabled).toBe(true)
+    expect(inputOf('自动沉淀记忆').disabled).toBe(true)
+    expect(inputOf('存档 tool 消息与工具调用').disabled).toBe(false)
+  })
+
+  it('configures the memory model via the catalog dropdowns and syncs to the namespace', async () => {
+    const update = vi.fn(() => Promise.resolve())
+    const api = {
+      settings: { update },
+      llm: {
+        models: vi.fn(async () => ({
+          result: {
+            ok: true as const,
+            value: {
+              groups: [
+                {
+                  id: 'deepseek-official', name: 'DeepSeek',
+                  models: [
+                    { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+                    { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' },
+                  ],
+                },
+              ],
+              failures: [],
+            },
+          },
+        })),
+      },
+    } as unknown as IApiClient
+    // 已有历史内存写入习惯的旧 localStorage(未配模型)不受影响。
+    localStorage.setItem(AI_STORAGE_KEY, JSON.stringify({
+      settings: { memoryEnabled: true },
+    }))
+    render(<AiTab api={api} />)
+    await act(async () => { await Promise.resolve() })
+    // 未配置时「启用长期记忆」被归一化回 false 且禁用。
+    expect(screen.getByText('启用长期记忆').closest('label')!.querySelector('input')!.disabled).toBe(true)
+    // 下拉选 provider + model
+    fireEvent.change(screen.getByLabelText('记忆模型 provider'), { target: { value: 'deepseek-official' } })
+    await act(async () => { await Promise.resolve() })
+    fireEvent.change(screen.getByLabelText('记忆模型 model'), { target: { value: 'deepseek-chat' } })
+    await act(async () => { await Promise.resolve() })
+    const stored = () => JSON.parse(localStorage.getItem(AI_STORAGE_KEY) ?? '{}') as {
+      settings: { memoryProvider: string; memoryModel: string }
+    }
+    expect(stored().settings.memoryProvider).toBe('deepseek-official')
+    expect(stored().settings.memoryModel).toBe('deepseek-chat')
+    expect(update).toHaveBeenCalledWith({
+      ns: 'starhub-memory-context',
+      patch: { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
+    })
+    // 配置后开关可用
+    expect(screen.getByText('启用长期记忆').closest('label')!.querySelector('input')!.disabled).toBe(false)
+    fireEvent.click(screen.getByText('启用长期记忆'))
+    await act(async () => { await Promise.resolve() })
+    expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: true } })
   })
 
   it('manages memories: group by scope, edit with audit, two-step delete', async () => {

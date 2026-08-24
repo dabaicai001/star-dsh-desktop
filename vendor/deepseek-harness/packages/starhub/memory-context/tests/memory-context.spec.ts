@@ -6,7 +6,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
 import {
-  apply, composeMemoryContext, isAutoReviewEnabled, renderMemoryContext,
+  apply, composeMemoryContext, isAutoReviewEnabled, isMemoryConfigured,
+  MEMORY_TOOL_NAME, memoryRouteOf, renderMemoryContext,
 } from '../src/index.ts'
 import { apply as applyInvariant } from '../src/invariant.ts'
 
@@ -108,6 +109,26 @@ describe('isAutoReviewEnabled', () => {
   })
 })
 
+describe('memoryRouteOf / isMemoryConfigured (v0.94.0 hard gate)', () => {
+  it('requires provider and model to be a non-empty pair', () => {
+    expect(memoryRouteOf(undefined)).toBeUndefined()
+    expect(memoryRouteOf({})).toBeUndefined()
+    expect(memoryRouteOf({ enabled: true })).toBeUndefined()
+    expect(memoryRouteOf({ memoryProvider: 'p' })).toBeUndefined()
+    expect(memoryRouteOf({ memoryModel: 'm' })).toBeUndefined()
+    expect(memoryRouteOf({ memoryProvider: '  ', memoryModel: 'm' })).toBeUndefined()
+    expect(memoryRouteOf({ memoryProvider: 'mem-provider', memoryModel: 'mem-model' }))
+      .toEqual({ provider: 'mem-provider', model: 'mem-model' })
+    expect(memoryRouteOf({ memoryProvider: ' p ', memoryModel: ' m ' }))
+      .toEqual({ provider: 'p', model: 'm' })
+  })
+  it('reports configuration through isMemoryConfigured', () => {
+    expect(isMemoryConfigured(undefined)).toBe(false)
+    expect(isMemoryConfigured({ memoryProvider: 'p' })).toBe(false)
+    expect(isMemoryConfigured({ memoryProvider: 'p', memoryModel: 'm' })).toBe(true)
+  })
+})
+
 describe('composeMemoryContext', () => {
   it('pulls cards through the transport with scopes and sessionId', async () => {
     const { transport, request } = makeTransport(CARDS)
@@ -153,8 +174,11 @@ describe('apply (pre-step injection)', () => {
     return listener!({ agent, signal: new AbortController().signal }, () => Promise.resolve(ENTER))
   }
 
-  it('injects memory text with user/global/folder scopes when enabled', async () => {
-    const { ctx, listeners } = makeCtx({ 'sdk-transport': makeTransport(CARDS).transport }, { enabled: true })
+  it('injects memory text with user/global/folder scopes when enabled and the route is configured', async () => {
+    const { ctx, listeners } = makeCtx(
+      { 'sdk-transport': makeTransport(CARDS).transport },
+      { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
+    )
     apply(ctx)
     const decision = await runListener(listeners, makeAgent('E:\\ws\\starhub'))
     expect(decision.kind).toBe('enter')
@@ -174,7 +198,10 @@ describe('apply (pre-step injection)', () => {
 
   it('omits the folder scope for sessions without a cwd', async () => {
     const { transport, request } = makeTransport(CARDS)
-    const { ctx, listeners } = makeCtx({ 'sdk-transport': transport }, { enabled: true })
+    const { ctx, listeners } = makeCtx(
+      { 'sdk-transport': transport },
+      { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
+    )
     apply(ctx)
     await runListener(listeners, makeAgent())
     expect(request).toHaveBeenCalledWith('starhub/memory.cards', {
@@ -190,6 +217,21 @@ describe('apply (pre-step injection)', () => {
     const decision = await runListener(listeners, makeAgent('/w'))
     expect(decision).toBe(ENTER)
     expect(request).not.toHaveBeenCalled()
+  })
+
+  it('does not inject when enabled but the memory route is missing (v0.94.0 hard gate)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { transport, request } = makeTransport(CARDS)
+      const { ctx, listeners } = makeCtx({ 'sdk-transport': transport }, { enabled: true })
+      apply(ctx)
+      const decision = await runListener(listeners, makeAgent('/w'))
+      expect(decision).toBe(ENTER)
+      expect(request).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('未配置记忆模型'))
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('passes through rejected decisions untouched', async () => {
@@ -209,7 +251,10 @@ describe('apply (pre-step injection)', () => {
   it('returns the decision untouched when every card comes back empty', async () => {
     const empty = { cards: [{ scope: 'user', content: '', char_count: 0, char_limit: 1375, entry_count: 0 }] }
     const { transport, request } = makeTransport(empty)
-    const { ctx, listeners } = makeCtx({ 'sdk-transport': transport }, { enabled: true })
+    const { ctx, listeners } = makeCtx(
+      { 'sdk-transport': transport },
+      { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
+    )
     apply(ctx)
     const decision = await runListener(listeners, makeAgent('/w'))
     expect(decision).toBe(ENTER)
@@ -228,6 +273,44 @@ describe('apply (pre-step injection)', () => {
     )
     expect(decision).toBe(ENTER)
     expect(request).not.toHaveBeenCalled()
+  })
+})
+
+describe('memory tool lock gate (tools/pre-execute, v0.94.0)', () => {
+  type PreExecListener = (
+    exec: { name: string },
+    next: () => Promise<{ kind: 'allow' }>,
+  ) => Promise<{ kind: 'allow' } | { kind: 'deny'; reason: string }>
+
+  const ALLOW = { kind: 'allow' as const }
+
+  /** apply() 注册两个监听器:listeners[0] = pre-step,listeners[1] = 工具锁死门。 */
+  function gateListener(listeners: PreStepListener[]): PreExecListener {
+    const listener = listeners[1]
+    expect(listener).toBeDefined()
+    return listener as unknown as PreExecListener
+  }
+
+  it('denies memory tool calls when the route is missing', async () => {
+    const { ctx, listeners } = makeCtx({}, { enabled: true })
+    apply(ctx)
+    const decision = await gateListener(listeners)({ name: MEMORY_TOOL_NAME }, () => Promise.resolve(ALLOW))
+    expect(decision.kind).toBe('deny')
+    expect((decision as { reason: string }).reason).toContain('配置记忆模型')
+  })
+
+  it('allows memory tool calls once the route is configured', async () => {
+    const { ctx, listeners } = makeCtx({}, { memoryProvider: 'p', memoryModel: 'm' })
+    apply(ctx)
+    await expect(gateListener(listeners)({ name: MEMORY_TOOL_NAME }, () => Promise.resolve(ALLOW)))
+      .resolves.toEqual(ALLOW)
+  })
+
+  it('passes non-memory tools through untouched even when unconfigured', async () => {
+    const { ctx, listeners } = makeCtx({}, undefined)
+    apply(ctx)
+    await expect(gateListener(listeners)({ name: 'ssh_exec' }, () => Promise.resolve(ALLOW)))
+      .resolves.toEqual(ALLOW)
   })
 })
 

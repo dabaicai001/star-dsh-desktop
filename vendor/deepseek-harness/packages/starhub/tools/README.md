@@ -44,4 +44,8 @@ The tool surface is static across turns; per-call results vary normally and foll
 
 - 全部工具注册在一个 runtime 注册表,不按会话绑定过滤工具清单;域不匹配的
   调用由宿主侧执行器报错引导(会话绑定由前端面板持有)。
+- `memory` 工具的可用性由 `starhub-memory-context` 插件的 tools/pre-execute
+  门禁管理:设置里没配记忆模型(provider + model)时,调用被 deny 并提示去
+  设置里配置;配置后交回 approval-bridge 逐条确认。写入 user/global 的项目
+  标注约定写在工具描述里(模型侧契约),不做机械校验。
 

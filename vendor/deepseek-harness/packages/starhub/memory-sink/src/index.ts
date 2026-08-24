@@ -6,12 +6,14 @@
  * 1. agent 回合结束 → dsh 发出 `agent/turn-stopping`(`{ agent, turn, signal }`)。
  * 2. 本插件读取 settings namespace `starhub-memory-context.autoReview`;关闭或
  *    namespace 未写过(v0.92.0 起默认关)则整段跳过。
- * 3. 通过门禁 `shouldReview({user, assistant})` 决定要不要调用 LLM 抽取;
+ * 3. **记忆模型硬前置(v0.94.0)**:namespace 的 `memoryProvider` + `memoryModel`
+ *    未成对配置时整段跳过(开关打开也没用,与设置「只有配置了才能勾选」对齐)。
+ * 4. 通过门禁 `shouldReview({user, assistant})` 决定要不要调用 LLM 抽取;
  *    太短的会话不调用(零成本)。
- * 4. 调用 `extractFacts(agent, signal)` 调一次独立 LLM chat completion(系统
- *    prompt 在第 23 行固定),返回 JSON 数组;`normalizeFacts` 收敛 scope +
- *    去空 + 限长 + 限条数。
- * 5. `pickTargetScope(cwd)` 决定 folder/global;逐条经 sdk-transport 反向
+ * 5. 调用 `extractFacts(agent, signal, route)` 用**专属记忆模型**做一次独立
+ *    LLM chat completion(`ctx.llm.stream`,provider/model 取自 namespace 路由),
+ *    返回 JSON 数组;`normalizeFacts` 收敛 scope + 去空 + 限长 + 限条数。
+ * 6. `pickTargetScope(cwd)` 决定 folder/global;逐条经 sdk-transport 反向
  *    RPC `starhub/memory.write` 调 Rust `ai_memory_add`。
  *
  * 失败/超时均吞掉(不污染主 agent turn 的 dispose 链),日志走 console.warn。
@@ -23,12 +25,20 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import {
+  BlockAssembler,
+  createUserMessage,
+  type GenerateOptions,
+  type StreamChunk,
+} from '@deepseek-ai/dsh-llm'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
 import { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   MEMORY_CONTEXT_NAMESPACE,
   isAutoReviewEnabled,
+  memoryRouteOf,
   type MemoryContextValue,
+  type MemoryRoute,
 } from '@deepseek-ai/dsh-starhub-memory-context'
 import {
   normalizeFacts,
@@ -61,6 +71,9 @@ const EXTRACT_SYSTEM_PROMPT = [
   'Otherwise return JSON {"facts": [{"content": "<concise fact, ≤280 chars>"}]}.',
   'Reject ephemeral debugging, raw logs, secrets, or anything queryable from',
   'source code. Each fact must be information-dense (one line).',
+  'Facts that apply only to a named project must carry that project name inside',
+  'the content (e.g. "[starhub] production DB is 10.0.0.5"); facts common to all',
+  'projects may stay unlabeled.',
 ].join(' ')
 
 /** Schemastery shape returned by the extraction LLM call. */
@@ -82,11 +95,12 @@ export interface MemorySinkAgent {
 }
 
 /**
- * Type for the optional LLM call capability injected by the host. We use an
- * `unknown`-typed result because the actual call lives in the dsh-llm package
- * and varies across backends; tests stub this surface.
+ * Type for the optional LLM call capability injected by the host. The call is
+ * routed to the dedicated memory model (`route.provider`/`route.model`); the
+ * real surface lives behind `ctx.llm.stream` (dsh-llm), tests stub this shape.
  */
 export type LlmExtractor = (params: {
+  route: MemoryRoute
   system: string
   prompt: string
   signal: AbortSignal
@@ -156,11 +170,24 @@ export function buildExtractPrompt(agent: MemorySinkAgent): string {
   const cwdLine = cwd === undefined || cwd.trim() === ''
     ? 'workspace: <none>'
     : `workspace: ${cwd}`
+  const projectLine = cwd === undefined || cwd.trim() === ''
+    ? 'project: <none>'
+    : `project: ${projectNameOf(cwd)}`
   return [
     'Distill durable facts from the just-completed turn into long-term memory.',
     cwdLine,
+    projectLine,
     'Return JSON only, no prose.',
   ].join('\n')
+}
+
+/**
+ * 从工作区绝对路径取项目名(末段目录名,去尾部斜杠)。
+ * @param cwd - 会话工作区绝对路径。
+ * @returns 项目名(目录末段);空路径返回空串。
+ */
+export function projectNameOf(cwd: string): string {
+  return cwd.replace(/[\\/]+$/, '').replace(/^.*[\\/]/, '')
 }
 
 /**
@@ -197,8 +224,11 @@ export async function runTurnReview(params: {
   transport: JsonRpcTransportPeer | undefined
   llm: LlmExtractor | undefined
   autoReviewEnabled: boolean
+  route: MemoryRoute | undefined
 }): Promise<void> {
   if (!params.autoReviewEnabled) return
+  // 记忆模型硬前置:未配置路由不沉淀(开关打开了也没用,与设置 UI 一致)。
+  if (params.route === undefined) return
   if (params.signal.aborted) return
   if (!shouldReview(countMessages(params.agent))) return
   if (params.llm === undefined) return
@@ -208,7 +238,12 @@ export async function runTurnReview(params: {
       timeout = setTimeout(() => { reject(new Error('extract timed out')) }, EXTRACT_TIMEOUT_MS)
     })
     const result = await Promise.race([
-      params.llm({ system: EXTRACT_SYSTEM_PROMPT, prompt: buildExtractPrompt(params.agent), signal: params.signal }),
+      params.llm({
+        route: params.route,
+        system: EXTRACT_SYSTEM_PROMPT,
+        prompt: buildExtractPrompt(params.agent),
+        signal: params.signal,
+      }),
       timeoutPromise,
     ])
     await persistExtractedFacts(params.transport, params.agent, result)
@@ -229,18 +264,21 @@ export function apply(ctx: Context): void {
   ctx.effect(() => {
     const transport = ctx.get('sdk-transport') as JsonRpcTransportPeer | undefined
     return ctx.on('agent/turn-stopping', async ({ agent, signal }): Promise<void> => {
-      // namespace 由 dsh-starhub-memory-context 注册,本插件只读 autoReview;
-      // 重复 register 会触发 settings duplicate-registration 硬失败(v0.92.2 事故)。
+      // namespace 由 dsh-starhub-memory-context 注册,本插件只读 autoReview +
+      // 记忆模型路由;重复 register 会触发 settings duplicate-registration
+      // 硬失败(v0.92.2 事故)。
       const value = ctx.settings.get(ns) as MemoryContextValue | undefined
+      const route = memoryRouteOf(value)
       await runTurnReview({
         agent,
         signal,
         transport,
-        // LLM extractor: dsh-llm exposes `ctx.llm.generate({...})` in production;
+        // LLM extractor: dsh-llm exposes `ctx.llm.stream` in production;
         // we treat it as optional and skip when absent. The host wires it via a
         // property proxy; using ctx.get keeps the dep optional.
-        llm: wireLlmExtractor(ctx),
+        llm: route === undefined ? undefined : wireLlmExtractor(ctx),
         autoReviewEnabled: isAutoReviewEnabled(value),
+        route,
       })
     })
   }, 'starhub-memory-sink: turn-stopping auto-distill')
@@ -248,30 +286,58 @@ export function apply(ctx: Context): void {
 
 /**
  * Build an LLM extractor closure from the dsh `llm` service if available.
+ * The closure streams one completion through the dedicated memory route
+ * (`route.provider` / `route.model`), collects text blocks via BlockAssembler
+ * and returns the assembled text (normalizeFacts accepts JSON or plain text).
+ * Honours the turn signal (abort races the pending stream) and the caller's
+ * timeout budget (handled by runTurnReview's race).
  * Returns undefined when the service is not registered (e.g. in unit tests
- * or in hosts that don't expose a generation surface).
+ * or in hosts that don't expose a streaming surface).
  * @param ctx - Cordis plugin context; only the `llm` service is read.
- * @returns The extractor closure, or undefined when no usable `llm.generate` exists.
+ * @returns The extractor closure, or undefined when no usable `llm.stream` exists.
  */
 export function wireLlmExtractor(ctx: Context): LlmExtractor | undefined {
   const candidate = ctx.get('llm') as unknown
   if (candidate === undefined || candidate === null) return undefined
   if (typeof candidate !== 'object') return undefined
-  const generate = (candidate as { generate?: unknown }).generate
-  if (typeof generate !== 'function') return undefined
-  return ({ system, prompt, signal }) => {
-    // Check before calling generate: inside a Promise.race the aborted
-    // promise's reaction is queued after an instantly-resolved generate's,
+  const stream = (candidate as { stream?: unknown }).stream
+  if (typeof stream !== 'function') return undefined
+  return async ({ route, system, prompt, signal }): Promise<unknown> => {
+    // Check before calling stream: inside a Promise.race the aborted
+    // promise's reaction is queued after an instantly-resolved stream's,
     // so a pre-aborted signal would lose the race and still resolve.
     if (signal.aborted) return Promise.reject(new Error('aborted'))
     const abortPromise = new Promise<never>((_resolve, reject) => {
       signal.addEventListener('abort', () => { reject(new Error('aborted')) }, { once: true })
     })
-    return Promise.race([
-      (generate as (input: { system: string; prompt: string; json: true }) => Promise<unknown>)({
-        system, prompt, json: true,
-      }),
-      abortPromise,
-    ])
+    const consume = (async (): Promise<unknown> => {
+      const assembler = new BlockAssembler()
+      const options: GenerateOptions = {
+        provider: route.provider,
+        model: route.model,
+        messages: [createUserMessage({
+          content: [{ type: 'text', text: prompt }],
+          source: { kind: 'plugin', plugin: 'dsh-starhub-memory-sink' },
+        })],
+        system,
+        signal,
+      }
+      const chunks = (stream as (input: GenerateOptions) => AsyncIterable<StreamChunk>)(options)
+      for await (const chunk of chunks) {
+        assembler.push(chunk)
+      }
+      const finish = assembler.finish
+      if (finish.kind !== 'stop') {
+        const reason = finish.kind === 'error' || finish.kind === 'aborted'
+          ? finish.failure.message
+          : `memory extraction finished with ${finish.kind}`
+        throw new Error(reason)
+      }
+      return assembler.blocks()
+        .filter(block => block.type === 'text')
+        .map(block => block.text)
+        .join('\n')
+    })()
+    return Promise.race([consume, abortPromise])
   }
 }

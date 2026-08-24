@@ -12,6 +12,21 @@
 - SQL 查询结果可编辑及无主键报错提示（转 K3）
 - 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
 
+## [0.94.0] - 2026-08-23
+
+### 新增
+- ✨ AI 记忆系统引入**专属记忆模型**且作为硬前置(呼应 Hermes Agent 用独立便宜模型跑后台记忆提炼的实践):设置 → AI 助手「记忆模型」下拉(provider + model 成对,数据源 dsh `llm.models` 会话无关模型目录)。
+- ✨ 记忆功能门禁:**记忆模型未配置 = 记忆功能整体关闭**——「启用长期记忆」「自动沉淀记忆」开关禁用(默认关,只有配置了才能勾选);host 侧三处兜底:memory-context pre-step 注入跳过(console.warn)、memory-sink turn-stopping 沉淀跳过、memory 工具调用被 `tools/pre-execute` 直接 deny(不弹确认卡、不进 Rust 写路径);`normalizeAiSettings` 把旧 localStorage 残留开启态强制归零。
+- ✨ 跨项目作用域项目标注约定:**写入 user/global 的记忆,凡属具体项目的事实必须在条目内标注项目名**(取工作区目录名,如 `[starhub] 生产库在 10.0.0.5`);跨项目通用的才允许不标注。落地于 memory 工具描述(模型侧契约)与 memory-sink 抽取系统提示/prompt(`project: <目录名>` 行);folder 卡本就按项目隔离,无需标注。
+
+### 修复
+- 🐛 memory-sink 自动沉淀抽取改为走 dsh-llm 官方 `ctx.llm.stream`(带 `provider`/`model` 显式路由);dsh-llm 只暴露 stream 面,原 `generate({json:true})` 便利面在宿主的 `llm` 服务上不存在,生产组合下抽取可能静默不触发——顺带补齐专属模型路由的承载面。
+
+### 测试
+- `memory-context` 补:记忆模型路由判定(`memoryRouteOf` / `isMemoryConfigured`)、pre-step 未配置硬门、memory 工具锁死门(deny/放行/非 memory 放行)。
+- `memory-sink` 补:route 缺失跳过、`wireLlmExtractor` 改 stream 全分支(路由透传/abort/非 stop finish)、项目名派生(`projectNameOf`)。
+- client-nav 补:记忆模型下拉(目录加载/选择/同步 namespace)、开关未配置禁用、`normalizeAiSettings` 硬门归一化、syncMemoryModel。
+
 ## [0.93.2] - 2026-08-23
 
 ### 修复
