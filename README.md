@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.93.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.93.2-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -148,14 +148,14 @@
 
 ## 当前版本
 
+### v0.93.2 (2026-08-23)
+- 🐛 修复截图功能四大问题:① 区域截图无法拖拽框选——遮罩页顶层 overlay 画布 `pointer-events: auto` 把鼠标事件(mousedown/mousemove/click)全截走,`base` 画布上的拖拽监听永远收不到(此前误判为画布尺寸/坐标问题),改为 anno/overlay 纯视觉层 `pointer-events: none`;② 窗口截图黑屏——`initWindow()` 定义了但从未被调用,遮罩页无论哪种模式都走 `initRegion()`,窗口模式下 `screenshot_get_desktop` 必然失败 → 黑屏+初始化失败提示,窗口列表/点击截取整条链路从未激活,Rust 侧 `screenshot_begin_window` 改为以 `screenshot.html?mode=window` 创建遮罩页,页面按 `location.search` 分发 `initRegion`/`initWindow`;③ 新会话页面不显示 git 分支胶囊——blank 会话(未发首条消息)整个会话头部被 `hideChrome` 隐藏,头部仅在会话仍处于打开中(settling/回放)时隐藏,blank 会话已打开的「新会话页」正常显示头部与分支胶囊;④ 对话中分支面板与左侧侧边栏遮挡——面板 `right:0` 从胶囊向左展开,胶囊位于标题之后(偏列左侧),面板越过会话列左缘被列裁剪,视觉上像被左侧侧边栏盖住,改为 `left:0` 向右展开 + 胶囊根层级提升至 z-index 30(压过 shell overlay 层)。
+
 ### v0.93.1 (2026-08-23)
 - 🐛 🐛 修复 v0.93.0 截图功能不可用:① `src-tauri/permissions/commands.toml`(Tauri 2 ACL 白名单)漏列 8 个 `screenshot_*` 命令,remote origin(127.0.0.1 dsh 主壳)调用被 ACL 拒绝 → 点「区域截图」无反应;② 截图菜单背景用了不存在的 token `--dsw-alias-surface-popover`(透明背景),且菜单向下展开时被窗口底部视口裁掉(只显示「区域截图」一项)——改为 `--dsw-alias-bg-overlay` + 向上展开 + 提层级压过 composer 渐变遮罩。
 
 ### v0.93.0 (2026-08-23)
 - ✨ ✨ AI 对话输入框新增截图功能(微信同款交互):输入框工具行「剪刀」按钮 → 区域截图 / 窗口截图。区域截图:隐藏主窗口后弹出全屏遮罩,拖拽框选选区(8 方向调整 / 整体移动 / 尺寸提示),支持红色矩形标注与撤销,回车/双击确认、Esc 取消;窗口截图:点击目标窗口整窗截取(含标题栏边框,自动过滤 StarHub 自身窗口)。确认后截图直接进输入框附件栏,随消息发送;超过 3MB 自动压缩到 3MB 以内。Rust 侧基于 xcap 跨平台截图(Windows WGC / macOS ScreenCaptureKit / Linux X11+Wayland),遮罩交互为独立置顶透明窗口加载的静态页,结果经 Tauri 事件回传主窗口并复用现有图片附件管线。
-
-### v0.92.4 (2026-08-23)
-- 🐛 **修复 v0.92.2 安装包启动崩溃(根因级,替代 v0.92.3 的产物级缓解)**:`examples/starhub-web/cordis.patch.yml` 引用的 `@deepseek-ai/dsh-starhub-memory-sink` 未随 dsh-runtime 入包(三处入包清单漏列),安装包启动即 `ERR_MODULE_NOT_FOUND` → 插件树加载失败 → dsh web 进程崩溃(浏览器侧表现为 `session-log-export` client bundle failed to load,系崩溃下游症状)。修复:`package-dsh-runtime.ts` 的 `WEB_LOCAL_PACKAGE_DIRS` / `web.rs` 的 `LOCAL_PACKAGES` / `examples/starhub-web/package.json` 三处补 memory-sink;memory-sink `apply()` 改为 `ctx.settings.get()` 只读 memory-context 的 namespace(不再重复 register,消除组合下 settings duplicate-registration 硬失败);`package-dsh-runtime.ts` 新增 `verifyProfilePatchClosure()` 打包门禁——starhub-web profile 引用的每个 `@deepseek-ai/*` 包必须已随闭包入包,漏列即构建失败(本地与 GitHub CI 均生效)。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

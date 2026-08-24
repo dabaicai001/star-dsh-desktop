@@ -11,6 +11,13 @@
   #stage { position: fixed; inset: 0; }
   #stage canvas { position: absolute; left: 0; top: 0; }
 
+  /* 三个画布完全重叠铺满窗口:base 承载底图与全部鼠标交互(拖拽选区 /
+     点击窗口),anno/overlay 纯视觉层(标注矩形、遮罩高亮)。不设
+     pointer-events: none 时,顶层 overlay 画布会把 mousedown/mousemove/
+     click 全部截走,base 的监听器永远收不到事件——区域截图拖不动、
+     窗口截图点不了(用户反馈「无法拖拽框选」的根因)。 */
+  #anno, #overlay { pointer-events: none; }
+
   /* 窗口模式:截图居中 */
   #stage.window-mode canvas { left: 50%; top: 50%; transform: translate(-50%, -50%); }
 
@@ -690,7 +697,13 @@ function initWindow() {
 }
 
 buildToolbar()
-initRegion()
+// 入口按 Rust 侧的窗口 URL 区分模式:screenshot_begin_region 创建
+// screenshot.html,screenshot_begin_window 创建 screenshot.html?mode=window。
+// 之前两种模式都走 initRegion(),窗口模式永远停在「初始化失败」黑屏
+// (initWindow 从未被调用)。
+var modeParam = new URLSearchParams(window.location.search).get('mode')
+if (modeParam === 'window') initWindow()
+else initRegion()
 </script>
 </body>
 </html>

@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.93.1(🐛 修复 v0.93.0 截图功能不可用:① `src-tauri/permissions/commands.toml`(Tauri 2 ACL 白名单)漏列 8 个 `screenshot_*` 命令,remote origin(127.0.0.1 dsh 主壳)调用被 ACL 拒绝 → 点「区域截图」无反应;② 截图菜单背景用了不存在的 token `--dsw-alias-surface-popover`(透明背景),且菜单向下展开时被窗口底部视口裁掉(只显示「区域截图」一项)——改为 `--dsw-alias-bg-overlay` + 向上展开 + 提层级压过 composer 渐变遮罩。) |
+| 当前版本 | v0.93.2(🐛 修复截图功能四大问题:① 区域截图无法拖拽框选——遮罩页顶层 overlay 画布 `pointer-events: auto` 把鼠标事件全截走,`base` 画布的拖拽监听永远收不到,改为 anno/overlay 纯视觉层 `pointer-events: none`;② 窗口截图黑屏——`initWindow()` 从未被调用,窗口模式永远走区域初始化失败→黑屏,改为 `screenshot_begin_window` 以 `screenshot.html?mode=window` 创建遮罩页并按 query 分发模式;③ 新会话页面不显示 git 分支胶囊——blank 会话整个头部被隐藏,改为仅在会话仍处于打开中(settling)时隐藏;④ 对话中分支面板被左侧侧边栏遮挡——面板 `right:0` 向左展开越过会话列左缘被裁剪,改为 `left:0` 向右展开 + 胶囊根层级提升至 z-index 30。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-23 (v0.93.1)*
+*最后更新: 2026-08-23 (v0.93.2)*

@@ -3,11 +3,11 @@
 .root {
   position: relative;
   display: inline-flex;
-  /* 自建堆叠上下文并压过会话列的粘性 composer(z-index 7)与回到底部按钮
-     (z-index 8):胶囊在会话头部,面板向下展开会越过消息流一直延伸到
-     composer 区域,不给根一个高于 8 的层级时面板尾部会被 composer 的
-     渐变遮罩盖住(分支行看似「被遮挡」)。 */
-  z-index: 9;
+  /* 自建堆叠上下文并压过会话列的粘性 composer(z-index 7)、回到底部按钮
+     (z-index 8)与 shell overlay 层(z-index 20):胶囊在会话头部,面板向下
+     展开会越过消息流一直延伸到 composer 区域;同时左侧侧边栏/遮罩层若
+     有更高层级内容时,不给根一个高于 20 的层级面板会被压住。 */
+  z-index: 30;
 }
 
 .pill {
@@ -49,7 +49,11 @@
 .panel {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  /* 左对齐向右展开:胶囊位于头部标题之后(偏列左侧),面板若向右:0 从
+     胶囊向左展开会越过会话列左缘、被列的 overflow 裁掉,视觉上就像被
+     左侧侧边栏盖住(用户反馈「弹出框与左侧侧边栏有遮挡」)。左对齐让
+     面板往列内侧展开,避开侧边栏边界。 */
+  left: 0;
   z-index: 100;
   display: flex;
   flex-direction: column;

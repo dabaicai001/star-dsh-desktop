@@ -12,6 +12,17 @@
 - SQL 查询结果可编辑及无主键报错提示（转 K3）
 - 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
 
+## [0.93.2] - 2026-08-23
+
+### 修复
+- 🐛 修复区域截图无法拖拽框选:遮罩页三个画布(base/anno/overlay)完全重叠铺满窗口,顶层 `#overlay` 画布默认 `pointer-events: auto`,把 mousedown/mousemove/click 全部截走,`#base` 画布上的拖拽/点击监听永远收不到事件(此前多次误判为画布尺寸、坐标换算、IPC 字节链路)——anno/overlay 是纯视觉层(标注矩形、遮罩高亮),改为 `pointer-events: none`,事件落到底层 base 画布。
+- 🐛 修复窗口截图黑屏:`initWindow()` 定义了但从未被调用,遮罩页无论哪种模式都执行 `initRegion()`;窗口模式下 `screenshot_get_desktop` 返回「no desktop capture cached」→ 黑屏 + 初始化失败提示,窗口列表(`screenshot_list_windows`)/ hover 高亮 / 点击截取整条链路从未激活。修复:Rust 侧 `screenshot_begin_window` 以 `screenshot.html?mode=window` 创建遮罩窗口,页面按 `location.search` 分发 `initRegion` / `initWindow`。
+- 🐛 修复新会话页面不显示 git 分支胶囊:blank 会话(未发首条消息)整个会话头部被 `hideChrome` 隐藏,`conversation.session.header.actions`(分支胶囊注册位)随之不可见——头部改为仅在会话仍处于打开中(settling/回放,`openState !== 'open'`)时隐藏,blank 会话已打开的「新会话页」正常显示头部与分支胶囊(胶囊数据源 cwd 在 host 帧落地后即就绪)。
+- 🐛 修复对话中分支面板与左侧侧边栏遮挡:面板 `right: 0` 从胶囊向左展开,而胶囊位于标题之后(偏会话列左侧),面板越过会话列左缘被列的 `overflow` 裁剪,视觉上像被左侧侧边栏盖住——面板改为 `left: 0` 向列内侧展开,避开侧边栏边界;胶囊根层级从 z-index 9 提升到 30,压过 shell overlay 层(z-index 20)。
+
+### 测试
+- `ui-conversation` skeleton 规格同步:blank 会话「已打开」hero 现在显示头部(断言 `aria-hidden` 移除 + `conversation.session.header.actions` 渲染),settling/replay 隐藏行为不变(2 例回归通过)。
+
 ## [0.92.1] - 2026-08-22
 
 ### 新增

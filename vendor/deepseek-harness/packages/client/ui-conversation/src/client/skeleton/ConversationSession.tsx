@@ -56,7 +56,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
 /**
  * Renders Session header chrome above the resident conversation scrollport.
  * @param props - Strict Session store, view ledger, navigation, render, and locale shares.
- * @returns the hidden blank-session header or visible title and tabs.
+ * @returns the hidden loading-session header or visible title and tabs.
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useStore, actions,
@@ -69,7 +69,14 @@ export function ConversationSessionHeader({
   const ancestry = useSessions(s => deriveAncestry(s, sessionId), equalBreadcrumbs)
   const composerPhase = useSession(s => s.composerPhase)
   const blank = useSession(s => s.blank)
-  const hideChrome = blank && composerPhase === 'blank'
+  const openState = useSession(s => s.openState)
+  // Blank sessions hide the header only while the session is still opening
+  // (replay round-trip / cold / error) so the history wait never flashes
+  // chrome over the hero. Once the blank session is open, a fresh new-session
+  // page keeps the header visible: header-actions hosts the StarHub git
+  // branch pill, and a new-session page must show the workspace branch before
+  // the first message.
+  const hideChrome = blank && composerPhase === 'blank' && openState !== 'open'
 
   return (
     <header

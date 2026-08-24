@@ -162,8 +162,18 @@ fn close_overlay(app: &AppHandle) {
     }
 }
 
+/// 遮罩窗口加载的页面 URL:区域模式为裸页;窗口模式带 `?mode=window`,
+/// 页面据此选择 `initRegion` / `initWindow`(两种模式共用同一张静态页)。
+fn overlay_url(mode: &str) -> WebviewUrl {
+    if mode == "window" {
+        WebviewUrl::App("screenshot.html?mode=window".into())
+    } else {
+        WebviewUrl::App("screenshot.html".into())
+    }
+}
+
 /// 创建遮罩窗口:覆盖虚拟屏、置顶、无边框、跳过任务栏、不可关(只能确认/取消)。
-fn create_overlay(app: &AppHandle, state: &ScreenshotSession) -> Result<(), String> {
+fn create_overlay(app: &AppHandle, state: &ScreenshotSession, mode: &str) -> Result<(), String> {
     close_overlay(app);
     let scale = *state.scale.lock().unwrap();
     let (x_min, y_min) = *state.origin.lock().unwrap();
@@ -188,7 +198,7 @@ fn create_overlay(app: &AppHandle, state: &ScreenshotSession) -> Result<(), Stri
     WebviewWindowBuilder::new(
         app,
         OVERLAY_LABEL,
-        WebviewUrl::App("screenshot.html".into()),
+        overlay_url(mode),
     )
     .title("StarHub 截图")
     .inner_size(width as f64, height as f64)
@@ -260,7 +270,7 @@ pub async fn screenshot_begin_region(
     *state.monitors.lock().unwrap() = monitors;
     *state.origin.lock().unwrap() = origin;
     *state.scale.lock().unwrap() = scale;
-    create_overlay(&app, &state).inspect_err(|_| restore_main(&app))
+    create_overlay(&app, &state, "region").inspect_err(|_| restore_main(&app))
 }
 
 /// 开始窗口截图:隐藏主窗口 → 弹出遮罩窗口(前端提示点击目标窗口)。
@@ -293,7 +303,7 @@ pub async fn screenshot_begin_window(
     *state.monitors.lock().unwrap() = monitors;
     *state.origin.lock().unwrap() = (x_min, y_min);
     *state.scale.lock().unwrap() = scale;
-    create_overlay(&app, &state).inspect_err(|_| restore_main(&app))
+    create_overlay(&app, &state, "window").inspect_err(|_| restore_main(&app))
 }
 
 /// 遮罩页面取底图:区域模式返回缓存的全屏 JPEG + 显示器列表 + 虚拟屏原点;
