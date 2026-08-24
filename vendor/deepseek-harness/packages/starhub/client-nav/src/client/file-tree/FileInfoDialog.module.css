@@ -1,11 +1,20 @@
-/* 文件信息弹窗:元信息表 + 内容预览,全部走 dsw 语义令牌。 */
+/* 文件信息弹窗:与 Read 卡「查看文件」同规格的大对话框 + 行号预览,全部走 dsw 语义令牌。 */
+
+/* 与 FileViewerOverlay 同尺寸:宽模态,内容在 .body 内滚动。 */
+.dialog {
+  width: min(1080px, calc(100vw - 64px));
+  height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
 
 .body {
   display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
   gap: 10px;
-  min-height: 0;
-  max-height: 60vh;
 }
 
 .banner {
@@ -59,26 +68,19 @@
   white-space: normal !important;
 }
 
-.previewLabel {
+.truncatedNotice {
+  flex: none;
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
 }
 
-.preview {
-  flex: 1;
-  min-height: 120px;
-  max-height: 320px;
-  margin: 0;
-  padding: 8px 10px;
-  overflow: auto;
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+.emptyHint {
+  padding: 10px;
+  border: 1px dashed var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 8px;
-  background: var(--dsw-alias-interactive-bg);
-  color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-font-mono);
+  color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
-  line-height: 18px;
-  white-space: pre;
+  text-align: center;
 }
 
 .closeBtn {

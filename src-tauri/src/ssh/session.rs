@@ -289,7 +289,11 @@ impl SshSession {
                 jump_port,
                 jump_username,
                 jump_auth,
-                &None,
+                // 跳板机也可能是堡垒机:密码之后同样要求 keyboard-interactive
+                // (验证码 + 选择机器)。复用资产的 kb 配置——跳板机不要求 kb 时
+                // 主认证成功即结束,不会多弹窗;要求 kb 时用户在同一弹窗流里
+                // 依次完成验证码与机器选择,再走隧道进目标机。
+                &self.config.kb_interactive,
                 session_id,
                 app_handle,
                 pending_kb,
@@ -1885,14 +1889,18 @@ async fn authenticate_keyboard_interactive(
                 instructions,
                 prompts,
             } => {
-                // 生成 auto-fill:密码提示用 kb_password 预填,TOTP 提示留空让用户手动输入
+                // 生成 auto-fill:仅密码类提示预填 MFA 主密码,TOTP 提示留空让
+                // 用户手动输入;其余提示(堡垒机「选择机器」菜单、验证码等)也
+                // 留空,避免把主密码误填进机器编号等非密码输入框导致后续卡住。
                 let auto_fill: Vec<Option<String>> = prompts
                     .iter()
                     .map(|p| {
                         if is_totp_prompt(&p.prompt) {
                             None // TOTP 码由用户手动输入
-                        } else {
+                        } else if is_password_prompt(&p.prompt) {
                             kb_password.clone()
+                        } else {
+                            None // 菜单 / 机器选择等:留空由用户填写
                         }
                     })
                     .collect();
@@ -1978,6 +1986,18 @@ fn is_totp_prompt(prompt: &str) -> bool {
         || lower.contains("一次性")
         || lower.contains("动态") // 动态口令 / 动态密码 / 动态令牌
         || lower.contains("短信")
+}
+
+/// 判断 prompt 是否为密码类提示(仅此类预填 MFA 主密码)。
+/// 注意:先经 is_totp_prompt 判定,「动态口令 / one-time password」等
+/// TOTP 类提示不会到达这里。
+fn is_password_prompt(prompt: &str) -> bool {
+    let lower = prompt.to_lowercase();
+    lower.contains("password")
+        || lower.contains("passwd")
+        || lower.contains("passphrase")
+        || lower.contains("密码")
+        || lower.contains("口令")
 }
 
 #[cfg(test)]
@@ -2090,6 +2110,29 @@ ZfG1KaT0PtFDJ/XFSqtiAAAAEHVzZXJAZXhhbXBsZS5jb20BAgMEBQ==
         assert!(!is_totp_prompt("Enter your password"));
         assert!(!is_totp_prompt("Username"));
         assert!(!is_totp_prompt(""));
+    }
+
+    #[test]
+    fn test_is_password_prompt_matches_password_like_prompts() {
+        assert!(is_password_prompt("Password:"));
+        assert!(is_password_prompt("Enter your password"));
+        assert!(is_password_prompt("Passphrase"));
+        assert!(is_password_prompt("请输入密码"));
+        assert!(is_password_prompt("输入口令"));
+        // 含「口令」的提示(如“动态口令”)按函数契约也算密码类;autoFill 里
+        // is_totp_prompt 先判定,「动态口令」等 TOTP 类提示不会走到预填分支。
+        assert!(is_password_prompt("请输入动态口令"));
+    }
+
+    #[test]
+    fn test_is_password_prompt_ignores_choice_and_menu_prompts() {
+        // 堡垒机「选择机器」等菜单提示:必须留空,绝不能预填主密码
+        assert!(!is_password_prompt("Please select the target host:"));
+        assert!(!is_password_prompt("请选择要连接的机器:"));
+        assert!(!is_password_prompt("请输入机器编号"));
+        assert!(!is_password_prompt("Verification code"));
+        assert!(!is_password_prompt("Username"));
+        assert!(!is_password_prompt(""));
     }
 
     #[test]

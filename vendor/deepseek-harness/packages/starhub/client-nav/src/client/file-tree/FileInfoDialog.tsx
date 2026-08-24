@@ -1,10 +1,14 @@
 /**
  * 文件信息弹窗(2026-08-24):点击目录树中的文件时弹出——展示元信息
- * (路径/大小/修改时间/只读)+ 内容预览(read 前 256KB),并提供「引用到
- * 对话框」快捷按钮(引用文本与右键菜单同款 @文件名 风格)。
+ * (路径/大小/修改时间/只读)+ 内容预览,并提供「引用到对话框」快捷按钮
+ * (引用文本与右键菜单同款 @文件名 风格)。
+ *
+ * 弹窗形态(2026-08-2x):与 Read 卡「查看文件」同尺寸的大对话框,内容预览
+ * 复用 dsh 的 ReadBlock(行号 gutter + 语法高亮 + 复制),不再用窄 Modal +
+ * 纯文本 pre。
  */
 import { useEffect, useState } from 'react'
-import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Modal, ReadBlock, type ReadBlockLine } from '@deepseek-ai/dsh-client-ui-primitives'
 import { readLocalTextFile } from '../file-viewer/file-service.ts'
 import { statLocalPath, type LocalPathInfo } from './file-tree-service.ts'
 import css from './FileInfoDialog.module.css'
@@ -37,8 +41,47 @@ export function formatModifiedAt(seconds: number | null): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/** 小写文件扩展名 → ReadBlock 语法高亮语言 hint(与 read 工具的映射同族)。 */
+const LANG_BY_EXTENSION: Readonly<Record<string, string>> = {
+  ts: 'ts', tsx: 'tsx', mts: 'ts', cts: 'ts',
+  js: 'js', jsx: 'jsx', mjs: 'js', cjs: 'js',
+  json: 'json', jsonc: 'json',
+  py: 'py', rb: 'rb', go: 'go', rs: 'rs', java: 'java',
+  c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', hpp: 'cpp', cxx: 'cpp',
+  cs: 'cs', kt: 'kotlin', swift: 'swift', php: 'php',
+  sh: 'sh', bash: 'sh', zsh: 'sh',
+  yaml: 'yaml', yml: 'yaml', toml: 'toml', ini: 'ini',
+  md: 'md', markdown: 'md', mdx: 'mdx',
+  html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
+  sql: 'sql', xml: 'xml', lua: 'lua',
+}
+
+/**
+ * 从路径推导语法高亮语言 hint;无扩展名/未知扩展(如 `.gitignore`)返回
+ * undefined(ReadBlock 按纯文本渲染)。
+ * @param path - 文件绝对路径。
+ * @returns 语言 id,或 undefined。
+ */
+export function langFromPath(path: string): string | undefined {
+  const base = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
+  const dot = base.lastIndexOf('.')
+  if (dot <= 0) return undefined
+  const ext = base.slice(dot + 1).toLowerCase()
+  return Object.hasOwn(LANG_BY_EXTENSION, ext) ? LANG_BY_EXTENSION[ext] : undefined
+}
+
 /** 内容预览截断上限(弹窗内只展示开头,避免整文件渲染)。 */
 const PREVIEW_LIMIT = 8 * 1024
+
+/** 大对话框内 ReadBlock 的头部/尾部展示行数(比聊天的 8 行更从容)。 */
+const DIALOG_READ_MAX_LINES = 32
+
+/** 把预览文本切成 ReadBlock 行(去除末尾多余换行,行号从 1 起)。 */
+function toReadLines(content: string): ReadBlockLine[] {
+  const text = content.endsWith('\n') ? content.slice(0, -1) : content
+  if (text === '') return []
+  return text.split('\n').map((line, index) => ({ number: index + 1, text: line }))
+}
 
 /**
  * 渲染文件信息弹窗。
@@ -95,6 +138,7 @@ export function FileInfoDialog({ path, onClose, onReference }: {
   if (path === null) return null
   /* v8 ignore next 1 -- split always yields ≥1 member; at(-1) is never undefined, so the final ?? is unreachable */
   const name = info?.name ?? path.split(/[\\/]/).at(-1) ?? path
+  const previewLines = toReadLines(content)
 
   return (
     <Modal
@@ -102,6 +146,7 @@ export function FileInfoDialog({ path, onClose, onReference }: {
       onClose={onClose}
       title={`文件信息 — ${name}`}
       closeLabel="关闭"
+      className={css.dialog}
       footer={(
         <>
           <span style={{ flex: 1 }} />
@@ -128,10 +173,20 @@ export function FileInfoDialog({ path, onClose, onReference }: {
             {info.readonly && <div className={css.metaRow}><dt>权限</dt><dd>只读</dd></div>}
           </dl>
         )}
-        <div className={css.previewLabel}>
-          内容预览{truncated ? '(仅开头)' : ''}
-        </div>
-        <pre className={css.preview}>{content === '' ? ' ' : content}</pre>
+        {truncated && content !== '' && (
+          <div className={css.truncatedNotice}>内容预览(仅开头 {PREVIEW_LIMIT / 1024}KB)</div>
+        )}
+        {content !== '' ? (
+          <ReadBlock
+            label={info?.path ?? path}
+            lines={previewLines}
+            totalLines={previewLines.length}
+            lang={langFromPath(path)}
+            maxLines={DIALOG_READ_MAX_LINES}
+          />
+        ) : error === null && !loading ? (
+          <div className={css.emptyHint}>空文件</div>
+        ) : null}
       </div>
     </Modal>
   )

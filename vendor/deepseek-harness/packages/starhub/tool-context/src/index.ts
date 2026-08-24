@@ -57,14 +57,25 @@ export function renderToolContext(value: StarHubToolContextValue): string | null
   const tool = value.subcategory ?? ''
   const asset = value.assetName ?? value.assetId ?? ''
   if (tool === '' && asset === '') return null
-  return [
+  const lines = [
     'Current StarHub tool context:',
     `- Tool: ${tool === '' ? 'none' : tool}`,
     `- Asset: ${asset === '' ? 'none' : asset}`,
     ...(value.routePrefix !== undefined && value.routePrefix !== ''
       ? [`- Route: ${value.routePrefix}`]
       : []),
-  ].join('\n')
+  ]
+  // Docker 资产硬约束(死规定):任何删除类操作必须先征得用户明确确认。
+  // 与 @ 引用标注、approval-bridge 风险门三层一致,不允许模型自行删除。
+  if (tool === 'docker') {
+    lines.push(
+      '- Docker delete guard (hard rule): never run destructive Docker commands '
+      + '(rm/rmi/prune — container, image, volume, network, system —, compose down/rm, '
+      + 'stack/service/config/secret/plugin rm). If deletion is truly required, ask the '
+      + 'user for explicit confirmation and only proceed after approval.',
+    )
+  }
+  return lines.join('\n')
 }
 
 /**

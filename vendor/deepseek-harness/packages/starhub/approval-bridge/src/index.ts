@@ -9,9 +9,12 @@
  *    审核策略统一由 dsh 权限体系供给。
  * 2. starhub_* 工具风险门(防误删核心):tools/pre-execute 上把「需要人工
  *    确认」的调用升级为 ask(写操作恒 ask;命令/SQL 按只读判定放行、风险词
- *    命中或不确定一律 ask)。策略为 never(danger-full-access)时不拦,与
- *    dsh 自家「全访问不弹审批」语义对齐。注意:preset 只提供策略,
- *    「哪些调用该问」的决定只由本门产生——删除本门 = 域工具不再有任何确认。
+ *    命中或不确定一律 ask)。删除/高危档(`hard`)与权限预设脱钩:风险词命中
+ *    (rm/find -delete/docker 删除/DROP/TRUNCATE/Redis DEL 等)即使会话策略
+ *    为 never(danger-full-access 全访问)也必须弹确认卡,绝不静默放行;
+ *    只有普通写操作档才随 never 策略放行,与 dsh 自家「全访问不弹审批」
+ *    语义对齐。注意:preset 只提供策略,「哪些调用该问」的决定只由本门
+ *    产生——删除本门 = 域工具不再有任何确认。
  * 3. 审批应答桥:approval/request 经 SDK stdio 双向 request
  *    (方法 `starhub/approval.request`)桥回 StarHub Rust 主进程,由前端
  *    确认卡给出 allowed-once / rejected;桥不可用一律 fail closed。
@@ -96,10 +99,23 @@ const RISKY_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bdocker\s+rmi\s+-f\b/i, reason: 'docker rmi -f 强制删除镜像' },
   { pattern: /\bdocker\s+volume\s+rm\b/i, reason: 'docker volume rm 删除数据卷' },
   { pattern: /\bdocker\s+network\s+rm\b/i, reason: 'docker network rm 删除网络' },
+  // Docker 删除类操作死规定:任何形态的删除/清理都必须人工确认(只读清单
+  // 之外的 docker 命令本来就会 ask,这里给出明确原因,宁可误拦不误放)。
+  { pattern: /\bdocker\s+(rm|rmi)\b/i, reason: 'docker rm/rmi 删除容器/镜像' },
+  { pattern: /\bdocker\s+(system|image|container|builder|network|volume)\s+prune\b/i, reason: 'docker prune 清理删除资源' },
+  { pattern: /\bdocker\s+(stack|service|config|secret|plugin)\s+rm\b/i, reason: 'docker 删除服务/配置/插件' },
+  { pattern: /\bdocker\s+compose\s+(down|rm)\b/i, reason: 'docker compose 删除容器/编排' },
   { pattern: /\bdocker\s+exec\b.*\b(rm|mkfs|dd|shutdown|reboot)\b/i, reason: '容器内执行危险命令' },
   { pattern: /\bkubectl\s+delete\s+(namespace|node)\b/i, reason: 'kubectl 删除 namespace/node' },
   { pattern: /\bchmod\s+(-[a-z]*[r]+|--recursive)\b.*\b7{3,}\b/i, reason: 'chmod 777 公开权限' },
   { pattern: /\bchown\s+-R\b.*\b(root|0)\b/i, reason: 'chown 改属主为 root' },
+  // find 带删除/执行参数:find 本身在只读清单里,但 -delete/-exec 会删除文件,
+  // 必须人工确认(2026-08-2x SSH 加固:此前 `find /path -delete` 直接放行)。
+  { pattern: /\bfind\b[^\n]*(?:-delete|-exec\b|-execdir\b|-ok\b|-okdir\b|'\{\}'\s*\+)/i, reason: 'find -delete/-exec 删除或执行' },
+  // ip 网络配置变更/删除(ip link del / addr del / route del / set down / flush)。
+  { pattern: /\bip\s+(link|addr|address|route|rule|neigh|neighbour|tunnel|maddr|netns)\s+(add|delete|del|set|change|replace|flush)\b/i, reason: 'ip 网络配置变更/删除' },
+  // journalctl --vacuum/--rotate 会删除/滚动系统日志。
+  { pattern: /\bjournalctl\b[^\n]*--(vacuum|rotate)/i, reason: 'journalctl 清理/滚动日志' },
   { pattern: /\bcurl\b.*\|\s*(bash|sh|zsh)\b/i, reason: '远程脚本管道执行' },
   { pattern: /\bwget\b.*\|\s*(bash|sh|zsh)\b/i, reason: '远程脚本管道执行' },
   { pattern: /\bcurl\b.*-o\s+\S+\s*&&\s*(chmod|xargs)/i, reason: '下载并执行文件' },
@@ -187,6 +203,12 @@ export function isReadOnlyShellCommand(command: string): boolean {
 interface GateVerdict {
   readonly ask: boolean
   readonly reason?: string
+  /**
+   * 删除/高危档(死规定):即使会话审批策略为 never(全访问不弹审批),
+   * 本类调用也必须弹确认卡,绝不静默放行。仅风险词命中(rm/dd/mkfs/
+   * find -delete/docker 删除/DROP/TRUNCATE/Redis DEL 等)置位。
+   */
+  readonly hard?: boolean
 }
 
 const ALLOW: GateVerdict = { ask: false }
@@ -203,6 +225,12 @@ const ALWAYS_ASK_TOOLS: ReadonlySet<string> = new Set([
   'mcp_call',
 ])
 
+/** 即使 never 策略也必须确认的 ALWAYS_ASK 工具(删除类)。 */
+const ALWAYS_ASK_HARD_TOOLS: ReadonlySet<string> = new Set([
+  'es_delete_document',
+  'es_delete_index',
+])
+
 /** Redis 只读命令首词。 */
 const REDIS_READONLY = new Set([
   'get', 'mget', 'keys', 'scan', 'ttl', 'type', 'exists', 'info',
@@ -211,8 +239,15 @@ const REDIS_READONLY = new Set([
   'sismember', 'zscore', 'zrank', 'object', 'memory', 'xinfo', 'xlen', 'xrange',
 ])
 
+/** Redis 删除/高危命令首词(哪怕 never 策略也必须确认)。 */
+const REDIS_DESTRUCTIVE = new Set([
+  'del', 'unlink', 'flushdb', 'flushall', 'flush', 'reset',
+])
+
 /**
  * starhub_* 工具调用的确认分级:只读放行;写操作/风险命令/不确定形态 ask。
+ * 风险命令(删除/覆写/停机等)标 hard:死规定,即使会话策略为 never
+ * (全访问不弹审批)也仍须人工确认。
  * 非 starhub 工具返回 null(门不介入)。
  * @param toolName - 工具名。
  * @param args - 模型参数(pre-execute 阶段为未校验 JSON)。
@@ -221,7 +256,11 @@ const REDIS_READONLY = new Set([
 export function classifyStarHubCall(toolName: string, args: unknown): GateVerdict | null {
   if (!toolName.startsWith('starhub_') && !STARHUB_DOMAIN_TOOLS.has(toolName)) return null
   if (ALWAYS_ASK_TOOLS.has(toolName)) {
-    return { ask: true, reason: `${toolName} 是写操作,必须人工确认` }
+    return {
+      ask: true,
+      reason: `${toolName} 是写操作,必须人工确认`,
+      ...(ALWAYS_ASK_HARD_TOOLS.has(toolName) ? { hard: true } : {}),
+    }
   }
   const record = typeof args === 'object' && args !== null ? args as Record<string, unknown> : {}
   switch (toolName) {
@@ -231,7 +270,7 @@ export function classifyStarHubCall(toolName: string, args: unknown): GateVerdic
       const command = typeof record.command === 'string' ? record.command : ''
       if (command === '') return { ask: true, reason: '缺少命令文本,无法判定安全性' }
       const risk = riskReason(command)
-      if (risk !== null) return { ask: true, reason: `风险命令:${risk}` }
+      if (risk !== null) return { ask: true, reason: `风险命令:${risk}`, hard: true }
       if (isReadOnlyShellCommand(command)) return ALLOW
       return { ask: true, reason: '非只读命令,需要确认' }
     }
@@ -239,7 +278,7 @@ export function classifyStarHubCall(toolName: string, args: unknown): GateVerdic
       const sql = typeof record.sql === 'string' ? record.sql : ''
       if (sql === '') return { ask: true, reason: '缺少 SQL,无法判定安全性' }
       const risk = riskReason(sql)
-      if (risk !== null) return { ask: true, reason: `风险 SQL:${risk}` }
+      if (risk !== null) return { ask: true, reason: `风险 SQL:${risk}`, hard: true }
       if (isReadOnlySql(sql)) return ALLOW
       return { ask: true, reason: '写 SQL,需要确认' }
     }
@@ -247,7 +286,10 @@ export function classifyStarHubCall(toolName: string, args: unknown): GateVerdic
       const command = typeof record.command === 'string' ? record.command.trim() : ''
       const first = command.split(/\s+/)[0]?.toLowerCase() ?? ''
       if (first !== '' && REDIS_READONLY.has(first)) return ALLOW
-      return { ask: true, reason: '写 Redis 命令,需要确认' }
+      const destructive = first !== '' && REDIS_DESTRUCTIVE.has(first)
+      return destructive
+        ? { ask: true, reason: '删除 Redis 数据,必须人工确认', hard: true }
+        : { ask: true, reason: '写 Redis 命令,需要确认' }
     }
     default:
       // 只读域工具(列表/查询/搜索/上传下载以外的 sftp、excel 工作簿操作等)放行。
@@ -317,7 +359,8 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
     setApprovalPolicy(session, policy)
   })
 
-  // 2. starhub_* 工具风险门:never 策略不拦(全访问语义),ask 策略按分级升级。
+  // 2. starhub_* 工具风险门:never 策略只放行「软确认」档(普通写操作),
+  //    删除/高危档(hard)是死规定——即使全访问(never)也仍弹确认卡。
   ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
     const decision = await next()
     if (decision.kind !== 'allow') return decision
@@ -325,7 +368,8 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
     if (agent === undefined) return decision
     const verdict = classifyStarHubCall(exec.name, exec.arguments)
     if (verdict === null || !verdict.ask) return decision
-    if (sessionPolicy(ctx, agent.session) === 'never') return decision
+    const policy = sessionPolicy(ctx, agent.session)
+    if (policy === 'never' && verdict.hard !== true) return decision
     return verdict.reason === undefined ? { kind: 'ask' } : { kind: 'ask', reason: verdict.reason }
   })
 

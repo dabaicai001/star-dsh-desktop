@@ -20,6 +20,9 @@ export const STARHUB_ASSET_SOURCE = 'starhub-asset'
 /** 触发字符(用户语法 `@web-1`,设计文档 M5.1)。 */
 const STARHUB_ASSET_TRIGGER = '@'
 
+/** Docker 资产引用文本上的特别标注(死规定:Docker 删除类操作必须用户确认)。 */
+export const DOCKER_REFERENCE_TAG = '[Docker]'
+
 /** 构造依赖:settings RPC 面 + 资产快照 holder + 选择桥(轻绑定读当前子类)。 */
 export interface StarHubAssetSourceDeps {
   api: IApiClient
@@ -35,9 +38,11 @@ export interface StarHubAssetSourceDeps {
  * @param asset - 目标资产(只需 id / name / config)。
  * @returns 模型可见引用文本(纯文本,无标记)。
  */
-export function renderAssetReference(asset: { id: string; name: string; config: Record<string, unknown> }): string {
+export function renderAssetReference(asset: { id: string; name: string; type?: string; config: Record<string, unknown> }): string {
   const sub = assetSubtitle(asset)
-  return sub === '' ? `@${asset.name}` : `@${asset.name} (${sub})`
+  const base = sub === '' ? `@${asset.name}` : `@${asset.name} (${sub})`
+  // Docker 资产一律带特别标注:模型与用户都能看到「删除操作受保护」。
+  return asset.type === 'docker' ? `${base} ${DOCKER_REFERENCE_TAG}` : base
 }
 
 /**
@@ -51,7 +56,8 @@ export function renderAssetReference(asset: { id: string; name: string; config: 
 export function assetToolBadge(asset: { type: string; config: Record<string, unknown> }): string {
   const route = routeNameForAsset(asset)
   if (route === 'ssh-terminal' || route === 'db-broker') return '终端'
-  if (route === 'docker') return 'Docker'
+  // Docker 候选带 ⚠ 特别标注:删除类操作受硬约束(必须先经用户确认)。
+  if (route === 'docker') return 'Docker⚠'
   if (route === 'local') return '本机'
   return '数据库'
 }
@@ -83,10 +89,12 @@ export function createStarHubAssetSource(deps: StarHubAssetSourceDeps): InputTri
       for (const asset of deps.assets.source.getSnapshot().assets) {
         if (needle !== '' && !asset.name.toLowerCase().includes(needle)) continue
         const sub = assetSubtitle(asset)
+        // Docker 资产无端点副标题时,候选说明直接点明删除保护(死规定)。
+        const dockerGuard = asset.type === 'docker' && sub === '' ? '删除操作需用户确认' : ''
         const candidate: InputTriggerCandidate = {
           name: asset.name,
           icon: assetToolBadge(asset),
-          ...(sub !== '' ? { description: sub } : {}),
+          ...(sub !== '' ? { description: sub } : dockerGuard !== '' ? { description: dockerGuard } : {}),
         }
         byCandidate.set(candidate, asset)
         items.push(candidate)
@@ -110,11 +118,13 @@ export function createStarHubAssetSource(deps: StarHubAssetSourceDeps): InputTri
       // 轻绑定:只写 settings 上下文,不切窗口、不打断输入。
       bindAssetContext(deps.api, deps.selection.source.getSnapshot(), asset)
       const sub = assetSubtitle(asset)
+      // Docker 资产管理标签也带 ⚠ 标注(候选行与输入框里的引用都醒目)。
+      const dockerMark = asset.type === 'docker' ? ` ${DOCKER_REFERENCE_TAG}` : ''
       return {
         insert: {
           source: STARHUB_ASSET_SOURCE,
           ref: asset.id,
-          label: sub === '' ? asset.name : `${asset.name} (${sub})`,
+          label: `${sub === '' ? asset.name : `${asset.name} (${sub})`}${dockerMark}`,
           clipboardText: `@${asset.name}`,
         },
       }

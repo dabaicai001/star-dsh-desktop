@@ -139,8 +139,17 @@ export function apply(ctx: Context): void {
       selectSubcategory: (key: string) => {
         const same = selection.source.getSnapshot().subcategory === key
         selection.selectSubcategory(key)
-        if (same) ctx.layout.toggleDetails()
-        else ctx.layout.openDetails()
+        // 文件树打开时点任意子类:先切回该子类的资产列表(头部「文件树」与
+        // 侧栏子类互斥——点哪个哪个在上面,避免文件树一直压住资产列表),
+        // 再按「切换子类 vs 重复点击同一子类」决定右侧栏开合。
+        if (fileTree.source.getSnapshot().open) {
+          fileTree.close()
+          ctx.layout.openDetails()
+        } else if (same) {
+          ctx.layout.toggleDetails()
+        } else {
+          ctx.layout.openDetails()
+        }
       },
       hooks: { selection: selection.source },
     }),

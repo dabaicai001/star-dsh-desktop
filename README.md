@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.95.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.95.1-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -148,6 +148,12 @@
 
 ## 当前版本
 
+### v0.95.1 (2026-08-24)
+- 🛡️ **SSH/Docker 删除类操作与权限预设脱钩(死规定)**:approval-bridge 风险门新增 `hard` 档——`rm`/`find -delete`/`ip link del`/`journalctl --vacuum`/Docker 删除类/`DROP`/`TRUNCATE`/Redis `DEL` 等风险词命中,即使会话策略为 never(「全访问不弹审批」)也必弹确认卡;同时补掉 find/ip/journalctl 三个「只读清单前缀但可删除」的漏拦洞。
+- 🐛 右侧栏「文件树」与侧栏子类互斥(点哪个哪个在上面);文件信息弹窗加大为 Read 卡同尺寸并用 ReadBlock 行号预览。
+- 🐛 SSH MFA 分场景修复:非 TOTP 提示不再预填主密码(堡垒机「选择机器」可正常填写),跳板机腿支持 keyboard-interactive MFA。
+- 🛡️ Docker `@` 引用特别标注 `[Docker]`(候选徽标 Docker⚠)+ AI 上下文注入删除保护硬规则。
+
 ### v0.95.0 (2026-08-24)
 - ✨ ✨ 会话文件树 + 本机文件搜索:头部「文件树」按钮打开项目目录树(懒加载展开、右键「引用文件/文件夹」把 `@名称 (路径)` 追加进对话框、文件信息弹窗);`@` 触发词新增 starhub-file source,候选来自会话工作区目录树,pick 产物与文件树右键引用一致;Rust 侧新增 `local_search_files` 命令(按文件名/文件内容检索,含深度与结果上限保护)并注册 ACL 权限。
 - ✨ ✨ DB 表格快捷筛选:数据表格新增 quickFilter 快捷筛选关键字,对所有列做 `LIKE '%kw%'` 模糊匹配(sidecar MySQL/PostgreSQL/SQLite/SQL Server/ClickHouse 全部适配 + 前端筛选输入框)。
@@ -157,14 +163,6 @@
 ### v0.94.3 (2026-08-24)
 - 🎨 AI 对话截图只保留**区域截图**、移除窗口截图:输入框工具行「剪刀」按钮点击即开始区域截图(不再弹「区域截图 / 窗口截图」菜单);同步删除 Rust 侧窗口截图命令、ACL 权限与遮罩页窗口模式代码。
 - 🎨 区域截图选区拖拽改「先沿单一轴拉出第一段」:第一段必须沿横向或纵向(先横后竖 / 先竖后横均可)拉过 12px 阈值,另一轴才解锁,不能一开始就斜着拉;解锁后恢复自由拖拽与 8 方向调整。
-
-### v0.94.2 (2026-08-24)
-- ✨ AI 域工具会话(dsh:)遇到服务器 keyboard-interactive 请求时主壳弹出居中 MFA 验证卡(TOTP 识别扩充:authenticator / 2fa / mfa / 动态口令 / 短信验证码等);Redis 工作台 DB 树化——db0–db15 懒加载展开、键按 `:` 分组为可折叠文件夹树、单库展开语义 + 按库缓存。
-- 🐛 SSH 主机密钥确认链路修复:① 正式打开 SSH 终端首次连接新服务器时弹出「是否信任此主机?」三选项弹窗(拒绝 / 仅本次 / 信任并保存)——此前只有测试连接订阅 `ssh:hostkey-confirm` 事件,交互终端无人消费 sender,未知主机一律静默等 60s 后以 `[HOSTKEY_TIMEOUT]` 失败;② AI 域工具 `dsh:` 会话遇到未知主机密钥快速失败并指引「先在 SSH 终端连接一次并选择信任并保存」,不再干等超时。
-
-### v0.94.1 (2026-08-23)
-- 🐛 修复 `apps/starhub-window` 独立 `tsc --noEmit` 的 118 个基线错误:补 project references(client-nav / ui-theme)+ 本应用 `css-modules.d.ts` + `WorkbenchErrorBoundary` 补 `override`(依赖面按 apps/web 同款边界解析到构建产物,不再把 vendor 上游源码拖进严格编译)。
-- 🐛 修复 FileViewer「变更前 / 变更后」对比:长行的 绿(+)/红(−) 变更行底色原来只到列宽、不覆盖整行文字——`diffView` 宽度改 `max-content` + 列内横向滚动,底色铺满整行。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

@@ -179,6 +179,27 @@ describe('client-nav apply', () => {
     expect(toggleDetails).toHaveBeenCalledTimes(1)
   })
 
+  it('sidebar inject closes an open file tree on any subcategory click (点哪个哪个在上面)', () => {
+    const { ctx, register, openDetails, toggleDetails } = fakeContext()
+    applyPlugin(ctx)
+    const navConfig = register.mock.calls[0]![0]
+    const workspaceConfig = register.mock.calls[4]![0]
+    const injected = navConfig.inject()
+    const workspace = workspaceConfig.inject()
+    // 先打开文件树(与头部按钮同桥)。
+    workspace.hooks.fileTree.set({ open: true })
+    expect(workspace.hooks.fileTree.getSnapshot()).toEqual({ open: true })
+    // 文件树打开时点任意子类:切回该子类资产列表(关闭文件树),只 open 不 toggle。
+    injected.selectSubcategory('terminal')
+    expect(workspace.hooks.fileTree.getSnapshot()).toEqual({ open: false })
+    expect(openDetails).toHaveBeenCalledTimes(1)
+    expect(toggleDetails).not.toHaveBeenCalled()
+    // 文件树已关,重复点击同一子类走原 toggle 语义。
+    injected.selectSubcategory('terminal')
+    expect(openDetails).toHaveBeenCalledTimes(1)
+    expect(toggleDetails).toHaveBeenCalledTimes(1)
+  })
+
   it('overlay inject exposes the connection-dialog bridge face', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)

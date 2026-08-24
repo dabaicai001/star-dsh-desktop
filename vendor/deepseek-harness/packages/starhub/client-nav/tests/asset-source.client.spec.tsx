@@ -66,6 +66,13 @@ describe('renderAssetReference', () => {
     expect(renderAssetReference({ id: 'a1', name: 'web-1', config: {} }))
       .toBe('@web-1')
   })
+
+  it('annotates every Docker asset reference (delete-guard hard rule)', () => {
+    expect(renderAssetReference({ id: 'd1', name: 'docker-1', type: 'docker', config: {} }))
+      .toBe('@docker-1 [Docker]')
+    expect(renderAssetReference({ id: 'd1', name: 'docker-1', type: 'docker', config: { host: '10.0.0.8' } }))
+      .toBe('@docker-1 (10.0.0.8) [Docker]')
+  })
 })
 
 describe('createStarHubAssetSource', () => {
@@ -103,7 +110,7 @@ describe('createStarHubAssetSource', () => {
     ['db', { dbType: 'redis' }, '数据库'],
     ['db', { dbType: 'kafka' }, '终端'],
     ['db', {}, '数据库'],
-    ['docker', {}, 'Docker'],
+    ['docker', {}, 'Docker⚠'],
     ['local', {}, '本机'],
   ])('candidate icon marks the tool category: type %s → %s', async (type, config, badge) => {
     const assets = createStarHubAssets()
@@ -214,6 +221,22 @@ describe('createStarHubAssetSource', () => {
     const { source } = makeHarness(createStarHubAssets(), vi.fn())
     const outcome = source.onPick(pickOf({ name: 'foreign' }))
     expect(outcome).toEqual({ text: '@foreign ' })
+  })
+
+  it('onPick annotates a Docker asset in the insert label and candidate description', async () => {
+    const assets = createStarHubAssets()
+    assets.source.set({
+      assets: [{ ...rustAsset('d1', 'docker-1'), type: 'docker' }],
+      loading: false, error: null, preview: false,
+    })
+    const { source } = makeHarness(assets, vi.fn(() => Promise.resolve({ result: { ok: true } })))
+    const [candidate] = await source.candidates(proj(), req(''))
+    expect(candidate?.icon).toBe('Docker⚠')
+    expect(candidate?.description).toBe('删除操作需用户确认')
+    const outcome = source.onPick(pickOf(candidate!))
+    expect(outcome).toMatchObject({
+      insert: { source: 'starhub-asset', ref: 'd1', label: 'docker-1 [Docker]', clipboardText: '@docker-1' },
+    })
   })
 
   it('light binding swallows settings.update failures', async () => {

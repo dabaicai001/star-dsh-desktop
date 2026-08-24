@@ -223,9 +223,11 @@ describe('FileTreePanel', () => {
     const row = await screen.findByRole('button', { name: /main\.ts/ })
     fireEvent.click(row)
     await screen.findByText(/文件信息 — main\.ts/)
-    expect(screen.getByText('C:\\ws\\proj\\main.ts')).toBeTruthy()
+    // 路径出现两处(元信息表 + ReadBlock 横幅);预览按行拆分展示
+    expect(screen.getAllByText('C:\\ws\\proj\\main.ts').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('42 B')).toBeTruthy()
-    expect(screen.getByText((_, el) => el?.textContent === 'line1\nline2')).toBeTruthy()
+    expect(screen.getByText('line1')).toBeTruthy()
+    expect(screen.getByText('line2')).toBeTruthy()
   })
 
   it('关闭按钮 in the info dialog closes it', async () => {

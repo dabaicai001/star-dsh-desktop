@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.95.0(✨ 会话文件树 + 本机文件搜索:头部「文件树」按钮打开项目目录树(懒加载展开、右键「引用文件/文件夹」把 `@名称 (路径)` 追加进对话框、文件信息弹窗);`@` 触发词新增 starhub-file source,候选来自会话工作区目录树,pick 产物与文件树右键引用一致;Rust 侧新增 `local_search_files` 命令(按文件名/文件内容检索,含深度与结果上限保护)并注册 ACL 权限。) |
+| 当前版本 | v0.95.1(🛡️ SSH/Docker 删除类操作与权限预设脱钩——approval-bridge 风险门新增 hard 档,`rm`/`find -delete`/`ip link del`/`journalctl --vacuum`/Docker 删除/DROP/TRUNCATE/Redis DEL 等风险词命中即使「全访问(never)」预设也必弹确认卡;右侧栏「文件树」与侧栏子类互斥(点哪个哪个在上面);文件信息弹窗加大为 Read 卡同尺寸并用 ReadBlock 行号预览;SSH MFA 非 TOTP 提示不再预填主密码 + 跳板机腿支持 keyboard-interactive;Docker `@` 引用特别标注 `[Docker]` 并注入删除保护硬规则。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-24 (v0.95.0)*
+*最后更新: 2026-08-24 (v0.95.1)*

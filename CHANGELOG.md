@@ -12,6 +12,16 @@
 - SQL 查询结果可编辑及无主键报错提示（转 K3）
 - 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
 
+## [0.95.1] - 2026-08-24
+
+### 修复
+- 🐛 右侧栏「文件树」与侧栏子类互斥(点哪个哪个在上面):文件树打开时点击侧栏「终端 / 数据库 / Docker」子类,自动切回该子类的资产列表——此前文件树一直压着资产列表,点子类无任何反应。
+- 🐛 文件信息弹窗改为与 Read 卡同尺寸的大对话框;内容预览复用 ReadBlock(行号 gutter + 语法高亮 + 复制 + 展开/收起),截断提示改「内容预览(仅开头 8KB)」,空文件显式提示。
+- 🐛 SSH MFA 分场景修复:① keyboard-interactive 非 TOTP 提示不再一律预填 MFA 主密码——仅密码类提示预填,「选择机器」等菜单提示留空由用户输入(堡垒机「验证码 → 选机器 → 进机器」流程不再因密码误填而卡住);② 跳板机腿支持 keyboard-interactive MFA(复用资产 kb 配置:堡垒机在跳板段完成密码+验证码+机器选择;跳板机不要求 kb 时不弹窗)。
+- 🐛 approval-bridge 风险门补只读清单漏洞:find/ip/journalctl 曾因首词在只读清单被直接放行,`find -delete`、`ip link del`、`journalctl --vacuum` 等删除/变更命令漏拦——新增对应风险词一律 ask。
+- 🛡️ **SSH/Docker 删除类操作与权限预设脱钩(死规定)**:风险门新增 `hard` 档——`rm`/`find -delete`/`ip link del`/`journalctl --vacuum`/Docker 删除类/`DROP`/`TRUNCATE`/Redis `DEL` 等风险词命中,即使会话审批策略为 never(「全访问不弹审批」预设)也必须弹确认卡,绝不静默放行;仅普通写操作档随 never 放行。
+- 🛡️ Docker `@` 引用特别标注:候选徽标「Docker⚠」(无端点时候选说明「删除操作需用户确认」)、pick 引用文本与插入标签附 `[Docker]`;AI 上下文注入(starhub-tool-context)在 docker 子类附加删除保护硬规则——标注 / 提示词 / 风险门三层一致。
+
 ## [0.94.3] - 2026-08-24
 
 ### 变更

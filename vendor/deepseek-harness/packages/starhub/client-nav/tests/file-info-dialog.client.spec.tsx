@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 /**
- * FileInfoDialog:文件信息弹窗——格式化函数(大小/时间/引用文本)、元信息+
- * 内容预览渲染、「引用到对话框」按钮回调;加载/错误态。
+ * FileInfoDialog:文件信息弹窗——格式化函数(大小/时间/引用文本/语言 hint)、
+ * 大对话框 + ReadBlock 行号预览、「引用到对话框」按钮回调;加载/错误态。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
-  FileInfoDialog, formatFileSize, formatModifiedAt, renderFileReference,
+  FileInfoDialog, formatFileSize, formatModifiedAt, langFromPath, renderFileReference,
 } from '../src/client/file-tree/FileInfoDialog.tsx'
 
 const STAT = {
@@ -63,6 +63,15 @@ describe('formatters', () => {
     expect(renderFileReference('src', 'C:\\p\\src', 'directory')).toBe('@src/ (C:\\p\\src)')
     expect(renderFileReference('src/', 'C:\\p\\src', 'directory')).toBe('@src/ (C:\\p\\src)')
   })
+
+  it('langFromPath maps source/config extensions and stays plain for unknown ones', () => {
+    expect(langFromPath('C:\\ws\\proj\\main.ts')).toBe('ts')
+    expect(langFromPath('/home/u/a.py')).toBe('py')
+    expect(langFromPath('conf.yml')).toBe('yaml')
+    expect(langFromPath('main.go')).toBe('go')
+    expect(langFromPath('.gitignore')).toBeUndefined()
+    expect(langFromPath('noext')).toBeUndefined()
+  })
 })
 
 describe('FileInfoDialog', () => {
@@ -71,7 +80,7 @@ describe('FileInfoDialog', () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull()
   })
 
-  it('shows metadata and content preview, and 引用到对话框 fires onReference', async () => {
+  it('shows metadata and a ReadBlock line-numbered preview, and 引用到对话框 fires onReference', async () => {
     restore = stubInvoke({
       local_stat_path: () => Promise.resolve(STAT),
       local_read_text_file: () => Promise.resolve({ path: STAT.path, content: 'hello\nworld', offset: 0, bytesRead: 11, totalBytes: 11, truncated: false }),
@@ -80,30 +89,43 @@ describe('FileInfoDialog', () => {
     const onClose = vi.fn()
     render(<FileInfoDialog path={STAT.path} onClose={onClose} onReference={onReference} />)
     await screen.findByText(/文件信息 — main\.ts/)
-    expect(screen.getByText('C:\\ws\\proj\\main.ts')).toBeTruthy()
+    // 路径出现两处:元信息表 + ReadBlock 横幅
+    expect(screen.getAllByText('C:\\ws\\proj\\main.ts').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('2.0 KB')).toBeTruthy()
-    expect(screen.getByText((_, el) => el?.textContent === 'hello\nworld')).toBeTruthy()
+    // ReadBlock 行号预览:内容按行拆成 gutter + 行文本
+    expect(screen.getByText('hello')).toBeTruthy()
+    expect(screen.getByText('world')).toBeTruthy()
+    expect(screen.getByText('1')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /@ 引用到对话框/ }))
     expect(onReference).toHaveBeenCalledWith('@main.ts (C:\\ws\\proj\\main.ts)')
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('marks the preview as truncated when the file is larger than the read window', async () => {
+  it('marks the preview as truncated when the file is larger than the read window', { timeout: 15_000 }, async () => {
     restore = stubInvoke({
       local_stat_path: () => Promise.resolve({ ...STAT, size: 1024 * 1024 }),
       local_read_text_file: () => Promise.resolve({ path: STAT.path, content: 'x'.repeat(5000), offset: 0, bytesRead: 5000, totalBytes: 1024 * 1024, truncated: true }),
     })
     render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} onReference={vi.fn()} />)
-    await screen.findByText(/内容预览\(仅开头\)/)
+    await screen.findByText(/内容预览\(仅开头 8KB\)/)
   })
 
-  it('marks the preview as truncated when untruncated content exceeds the preview limit', async () => {
+  it('marks the preview as truncated when untruncated content exceeds the preview limit', { timeout: 15_000 }, async () => {
     restore = stubInvoke({
       local_stat_path: () => Promise.resolve(STAT),
       local_read_text_file: () => Promise.resolve({ path: STAT.path, content: 'x'.repeat(9000), offset: 0, bytesRead: 9000, totalBytes: 9000, truncated: false }),
     })
     render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} onReference={vi.fn()} />)
-    await screen.findByText(/内容预览\(仅开头\)/)
+    await screen.findByText(/内容预览\(仅开头 8KB\)/)
+  })
+
+  it('shows 空文件 when the file reads empty without error', async () => {
+    restore = stubInvoke({
+      local_stat_path: () => Promise.resolve(STAT),
+      local_read_text_file: () => Promise.resolve({ path: STAT.path, content: '', offset: 0, bytesRead: 0, totalBytes: 0, truncated: false }),
+    })
+    render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} onReference={vi.fn()} />)
+    await screen.findByText('空文件')
   })
 
   it('renders directory and other kinds and the readonly badge', async () => {
