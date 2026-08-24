@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.94.0(✨ AI 记忆系统引入专属记忆模型并作为硬前置:设置 → AI 助手「记忆模型」下拉配 provider+model,未配置 = 记忆功能整体关闭——「启用长期记忆」「自动沉淀记忆」开关禁用(只有配置了才能勾选),注入/沉淀/memory 工具三处 host 门禁兜底;自动沉淀抽取改走 `ctx.llm.stream` 专属路由(修复原 generate 便利面静默失效);写入 user/global 的记忆凡属具体项目必须标注项目名(`[项目名] ...`),跨项目通用才可不标注。) |
+| 当前版本 | v0.94.1(🐛 修复两处:① `apps/starhub-window` 独立 `tsc --noEmit` 基线清零——补 project references(client-nav/ui-theme)+ 本应用 `css-modules.d.ts` + ErrorBoundary 补 `override`,依赖面按 apps/web 同款边界解析,不再把 vendor 上游源码拖进严格编译;② FileViewer「变更前/变更后」对比视图长行的 绿(+)/红(−) 底色只到列宽、不覆盖整行文字——`diffView` 宽度改 `max-content` + 列内横滚,底色铺满整行。前版 v0.94.0:AI 记忆系统专属记忆模型硬前置(provider+model 未配置 = 记忆功能整体关闭,注入/沉淀/memory 工具三处门禁 + UI 开关禁用;抽取走 `ctx.llm.stream` 专属路由;user/global 记忆须标注项目名 `[项目名]`)。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-23 (v0.94.0)*
+*最后更新: 2026-08-23 (v0.94.1)*

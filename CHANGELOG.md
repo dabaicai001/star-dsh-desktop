@@ -12,6 +12,12 @@
 - SQL 查询结果可编辑及无主键报错提示（转 K3）
 - 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
 
+## [0.94.1] - 2026-08-23
+
+### 修复
+- 🐛 修复 `apps/starhub-window` 独立 `tsc --noEmit` 的 118 个基线错误(此前按 `tsc -p` 直跑时,`paths` 把 `@deepseek-ai/*` 全部映射到 src,把 vendor/cordis / cosmokit / schemastery 与 api/gateway 的上游源码拖进本程序的严格编译面,叠加缺失的 CSS module 声明与 App.tsx 的 override 违约):tsconfig 补齐 project references(client-nav / ui-theme,按 apps/web 同款边界把依赖解析到构建产物声明,避开跨 tsconfig 的严格混编)、新增 `src/css-modules.d.ts`(`*.module.css` / `*.css` 声明,与各 client 包同款)、`WorkbenchErrorBoundary` 三个成员补 `override`。现在 `pnpm exec tsc --noEmit -p apps/starhub-window/tsconfig.json` 零错误。
+- 🐛 修复 FileViewer「变更前 / 变更后」对比视图:长行时 绿(+)/红(−) 变更行的底色只到列宽为止、不覆盖整行文字——`diffView` 宽度改 `max-content`(至少 100%),行底色随内容铺满(超宽由列内 `overflow` 横向滚动承接);同时移除列右侧非对称 padding,普通行的底色也铺满整行。
+
 ## [0.94.0] - 2026-08-23
 
 ### 新增

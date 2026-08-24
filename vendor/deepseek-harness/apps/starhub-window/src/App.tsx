@@ -31,17 +31,17 @@ type ShellState =
 
 /** Surface a workbench render failure instead of leaving an empty webview. */
 class WorkbenchErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null }
+  override state = { error: null as Error | null }
 
   static getDerivedStateFromError(error: Error): { error: Error } {
     return { error }
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo): void {
+  override componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('StarHub workbench render failed', error, info.componentStack)
   }
 
-  render(): ReactNode {
+  override render(): ReactNode {
     if (this.state.error !== null) {
       return (
         <div className="window-frame window-error" role="alert">

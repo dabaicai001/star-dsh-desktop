@@ -7,5 +7,14 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["src", "tests"]
+  "include": ["src", "tests"],
+  "references": [
+    // Workbench components come from the client-nav package (src subpath
+    // imports); ui-theme provides the shared --dsw-* token base. Referencing
+    // them lets tsc resolve these workspace packages through their built
+    // declaration outputs instead of compiling their whole dependency graph
+    // (incl. vendored cordis internals) under this project's strict program.
+    { "path": "../../packages/starhub/client-nav" },
+    { "path": "../../packages/client/ui-theme" }
+  ]
 }

@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.94.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.94.1-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -148,15 +148,16 @@
 
 ## 当前版本
 
+### v0.94.1 (2026-08-23)
+- 🐛 修复 `apps/starhub-window` 独立 `tsc --noEmit` 的 118 个基线错误:补 project references(client-nav / ui-theme)+ 本应用 `css-modules.d.ts` + `WorkbenchErrorBoundary` 补 `override`(依赖面按 apps/web 同款边界解析到构建产物,不再把 vendor 上游源码拖进严格编译)。
+- 🐛 修复 FileViewer「变更前 / 变更后」对比:长行的 绿(+)/红(−) 变更行底色原来只到列宽、不覆盖整行文字——`diffView` 宽度改 `max-content` + 列内横向滚动,底色铺满整行。
+
 ### v0.94.0 (2026-08-23)
 - ✨ ✨ AI 记忆系统引入专属记忆模型且作为硬前置:「记忆模型」下拉(provider + model,数据源 dsh 模型目录)未配置 = 记忆功能整体关闭——「启用长期记忆」「自动沉淀记忆」开关禁用(只有配置了才能勾选);host 侧三处兜底:注入跳过(warn)、自动沉淀跳过、memory 工具被 tools/pre-execute 直接拒绝;旧 localStorage 残留开启态归一化强制归零。自动沉淀抽取改走 `ctx.llm.stream` 专属路由(修复原 `generate` 便利面在 dsh-llm 不存在的静默失效)。
 - ✨ 跨项目作用域项目标注:写入 user/global 的记忆,凡属具体项目的事实必须在条目内标注项目名(`[项目名] ...`,取工作区目录名);跨项目通用的才允许不标注(memory 工具描述 + 抽取提示双落地)。
 
 ### v0.93.2 (2026-08-23)
 - 🐛 修复截图功能四大问题:① 区域截图无法拖拽框选——遮罩页顶层 overlay 画布 `pointer-events: auto` 把鼠标事件(mousedown/mousemove/click)全截走,`base` 画布上的拖拽监听永远收不到(此前误判为画布尺寸/坐标问题),改为 anno/overlay 纯视觉层 `pointer-events: none`;② 窗口截图黑屏——`initWindow()` 定义了但从未被调用,遮罩页无论哪种模式都走 `initRegion()`,窗口模式下 `screenshot_get_desktop` 必然失败 → 黑屏+初始化失败提示,窗口列表/点击截取整条链路从未激活,Rust 侧 `screenshot_begin_window` 改为以 `screenshot.html?mode=window` 创建遮罩页,页面按 `location.search` 分发 `initRegion`/`initWindow`;③ 新会话页面不显示 git 分支胶囊——blank 会话(未发首条消息)整个会话头部被 `hideChrome` 隐藏,头部仅在会话仍处于打开中(settling/回放)时隐藏,blank 会话已打开的「新会话页」正常显示头部与分支胶囊;④ 对话中分支面板与左侧侧边栏遮挡——面板 `right:0` 从胶囊向左展开,胶囊位于标题之后(偏列左侧),面板越过会话列左缘被列裁剪,视觉上像被左侧侧边栏盖住,改为 `left:0` 向右展开 + 胶囊根层级提升至 z-index 30(压过 shell overlay 层)。
-
-### v0.93.1 (2026-08-23)
-- 🐛 🐛 修复 v0.93.0 截图功能不可用:① `src-tauri/permissions/commands.toml`(Tauri 2 ACL 白名单)漏列 8 个 `screenshot_*` 命令,remote origin(127.0.0.1 dsh 主壳)调用被 ACL 拒绝 → 点「区域截图」无反应;② 截图菜单背景用了不存在的 token `--dsw-alias-surface-popover`(透明背景),且菜单向下展开时被窗口底部视口裁掉(只显示「区域截图」一项)——改为 `--dsw-alias-bg-overlay` + 向上展开 + 提层级压过 composer 渐变遮罩。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 
