@@ -16,14 +16,6 @@ function allow(tool: string, command: string): void {
   expect(classifyStarHubCall(tool, { command })).toEqual({ ask: false })
 }
 
-/** 断言命令判为 ask 且原因带「风险命令」。 */
-function askWith(tool: string, command: string, reasonPart: string): void {
-  const verdict = classifyStarHubCall(tool, { command })
-  expect(verdict?.ask).toBe(true)
-  if (verdict?.reason !== undefined) expect(verdict.reason).toContain(reasonPart)
-  else throw new Error(`expected a risk reason containing ${reasonPart}`)
-}
-
 /** 断言删除/高危档:ask 且 hard=true(即使 never 策略也必须确认)。 */
 function askHard(tool: string, command: string, reasonPart: string): void {
   const verdict = classifyStarHubCall(tool, { command })
