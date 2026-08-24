@@ -29,7 +29,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises'
-import { dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 
 /** vendor/deepseek-harness 仓库根。 */
@@ -521,7 +521,14 @@ class DshRuntimePackage {
     for (const dir of WEB_LOCAL_PACKAGE_DIRS) {
       const destination = join(this.outDir, 'packages', 'starhub', dir)
       await mkdir(dirname(destination), { recursive: true })
-      await cp(join(root, 'packages', 'starhub', dir), destination, { recursive: true })
+      // 只带包源码/lib/配置:各包内嵌套 node_modules 是 pnpm 工作区链接布局
+      // (符号链接),Windows 无管理员/开发者模式时 fs.cp 重建链接直接 EPERM,
+      // 且产物运行时依赖已由 deploy 的 hoisted 顶层 node_modules 覆盖
+      // (web.rs 仅对包目录建 mklink /J junction,免管理员)。
+      await cp(join(root, 'packages', 'starhub', dir), destination, {
+        recursive: true,
+        filter: (source) => basename(source) !== 'node_modules',
+      })
     }
     await this.installWebRuntimePackages()
     this.verifyProfilePatchClosure()

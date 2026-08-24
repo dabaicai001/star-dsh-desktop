@@ -21,6 +21,7 @@
 ### 修复
 - 🐛 SSH 首次连接新服务器不再静默失败,弹出「是否信任此主机?」确认弹窗(拒绝 / 仅本次 / 信任并保存):此前后端 `ssh:hostkey-confirm:<sessionId>` 事件只有测试连接在订阅,正式打开 SSH 终端(starhub-window 独立窗口)无人消费 sender,未知主机一律等满 60s 后以 `[HOSTKEY_TIMEOUT]` 拒绝,用户看不到任何提示——`SshTerminalOverlay` 在 invoke `ssh_connect` 前补订阅该事件并渲染三选项弹窗,拒绝/信任均经 `ssh_hostkey_response` 回传(信任并保存写入 known_hosts)。
 - 🐛 AI 域工具 SSH 会话(connId `dsh:{assetId}:ssh`,经 ssh_exec / 域工具建连)遇到未知主机密钥时,不再发出无人订阅的 hostkey 事件静默等 60s 超时:改为快速失败并返回明确指引「主机尚未确认主机密钥,请先在 SSH 终端连接一次并选择『信任并保存』」(与 Docker over SSH 的预信任约定一致);已确认过的主机不受影响。
+- 🐛 Windows 本地打包修复:`package-dsh-runtime` 复制 `packages/starhub/*` 本地包时跳过各包内嵌套 node_modules(pnpm 工作区符号链接布局)——fs.cp 在无管理员/开发者模式的 Windows 上重建符号链接会 EPERM,导致 `npm run tauri:build` 在入包阶段失败;产物运行时依赖由 deploy 的 hoisted 顶层 node_modules 覆盖,web.rs 仅对包目录建免管理员的 `mklink /J` junction,嵌套 node_modules 本就不需要。
 
 ## [0.94.1] - 2026-08-23
 
