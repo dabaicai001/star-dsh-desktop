@@ -7,6 +7,11 @@
 .exportBtn:hover { background: var(--dsw-accent-soft); }
 .exportBtn:disabled { opacity: 0.5; cursor: default; }
 .filterBadge { color: var(--dsw-accent); font-size: 11px; }
+.quickFilterWrap { position: relative; display: flex; align-items: center; }
+.quickFilterInput { width: 140px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 12px; padding: 3px 22px 3px 8px; outline: none; }
+.quickFilterInput:focus { border-color: var(--dsw-accent); }
+.quickFilterClear { position: absolute; right: 4px; width: 16px; height: 16px; border: 0; border-radius: 50%; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 1; cursor: pointer; padding: 0; }
+.quickFilterClear:hover { color: var(--dsw-accent); background: var(--dsw-alias-interactive-bg-hover); }
 .saveBtn { border: 1px solid var(--dsw-accent); border-radius: 6px; padding: 3px 10px; background: var(--dsw-accent-soft); color: var(--dsw-accent); font-size: 11px; cursor: pointer; }
 .saveBtn:disabled { opacity: 0.5; cursor: default; }
 .error { padding: 6px 10px; color: var(--dsw-alias-state-error-primary); font-size: 12px; }

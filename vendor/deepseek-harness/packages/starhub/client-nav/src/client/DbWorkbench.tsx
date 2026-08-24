@@ -40,9 +40,6 @@ import css from './DbWorkbench.module.css'
 /** db_mysql_execute 的返回(与 QueryResult 同构;SQL 执行结果复用)。 */
 interface SqlQueryResult { columns?: unknown; rows?: unknown; error?: string }
 
-/** 惰性列缓存:表名 → 列名[];首次点表时经 list_columns 填充。 */
-const columnCache = new Map<string, string[]>()
-
 /** 从 db_mysql_list_columns 结果提取列名(返回元素为 {name} 对象行)。 */
 function extractColumnNames(rows: unknown): string[] {
   if (!Array.isArray(rows)) return []
@@ -280,6 +277,9 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
   // 执行 SQL 的当前库:默认取资产配置的 database,点表/手选后跟随;参与持久化记忆。
   const [currentDb, setCurrentDb] = useState<string>(() =>
     typeof asset.config.database === 'string' ? asset.config.database : '')
+  // 惰性列缓存:表名 → 列名[](state 驱动补全 schema 重算——列在树展开后异步到达,
+  // 若放模块级 Map 则 set 不触发重渲染,sqlSchema memo 永远读不到新列)。
+  const [columnsByTable, setColumnsByTable] = useState<Record<string, string[]>>({})
 
   // DB 实体类型来自资产 config.dbType(sections.ts 同样判定);决定方言与表操作可用性。
   const dbType = typeof asset.config.dbType === 'string' ? asset.config.dbType : 'mysql'
@@ -342,7 +342,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     const id = connRef.current
     if (id === null) return
     setSelected(null)
-    columnCache.clear()
+    setColumnsByTable({})
     void loadDatabases(id)
   }, [loadDatabases])
 
@@ -537,7 +537,11 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
 
   /** 建表成功:把新表并入该库节点(若已展开)并清掉列缓存。 */
   const onTableCreated = useCallback((database: string, tableName: string) => {
-    columnCache.delete(tableName)
+    setColumnsByTable(prev => {
+      const next = { ...prev }
+      delete next[tableName]
+      return next
+    })
     setDbs(prev => prev.map(d => (
       d.kind === 'database' && d.name === database && !d.tables.includes(tableName)
         ? { ...d, expanded: true, tables: [...d.tables, tableName] }
@@ -583,30 +587,34 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     }
   }, [dialect])
 
-  // 把已展开库的表拼成补全 schema(表名 → 列名;列名在展开时惰性拉取)。
+  // 把已展开库的表拼成补全 schema(表名 → 列名;列名在展开时惰性拉取,
+  // 经 columnsByTable state 驱动 memo 重算,列到达后立即参与补全)。
   const sqlSchema: SqlCompletionSchema = useMemo(() => {
     const out: SqlCompletionSchema = {}
     for (const db of dbs) {
       if (db.kind !== 'database') continue
-      for (const table of db.tables) out[table] = columnCache.get(table) ?? []
+      for (const table of db.tables) out[table] = columnsByTable[table] ?? []
     }
     return out
-  }, [dbs])
-  // 展开库时懒加载列到 cache(供 SQL 补全)。
+  }, [dbs, columnsByTable])
+  // 展开库时懒加载列到 state(供 SQL 补全)。
   useEffect(() => {
     const id = connRef.current
     if (id === null) return
     for (const db of dbs) {
       if (db.kind !== 'database') continue
       for (const table of db.tables) {
-        if (columnCache.has(table)) continue
+        if (columnsByTable[table] !== undefined) continue
         void tauriInvoke<unknown>(`${cmdPrefix}_list_columns`, {
           connId: id, table, database: db.name,
         })
-          .then((cols) => { columnCache.set(table, extractColumnNames(cols)) })
+          .then((cols) => {
+            setColumnsByTable(prev => ({ ...prev, [table]: extractColumnNames(cols) }))
+          })
           .catch(() => { /* 补全失败静默 */ })
       }
     }
+    // 仅随 dbs 变化重跑;列 state 更新不重跑(避免重复请求)。
   }, [dbs, cmdPrefix])
 
   return (
@@ -819,7 +827,14 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
             connId={connId}
             database={dialog.database}
             table={dialog.table}
-            onClose={() => { setDialog(null); columnCache.delete(dialog.table) }}
+            onClose={() => {
+              setDialog(null)
+              setColumnsByTable(prev => {
+                const next = { ...prev }
+                delete next[dialog.table]
+                return next
+              })
+            }}
           />
         )}
         {dialog !== null && dialog.kind === 'indexes' && (

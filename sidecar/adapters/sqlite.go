@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
+	_ "modernc.org/sqlite"
 )
 
 // SQLiteAdapter 封装 SQLite 连接
@@ -321,7 +321,7 @@ func (a *SQLiteAdapter) GetTableDDL(_, table string) (string, error) {
 }
 
 // GetTableData 分页获取表数据
-func (a *SQLiteAdapter) GetTableData(_, table string, limit, offset int, orderBy, orderDir, filter string, columnFilters map[string]string) (*QueryResult, error) {
+func (a *SQLiteAdapter) GetTableData(_, table string, limit, offset int, orderBy, orderDir, filter, quickFilter string, columnFilters map[string]string) (*QueryResult, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -342,6 +342,25 @@ func (a *SQLiteAdapter) GetTableData(_, table string, limit, offset int, orderBy
 		for col, val := range columnFilters {
 			conditions = append(conditions, fmt.Sprintf("%s = ?", quoteSQLiteIdentifier(col)))
 			args = append(args, val)
+		}
+	}
+
+	// 快捷筛选:所有列 LIKE '%kw%'(列名来自 PRAGMA table_info,参数化防注入)
+	if quickFilter != "" {
+		cols, err := a.ListColumns("", table)
+		if err != nil {
+			return nil, fmt.Errorf("quick filter: %w", err)
+		}
+		var likeParts []string
+		for _, c := range cols {
+			if c.Name == "" {
+				continue
+			}
+			likeParts = append(likeParts, fmt.Sprintf("CAST(%s AS TEXT) LIKE ?", quoteSQLiteIdentifier(c.Name)))
+			args = append(args, "%"+quickFilter+"%")
+		}
+		if len(likeParts) > 0 {
+			conditions = append(conditions, "("+strings.Join(likeParts, " OR ")+")")
 		}
 	}
 

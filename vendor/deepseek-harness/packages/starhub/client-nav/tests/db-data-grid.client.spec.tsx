@@ -198,6 +198,40 @@ describe('DbDataGrid', () => {
     expect(screen.getByText('1 个筛选')).toBeTruthy()
   })
 
+  it('applies a quick filter via Enter and passes quickFilter server-side', async () => {
+    const { calls } = stubInvoke()
+    render(<DbDataGrid connId="c1" table="users" />)
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    const input = screen.getByLabelText('快捷筛选')
+    fireEvent.change(input, { target: { value: 'ali' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() =>{  expect(calls.some(([, a]) => a.quickFilter === 'ali')).toBe(true) })
+  })
+
+  it('clears the quick filter via the × button and stops passing it', async () => {
+    const { calls } = stubInvoke()
+    render(<DbDataGrid connId="c1" table="users" />)
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    const input = screen.getByLabelText('快捷筛选')
+    fireEvent.change(input, { target: { value: 'ali' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() =>{  expect(calls.some(([, a]) => a.quickFilter === 'ali')).toBe(true) })
+    fireEvent.click(screen.getByLabelText('清除快捷筛选'))
+    await waitFor(() =>{  expect((calls[calls.length - 1]?.[1].quickFilter ?? '')).toBe('') })
+  })
+
+  it('resets the quick filter when the table changes', async () => {
+    const { calls } = stubInvoke()
+    const { rerender } = render(<DbDataGrid connId="c1" table="users" />)
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    const input = screen.getByLabelText('快捷筛选')
+    fireEvent.change(input, { target: { value: 'ali' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() =>{  expect(calls.some(([, a]) => a.quickFilter === 'ali')).toBe(true) })
+    rerender(<DbDataGrid connId="c1" table="orders" />)
+    await waitFor(() =>{  expect((screen.getByLabelText('快捷筛选') as HTMLInputElement).value).toBe('') })
+  })
+
   it('clears a column filter and removes the badge', async () => {
     const { calls } = stubInvoke()
     render(<DbDataGrid connId="c1" table="users" />)

@@ -436,7 +436,8 @@ func (a *MySQLAdapter) GetTableDDL(database, table string) (string, error) {
 // GetTableData 分页获取表数据
 // filter: 全局文本搜索,对所有文本列做 LIKE 匹配
 // columnFilters: 精确列筛选,对指定列做 = 匹配
-func (a *MySQLAdapter) GetTableData(database, table string, limit, offset int, orderBy, orderDir, filter string, columnFilters map[string]string) (*QueryResult, error) {
+// quickFilter: 快捷筛选关键字,对所有列做 LIKE '%kw%' 模糊匹配
+func (a *MySQLAdapter) GetTableData(database, table string, limit, offset int, orderBy, orderDir, filter, quickFilter string, columnFilters map[string]string) (*QueryResult, error) {
 	if database == "" {
 		database = a.conn.Database
 	}
@@ -463,6 +464,25 @@ func (a *MySQLAdapter) GetTableData(database, table string, limit, offset int, o
 		for col, val := range columnFilters {
 			conditions = append(conditions, fmt.Sprintf("%s = ?", quoteIdentifier(col)))
 			args = append(args, val)
+		}
+	}
+
+	// 快捷筛选:所有列 LIKE '%kw%'(列名来自 information_schema,参数化防注入)
+	if quickFilter != "" {
+		cols, err := a.ListColumns(database, table)
+		if err != nil {
+			return nil, fmt.Errorf("quick filter: %w", err)
+		}
+		var likeParts []string
+		for _, c := range cols {
+			if c.Name == "" {
+				continue
+			}
+			likeParts = append(likeParts, fmt.Sprintf("%s LIKE ?", quoteIdentifier(c.Name)))
+			args = append(args, "%"+quickFilter+"%")
+		}
+		if len(likeParts) > 0 {
+			conditions = append(conditions, "("+strings.Join(likeParts, " OR ")+")")
 		}
 	}
 

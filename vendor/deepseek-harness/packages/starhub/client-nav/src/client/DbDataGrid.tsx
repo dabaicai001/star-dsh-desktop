@@ -121,6 +121,10 @@ export function DbDataGrid({
   const theadRef = useRef<HTMLDivElement | null>(null)
   // 列筛选(服务端):列名 → 筛选文本;空串/缺省表示不过滤。
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  // 快捷筛选(服务端):关键字 → 对所有列做 LIKE '%kw%';quickFilter 为已应用值,
+  // quickFilterText 为输入框草稿(Enter 应用 / Esc 清除)。
+  const [quickFilter, setQuickFilter] = useState('')
+  const [quickFilterText, setQuickFilterText] = useState('')
   // 列筛选弹层:当前列名 / 输入 / 锚点行底坐标(相对视口,弹层 fixed)。
   const [filterCol, setFilterCol] = useState<string | null>(null)
   const [filterText, setFilterText] = useState('')
@@ -140,7 +144,9 @@ export function DbDataGrid({
   const [saving, setSaving] = useState(false)
   const menu = useContextMenu()
 
-  const totalRows = Object.values(columnFilters).some(v => v !== '')
+  // 有任一筛选(快捷筛选 / 列筛选)时以结果自带 totalRows 为分页基数,否则用全表 COUNT。
+  const filtering = quickFilter !== '' || Object.values(columnFilters).some(v => v !== '')
+  const totalRows = filtering
     ? (result?.totalRows ?? 0)
     : (baseCount ?? result?.totalRows ?? 0)
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize))
@@ -152,7 +158,13 @@ export function DbDataGrid({
     if (page > pageCount - 1) setPage(pageCount - 1)
   }, [page, pageCount])
 
-  const load = useCallback(async (offset: number, size: number, sortCol: string | null, dir: 'asc' | 'desc', filters: Record<string, string>) => {
+  // 切换表时重置快捷筛选(列筛选保持原行为,不在此处置)。
+  useEffect(() => {
+    setQuickFilter('')
+    setQuickFilterText('')
+  }, [table])
+
+  const load = useCallback(async (offset: number, size: number, sortCol: string | null, dir: 'asc' | 'desc', filters: Record<string, string>, quick: string) => {
     setLoading(true)
     setError(null)
     try {
@@ -164,6 +176,7 @@ export function DbDataGrid({
       }
       const activeFilters = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ''))
       if (Object.keys(activeFilters).length > 0) args.columnFilters = activeFilters
+      if (quick !== '') args.quickFilter = quick
       const res = await tauriInvoke<QueryResult>(`${cmdPrefix}_get_table_data`, args)
       if (res.error !== undefined && res.error !== '') {
         setError(res.error)
@@ -178,10 +191,10 @@ export function DbDataGrid({
     }
   }, [connId, table, database, cmdPrefix])
 
-  // 表 / 页大小 / 页 / 排序 / 列筛选变化 → 重新拉服务端数据。
+  // 表 / 页大小 / 页 / 排序 / 列筛选 / 快捷筛选变化 → 重新拉服务端数据。
   useEffect(() => {
-    void load(page * pageSize, pageSize, orderBy, orderDir, columnFilters)
-  }, [page, pageSize, orderBy, orderDir, columnFilters, load])
+    void load(page * pageSize, pageSize, orderBy, orderDir, columnFilters, quickFilter)
+  }, [page, pageSize, orderBy, orderDir, columnFilters, quickFilter, load])
 
   // 主键列:每次表切换后经 list_columns 取 key==='PRI' 的列。
   useEffect(() => {
@@ -381,14 +394,14 @@ export function DbDataGrid({
       if (!failed) {
         // 全部成功 → 清 dirty 并重载当前页。
         setDirty(new Map())
-        void load(page * pageSize, pageSize, orderBy, orderDir, columnFilters)
+        void load(page * pageSize, pageSize, orderBy, orderDir, columnFilters, quickFilter)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setSaving(false)
     }
-  }, [dirty, rows, pkCols, columns, connId, table, database, cmdPrefix, page, pageSize, orderBy, orderDir, columnFilters, load])
+  }, [dirty, rows, pkCols, columns, connId, table, database, cmdPrefix, page, pageSize, orderBy, orderDir, columnFilters, quickFilter, load])
 
   // Ctrl/Cmd+S 全局保存(与 Vue 对齐);编辑输入中先提交再保存。
   useEffect(() => {
@@ -412,6 +425,21 @@ export function DbDataGrid({
 
   const filteredCount = useMemo(() => Object.values(columnFilters).filter(v => v !== '').length, [columnFilters])
 
+  // ─── 快捷筛选:Enter 应用 / Esc 清除 / × 按钮清除 ───
+  const applyQuickFilter = (): void => {
+    setQuickFilter(quickFilterText.trim())
+    setPage(0)
+  }
+  const clearQuickFilter = (): void => {
+    setQuickFilter('')
+    setQuickFilterText('')
+    setPage(0)
+  }
+  const onQuickFilterKeydown = (e: React.KeyboardEvent): void => {
+    if (e.key === 'Enter') applyQuickFilter()
+    if (e.key === 'Escape') clearQuickFilter()
+  }
+
   const onRowSelect = (id: string): void => {
     // 菜单项选择分发:目前只有「复制为 INSERT」一项;menuRow 在右键时写入,
     // 防御 menuRow 未就绪(如菜单项经程序化触发)时静默跳过。
@@ -424,6 +452,27 @@ export function DbDataGrid({
       <div className={css.meta}>
         <span>表 {table}{totalRows > 0 ? ` · ${totalRows.toLocaleString()} 行` : ''}</span>
         {filteredCount > 0 && <span className={css.filterBadge}>{filteredCount} 个筛选</span>}
+        <div className={css.quickFilterWrap}>
+          <input
+            type="search"
+            className={css.quickFilterInput}
+            value={quickFilterText}
+            onChange={(e) =>{  setQuickFilterText(e.target.value) }}
+            onKeyDown={onQuickFilterKeydown}
+            placeholder="快捷筛选…"
+            aria-label="快捷筛选"
+            title="Enter 应用(全列模糊匹配),Esc 清除"
+          />
+          {quickFilter !== '' && (
+            <button
+              type="button"
+              className={css.quickFilterClear}
+              onClick={clearQuickFilter}
+              title="清除快捷筛选"
+              aria-label="清除快捷筛选"
+            >×</button>
+          )}
+        </div>
         <span className={css.spacer} />
         {onExport !== undefined && (
           <button type="button" className={css.exportBtn} onClick={() =>{  onExport(orderBy, orderDir) }} title="全量导出该表到 Excel(后端执行)">

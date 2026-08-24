@@ -230,7 +230,7 @@ type relationalAdapter interface {
 	Execute(string) (*QueryResult, error)
 	Explain(string) (*QueryResult, error)
 	GetTableDDL(string, string) (string, error)
-	GetTableData(string, string, int, int, string, string, string, map[string]string) (*QueryResult, error)
+	GetTableData(string, string, int, int, string, string, string, string, map[string]string) (*QueryResult, error)
 	DropTable(string, string, bool) error
 	TruncateTable(string, string) error
 	RenameTable(string, string, string) error
@@ -483,17 +483,18 @@ func handleMySQLGetTableData(mgr *pool.Manager) Handler {
 			OrderBy       string            `json:"orderBy,omitempty"`
 			OrderDir      string            `json:"orderDir,omitempty"`
 			Filter        string            `json:"filter,omitempty"`
+			QuickFilter   string            `json:"quickFilter,omitempty"`
 			ColumnFilters map[string]string `json:"columnFilters,omitempty"`
 		}
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, err
 		}
-		log.Info().Str("filter", p.Filter).Interface("columnFilters", p.ColumnFilters).Msg("handleMySQLGetTableData")
+		log.Info().Str("filter", p.Filter).Str("quickFilter", p.QuickFilter).Interface("columnFilters", p.ColumnFilters).Msg("handleMySQLGetTableData")
 		adapter, err := getRelationalAdapter(mgr, p.ConnID)
 		if err != nil {
 			return nil, err
 		}
-		return adapter.GetTableData(p.Database, p.Table, p.Limit, p.Offset, p.OrderBy, p.OrderDir, p.Filter, p.ColumnFilters)
+		return adapter.GetTableData(p.Database, p.Table, p.Limit, p.Offset, p.OrderBy, p.OrderDir, p.Filter, p.QuickFilter, p.ColumnFilters)
 	}
 }
 
@@ -980,6 +981,7 @@ func handleClickHouseGetTableData(mgr *pool.Manager) Handler {
 			OrderBy       string            `json:"orderBy,omitempty"`
 			OrderDir      string            `json:"orderDir,omitempty"`
 			Filter        string            `json:"filter,omitempty"`
+			QuickFilter   string            `json:"quickFilter,omitempty"`
 			ColumnFilters map[string]string `json:"columnFilters,omitempty"`
 		}
 		if err := json.Unmarshal(params, &p); err != nil {
@@ -989,7 +991,7 @@ func handleClickHouseGetTableData(mgr *pool.Manager) Handler {
 		if err != nil {
 			return nil, err
 		}
-		return adapter.GetTableData(p.Database, p.Table, p.Limit, p.Offset, p.OrderBy, p.OrderDir, p.Filter, p.ColumnFilters)
+		return adapter.GetTableData(p.Database, p.Table, p.Limit, p.Offset, p.OrderBy, p.OrderDir, p.Filter, p.QuickFilter, p.ColumnFilters)
 	}
 }
 

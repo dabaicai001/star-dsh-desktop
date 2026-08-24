@@ -342,7 +342,7 @@ func (a *ClickHouseAdapter) GetTableDDL(database, table string) (string, error) 
 }
 
 // GetTableData 分页获取表数据
-func (a *ClickHouseAdapter) GetTableData(database, table string, limit, offset int, orderBy, orderDir, filter string, columnFilters map[string]string) (*QueryResult, error) {
+func (a *ClickHouseAdapter) GetTableData(database, table string, limit, offset int, orderBy, orderDir, filter, quickFilter string, columnFilters map[string]string) (*QueryResult, error) {
 	if database == "" {
 		database = a.conn.Database
 	}
@@ -369,6 +369,26 @@ func (a *ClickHouseAdapter) GetTableData(database, table string, limit, offset i
 		for col, val := range columnFilters {
 			conditions = append(conditions, fmt.Sprintf("%s = ?", quoteIdentifier(col)))
 			args = append(args, val)
+		}
+	}
+
+	// 快捷筛选:所有列 lower(toString(col)) LIKE lower('%kw%')(列名来自 system.columns,
+	// 参数化防注入;ClickHouse LIKE 大小写敏感,两侧 lower 对齐)
+	if quickFilter != "" {
+		cols, err := a.ListColumns(database, table)
+		if err != nil {
+			return nil, fmt.Errorf("quick filter: %w", err)
+		}
+		var likeParts []string
+		for _, c := range cols {
+			if c.Name == "" {
+				continue
+			}
+			likeParts = append(likeParts, fmt.Sprintf("lower(CAST(%s AS String)) LIKE lower(?)", quoteIdentifier(c.Name)))
+			args = append(args, "%"+quickFilter+"%")
+		}
+		if len(likeParts) > 0 {
+			conditions = append(conditions, "("+strings.Join(likeParts, " OR ")+")")
 		}
 	}
 

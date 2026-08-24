@@ -290,7 +290,7 @@ func (a *PostgresAdapter) GetTableDDL(schema, table string) (string, error) {
 func (a *PostgresAdapter) GetTableData(
 	schema, table string,
 	limit, offset int,
-	orderBy, orderDir, filter string,
+	orderBy, orderDir, filter, quickFilter string,
 	columnFilters map[string]string,
 ) (*QueryResult, error) {
 	if limit <= 0 {
@@ -317,6 +317,25 @@ func (a *PostgresAdapter) GetTableData(
 		args = append(args, "%"+value+"%")
 		conditions = append(conditions,
 			fmt.Sprintf("CAST(%s AS TEXT) ILIKE $%d", quotePostgresIdentifier(column), len(args)))
+	}
+	// 快捷筛选:所有列 ILIKE '%kw%'(列名来自 information_schema,参数化防注入)
+	if quickFilter != "" {
+		cols, err := a.ListColumns(schema, table)
+		if err != nil {
+			return nil, fmt.Errorf("quick filter: %w", err)
+		}
+		var likeParts []string
+		for _, c := range cols {
+			if c.Name == "" {
+				continue
+			}
+			args = append(args, "%"+quickFilter+"%")
+			likeParts = append(likeParts,
+				fmt.Sprintf("CAST(%s AS TEXT) ILIKE $%d", quotePostgresIdentifier(c.Name), len(args)))
+		}
+		if len(likeParts) > 0 {
+			conditions = append(conditions, "("+strings.Join(likeParts, " OR ")+")")
+		}
 	}
 	query := "SELECT * FROM " + qualifiedPostgresIdentifier(schema, table)
 	if len(conditions) > 0 {

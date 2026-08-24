@@ -83,16 +83,17 @@ describe('SQL completion behavior', () => {
     parent.remove()
   })
 
-  it('offers table and column names in a plain context', async () => {
+  it('offers tables (not bare columns) after FROM', async () => {
     const schema = { users: ['id', 'name'], logs: ['level'] }
     const state = EditorState.create({ doc: 'select * from ' })
     const ctx = new CompletionContext(state, 14, true)
     const result = await tableCompletion(() => schema)(ctx)
-    expect(result?.options.map(o => o.label)).toContain('users')
-    expect(result?.options.map(o => o.label)).toContain('id')
+    const labels = result?.options.map(o => o.label) ?? []
+    expect(labels).toContain('users')
+    expect(labels).not.toContain('id')
   })
 
-  it('filters offered names by the typed prefix', async () => {
+  it('filters table names by the typed prefix after FROM', async () => {
     const schema = { users: ['id', 'name'], logs: ['level'] }
     const state = EditorState.create({ doc: 'select * from u' })
     const ctx = new CompletionContext(state, 15, true)
@@ -106,6 +107,68 @@ describe('SQL completion behavior', () => {
     const ctx = new CompletionContext(state, 13, true)
     const result = await tableCompletion(() => schema)(ctx)
     expect(result?.options.map(o => o.label)).toEqual(['id', 'name'])
+  })
+
+  it('offers in-scope columns after WHERE (no table names)', async () => {
+    const schema = { users: ['id', 'name'], logs: ['level'] }
+    const state = EditorState.create({ doc: 'select * from users where na' })
+    const ctx = new CompletionContext(state, 28, true)
+    const result = await tableCompletion(() => schema)(ctx)
+    const labels = result?.options.map(o => o.label) ?? []
+    expect(labels).toContain('name')
+    expect(labels).not.toContain('users')
+    expect(labels).not.toContain('level')
+  })
+
+  it('offers where-clause keywords alongside columns after WHERE', async () => {
+    const schema = { users: ['id', 'name'] }
+    const state = EditorState.create({ doc: 'select * from users where an' })
+    const ctx = new CompletionContext(state, 28, true)
+    const result = await tableCompletion(() => schema, ['SELECT', 'AND', 'OR'])(ctx)
+    expect(result?.options.map(o => o.label)).toContain('AND')
+  })
+
+  it('falls back to all columns after WHERE when no FROM table is in scope', async () => {
+    const schema = { users: ['id', 'name'], logs: ['level'] }
+    const state = EditorState.create({ doc: 'select * from x where na' })
+    const ctx = new CompletionContext(state, 24, true)
+    const result = await tableCompletion(() => schema)(ctx)
+    const labels = result?.options.map(o => o.label) ?? []
+    expect(labels).toContain('name')
+  })
+
+  it('resolves a FROM alias for a table-dot prefix in WHERE', async () => {
+    const schema = { users: ['id', 'name'], logs: ['level'] }
+    const state = EditorState.create({ doc: 'select * from users u where u.na' })
+    const ctx = new CompletionContext(state, 32, true)
+    const result = await tableCompletion(() => schema)(ctx)
+    expect(result?.options.map(o => o.label)).toEqual(['name'])
+  })
+
+  it('opens with the full in-scope column list when explicitly triggered after WHERE', async () => {
+    const schema = { users: ['id', 'name'], logs: ['level'] }
+    const state = EditorState.create({ doc: 'select * from users where ' })
+    const ctx = new CompletionContext(state, 26, true)
+    const result = await tableCompletion(() => schema)(ctx)
+    const labels = result?.options.map(o => o.label) ?? []
+    expect(labels).toContain('id')
+    expect(labels).toContain('name')
+    expect(labels).not.toContain('level')
+  })
+
+  it('stays closed on an empty prefix without an explicit trigger', async () => {
+    const schema = { users: ['id', 'name'] }
+    const state = EditorState.create({ doc: 'select * from users where ' })
+    const ctx = new CompletionContext(state, 26, false)
+    expect(await tableCompletion(() => schema)(ctx)).toBeNull()
+  })
+
+  it('suggests keywords in a plain context', async () => {
+    const schema = { users: ['id'] }
+    const state = EditorState.create({ doc: 'SEL' })
+    const ctx = new CompletionContext(state, 3, true)
+    const result = await tableCompletion(() => schema, ['SELECT', 'FROM'])(ctx)
+    expect(result?.options.map(o => o.label)).toContain('SELECT')
   })
 
   it('reads the latest schema through the getter (tree expands after mount)', async () => {

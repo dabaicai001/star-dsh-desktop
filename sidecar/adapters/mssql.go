@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/microsoft/go-mssqldb"
 	"github.com/jmoiron/sqlx"
+	_ "github.com/microsoft/go-mssqldb"
 	"github.com/rs/zerolog/log"
 )
 
@@ -325,7 +325,7 @@ func (a *MSSQLAdapter) GetTableDDL(schema, table string) (string, error) {
 }
 
 // GetTableData 分页获取表数据
-func (a *MSSQLAdapter) GetTableData(schema, table string, limit, offset int, orderBy, orderDir, filter string, columnFilters map[string]string) (*QueryResult, error) {
+func (a *MSSQLAdapter) GetTableData(schema, table string, limit, offset int, orderBy, orderDir, filter, quickFilter string, columnFilters map[string]string) (*QueryResult, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -352,6 +352,25 @@ func (a *MSSQLAdapter) GetTableData(schema, table string, limit, offset int, ord
 		for _, col := range keys {
 			conditions = append(conditions, fmt.Sprintf("%s = ?", quoteMSSQLIdentifier(col)))
 			args = append(args, columnFilters[col])
+		}
+	}
+
+	// 快捷筛选:所有列 LIKE '%kw%'(列名来自 INFORMATION_SCHEMA,参数化防注入)
+	if quickFilter != "" {
+		cols, err := a.ListColumns(schema, table)
+		if err != nil {
+			return nil, fmt.Errorf("quick filter: %w", err)
+		}
+		var likeParts []string
+		for _, c := range cols {
+			if c.Name == "" {
+				continue
+			}
+			likeParts = append(likeParts, fmt.Sprintf("CAST(%s AS NVARCHAR(MAX)) LIKE ?", quoteMSSQLIdentifier(c.Name)))
+			args = append(args, "%"+quickFilter+"%")
+		}
+		if len(likeParts) > 0 {
+			conditions = append(conditions, "("+strings.Join(likeParts, " OR ")+")")
 		}
 	}
 
