@@ -14,6 +14,8 @@ import { StarHubOverlay } from '../src/client/StarHubOverlay.tsx'
 import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
 import { GitBranchPill } from '../src/client/git/GitBranchPill.tsx'
 import { FileViewerOverlay } from '../src/client/file-viewer/FileViewerOverlay.tsx'
+import { MfaPromptCard } from '../src/client/mfa/MfaPromptCard.tsx'
+import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
 import { AboutTab } from '../src/client/settings/about.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
@@ -123,18 +125,18 @@ describe('client-nav apply', () => {
     expect(() =>{  applyHost() }).not.toThrow()
   })
 
-  it('registers the eleven slots with their components in order', () => {
+  it('registers the thirteen slots with their components in order', () => {
     const { ctx, inject, register } = fakeContext()
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
-      'sidebar.navigation', 'shell.overlay', 'shell.overlay', 'workspace', 'details.workspace',
-      'conversation.session.header.actions',
+      'sidebar.navigation', 'shell.overlay', 'shell.overlay', 'shell.overlay', 'workspace', 'details.workspace',
+      'conversation.session.header.actions', 'conversation.input.left',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
     ])
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
-      StarHubNav, StarHubOverlay, FileViewerOverlay, StarHubToolWorkspace, StarHubToolWorkspace,
-      GitBranchPill,
+      StarHubNav, StarHubOverlay, FileViewerOverlay, MfaPromptCard, StarHubToolWorkspace, StarHubToolWorkspace,
+      GitBranchPill, ScreenshotButton,
       // AiTab 经 () => createElement(AiTab, { api }) 包装(传入 settings RPC 面),
       // 不再是裸引用,按函数断言。
       expect.any(Function), PluginsTab, AuditTab, AlertTab, AboutTab,
@@ -187,7 +189,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0].inject()
+      const injected = register.mock.calls[4]![0].inject()
       const overlay = register.mock.calls[1]![0].inject()
       // 壳内 overlay 不再承载 SSH/DB/Docker/Redis 工作台桥
       expect(overlay.hooks.sshTerminal).toBeUndefined()
@@ -213,7 +215,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0].inject()
+      const injected = register.mock.calls[4]![0].inject()
       const fullAsset = {
         id: 'a1', type: 'ssh', name: 'web-1', group_id: null, config: { host: '1.1.1.1' },
         key_id: null, tags: [], favorite: false, last_used_at: null, created_at: 0, updated_at: 0,
@@ -231,7 +233,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0].inject()
+      const injected = register.mock.calls[4]![0].inject()
       const dbAsset = {
         id: 'pg1', type: 'db', name: 'prod-db', group_id: null,
         config: { dbType: 'postgresql', host: 'h' },
@@ -252,7 +254,7 @@ describe('client-nav apply', () => {
     try {
       const { ctx, register } = fakeContext()
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0].inject()
+      const injected = register.mock.calls[4]![0].inject()
       const esAsset = {
         id: 'es1', type: 'db', name: 'es-1', group_id: null,
         config: { dbType: 'elasticsearch', host: 'h' },
@@ -272,7 +274,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0].inject()
+      const injected = register.mock.calls[4]![0].inject()
       const dockerAsset = {
         id: 'd1', type: 'docker', name: 'docker-1', group_id: null,
         config: { dockerTransport: 'socket', socketPath: '/var/run/docker.sock' },
@@ -291,7 +293,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[3]![0].inject()
+      const injected = register.mock.calls[4]![0].inject()
       const redisAsset = {
         id: 'r1', type: 'db', name: 'redis-1', group_id: null,
         config: { dbType: 'redis', host: 'h' },
@@ -312,7 +314,7 @@ describe('client-nav apply', () => {
     try {
       const { ctx, register } = fakeContext()
       applyPlugin(ctx)
-      const workspaceConfig = register.mock.calls[3]![0]
+      const workspaceConfig = register.mock.calls[4]![0]
       const asset = {
         id: 'a1', type: 'ssh', name: 'web-1', group_id: null,
         config: { host: 'h' },
@@ -329,7 +331,7 @@ describe('client-nav apply', () => {
   it('workspace inject wires the api face, bridge callbacks and asset holder', () => {
     const { ctx, register, get } = fakeContext()
     applyPlugin(ctx)
-    const workspaceConfig = register.mock.calls[3]![0]
+    const workspaceConfig = register.mock.calls[4]![0]
     const injected = workspaceConfig.inject()
     expect(get).toHaveBeenCalledWith('connection')
     expect(injected.api.settings.update).toBeTypeOf('function')
@@ -342,7 +344,7 @@ describe('client-nav apply', () => {
   it('workspace openAiAssistant opens the shell AI chat bridge without throwing', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const injected = register.mock.calls[3]![0].inject()
+    const injected = register.mock.calls[4]![0].inject()
     // 打开 AI 聊天面板桥(set snapshot);不抛错即覆盖该注入箭头。
     expect(() => { injected.openAiAssistant() }).not.toThrow()
   })
@@ -350,7 +352,7 @@ describe('client-nav apply', () => {
   it('registers the five starhub settings sections under the starhub group at orders 30-34', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const settingsConfigs = register.mock.calls.slice(6).map(c => c[0])
+    const settingsConfigs = register.mock.calls.slice(8).map(c => c[0])
     expect(settingsConfigs.map(c => c.id)).toEqual([
       'starhub-ai', 'starhub-plugins', 'starhub-audit', 'starhub-alert', 'starhub-about',
     ])

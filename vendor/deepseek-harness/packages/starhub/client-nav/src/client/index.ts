@@ -38,6 +38,7 @@ import {
 } from './store.ts'
 import { createFileViewerBridge } from './file-viewer/state.ts'
 import { FileViewerOverlay } from './file-viewer/FileViewerOverlay.tsx'
+import { MfaPromptCard } from './mfa/MfaPromptCard.tsx'
 import type { StarHubFileViewerFace } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { assetWindowUrl, type StarHubAsset } from './sections.ts'
 import { focusWindowByKey, openNewPage, tauriInvoke } from './tauri.ts'
@@ -166,6 +167,14 @@ export function apply(ctx: Context): void {
       hooks: { fileViewer: fileViewer.source },
     }),
   }, FileViewerOverlay))
+  // 主壳 MFA 验证卡(2026-08-24):AI 域工具建连遇到 keyboard-interactive 时
+  // 弹出 TOTP 输入;只接管 dsh: 前缀会话,与交互终端精确事件互补。
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'starhub-mfa-card',
+    order: 115,
+    label: 'StarHub MFA',
+  }, MfaPromptCard))
   const workspaceInject = () => ({
     // The connection wire face for syncing the current tool context to
     // host settings (Path B plan 4.3).

@@ -1906,12 +1906,17 @@ async fn authenticate_keyboard_interactive(
 
                 // 发送 Tauri 事件到前端（始终弹窗,让用户确认/输入 TOTP 码）
                 let payload = serde_json::json!({
+                    "sessionId": session_id,
                     "instructions": instructions,
                     "prompts": prompts.iter().map(|p| serde_json::json!({"prompt": p.prompt, "echo": p.echo})).collect::<Vec<_>>(),
                     "autoFill": auto_fill,
                 });
                 if let Some(app) = app_handle {
-                    let _ = app.emit(&format!("ssh:kb-interactive:{}", session_id), payload);
+                    // 精确事件:交互终端 / 测试连接按 sessionId 订阅,各自弹输入框。
+                    let _ = app.emit(&format!("ssh:kb-interactive:{}", session_id), payload.clone());
+                    // 通用事件:AI 域工具会话(connId `dsh:{assetId}:ssh`)由主壳 MFA
+                    // 确认卡订阅(无可预测的固定后缀),应答仍按 payload.sessionId 回传。
+                    let _ = app.emit("ssh:kb-interactive", payload);
                 }
 
                 // 等待前端 ssh_kb_response（360s 超时）
@@ -1962,9 +1967,17 @@ fn is_totp_prompt(prompt: &str) -> bool {
         || lower.contains("code")
         || lower.contains("token")
         || lower.contains("one-time")
+        || lower.contains("authenticator")
+        || lower.contains("2fa")
+        || lower.contains("2sv")
+        || lower.contains("mfa")
+        || lower.contains("passcode")
+        || lower.contains("dynamic") // 动态口令 / dynamic token
         || lower.contains("验证")
         || lower.contains("令牌")
         || lower.contains("一次性")
+        || lower.contains("动态") // 动态口令 / 动态密码 / 动态令牌
+        || lower.contains("短信")
 }
 
 #[cfg(test)]
@@ -2056,6 +2069,10 @@ ZfG1KaT0PtFDJ/XFSqtiAAAAEHVzZXJAZXhhbXBsZS5jb20BAgMEBQ==
         assert!(is_totp_prompt("OTP token required"));
         assert!(is_totp_prompt("One-time password"));
         assert!(is_totp_prompt("Please enter verification code"));
+        assert!(is_totp_prompt("Google Authenticator code"));
+        assert!(is_totp_prompt("Enter 2FA passcode"));
+        assert!(is_totp_prompt("MFA code from your device"));
+        assert!(is_totp_prompt("Dynamic token"));
     }
 
     #[test]
@@ -2063,6 +2080,9 @@ ZfG1KaT0PtFDJ/XFSqtiAAAAEHVzZXJAZXhhbXBsZS5jb20BAgMEBQ==
         assert!(is_totp_prompt("请输入验证码"));
         assert!(is_totp_prompt("动态令牌验证"));
         assert!(is_totp_prompt("一次性密码"));
+        assert!(is_totp_prompt("请输入动态口令"));
+        assert!(is_totp_prompt("短信验证码"));
+        assert!(is_totp_prompt("输入动态密码"));
     }
 
     #[test]

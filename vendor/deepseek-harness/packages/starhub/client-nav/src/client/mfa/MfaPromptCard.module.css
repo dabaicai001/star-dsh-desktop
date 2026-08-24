@@ -1,0 +1,15 @@
+.backdrop { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(5, 10, 16, 0.74); }
+.card { display: flex; width: min(440px, 92vw); flex-direction: column; overflow: hidden; border: 1px solid #416d94; border-radius: 7px; background: #1a2c41; box-shadow: 0 18px 46px rgba(0, 0, 0, 0.46); }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #34516f; }
+.title { color: #eff8ff; font-size: 14px; font-weight: 750; }
+.hint { overflow: hidden; color: #9eb6cc; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.body { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.instructions { color: #c9ddf0; font-size: 12px; line-height: 1.5; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.label { color: #a9c2d9; font-size: 12px; }
+.input { box-sizing: border-box; width: 100%; border: 1px solid #41698c; border-radius: 5px; padding: 8px 9px; outline: none; background: #101d2b; color: #e4f2ff; font: inherit; font-size: 13px; font-family: var(--dsw-font-mono); }
+.input:focus { border-color: #64cddd; box-shadow: 0 0 0 2px rgba(100, 205, 221, 0.15); }
+.timeHint { color: #8ba6bf; font-size: 11px; }
+.footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid #34516f; }
+.submit { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #3490a7; border-radius: 5px; padding: 7px 14px; background: #17627a; color: #effdff; cursor: pointer; font-size: 12px; font-weight: 700; }
+.submit:hover { background: #1d7490; }
