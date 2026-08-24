@@ -9,6 +9,35 @@ const MAX_SHELL_OUTPUT_BYTES: usize = 512 * 1024;
 const MAX_TEXT_READ_BYTES: usize = 1024 * 1024;
 const MAX_TEXT_WRITE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_DIRECTORY_ENTRIES: usize = 500;
+/// 文件树搜索:递归深度上限、单目录条目上限、命中上限、单文件内容检索窗口。
+const SEARCH_MAX_DEPTH: usize = 8;
+const SEARCH_MAX_RESULTS: usize = 100;
+const SEARCH_READ_WINDOW_BYTES: u64 = 256 * 1024;
+const SEARCH_IGNORED_DIRS: &[&str] = &[
+    "node_modules", ".git", ".svn", ".hg", "dist", "build", "target", "out",
+    "coverage", ".next", ".nuxt", ".idea", ".vscode", "__pycache__",
+    ".venv", "venv", ".pytest_cache", ".mypy_cache", ".turbo", ".cache",
+];
+
+/// 文件树搜索的一次命中(文件名模式或内容模式)。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalSearchHit {
+    path: String,
+    name: String,
+    kind: String,
+    size: u64,
+    modified_at: Option<u64>,
+    /// 内容模式下首个匹配行的 1-based 行号;文件名模式为 None。
+    line: Option<u32>,
+    /// 内容模式下匹配行的截断文本;文件名模式为 None。
+    snippet: Option<String>,
+}
+
+/// 判断目录名是否应折叠(node_modules/.git 等噪音目录,递归时跳过)。
+fn is_search_ignored_dir(name: &str) -> bool {
+    SEARCH_IGNORED_DIRS.contains(&name)
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -437,6 +466,137 @@ pub async fn local_remove_path(path: String, recursive: Option<bool>) -> Result<
     .map_err(|error| format!("remove path failed: {error}"))
 }
 
+/// 在目录树中递归搜索文件:`mode = "name"` 按文件名模糊匹配(不区分大小写),
+/// `mode = "content"` 读文本文件前 256KB 检索关键词并返回首个匹配行。
+/// 跳过噪音目录(node_modules/.git 等)、二进制文件与超深嵌套。
+#[tauri::command]
+pub async fn local_search_files(
+    root: String,
+    query: String,
+    mode: Option<String>,
+    max_results: Option<usize>,
+) -> Result<Vec<LocalSearchHit>, String> {
+    let target = PathBuf::from(root);
+    if !target.is_dir() {
+        return Err(format!("directory does not exist: {}", display_path(&target)));
+    }
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Err("query must not be empty".to_string());
+    }
+    let needle = trimmed.to_lowercase();
+    let search_mode = mode.as_deref().unwrap_or("name");
+    let limit = max_results.unwrap_or(SEARCH_MAX_RESULTS).clamp(1, SEARCH_MAX_RESULTS);
+
+    let mut hits = Vec::new();
+    let mut stack = vec![(target.clone(), 0_usize)];
+    while let Some((dir, depth)) = stack.pop() {
+        if hits.len() >= limit {
+            break;
+        }
+        if depth > SEARCH_MAX_DEPTH {
+            continue;
+        }
+        let Ok(mut reader) = tokio::fs::read_dir(&dir).await else {
+            continue; // 目录不可读:跳过
+        };
+        let mut subdirs = Vec::new();
+        while let Ok(Some(entry)) = reader.next_entry().await {
+            if hits.len() >= limit {
+                break;
+            }
+            let Ok(metadata) = entry.metadata().await else {
+                continue;
+            };
+            let name = entry.file_name().to_string_lossy().to_string();
+            let path = entry.path();
+            if metadata.is_dir() {
+                if !is_search_ignored_dir(&name) {
+                    subdirs.push((path, depth + 1));
+                }
+                continue;
+            }
+            if !metadata.is_file() {
+                continue;
+            }
+            let name_matches = search_mode == "name" && name.to_lowercase().contains(&needle);
+            let content_matches = search_mode != "name" && content_contains(&path, &needle).await;
+            if !name_matches && !content_matches {
+                continue;
+            }
+            hits.push(LocalSearchHit {
+                path: display_path(&path),
+                name,
+                kind: path_kind(&metadata),
+                size: metadata.len(),
+                modified_at: modified_at(&metadata),
+                line: None,
+                snippet: None,
+            });
+        }
+        stack.extend(subdirs);
+    }
+    hits.sort_by(|a, b| a.path.to_lowercase().cmp(&b.path.to_lowercase()));
+    // 内容模式:补充首个匹配行(文件名模式统一判空,避免无谓读文件)。
+    if search_mode == "content" {
+        let mut enriched = Vec::with_capacity(hits.len());
+        for hit in hits {
+            let (line, snippet) = first_match_line(&hit.path, &needle).await;
+            let base = LocalSearchHit {
+                line,
+                snippet,
+                ..hit
+            };
+            enriched.push(base);
+        }
+        Ok(enriched)
+    } else {
+        Ok(hits)
+    }
+}
+
+/// 读文件前 256KB 窗口并小写化,判断是否包含关键词。
+async fn content_contains(path: &std::path::Path, needle: &str) -> bool {
+    let Ok(file) = tokio::fs::File::open(path).await else {
+        return false;
+    };
+    let mut buffer = Vec::new();
+    let Ok(n) = file
+        .take(SEARCH_READ_WINDOW_BYTES)
+        .read_to_end(&mut buffer)
+        .await
+    else {
+        return false;
+    };
+    // 二进制探测:前 8KB 含 NUL → 视为二进制,跳过内容检索。
+    let probe_end = n.min(8 * 1024);
+    if buffer[..probe_end].contains(&0) {
+        return false;
+    }
+    String::from_utf8_lossy(&buffer).to_lowercase().contains(needle)
+}
+
+/// 返回文件内 needle 首个匹配行的 1-based 行号与截断文本;无匹配或读失败返回 None。
+async fn first_match_line(path: &str, needle: &str) -> (Option<u32>, Option<String>) {
+    let content = match local_read_text_file(path.to_string(), None, None).await {
+        Ok(read) => read.content,
+        Err(_) => return (None, None),
+    };
+    let lower = content.to_lowercase();
+    for (index, raw_line) in lower.split('\n').enumerate() {
+        if raw_line.contains(needle) {
+            let line_text = content.split('\n').nth(index).unwrap_or_default();
+            let snippet = if line_text.chars().count() > 160 {
+                format!("{}…", line_text.chars().take(160).collect::<String>())
+            } else {
+                line_text.to_string()
+            };
+            return (Some(index as u32 + 1), Some(snippet));
+        }
+    }
+    (None, None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,6 +641,85 @@ mod tests {
             .await
             .expect("read");
         assert_eq!(read.content, "cross-platform");
+        local_remove_path(display_path(&root), Some(true))
+            .await
+            .expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn search_files_by_name_and_contents() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("starhub-local-search-{unique}"));
+        let src = root.join("src");
+        let noise = root.join("node_modules");
+        local_write_text_file(
+            display_path(&src.join("app.ts")),
+            "export const TOKEN = 'needle-here'".to_string(),
+            Some(false),
+            Some(true),
+        )
+        .await
+        .expect("write app");
+        local_write_text_file(
+            display_path(&root.join("readme.md")),
+            "docs only".to_string(),
+            Some(false),
+            Some(true),
+        )
+        .await
+        .expect("write readme");
+        // 噪音目录内文件不应出现在结果里。
+        local_write_text_file(
+            display_path(&noise.join("dep.ts")),
+            "needle-here too".to_string(),
+            Some(false),
+            Some(true),
+        )
+        .await
+        .expect("write dep");
+
+        // 文件名模式:app.ts 命中(dep.ts 在 node_modules 内被跳过)。
+        let by_name = local_search_files(
+            display_path(&root),
+            "app".to_string(),
+            Some("name".to_string()),
+            None,
+        )
+        .await
+        .expect("name search");
+        assert!(by_name.iter().all(|hit| hit.path.ends_with("app.ts")));
+        assert_eq!(by_name.len(), 1);
+
+        // 内容模式:needle 命中 app.ts 并带行号;node_modules 内同词不出现。
+        let by_content = local_search_files(
+            display_path(&root),
+            "needle".to_string(),
+            Some("content".to_string()),
+            None,
+        )
+        .await
+        .expect("content search");
+        assert_eq!(by_content.len(), 1);
+        assert!(by_content[0].path.ends_with("app.ts"));
+        assert_eq!(by_content[0].line, Some(1));
+        assert!(by_content[0].snippet.as_deref().unwrap_or_default().contains("needle-here"));
+
+        // 空 query 报错;目录不存在报错。
+        assert!(local_search_files(display_path(&root), "  ".to_string(), None, None)
+            .await
+            .is_err());
+        assert!(local_search_files(
+            display_path(&root.join("missing-dir")),
+            "x".to_string(),
+            None,
+            None,
+        )
+        .await
+        .is_err());
+
         local_remove_path(display_path(&root), Some(true))
             .await
             .expect("cleanup");

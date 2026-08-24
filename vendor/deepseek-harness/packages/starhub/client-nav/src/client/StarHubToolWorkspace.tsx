@@ -35,6 +35,8 @@ import { STARHUB_SUBCATEGORIES, assetSubtitle, type StarHubAsset } from './secti
 import type { RustAsset, StarHubAssetListState, ToolSelection } from './store.ts'
 import { TOOL_CONTEXT_NAMESPACE } from './tool-context.ts'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
+import { FileTreePanel } from './file-tree/FileTreePanel.tsx'
+import type { FileTreeState } from './file-tree/state.ts'
 import css from './StarHubToolWorkspace.module.css'
 
 /** Business face injected by the registration: the connection wire + bridge/asset writes. */
@@ -47,9 +49,14 @@ export interface StarHubToolWorkspaceInjected {
   openConnectionManager: (asset?: RustAsset) => void
   /** 聚焦(或新建)壳内 AI 会话:右侧栏「AI 助手」入口。 */
   openAiAssistant: () => void
+  /** 切回资产列表视图(文件树面板头部「返回资产列表」)。 */
+  closeFileTree: () => void
+  /** 把引用文本追加进当前会话对话框输入框(右键「引用文件/文件夹」)。 */
+  insertFileReference: (text: string) => void
   hooks: {
     selection: SnapshotStore<ToolSelection>
     assets: SnapshotStore<StarHubAssetListState>
+    fileTree: SnapshotStore<FileTreeState>
   }
 }
 
@@ -133,11 +140,17 @@ function AssetRow({ asset, badgeLabel, onOpen, onEdit, onDelete }: {
  * current tool selection to host settings for AI context (Path B plan 4.3) —
  * the patch is always the full four fields, empty string clearing the key, so
  * a deselected asset never lingers as stale AI context.
+ *
+ * 文件树视图(2026-08-24):头部「文件树」按钮把 fileTree bridge 置 open 后,
+ * 本列切换为项目文件目录树(以会话 cwd 为根)——引用文件/文件夹到对话框、
+ * 点击文件弹信息窗;「返回资产列表」回到资产列表视图。无会话 cwd 时(blank
+ * 会话/浏览器预览)文件树不可用,保持资产列表。
  * @param props - composed slot props (workspace runtime share + injected face).
  * @returns the asset list surface, or a guide/loading/preview/error/empty state.
  */
 export function StarHubToolWorkspace({
-  api, openAsset, refreshAssets, openConnectionManager, openAiAssistant, useSelection, useAssets,
+  api, openAsset, refreshAssets, openConnectionManager, openAiAssistant, closeFileTree,
+  insertFileReference, useSelection, useAssets, useFileTree, useSessions, sessionId,
 }: StarHubToolWorkspaceProps) {
   const assets = useAssets(s => s.assets)
   const loading = useAssets(s => s.loading)
@@ -147,6 +160,10 @@ export function StarHubToolWorkspace({
   const activeAssetId = useSelection(s => s.assetId)
   const activeRoutePrefix = useSelection(s => s.routePrefix)
   const subcategory = STARHUB_SUBCATEGORIES.find(s => s.key === activeSubcategory)
+  const fileTreeOpen = useFileTree(s => s.open)
+  const sessionCwd = useSessions(s => (
+    sessionId === undefined ? undefined : s.byId[sessionId]?.cwd
+  ))
 
   // 挂载与切换子类时都重新拉取(回调内部对并发拉取去重)。
   useEffect(() => { refreshAssets() }, [activeSubcategory, refreshAssets])
@@ -164,6 +181,17 @@ export function StarHubToolWorkspace({
     }
     void api.settings.update({ ns: TOOL_CONTEXT_NAMESPACE, patch }).catch(() => {})
   }, [api, subcategory, activeAssetId, activeRoutePrefix, assets])
+
+  // 文件树视图:仅会话有 cwd 时可用(无 cwd 回退资产列表)。
+  if (fileTreeOpen && sessionCwd !== undefined) {
+    return (
+      <FileTreePanel
+        cwd={sessionCwd}
+        onClose={closeFileTree}
+        insertReference={insertFileReference}
+      />
+    )
+  }
 
   if (subcategory === undefined) {
     return <div className={css.status}>请在左侧选择工具子类(终端 / 数据库 / Docker)。</div>

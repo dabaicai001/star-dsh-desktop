@@ -24,29 +24,44 @@ afterEach(cleanup)
  * the component's PropsRuntime requires (the component itself only reads the
  * injected face).
  */
-function workspaceProps() {
+function workspaceProps(opts: { cwd?: string; sessionId?: string } = {}) {
   const assets = createSnapshotStore<StarHubAssetListState>({ assets: [], loading: false, error: null, preview: false })
   const bridge = createToolSelectionBridge()
+  const fileTree = createSnapshotStore<{ open: boolean }>({ open: false })
   const useAssets = <S,>(sel: (s: StarHubAssetListState) => S) => sel(assets.getSnapshot())
   const useSelection = <S,>(sel: (s: ToolSelection) => S) => sel(bridge.source.getSnapshot())
+  const useFileTree = <S,>(sel: (s: { open: boolean }) => S) => sel(fileTree.getSnapshot())
+  const sessionId = opts.sessionId === undefined ? undefined : opts.sessionId as never
+  const useSessions = ((sel: (s: { byId: Record<string, { cwd?: string } | undefined> }) => unknown) => {
+    const state = {
+      byId: opts.sessionId === undefined || opts.cwd === undefined
+        ? {}
+        : { [opts.sessionId]: { cwd: opts.cwd } },
+    }
+    return sel(state)
+  }) as never
   return {
     assets,
     bridge,
+    fileTree,
     refreshAssets: vi.fn(),
     openConnectionManager: vi.fn(),
     openAiAssistant: vi.fn(),
+    closeFileTree: vi.fn(),
+    insertFileReference: vi.fn(),
     useAssets,
     useSelection,
+    useFileTree,
+    useSessions,
     // settings.update stub: the tool-context sync effect calls it and must
     // not throw in jsdom (no real wire).
     api: { settings: { update: () => Promise.resolve({ result: { ok: true } }) } } as never,
     openAsset: bridge.openAsset,
     useSession: (() => undefined) as never,
-    sessionId: undefined,
+    sessionId,
     useProjection: (() => undefined) as never,
     useInput: (() => undefined) as never,
     inputActions: {} as never,
-    useSessions: (() => undefined) as never,
     useWorkspaces: (() => undefined) as never,
   }
 }
@@ -305,5 +320,58 @@ describe('StarHubToolWorkspace', () => {
     } finally {
       delete (navigator as { clipboard?: unknown }).clipboard
     }
+  })
+
+  it('renders the file tree when the fileTree bridge is open and the session has a cwd', async () => {
+    const props = workspaceProps({ sessionId: 's1', cwd: 'C:\\ws\\proj' })
+    props.fileTree.update((d) => { d.open = true })
+    // 文件树需要 local_list_directory(Tauri invoke stub);根目录懒加载。
+    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
+    w.__TAURI_INTERNALS__ = {
+      invoke: (cmd: string, args?: { path?: string }) => {
+        if (cmd !== 'local_list_directory') return Promise.reject(new Error(`unexpected: ${cmd}`))
+        const path = args?.path ?? ''
+        if (path === 'C:\\ws\\proj') {
+          return Promise.resolve([{ name: 'main.ts', path: 'C:\\ws\\proj\\main.ts', kind: 'file', size: 10, modifiedAt: 1, readonly: false, hidden: false }])
+        }
+        return Promise.reject(new Error(`unknown dir: ${path}`))
+      },
+    }
+    try {
+      const view = render(<StarHubToolWorkspace {...props} />)
+      // 头部「文件树」标题出现,资产视图被替换
+      expect(screen.getByText('文件树')).toBeTruthy()
+      expect(screen.queryByText('新建连接')).toBeNull()
+      // 根目录懒加载 → 文件行出现
+      const fileRow = await screen.findByRole('button', { name: /main\.ts/ })
+      expect(fileRow).toBeTruthy()
+      // 返回资产列表按钮 → closeFileTree
+      fireEvent.click(screen.getByLabelText('返回资产列表'))
+      expect(props.closeFileTree).toHaveBeenCalledTimes(1)
+      delete w.__TAURI_INTERNALS__
+      view.unmount()
+    } finally {
+      delete w.__TAURI_INTERNALS__
+    }
+  })
+
+  it('keeps the asset list when the fileTree bridge is open but no session cwd exists', () => {
+    const props = workspaceProps()
+    props.bridge.selectSubcategory('terminal')
+    props.assets.update((d) => { d.assets = [sshAsset] })
+    props.fileTree.update((d) => { d.open = true })
+    render(<StarHubToolWorkspace {...props} />)
+    // 无 cwd:文件树不可用,资产列表照常
+    expect(screen.getByText('prod-server')).toBeTruthy()
+    expect(screen.queryByText('文件树')).toBeNull()
+  })
+
+  it('opens the shell AI chat from the column header button', () => {
+    const props = workspaceProps()
+    props.bridge.selectSubcategory('terminal')
+    props.assets.update((d) => { d.assets = [sshAsset] })
+    render(<StarHubToolWorkspace {...props} />)
+    fireEvent.click(screen.getByLabelText('AI 助手'))
+    expect(props.openAiAssistant).toHaveBeenCalledTimes(1)
   })
 })

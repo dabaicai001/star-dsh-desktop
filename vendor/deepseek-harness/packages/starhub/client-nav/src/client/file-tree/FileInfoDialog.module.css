@@ -1,0 +1,112 @@
+/* 文件信息弹窗:元信息表 + 内容预览,全部走 dsw 语义令牌。 */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  max-height: 60vh;
+}
+
+.banner {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.bannerError {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.metaRow {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.metaRow dt {
+  flex: none;
+  width: 56px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.metaRow dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary);
+}
+
+.metaPath {
+  font-family: var(--dsw-font-mono);
+  word-break: break-all;
+  white-space: normal !important;
+}
+
+.previewLabel {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.preview {
+  flex: 1;
+  min-height: 120px;
+  max-height: 320px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre;
+}
+
+.closeBtn {
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.closeBtn:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.referenceBtn {
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--dsw-alias-button-primary-fill);
+  border-radius: 6px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-inverted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.referenceBtn:hover {
+  background: var(--dsw-alias-button-primary-hover);
+}

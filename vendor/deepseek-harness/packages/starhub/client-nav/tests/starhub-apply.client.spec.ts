@@ -13,10 +13,12 @@ import { StarHubNav } from '../src/client/StarHubNav.tsx'
 import { StarHubOverlay } from '../src/client/StarHubOverlay.tsx'
 import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
 import { GitBranchPill } from '../src/client/git/GitBranchPill.tsx'
+import { FileTreeButton } from '../src/client/file-tree/FileTreeButton.tsx'
 import { FileViewerOverlay } from '../src/client/file-viewer/FileViewerOverlay.tsx'
 import { MfaPromptCard } from '../src/client/mfa/MfaPromptCard.tsx'
 import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
+import { STARHUB_FILE_SOURCE } from '../src/client/file-source.ts'
 import { AboutTab } from '../src/client/settings/about.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
 import { AuditTab } from '../src/client/settings/audit.tsx'
@@ -58,12 +60,19 @@ interface RegisterInjected {
   openAiAssistant: () => void
   openAsset: (asset: unknown) => void
   api: { settings: { update: () => Promise<unknown> } }
+  closeFileTree: () => void
+  insertFileReference: (text: string) => void
+  openFileTree: () => void
   hooks: {
     selection: { getSnapshot: () => { subcategory: string | null } }
     connectionManager: { getSnapshot: () => { open: boolean; asset: null } }
     assets: {
       getSnapshot: () => AssetListSnapshot
       set: (state: AssetListSnapshot) => void
+    }
+    fileTree: {
+      getSnapshot: () => { open: boolean }
+      set: (state: { open: boolean }) => void
     }
     sshTerminal: undefined
     dbWorkbench: undefined
@@ -125,18 +134,18 @@ describe('client-nav apply', () => {
     expect(() =>{  applyHost() }).not.toThrow()
   })
 
-  it('registers the thirteen slots with their components in order', () => {
+  it('registers the fourteen slots with their components in order', () => {
     const { ctx, inject, register } = fakeContext()
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
       'sidebar.navigation', 'shell.overlay', 'shell.overlay', 'shell.overlay', 'workspace', 'details.workspace',
-      'conversation.session.header.actions', 'conversation.input.left',
+      'conversation.session.header.actions', 'conversation.session.header.actions', 'conversation.input.left',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
     ])
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
       StarHubNav, StarHubOverlay, FileViewerOverlay, MfaPromptCard, StarHubToolWorkspace, StarHubToolWorkspace,
-      GitBranchPill, ScreenshotButton,
+      GitBranchPill, FileTreeButton, ScreenshotButton,
       // AiTab 经 () => createElement(AiTab, { api }) 包装(传入 settings RPC 面),
       // 不再是裸引用,按函数断言。
       expect.any(Function), PluginsTab, AuditTab, AlertTab, AboutTab,
@@ -341,6 +350,35 @@ describe('client-nav apply', () => {
     expect(injected.hooks.assets.getSnapshot()).toHaveProperty('assets')
   })
 
+  it('workspace inject exposes the file-tree hooks and reference insert face', () => {
+    const { ctx, register } = fakeContext()
+    applyPlugin(ctx)
+    const workspaceConfig = register.mock.calls[4]![0]
+    const injected = workspaceConfig.inject()
+    expect(injected.hooks.fileTree.getSnapshot()).toEqual({ open: false })
+    expect(injected.closeFileTree).toBeTypeOf('function')
+    expect(injected.insertFileReference).toBeTypeOf('function')
+    // 无会话/无 binding:insertFileReference 安静跳过(不抛错)。
+    expect(() =>{  injected.insertFileReference('@x (p)') }).not.toThrow()
+  })
+
+  it('file-tree header action opens the fileTree bridge and the details panel', () => {
+    const { ctx, register, openDetails } = fakeContext()
+    applyPlugin(ctx)
+    const config = register.mock.calls[7]![0]
+    expect(config.name).toBe('conversation.session.header.actions')
+    expect(config.order).toBe(40)
+    expect(config.id).toBe('starhub-file-tree')
+    expect(register.mock.calls[7]![1]).toBe(FileTreeButton)
+    const injected = config.inject()
+    expect(injected.hooks.fileTree.getSnapshot()).toEqual({ open: false })
+    injected.openFileTree()
+    expect(injected.hooks.fileTree.getSnapshot()).toEqual({ open: true })
+    expect(openDetails).toHaveBeenCalledTimes(1)
+    injected.closeFileTree()
+    expect(injected.hooks.fileTree.getSnapshot()).toEqual({ open: false })
+  })
+
   it('workspace openAiAssistant opens the shell AI chat bridge without throwing', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
@@ -352,7 +390,7 @@ describe('client-nav apply', () => {
   it('registers the five starhub settings sections under the starhub group at orders 30-34', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const settingsConfigs = register.mock.calls.slice(8).map(c => c[0])
+    const settingsConfigs = register.mock.calls.slice(9).map(c => c[0])
     expect(settingsConfigs.map(c => c.id)).toEqual([
       'starhub-ai', 'starhub-plugins', 'starhub-audit', 'starhub-alert', 'starhub-about',
     ])
@@ -374,12 +412,16 @@ describe('client-nav apply', () => {
     ])
   })
 
-  it('registers the @ asset source through ctx.effect and disposes it with the fiber', () => {
+  it('registers the @ asset and file sources through ctx.effect and disposes them with the fiber', () => {
     const { ctx, registerSource } = fakeContext()
     applyPlugin(ctx)
-    const src = registerSource.mock.calls[0]![0] as { trigger: string; name: string }
-    expect(src.trigger).toBe('@')
-    expect(src.name).toBe(STARHUB_ASSET_SOURCE)
+    expect(registerSource).toHaveBeenCalledTimes(2)
+    const assetSrc = registerSource.mock.calls[0]![0] as { trigger: string; name: string }
+    expect(assetSrc.trigger).toBe('@')
+    expect(assetSrc.name).toBe(STARHUB_ASSET_SOURCE)
+    const fileSrc = registerSource.mock.calls[1]![0] as { trigger: string; name: string }
+    expect(fileSrc.trigger).toBe('@')
+    expect(fileSrc.name).toBe(STARHUB_FILE_SOURCE)
     // 注册经 ctx.effect:disposer 随 fiber 卸载反注册 source(HMR 安全)。
     expect(ctx.effect).toHaveBeenCalled()
   })

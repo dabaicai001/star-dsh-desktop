@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.94.3(🎨 AI 对话截图只保留**区域截图**、移除窗口截图:输入框工具行「剪刀」按钮点击即开始区域截图(不再弹「区域截图 / 窗口截图」菜单),同步删除 Rust 侧 `screenshot_begin_window` / `screenshot_list_windows` / `screenshot_capture_window` 命令、ACL 权限与遮罩页全部窗口模式代码;区域截图选区拖拽改「先沿单一轴拉出第一段」——第一段必须沿横向或纵向(先横后竖 / 先竖后横均可)拉过阈值(12px),另一轴才解锁,不能一开始就斜着拉。前版 v0.94.2:✨ AI 域工具 `dsh:` 会话 keyboard-interactive 主壳 MFA 确认卡 + Redis 工作台 DB 树化;🐛 修复 SSH 主机密钥确认链路:① 正式打开 SSH 终端首次连接新服务器时弹出「是否信任此主机?」三选项弹窗(此前只有测试连接订阅 hostkey-confirm 事件,交互终端无人消费 sender,静默 60s 超时 `[HOSTKEY_TIMEOUT]` 失败);② AI 域工具 `dsh:` 会话遇到未知主机密钥快速失败并指引先在 SSH 终端信任保存,不再干等 60s。前版 v0.94.1:🐛 修复两处:① `apps/starhub-window` 独立 `tsc --noEmit` 基线清零——补 project references(client-nav/ui-theme)+ 本应用 `css-modules.d.ts` + ErrorBoundary 补 `override`,依赖面按 apps/web 同款边界解析,不再把 vendor 上游源码拖进严格编译;② FileViewer「变更前/变更后」对比视图长行的 绿(+)/红(−) 底色只到列宽、不覆盖整行文字——`diffView` 宽度改 `max-content` + 列内横滚,底色铺满整行。) |
+| 当前版本 | v0.95.0(✨ 会话文件树 + 本机文件搜索:头部「文件树」按钮打开项目目录树(懒加载展开、右键「引用文件/文件夹」把 `@名称 (路径)` 追加进对话框、文件信息弹窗);`@` 触发词新增 starhub-file source,候选来自会话工作区目录树,pick 产物与文件树右键引用一致;Rust 侧新增 `local_search_files` 命令(按文件名/文件内容检索,含深度与结果上限保护)并注册 ACL 权限。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-24 (v0.94.3)*
+*最后更新: 2026-08-24 (v0.95.0)*

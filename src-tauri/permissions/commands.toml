@@ -186,6 +186,7 @@ commands.allow = [
   "local_move_path",
   "local_read_text_file",
   "local_remove_path",
+  "local_search_files",
   "local_shell_exec",
   "local_stat_path",
   "local_system_info",

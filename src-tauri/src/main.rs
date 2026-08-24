@@ -385,6 +385,7 @@ fn main() {
             commands::local::local_copy_file,
             commands::local::local_move_path,
             commands::local::local_remove_path,
+            commands::local::local_search_files,
             // AI(内核已迁移 dsh;此段只剩密钥与记忆持久化)
             commands::secret::set_ai_api_key,
             commands::secret::get_ai_api_key,

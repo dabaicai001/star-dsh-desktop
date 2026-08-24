@@ -79,6 +79,16 @@
 
 ---
 
+## [0.95.0] - 2026-08-24
+
+### 新增
+- ✨ 会话文件树 + 本机文件搜索:头部「文件树」按钮打开项目目录树(懒加载展开、右键「引用文件/文件夹」把 `@名称 (路径)` 追加进对话框、文件信息弹窗);`@` 触发词新增 starhub-file source,候选来自会话工作区目录树,pick 产物与文件树右键引用一致;Rust 侧新增 `local_search_files` 命令(按文件名/文件内容检索,含深度与结果上限保护)并注册 ACL 权限。
+- ✨ DB 表格快捷筛选:数据表格新增 quickFilter 快捷筛选关键字,对所有列做 `LIKE '%kw%'` 模糊匹配(sidecar MySQL/PostgreSQL/SQLite/SQL Server/ClickHouse 全部适配 + 前端筛选输入框)。
+
+### 修复
+- 🐛 文件树面板目录读取失败时不再无限重发请求(挂载自动展开 + `expand` 依赖 `[cache, loading]`,`finally` 移除 loading 会重建 `expand` 并重跑 effect,形成「失败 → 再请求 → 再失败」死循环,CPU 100% 满载导致 vitest 全量测试超时挂起):同一 cwd 只自动展开一次;目录加载失败后点击 = 重试。
+- 🐛 SSH 终端对 MFA 资产发送 `kb_interactive` 配置(镜像 Rust 侧 `authMode`/`mfaEnabled`/`mfaPassword` → `kb_interactive` 的翻译),修复真实连接「服务器要求 keyboard-interactive MFA 时 `[AUTH_FAILED]`」而测试连接弹窗正常的不一致。
+
 ## [0.93.1] - 2026-08-23
 
 ### 修复

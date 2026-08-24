@@ -1,0 +1,138 @@
+/**
+ * 文件信息弹窗(2026-08-24):点击目录树中的文件时弹出——展示元信息
+ * (路径/大小/修改时间/只读)+ 内容预览(read 前 256KB),并提供「引用到
+ * 对话框」快捷按钮(引用文本与右键菜单同款 @文件名 风格)。
+ */
+import { useEffect, useState } from 'react'
+import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { readLocalTextFile } from '../file-viewer/file-service.ts'
+import { statLocalPath, type LocalPathInfo } from './file-tree-service.ts'
+import css from './FileInfoDialog.module.css'
+
+/** 引用文本生成:文件 `@文件名 (路径)`;文件夹 `@文件夹名/ (路径)`。 */
+export function renderFileReference(name: string, path: string, kind: 'file' | 'directory'): string {
+  const label = kind === 'directory' && !name.endsWith('/') ? `${name}/` : name
+  return `@${label} (${path})`
+}
+
+/** 人类可读的大小(与 sftp/docker 面板同风格,B 单位)。 */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = 'B'
+  for (const next of units) {
+    value /= 1024
+    unit = next
+    if (value < 1024) break
+  }
+  return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)} ${unit}`
+}
+
+/** 人类可读的修改时间;null(不可读)显示「未知」。 */
+export function formatModifiedAt(seconds: number | null): string {
+  if (seconds === null) return '未知'
+  const date = new Date(seconds * 1000)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/** 内容预览截断上限(弹窗内只展示开头,避免整文件渲染)。 */
+const PREVIEW_LIMIT = 8 * 1024
+
+/**
+ * 渲染文件信息弹窗。
+ * @param props.path - 目标文件绝对路径;null = 关闭。
+ * @param props.onClose - 关闭弹窗。
+ * @param props.onReference - 点击「引用到对话框」:携带引用文本。
+ * @returns Modal;path 为 null 时不渲染。
+ */
+export function FileInfoDialog({ path, onClose, onReference }: {
+  path: string | null
+  onClose: () => void
+  onReference: (text: string) => void
+}) {
+  const [info, setInfo] = useState<LocalPathInfo | null>(null)
+  const [content, setContent] = useState('')
+  const [truncated, setTruncated] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (path === null) return
+    let cancelled = false
+    setInfo(null)
+    setContent('')
+    setTruncated(false)
+    setError(null)
+    setLoading(true)
+    void Promise.all([
+      statLocalPath(path),
+      readLocalTextFile(path).catch((err: unknown) => {
+        // 二进制/读取失败:内容预览为空,元信息照常展示。
+        /* v8 ignore next 2 -- canceled after unmount: the effect's own `if (cancelled) return` may already have run; rethrow into the shared catch which also no-ops while cancelled */
+        if (cancelled) throw err
+        setError(err instanceof Error ? err.message : String(err))
+        return { content: '', truncated: false }
+      }),
+    ]).then(([stat, read]) => {
+      /* v8 ignore next 1 -- canceled after unmount: the last line sets `cancelled = true`; no state write may follow */
+      if (cancelled) return
+      setInfo(stat)
+      setContent(read.content.slice(0, PREVIEW_LIMIT))
+      setTruncated(read.truncated || read.content.length > PREVIEW_LIMIT)
+    }).catch(() => {
+      // stat 失败时整体置错(路径不可达)。
+      /* v8 ignore next 1 -- canceled after unmount: covered behavior is the stat-fail path above; this guard only suppresses a state write after teardown */
+      if (!cancelled) setError('无法读取文件信息')
+    }).finally(() => {
+      /* v8 ignore next 1 -- canceled after unmount: the guard below is the teardown race; the loading=flase write is exercised by every success/failure test */
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [path])
+
+  if (path === null) return null
+  /* v8 ignore next 1 -- split always yields ≥1 member; at(-1) is never undefined, so the final ?? is unreachable */
+  const name = info?.name ?? path.split(/[\\/]/).at(-1) ?? path
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`文件信息 — ${name}`}
+      closeLabel="关闭"
+      footer={(
+        <>
+          <span style={{ flex: 1 }} />
+          <button type="button" className={css.closeBtn} onClick={onClose}>关闭</button>
+          <button
+            type="button"
+            className={css.referenceBtn}
+            onClick={() => { onReference(renderFileReference(name, path, info?.kind === 'directory' ? 'directory' : 'file')) }}
+          >
+            @ 引用到对话框
+          </button>
+        </>
+      )}
+    >
+      <div className={css.body}>
+        {loading && <div className={css.banner}>读取中…</div>}
+        {error !== null && <div className={css.bannerError} role="alert">{error}</div>}
+        {info !== null && (
+          <dl className={css.meta}>
+            <div className={css.metaRow}><dt>路径</dt><dd className={css.metaPath}>{info.path}</dd></div>
+            <div className={css.metaRow}><dt>大小</dt><dd>{formatFileSize(info.size)}</dd></div>
+            <div className={css.metaRow}><dt>修改时间</dt><dd>{formatModifiedAt(info.modifiedAt)}</dd></div>
+            <div className={css.metaRow}><dt>类型</dt><dd>{info.kind === 'directory' ? '文件夹' : info.kind === 'file' ? '文件' : info.kind}</dd></div>
+            {info.readonly && <div className={css.metaRow}><dt>权限</dt><dd>只读</dd></div>}
+          </dl>
+        )}
+        <div className={css.previewLabel}>
+          内容预览{truncated ? '(仅开头)' : ''}
+        </div>
+        <pre className={css.preview}>{content === '' ? ' ' : content}</pre>
+      </div>
+    </Modal>
+  )
+}

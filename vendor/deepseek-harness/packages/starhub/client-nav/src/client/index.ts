@@ -32,6 +32,7 @@ import type { IConversation } from '@deepseek-ai/dsh-client-ui-conversation/clie
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createStarHubAssetSource } from './asset-source.ts'
+import { createStarhubFileSource } from './file-source.ts'
 import { createAskAiHandler, createOpenAssetHandler, subscribeHostEvents } from './host-events.ts'
 import {
   createAiChatOverlay, createConnectionManagerOverlay, createStarHubAssets, createStarHubNavStore, createToolSelectionBridge,
@@ -46,6 +47,8 @@ import { ScreenshotButton } from './screenshot/ScreenshotButton.tsx'
 import { StarHubNav } from './StarHubNav.tsx'
 import { StarHubOverlay } from './StarHubOverlay.tsx'
 import { GitBranchPill } from './git/GitBranchPill.tsx'
+import { FileTreeButton } from './file-tree/FileTreeButton.tsx'
+import { createFileTreeBridge } from './file-tree/state.ts'
 import { StarHubToolWorkspace } from './StarHubToolWorkspace.tsx'
 import { AboutTab } from './settings/about.tsx'
 import { AiTab } from './settings/ai.tsx'
@@ -82,6 +85,9 @@ export function apply(ctx: Context): void {
   // 壳内文件查看窗(2026-08-21):viewFile 回调经 starhubFileViewer 服务写入,
   // shell.overlay 席位渲染;服务面类型定义在 ui-conversation contract。
   const fileViewer = createFileViewerBridge()
+  // 会话文件树视图开关(2026-08-24):头部按钮(header.actions)写,
+  // 右侧工作区列(details.workspace)读——同一裸 source 桥范式。
+  const fileTree = createFileTreeBridge()
   ctx.provide('starhubFileViewer', {
     open: (target) => { fileViewer.open(target) },
   } satisfies StarHubFileViewerFace)
@@ -184,7 +190,22 @@ export function apply(ctx: Context): void {
     openConnectionManager: connectionManager.open,
     // 右侧栏「AI 助手」:打开壳内 AI 聊天面板(shell.overlay 承载)。
     openAiAssistant: () =>{  aiChat.open() },
-    hooks: { selection: selection.source, assets: assets.source },
+    // 文件树视图:头部按钮打开后,工作区列切为目录树;「返回资产列表」关闭。
+    closeFileTree: fileTree.close,
+    // 文件树右键「引用文件/文件夹」:把 `@名称 (路径)` 追加进当前会话对话框。
+    insertFileReference: (text: string) => {
+      const current = sessions.list.getSnapshot().current
+      if (current === undefined) return
+      const binding = sessions.binding(current)
+      if (binding === undefined) return
+      const input = conversation.input.for(binding.ctx)
+      input.setDraft(input.state.getSnapshot().draft + text)
+    },
+    hooks: {
+      selection: selection.source,
+      assets: assets.source,
+      fileTree: fileTree.source,
+    },
   })
   // 两座工作区席位都不声明注册侧 store:session-maybe 无会话分支不下发
   // useStore,资产/选择状态全部由上面的 hooks 舱位供给。
@@ -202,6 +223,12 @@ export function apply(ctx: Context): void {
     () => inputTriggers.registerSource(createStarHubAssetSource({ api: connection.api, assets, selection })),
     'starhub: @ asset source',
   )
+  // `@` 文件 source(2026-08-24):与资产 source 同 trigger 并行,候选来自当前
+  // 会话工作区目录树;pick 产物 `@文件名 (路径)` 与文件树右键引用一致。
+  ctx.effect(
+    () => inputTriggers.registerSource(createStarhubFileSource({ sessions })),
+    'starhub: @ file source',
+  )
   // 会话头部「git 分支胶囊」(2026-08-21):会话 cwd 下的分支展示 + 搜索/切换
   // 分支 + commit/push;非 git 工作区与浏览器预览(无 Tauri IPC)不渲染。
   // order 30:排在 ui-jobs 后台任务(20)之后、utilities 之前。
@@ -211,6 +238,22 @@ export function apply(ctx: Context): void {
     order: 30,
     label: 'StarHub Git',
   }, GitBranchPill))
+  // 会话头部「文件树」按钮(2026-08-24):分支胶囊旁,点击打开右侧详情列并
+  // 切到项目文件目录树视图;再次点击切回资产列表。order 40:紧跟分支胶囊。
+  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
+    name: 'conversation.session.header.actions',
+    id: 'starhub-file-tree',
+    order: 40,
+    label: 'StarHub 文件树',
+    inject: () => ({
+      openFileTree: () => {
+        fileTree.open()
+        ctx.layout.openDetails()
+      },
+      closeFileTree: fileTree.close,
+      hooks: { fileTree: fileTree.source },
+    }),
+  }, FileTreeButton))
   // AI 对话输入框截图(2026-08-23):工具行「剪刀」按钮 → 区域截图(遮罩框选),
   // 确认后结果作为图片附件进当前会话输入(与粘贴/拖拽同一管线)。
   // 浏览器预览(无 Tauri IPC)下 invoke 拒绝,按钮点击打日志不弹窗。
