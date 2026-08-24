@@ -36,6 +36,23 @@ export interface SshTerminalOverlayProps {
   onClose: () => void
 }
 
+/** `ssh:kb-interactive:<sessionId>` 负载:服务器 keyboard-interactive 请求 + 预填。 */
+export interface KbInteractiveEvent {
+  sessionId: string
+  instructions: string
+  prompts: Array<{ prompt: string; echo: boolean }>
+  autoFill: Array<string | null>
+}
+
+/** `ssh:hostkey-confirm:<sessionId>` 负载:新主机密钥等待用户确认。 */
+export interface HostKeyConfirmEvent {
+  hostname: string
+  port: number
+  remote: string
+  keyType: string
+  sha256: string
+}
+
 type SidePanel = 'sftp' | 'web' | null
 
 /**
@@ -73,6 +90,12 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const [sshCwd, setSshCwd] = useState('')
   const [quickCommands, setQuickCommands] = useState<QuickCommand[]>(loadQuickCommands)
   const [quickEditorOpen, setQuickEditorOpen] = useState(false)
+  // MFA/2FA:服务器 keyboard-interactive 请求(非空时渲染验证码输入弹窗)。
+  const [kbPrompt, setKbPrompt] = useState<KbInteractiveEvent | null>(null)
+  const [kbAnswers, setKbAnswers] = useState<string[]>([])
+  // 新主机密钥:首次连接新服务器时后端要求用户确认指纹(非空时阻断 SSH 终端、
+  // 渲染三选项弹窗:拒绝 / 仅本次 / 信任并保存)。
+  const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyConfirmEvent | null>(null)
   const quickImportRef = useRef<HTMLInputElement>(null)
   // 命令广播(需求 6 broadcast 子集):弹层会话列表 + 发送结果提示。
   const [broadcastSessions, setBroadcastSessions] = useState<BroadcastSession[] | null>(null)
@@ -136,6 +159,8 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     let resizeObserver: ResizeObserver | undefined
     let unlistenData: TauriUnlisten | undefined
     let unlistenClose: TauriUnlisten | undefined
+    let unlistenKb: TauriUnlisten | undefined
+    let unlistenHostkey: TauriUnlisten | undefined
 
     const cwdTracker = createCwdTracker()
     const decoder = new TextDecoder()
@@ -178,7 +203,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
 
     const connect = async () => {
       try {
-        [unlistenData, unlistenClose] = await Promise.all([
+        [unlistenData, unlistenClose, unlistenKb, unlistenHostkey] = await Promise.all([
           tauriListen<number[]>(`ssh:data:${sessionId}`, (bytes) => {
             handleChunk(decoder.decode(new Uint8Array(bytes), { stream: true }))
           }),
@@ -187,10 +212,26 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
             setConnected(false)
             if (!disposed) term.writeln(`\r\n[连接已关闭: ${reason}]`)
           }),
+          // MFA/2FA:服务器 keyboard-interactive 请求,弹终端内验证码输入框。
+          tauriListen<KbInteractiveEvent>(`ssh:kb-interactive:${sessionId}`, (event) => {
+            if (disposed) return
+            setKbAnswers(event.autoFill.map(value => value ?? ''))
+            setKbPrompt(event)
+          }),
+          // 主机密钥确认:首次连新服务器必须由用户信任指纹后端才会放行。
+          // 此前测试连接(NewConnectionDialog)与正式连接(SshTerminalOverlay)
+          // 共用一个事件名却只在测试侧 listen,正式连接会因无人消费 sender
+          // 导致后端 60s 超时拒绝。这里订阅,把决定权交回用户。
+          tauriListen<HostKeyConfirmEvent>(`ssh:hostkey-confirm:${sessionId}`, (event) => {
+            if (disposed) return
+            setHostKeyPrompt(event)
+          }),
         ])
         if (disposed) {
           void unlistenData()
           void unlistenClose()
+          void unlistenKb()
+          void unlistenHostkey()
           return
         }
         await tauriInvoke('ssh_connect', {
@@ -228,6 +269,9 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
       resizeObserver?.disconnect()
       void unlistenData?.()
       void unlistenClose?.()
+      void unlistenKb?.()
+      void unlistenHostkey?.()
+      setHostKeyPrompt(null)
       const tail = decoder.decode()
       if (tail) handleChunk(tail)
       void tauriInvoke('ssh_disconnect', { id: sessionId }).catch(() => {})
@@ -301,6 +345,34 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     setBroadcastNotice(failed === 0
       ? `已广播到 ${sessionIds.length} 个会话`
       : `广播完成,${failed} 个会话发送失败`)
+  }
+
+  /** 提交 keyboard-interactive 应答(MFA TOTP 输入),回复后端 pending 通道。 */
+  const submitKbAnswers = (): void => {
+    if (kbPrompt === null) return
+    void tauriInvoke('ssh_kb_response', { id: sessionId, responses: kbAnswers }).catch(() => {})
+    setKbPrompt(null)
+    setKbAnswers([])
+  }
+
+  /** 处理主机密钥确认决策。拒绝时主动断开 SSH 会话并关闭 overlay,
+   *  避免后端 60s 超时(后续重试会因为 known_hosts 仍没有这个指纹而再次弹)。*/
+  const resolveHostKey = (allowed: boolean, persist: boolean): void => {
+    if (hostKeyPrompt === null) return
+    const promptSnapshot = hostKeyPrompt
+    setHostKeyPrompt(null)
+    if (allowed) {
+      void tauriInvoke('ssh_hostkey_response', { id: sessionId, allowed: true, persist }).catch(() => {})
+      return
+    }
+    // 拒绝:不响应 sender,直接关 SSH 让用户回到资产列表。
+    void tauriInvoke('ssh_hostkey_response', { id: sessionId, allowed: false, persist: false })
+      .catch(() => { /* 后端 sender 可能已被取消;失败不阻塞下面的断开 */ })
+    void tauriInvoke('ssh_disconnect', { id: sessionId }).catch(() => {})
+    if (!disposedRef.current) {
+      setError(`已拒绝主机密钥:${promptSnapshot.remote} (${promptSnapshot.keyType})`)
+    }
+    onClose()
   }
 
   const sidePanelLabel = sidePanel === 'sftp' ? '文件传输' : '网页访问'
@@ -411,6 +483,90 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
           onSubmit={({ command, sessionIds }) => void sendBroadcast(command, sessionIds)}
           onClose={closeBroadcast}
         />
+      )}
+      {kbPrompt !== null && (
+        <div className={css.kbBackdrop} role="dialog" aria-modal="true" aria-label="MFA 验证">
+          <section className={css.kbDialog}>
+            <header className={css.kbHeader}>
+              <span className={css.kbTitle}>MFA 验证</span>
+              <span className={css.kbHint}>{typeof asset.config.host === 'string' ? `${asset.config.host} 需要验证` : '服务器需要验证'}</span>
+            </header>
+            <div className={css.kbBody}>
+              {kbPrompt.instructions !== '' && <div className={css.kbInstructions}>{kbPrompt.instructions}</div>}
+              {kbPrompt.prompts.map((prompt, index) => (
+                <div className={css.kbField} key={`${index}-${prompt.prompt}`}>
+                  <label className={css.kbLabel} htmlFor={`kb-answer-${index}`}>
+                    {prompt.prompt !== '' ? prompt.prompt : '一次性验证码'}
+                  </label>
+                  <input
+                    id={`kb-answer-${index}`}
+                    className={css.kbInput}
+                    type={prompt.echo ? 'text' : 'password'}
+                    value={kbAnswers[index] ?? ''}
+                    autoFocus={index === 0}
+                    onChange={(event) => {
+                      const next = [...kbAnswers]
+                      next[index] = event.target.value
+                      setKbAnswers(next)
+                    }}
+                  />
+                </div>
+              ))}
+              <span className={css.kbTimeHint}>请在 360 秒内完成验证,超时连接将断开。</span>
+            </div>
+            <footer className={css.kbFooter}>
+              <button type="button" className={css.kbSubmit} onClick={submitKbAnswers}>提交验证码</button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {hostKeyPrompt !== null && (
+        <div className={css.hkBackdrop} role="dialog" aria-modal="true" aria-label="主机密钥确认">
+          <section className={css.hkDialog}>
+            <header className={css.hkHeader}>
+              <span className={css.hkTitle}>是否信任此主机?</span>
+              <span className={css.hkHint}>该服务器尚未加入 known_hosts,首次连接需确认指纹。</span>
+            </header>
+            <div className={css.hkBody}>
+              <div className={css.hkRow}>
+                <span className={css.hkLabel}>主机</span>
+                <span className={css.hkValue}>{hostKeyPrompt.remote}</span>
+              </div>
+              <div className={css.hkRow}>
+                <span className={css.hkLabel}>密钥类型</span>
+                <span className={css.hkValue}>{hostKeyPrompt.keyType}</span>
+              </div>
+              <div className={css.hkRow}>
+                <span className={css.hkLabel}>指纹(SHA256)</span>
+                <span className={css.hkValueMono}>{hostKeyPrompt.sha256}</span>
+              </div>
+              <div className={css.hkDanger}>
+                请确认指纹与服务器管理员提供的指纹一致。指纹不一致可能意味着你正在遭受中间人攻击。
+              </div>
+            </div>
+            <footer className={css.hkFooter}>
+              <button
+                type="button"
+                className={css.hkBtnDanger}
+                onClick={() => { resolveHostKey(false, false) }}
+                title="拒绝并断开本次 SSH 连接"
+              >拒绝</button>
+              <span className={css.spacer} />
+              <button
+                type="button"
+                className={css.hkBtnSecondary}
+                onClick={() => { resolveHostKey(true, false) }}
+                title="本次会话信任此指纹,不写入 known_hosts"
+              >仅本次</button>
+              <button
+                type="button"
+                className={css.hkBtnPrimary}
+                onClick={() => { resolveHostKey(true, true) }}
+                title="写入 known_hosts,后续自动信任"
+              >信任并保存</button>
+            </footer>
+          </section>
+        </div>
       )}
     </div>
   )

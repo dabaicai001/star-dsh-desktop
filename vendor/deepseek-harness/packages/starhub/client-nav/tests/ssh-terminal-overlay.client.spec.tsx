@@ -101,6 +101,8 @@ describe('SshTerminalOverlay', () => {
     expect(invoke).toHaveBeenCalledWith('ssh_disconnect', { id: 'ssh-1' })
     expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', { event: 'ssh:data:ssh-1', eventId: 1 })
     expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', { event: 'ssh:close:ssh-1', eventId: 2 })
+    expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', { event: 'ssh:kb-interactive:ssh-1', eventId: 3 })
+    expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', { event: 'ssh:hostkey-confirm:ssh-1', eventId: 4 })
   })
 
   it('calls onClose from the workspace close control', () => {
@@ -357,6 +359,162 @@ describe('SshTerminalOverlay', () => {
     fireEvent.change(getByLabelText('广播命令'), { target: { value: 'reboot' } })
     fireEvent.click(getByText('广播 (2)'))
     await waitFor(() =>{  expect(screen.getByText(/1 个会话发送失败/)).toBeTruthy() })
+    unmount()
+  })
+
+  it('shows the MFA prompt on kb-interactive and submits answers via ssh_kb_response', async () => {
+    const callbacks: Array<(event: unknown) => void> = []
+    const invoke = vi.fn((command: string) => {
+      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
+      return Promise.resolve(null)
+    })
+    ;(window as unknown as {
+      __TAURI_INTERNALS__: {
+        invoke: typeof invoke
+        transformCallback: (callback: (event: unknown) => void) => number
+      }
+    }).__TAURI_INTERNALS__ = {
+      invoke,
+      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
+    }
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    }
+
+    const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    // 3 个子scription:data / close / kb-interactive
+    const kbCallback = callbacks[2]!
+    kbCallback({ event: 'ssh:kb-interactive:ssh-1', id: 3, payload: {
+      sessionId: 'ssh-1',
+      instructions: '2FA required',
+      prompts: [{ prompt: 'Verification code', echo: false }],
+      autoFill: [null],
+    } })
+    await waitFor(() =>{  expect(screen.getByLabelText('MFA 验证')).toBeTruthy() })
+    expect(screen.getByText('2FA required')).toBeTruthy()
+    expect(screen.getByText('Verification code')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Verification code'), { target: { value: '123456' } })
+    fireEvent.click(screen.getByText('提交验证码'))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_kb_response', { id: 'ssh-1', responses: ['123456'] }) })
+    expect(screen.queryByLabelText('MFA 验证')).toBeNull()
+    unmount()
+  })
+
+  it('prefills kb answers from autoFill and clears the prompt on submit', async () => {
+    const callbacks: Array<(event: unknown) => void> = []
+    const invoke = vi.fn((command: string) => {
+      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
+      return Promise.resolve(null)
+    })
+    ;(window as unknown as {
+      __TAURI_INTERNALS__: {
+        invoke: typeof invoke
+        transformCallback: (callback: (event: unknown) => void) => number
+      }
+    }).__TAURI_INTERNALS__ = {
+      invoke,
+      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
+    }
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    }
+
+    const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    const kbCallback = callbacks[2]!
+    kbCallback({ event: 'ssh:kb-interactive:ssh-1', id: 3, payload: {
+      sessionId: 'ssh-1',
+      instructions: '',
+      prompts: [
+        { prompt: 'Password', echo: false },
+        { prompt: 'TOTP', echo: false },
+      ],
+      autoFill: ['pre-filled-pwd', null],
+    } })
+    await waitFor(() =>{  expect(screen.getByLabelText('MFA 验证')).toBeTruthy() })
+    expect((screen.getByLabelText('Password') as HTMLInputElement).value).toBe('pre-filled-pwd')
+    expect((screen.getByLabelText('TOTP') as HTMLInputElement).value).toBe('')
+    fireEvent.click(screen.getByText('提交验证码'))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_kb_response', { id: 'ssh-1', responses: ['pre-filled-pwd', ''] }) })
+    expect(screen.queryByLabelText('MFA 验证')).toBeNull()
+    unmount()
+  })
+
+  it('shows the host-key prompt on first connect, lets the user trust & persist, and replies via ssh_hostkey_response', async () => {
+    const callbacks: Array<(event: unknown) => void> = []
+    const invoke = vi.fn((command: string) => {
+      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
+      return Promise.resolve(null)
+    })
+    ;(window as unknown as {
+      __TAURI_INTERNALS__: {
+        invoke: typeof invoke
+        transformCallback: (callback: (event: unknown) => void) => number
+      }
+    }).__TAURI_INTERNALS__ = {
+      invoke,
+      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
+    }
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    }
+
+    const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    // hostkey-confirm 是第 4 个 listen(顺序:data / close / kb-interactive / hostkey-confirm)
+    const hkCallback = callbacks[3]!
+    hkCallback({ event: 'ssh:hostkey-confirm:ssh-1', id: 4, payload: {
+      hostname: '10.0.0.5', port: 22, remote: '10.0.0.5:22',
+      keyType: 'ssh-ed25519', sha256: 'SHA256:c3R1Yi1lZDI1NTE5LWZpbmdlcnByaW50',
+    } })
+    await waitFor(() =>{  expect(screen.getByLabelText('主机密钥确认')).toBeTruthy() })
+    expect(screen.getByText('10.0.0.5:22')).toBeTruthy()
+    expect(screen.getByText('ssh-ed25519')).toBeTruthy()
+    expect(screen.getByText(/c3R1Yi1lZDI1NTE5LWZpbmdlcnByaW50/)).toBeTruthy()
+    fireEvent.click(screen.getByText('信任并保存'))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_hostkey_response', { id: 'ssh-1', allowed: true, persist: true }) })
+    expect(screen.queryByLabelText('主机密钥确认')).toBeNull()
+    unmount()
+  })
+
+  it('rejects an unknown host key by responding allowed=false and disconnecting the session', async () => {
+    const callbacks: Array<(event: unknown) => void> = []
+    const onClose = vi.fn()
+    const invoke = vi.fn((command: string) => {
+      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
+      return Promise.resolve(null)
+    })
+    ;(window as unknown as {
+      __TAURI_INTERNALS__: {
+        invoke: typeof invoke
+        transformCallback: (callback: (event: unknown) => void) => number
+      }
+    }).__TAURI_INTERNALS__ = {
+      invoke,
+      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
+    }
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    }
+
+    const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={onClose} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    const hkCallback = callbacks[3]!
+    hkCallback({ event: 'ssh:hostkey-confirm:ssh-1', id: 4, payload: {
+      hostname: '10.0.0.5', port: 22, remote: '10.0.0.5:22',
+      keyType: 'ssh-rsa', sha256: 'SHA256:dW50cnVzdGVkLWZpbmdlcnByaW50',
+    } })
+    await waitFor(() =>{  expect(screen.getByLabelText('主机密钥确认')).toBeTruthy() })
+    fireEvent.click(screen.getByText('拒绝'))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_hostkey_response', { id: 'ssh-1', allowed: false, persist: false }) })
+    expect(invoke).toHaveBeenCalledWith('ssh_disconnect', { id: 'ssh-1' })
+    expect(onClose).toHaveBeenCalled()
+    expect(screen.queryByLabelText('主机密钥确认')).toBeNull()
     unmount()
   })
 })

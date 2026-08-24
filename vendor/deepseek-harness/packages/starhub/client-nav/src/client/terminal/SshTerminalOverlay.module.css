@@ -65,5 +65,40 @@
 .sidePanelBody { display: flex; min-width: 0; min-height: 0; flex: 1; }
 .sidePanelBody > * { min-width: 0; min-height: 0; flex: 1; }
 .error { padding: 9px 16px; border-bottom: 1px solid #76404b; background: #411f29; color: #ffb6b9; font-size: 12px; }
+.kbBackdrop { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(5, 10, 16, 0.74); }
+.kbDialog { display: flex; width: min(420px, 92vw); flex-direction: column; overflow: hidden; border: 1px solid #416d94; border-radius: 7px; background: #1a2c41; box-shadow: 0 18px 46px rgba(0, 0, 0, 0.46); }
+.kbHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #34516f; }
+.kbTitle { color: #eff8ff; font-size: 14px; font-weight: 750; }
+.kbHint { overflow: hidden; color: #9eb6cc; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.kbBody { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.kbInstructions { color: #c9ddf0; font-size: 12px; line-height: 1.5; }
+.kbField { display: flex; flex-direction: column; gap: 5px; }
+.kbLabel { color: #a9c2d9; font-size: 12px; }
+.kbInput { box-sizing: border-box; width: 100%; border: 1px solid #41698c; border-radius: 5px; padding: 8px 9px; outline: none; background: #101d2b; color: #e4f2ff; font: inherit; font-size: 13px; font-family: var(--dsw-font-mono); }
+.kbInput:focus { border-color: #64cddd; box-shadow: 0 0 0 2px rgba(100, 205, 221, 0.15); }
+.kbTimeHint { color: #8ba6bf; font-size: 11px; }
+.kbFooter { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid #34516f; }
+.kbSubmit { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #3490a7; border-radius: 5px; padding: 7px 14px; background: #17627a; color: #effdff; cursor: pointer; font-size: 12px; font-weight: 700; }
+.kbSubmit:hover { background: #1d7490; }
+.hkBackdrop { position: fixed; inset: 0; z-index: 95; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(5, 10, 16, 0.78); }
+.hkDialog { display: flex; width: min(480px, 94vw); flex-direction: column; overflow: hidden; border: 1px solid #416d94; border-radius: 7px; background: #1a2c41; box-shadow: 0 18px 46px rgba(0, 0, 0, 0.46); }
+.hkHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #34516f; }
+.hkTitle { color: #eff8ff; font-size: 14px; font-weight: 750; }
+.hkHint { overflow: hidden; color: #9eb6cc; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.hkBody { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.hkRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px dashed #34516f; padding-bottom: 8px; }
+.hkRow:last-of-type { border-bottom: 0; padding-bottom: 0; }
+.hkLabel { flex: none; color: #9eb6cc; font-size: 11px; }
+.hkValue { overflow: hidden; color: #e4f2ff; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.hkValueMono { overflow: hidden; color: #ffd789; font-size: 12px; font-family: var(--dsw-font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.hkDanger { border: 1px solid #76404b; border-radius: 5px; padding: 8px 10px; background: #2a1820; color: #ffb6b9; font-size: 11px; line-height: 1.5; }
+.hkFooter { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid #34516f; }
+.hkBtnDanger, .hkBtnSecondary, .hkBtnPrimary { display: inline-flex; align-items: center; gap: 6px; border-radius: 5px; padding: 7px 14px; cursor: pointer; font-size: 12px; font-weight: 700; }
+.hkBtnDanger { border: 1px solid #88394a; background: #4a1c28; color: #ffd0d4; }
+.hkBtnDanger:hover { background: #6a2434; }
+.hkBtnSecondary { border: 1px solid #41698c; background: #1b344d; color: #dcefff; }
+.hkBtnSecondary:hover { border-color: #5bc9dc; color: #8cdeeb; }
+.hkBtnPrimary { border: 1px solid #3490a7; background: #17627a; color: #effdff; }
+.hkBtnPrimary:hover { background: #1d7490; }
 @media (max-width: 840px) { .sidePanel { width: 42%; min-width: 290px; } .connectionState { display: none; } }
 @media (max-width: 680px) { .workspace { flex-direction: column; } .sidePanel { width: auto; min-width: 0; min-height: 42%; flex: 1 1 42%; border-top: 1px solid #365775; border-left: 0; } .workspaceTabs { min-height: 38px; padding-inline: 4px; } .terminalTab, .workspaceTab, .workspaceTabActive { padding-inline: 8px; } .broadcastAction { padding: 6px 8px; } }
