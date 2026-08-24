@@ -11,17 +11,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ubuntu-22-04:
-    name: Ubuntu 22.04 / ${{ matrix.name }}
+  ubuntu-24-04:
+    name: Ubuntu 24.04 / ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: x86_64
-            runner: ubuntu-22.04
+            runner: ubuntu-24.04
             deb_arch: amd64
           - name: ARM64
-            runner: ubuntu-22.04-arm
+            runner: ubuntu-24.04-arm
             deb_arch: arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -104,7 +104,7 @@ jobs:
 
       - name: Test Tauri backend on Linux
         working-directory: src-tauri
-        # ARM64 runner 仅 4GB 内存,而本后端 debug 测试构建峰值内存极高(曾在
+        # ARM64 runner 仅 16GB 内存,而本后端 debug 测试构建峰值内存极高(曾在
         # 27GB 本地机 LLVM OOM);除 Cargo.toml 的 [profile.test] debug=0 外,
         # 再限制并行编译单元数,把峰值内存进一步压下来避免 101。
         env:

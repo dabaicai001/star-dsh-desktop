@@ -198,6 +198,41 @@ pub fn screenshot_list_monitors() -> Result<Vec<ScreenshotMonitor>, String> {
     monitor_descs()
 }
 
+/// Linux 截图依赖 PipeWire ≥ 1.0:xcap → pipewire/libspa 0.10.1 需要新版 spa
+/// 头与 libpipewire(0.10.1 在 0.3.48 的 Ubuntu 22.04 上连绑定都无法生成,
+/// Linux 构建基线因此定在 ubuntu-24.04)。这里在隐藏主窗口前做版本预检,
+/// 旧系统直接给出升级提示,避免「窗口已隐藏、遮罩未弹出」的失败形态。
+#[cfg(target_os = "linux")]
+fn check_pipewire_compat() -> Result<(), String> {
+    const HINT: &str =
+        "截图功能需要系统 PipeWire ≥ 1.0(Ubuntu 24.04 及以上)。当前系统 PipeWire 版本过旧,请升级系统后重试。";
+    let output = std::process::Command::new("pipewire")
+        .arg("--version")
+        .output();
+    let stdout = match output {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).into_owned(),
+        // 探测不到(/usr/bin/pipewire 缺失)按不兼容处理,给用户明确指引。
+        Err(_) => return Err(HINT.to_string()),
+    };
+    // 输出形如 "pipewire 1.0.5" 或 "pipewire 0.3.48"。
+    let major = stdout
+        .split_whitespace()
+        .nth(1)
+        .and_then(|v| v.split('.').next())
+        .and_then(|m| m.parse::<u32>().ok());
+    match major {
+        Some(major) if major >= 1 => Ok(()),
+        Some(_) => Err(HINT.to_string()),
+        // 版本无法解析时放行,交给 capture 自身报错(避免误拦截新发行版)。
+        None => Ok(()),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn check_pipewire_compat() -> Result<(), String> {
+    Ok(())
+}
+
 /// 开始区域截图:隐藏主窗口 → 截桌面底图 → 弹出遮罩窗口。
 /// 截屏走 blocking 线程 + 10s 超时:WGC/GPU 异常卡住时不能把用户锁死在
 /// 「主窗口已隐藏、遮罩未弹出」的黑屏态,任何失败都恢复主窗口。
@@ -206,6 +241,7 @@ pub async fn screenshot_begin_region(
     app: AppHandle,
     state: tauri::State<'_, ScreenshotSession>,
 ) -> Result<(), String> {
+    check_pipewire_compat()?;
     hide_main(&app);
     const CAPTURE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
     let captured = tokio::time::timeout(

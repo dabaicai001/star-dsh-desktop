@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.95.2-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.95.3-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -148,6 +148,10 @@
 
 ## 当前版本
 
+### v0.95.3 (2026-08-24)
+- 🐛 GitHub Linux 构建失败根因修复:截图栈 `xcap → pipewire/libspa 0.10.1` 要求系统 PipeWire/spa 头 ≥ 1.0,而 ubuntu-22.04 的 0.3.48 头过旧(`libspa-sys` 构建时 bindgen 从系统头生成绑定,缺 `flags` 字段、meta 函数仍是宏)→ `libspa` 编译 7 错;Linux 构建基线升 `ubuntu-24.04`(PipeWire 1.0.5),glibc 下限 2.35 → 2.39。
+- 🐛 Linux 旧系统(Ubuntu 22.04 等 PipeWire < 1.0)点击截图提示「需要系统 PipeWire ≥ 1.0(升级到 Ubuntu 24.04 及以上)」,不再静默失败;截图按钮失败从仅 console 改为可见 toast。
+
 ### v0.95.2 (2026-08-24)
 - 🐛 会话头部 git 分支胶囊自动追踪外部切换:每 10s 轮询 + 页面重新可见立即刷新 + 打开面板顺带刷新——在其它终端/编辑器 checkout 后胶囊不再延迟到切换会话才更新。
 - 🐛 GitHub Linux 构建修复:apt 依赖补 `libpipewire-0.3-dev` + `libspa-0.2-dev`(截图栈 xcap 的 `libspa-sys` 此前在 Linux 构建报 `Cannot find libraries: libpipewire-0.3`)。
@@ -282,19 +286,19 @@ Tauri 打包前置流程（`src-tauri/tauri.conf.json` 的 `beforeBuildCommand` 
 | 文件 | 路径 | 用途 |
 |---|---|---|
 | DEB 安装包 | `src-tauri/target/release/bundle/deb/StarHub_<version>_{amd64,arm64}.deb` | Debian/Ubuntu，通过 APT 安装并解析依赖 |
-| RPM 安装包 | `src-tauri/target/release/bundle/rpm/StarHub-<version>-1.{x86_64,aarch64}.rpm` | glibc 2.35+ RPM 系，通过 DNF 安装并解析依赖 |
+| RPM 安装包 | `src-tauri/target/release/bundle/rpm/StarHub-<version>-1.{x86_64,aarch64}.rpm` | glibc 2.39+ RPM 系，通过 DNF 安装并解析依赖 |
 | AppImage | `src-tauri/target/release/bundle/appimage/StarHub_<version>_{amd64,aarch64}.AppImage` | 主流 glibc 桌面通用版，内置 WebKitGTK/GTK/sidecar |
 
-> Linux 包必须在 Ubuntu 22.04 对应架构的原生环境构建，确保 glibc 2.35 兼容下限；AppImage 不允许交叉编译。CI 使用 `ubuntu-22.04` 与 `ubuntu-22.04-arm` runner，完成后执行 `bash scripts/verify-linux-bundles.sh`。WSL 中可用 Docker 验证 x86_64 构建：
+> Linux 包必须在 Ubuntu 24.04 对应架构的原生环境构建，确保 glibc 2.39 兼容下限；**截图功能依赖系统 PipeWire ≥ 1.0（Ubuntu 24.04 及以上）**——旧系统（如 Ubuntu 22.04 的 PipeWire 0.3.48）上点击截图会提示升级；AppImage 不允许交叉编译。CI 使用 `ubuntu-24.04` 与 `ubuntu-24.04-arm` runner，完成后执行 `bash scripts/verify-linux-bundles.sh`。WSL 中可用 Docker 验证 x86_64 构建：
 > ```bash
 > docker run --rm --network host \
 >   -v ~/.cargo:/root/.cargo -v ~/.rustup:/root/.rustup \
 >   -v <go-path>:/usr/local/go \
->   -v $(pwd):/workspace -w /workspace ubuntu:22.04 \
+>   -v $(pwd):/workspace -w /workspace ubuntu:24.04 \
 >   bash -c "apt-get update && apt-get install -y libwebkit2gtk-4.1-dev ... && npx tauri build"
 > ```
 >
-> ARM64 runner 受限于 4GB 内存，`Cargo.toml` 的 `[profile.test] debug = 0` 已关闭测试编译 debuginfo，`linux-compat.yml` / `release.yml` 对 ARM64 设置 `CARGO_BUILD_JOBS=2` 限制并行编译单元。Go sidecar 编译时必须指定正确的 `GOOS` 和 `GOARCH`（例如 `GOOS=windows GOARCH=amd64`），否则二进制无法在目标平台运行。
+> ARM64 runner 受限于 16GB 内存，`Cargo.toml` 的 `[profile.test] debug = 0` 已关闭测试编译 debuginfo，`linux-compat.yml` / `release.yml` 对 ARM64 设置 `CARGO_BUILD_JOBS=2` 限制并行编译单元。Go sidecar 编译时必须指定正确的 `GOOS` 和 `GOARCH`（例如 `GOOS=windows GOARCH=amd64`），否则二进制无法在目标平台运行。
 
 ---
 

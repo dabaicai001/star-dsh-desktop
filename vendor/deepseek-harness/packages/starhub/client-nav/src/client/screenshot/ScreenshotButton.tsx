@@ -7,7 +7,7 @@
  * draft 附件并追加到会话输入(复用现有图片附件管线)。
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerAttachment, DraftAttachmentId } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -57,11 +57,15 @@ function ingestScreenshot(
   if (images.length > 0) addImages?.(images.map(image => image.id))
 }
 
+/** 截图失败提示自动消失时长。 */
+const TOAST_DURATION_MS = 4000
+
 export function ScreenshotButton({
   createDraftImages,
   startRegion,
   inputActions,
 }: ScreenshotButtonProps): JSX.Element {
+  const [toast, setToast] = useState<string | null>(null)
   // 事件回调经 ref 转发,监听本身只挂一次(避免 props 抖动重建订阅)。
   const latest = useRef({ createDraftImages, addImages: inputActions?.addImages })
   latest.current = { createDraftImages, addImages: inputActions?.addImages }
@@ -73,20 +77,37 @@ export function ScreenshotButton({
     return () => { void unlisten.then(dispose => dispose()) }
   }, [])
 
+  // toast 自动消失(时序副作用由出现断言覆盖,不单独测消失)。
+  useEffect(() => {
+    if (toast === null) return
+    const timer = window.setTimeout(() => setToast(null), TOAST_DURATION_MS)
+    return () => window.clearTimeout(timer)
+  }, [toast])
+
   const run = (): void => {
-    startRegion().catch(error => { console.error('开始截图失败:', error) })
+    startRegion().catch((error: unknown) => {
+      // 老系统(Linux PipeWire < 1.0)等前置失败必须可见,不能只打 console:
+      // Tauri invoke 的拒绝值是 Rust Err 的字符串,浏览器预览则是 Error。
+      const message = error instanceof Error ? error.message : String(error)
+      setToast(message)
+    })
   }
 
   return (
-    <button
-      type="button"
-      className={css.button}
-      aria-label="截图"
-      title="区域截图（拖拽框选屏幕区域）"
-      onClick={run}
-      onMouseDown={e => e.preventDefault()}
-    >
-      {SCISSORS_ICON}
-    </button>
+    <>
+      <button
+        type="button"
+        className={css.button}
+        aria-label="截图"
+        title="区域截图（拖拽框选屏幕区域）"
+        onClick={run}
+        onMouseDown={e => e.preventDefault()}
+      >
+        {SCISSORS_ICON}
+      </button>
+      {toast !== null && (
+        <div className={css.toast} role="alert">{toast}</div>
+      )}
+    </>
   )
 }

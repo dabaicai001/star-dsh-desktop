@@ -18,3 +18,21 @@
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
+
+/* 截图失败提示:fixed 定位避免被 composer 容器裁切,样式对齐 DSH toast。 */
+.toast {
+  position: fixed;
+  z-index: 100;
+  bottom: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(560px, 90vw);
+  padding: 8px 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--dsw-shadow-popover);
+  font-size: 12px;
+  line-height: 1.5;
+}

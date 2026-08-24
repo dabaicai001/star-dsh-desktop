@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.95.2(🛡️ SSH/Docker 删除类操作与权限预设脱钩——approval-bridge 风险门新增 hard 档,`rm`/`find -delete`/`ip link del`/`journalctl --vacuum`/Docker 删除/DROP/TRUNCATE/Redis DEL 等风险词命中即使「全访问(never)」预设也必弹确认卡;右侧栏「文件树」与侧栏子类互斥(点哪个哪个在上面);文件信息弹窗加大为 Read 卡同尺寸并用 ReadBlock 行号预览;SSH MFA 非 TOTP 提示不再预填主密码 + 跳板机腿支持 keyboard-interactive;Docker `@` 引用特别标注 `[Docker]` 并注入删除保护硬规则;git 分支胶囊自动追踪外部切换 + GitHub Linux 构建补 PipeWire 依赖。) |
+| 当前版本 | v0.95.3(🐛 GitHub Linux 构建失败根因修复(截图栈依赖链版本错配):`xcap 0.9.8 → pipewire/libspa 0.10.1` 要求系统 PipeWire/spa 头 ≥ 1.0,而 `libspa-sys` 的绑定是构建时用 bindgen 从系统 spa 头生成的,ubuntu-22.04 的 0.3.48 头缺 `spa_video_info_raw.flags`、`modifier` 还是 `int64`,且 `spa_meta_region_is_valid`/`spa_meta_first` 仅是宏(bindgen 无法导出成可调用函数)→ `cargo test --locked` 编译 libspa 报 E0425/E0560/E0308 共 7 错(exit 101);Windows 用 WGC 后端不碰该链所以绿。修复:Linux 构建基线升 `ubuntu-24.04`(PipeWire 1.0.5,meta 函数已是 static inline、链接层安全),glibc 下限 2.35 → 2.39,README / 技术方案 / 踩坑记录 / 已知坑索引同步。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-24 (v0.95.2)*
+*最后更新: 2026-08-24 (v0.95.3)*
