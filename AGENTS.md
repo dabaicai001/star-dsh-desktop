@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.94.1(🐛 修复两处:① `apps/starhub-window` 独立 `tsc --noEmit` 基线清零——补 project references(client-nav/ui-theme)+ 本应用 `css-modules.d.ts` + ErrorBoundary 补 `override`,依赖面按 apps/web 同款边界解析,不再把 vendor 上游源码拖进严格编译;② FileViewer「变更前/变更后」对比视图长行的 绿(+)/红(−) 底色只到列宽、不覆盖整行文字——`diffView` 宽度改 `max-content` + 列内横滚,底色铺满整行。前版 v0.94.0:AI 记忆系统专属记忆模型硬前置(provider+model 未配置 = 记忆功能整体关闭,注入/沉淀/memory 工具三处门禁 + UI 开关禁用;抽取走 `ctx.llm.stream` 专属路由;user/global 记忆须标注项目名 `[项目名]`)。) |
+| 当前版本 | v0.94.2(✨ AI 域工具 `dsh:` 会话 keyboard-interactive 主壳 MFA 确认卡 + Redis 工作台 DB 树化;🐛 修复 SSH 主机密钥确认链路:① 正式打开 SSH 终端首次连接新服务器时弹出「是否信任此主机?」三选项弹窗(此前只有测试连接订阅 hostkey-confirm 事件,交互终端无人消费 sender,静默 60s 超时 `[HOSTKEY_TIMEOUT]` 失败);② AI 域工具 `dsh:` 会话遇到未知主机密钥快速失败并指引先在 SSH 终端信任保存,不再干等 60s。前版 v0.94.1:🐛 修复两处:① `apps/starhub-window` 独立 `tsc --noEmit` 基线清零——补 project references(client-nav/ui-theme)+ 本应用 `css-modules.d.ts` + ErrorBoundary 补 `override`,依赖面按 apps/web 同款边界解析,不再把 vendor 上游源码拖进严格编译;② FileViewer「变更前/变更后」对比视图长行的 绿(+)/红(−) 底色只到列宽、不覆盖整行文字——`diffView` 宽度改 `max-content` + 列内横滚,底色铺满整行。前版 v0.94.0:AI 记忆系统专属记忆模型硬前置(provider+model 未配置 = 记忆功能整体关闭,注入/沉淀/memory 工具三处门禁 + UI 开关禁用;抽取走 `ctx.llm.stream` 专属路由;user/global 记忆须标注项目名 `[项目名]`)。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-23 (v0.94.1)*
+*最后更新: 2026-08-24 (v0.94.2)*

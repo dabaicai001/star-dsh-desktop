@@ -12,6 +12,16 @@
 - SQL 查询结果可编辑及无主键报错提示（转 K3）
 - 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
 
+## [0.94.2] - 2026-08-24
+
+### 新增
+- ✨ AI 域工具会话(connId `dsh:{assetId}:ssh`)遇到服务器 keyboard-interactive 请求时,主壳弹出居中 MFA 验证卡:后端 `authenticate_keyboard_interactive` 双发精确事件(`ssh:kb-interactive:<sessionId>`,交互终端 / 测试连接各自弹窗)与通用事件(`ssh:kb-interactive`,负载带 sessionId,主壳确认卡仅接管 `dsh:` 前缀会话),应答统一走 `ssh_kb_response`;TOTP 提示识别扩充(authenticator / 2fa / 2sv / mfa / passcode / 动态口令 / 短信验证码等)。
+- ✨ Redis 工作台 DB 树化:左侧 db0–db15 全部默认收起,点击展开才懒加载(DBSIZE + SCAN,键按 `:` 二次分组为文件夹树,文件夹同样默认收起、点击行才展开叶子);同一时刻仅展开一个 db(sidecar Redis 客户端为单库语义,展开态 db 恒等于客户端当前 db,键操作与 CLI 都作用其上);已加载键按 db 缓存,收起再展开不重复请求。
+
+### 修复
+- 🐛 SSH 首次连接新服务器不再静默失败,弹出「是否信任此主机?」确认弹窗(拒绝 / 仅本次 / 信任并保存):此前后端 `ssh:hostkey-confirm:<sessionId>` 事件只有测试连接在订阅,正式打开 SSH 终端(starhub-window 独立窗口)无人消费 sender,未知主机一律等满 60s 后以 `[HOSTKEY_TIMEOUT]` 拒绝,用户看不到任何提示——`SshTerminalOverlay` 在 invoke `ssh_connect` 前补订阅该事件并渲染三选项弹窗,拒绝/信任均经 `ssh_hostkey_response` 回传(信任并保存写入 known_hosts)。
+- 🐛 AI 域工具 SSH 会话(connId `dsh:{assetId}:ssh`,经 ssh_exec / 域工具建连)遇到未知主机密钥时,不再发出无人订阅的 hostkey 事件静默等 60s 超时:改为快速失败并返回明确指引「主机尚未确认主机密钥,请先在 SSH 终端连接一次并选择『信任并保存』」(与 Docker over SSH 的预信任约定一致);已确认过的主机不受影响。
+
 ## [0.94.1] - 2026-08-23
 
 ### 修复

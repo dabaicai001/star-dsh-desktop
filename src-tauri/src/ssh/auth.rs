@@ -11,6 +11,12 @@ use tokio::sync::{oneshot, Mutex};
 /// 远程端口转发映射表: remote_port -> (local_host, local_port)
 pub type RemoteForwards = Arc<Mutex<HashMap<u16, (String, u16)>>>;
 
+/// connId 以 `dsh:` 开头的是 AI 域工具会话(见 harness/domain.rs 的
+/// `ai_ssh_conn_id`,形如 `dsh:{assetId}:ssh`)。
+fn is_ai_session(session_id: &str) -> bool {
+    session_id.starts_with("dsh:")
+}
+
 pub struct SshHandler {
     pub session_id: String,
     pub app_handle: Option<tauri::AppHandle>,
@@ -49,6 +55,19 @@ impl client::Handler for SshHandler {
     ) -> Result<bool, Self::Error> {
         if super::known_hosts::is_known(&self.host, self.port, server_public_key).await {
             return Ok(true);
+        }
+
+        // AI 域工具会话(dsh: 前缀)不弹交互确认:无人值守执行场景无法答题,
+        // 此前会发出无人订阅的 hostkey-confirm 事件,静默等满 60s 才以
+        // [HOSTKEY_TIMEOUT] 失败,用户完全不知道要先信任主机。与 Docker over
+        // SSH 的既有约定一致:未知主机密钥需先在 SSH 终端连接一次,
+        // 选择「信任并保存」写入 known_hosts,之后 AI 会话即可复用。
+        if is_ai_session(&self.session_id) {
+            return Err(anyhow::anyhow!(
+                "[HOSTKEY_UNKNOWN] 主机 {}:{} 尚未确认主机密钥,请先在 SSH 终端连接一次并选择「信任并保存」",
+                self.host,
+                self.port
+            ));
         }
 
         let app_handle = match &self.app_handle {
@@ -196,5 +215,20 @@ impl client::Handler for SshHandler {
         });
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_ai_session() {
+        // AI 域工具会话(harness/domain.rs ai_ssh_conn_id)
+        assert!(is_ai_session("dsh:asset-1:ssh"));
+        // 交互终端(资产 id)与测试连接(test-*)不走 AI 分支
+        assert!(!is_ai_session("asset-1"));
+        assert!(!is_ai_session("test-1712345678901"));
+        assert!(!is_ai_session(""));
     }
 }
