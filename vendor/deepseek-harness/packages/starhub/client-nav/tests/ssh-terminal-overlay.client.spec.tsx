@@ -362,6 +362,51 @@ describe('SshTerminalOverlay', () => {
     unmount()
   })
 
+  it('sends kb_interactive for MFA assets so the server prompt can be shown', async () => {
+    const callbacks: Array<(event: unknown) => void> = []
+    const invoke = vi.fn((command: string) => {
+      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
+      return Promise.resolve(null)
+    })
+    ;(window as unknown as {
+      __TAURI_INTERNALS__: {
+        invoke: typeof invoke
+        transformCallback: (callback: (event: unknown) => void) => number
+      }
+    }).__TAURI_INTERNALS__ = {
+      invoke,
+      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
+    }
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    }
+
+    const mfaAsset = {
+      ...asset,
+      config: {
+        ...asset.config,
+        // NewConnectionDialog 保存 MFA 档时把主密码同时写入 password 与 mfaPassword。
+        password: 'main-secret',
+        authMode: 'mfa',
+        mfaEnabled: true,
+        mfaPassword: 'main-secret',
+      },
+    }
+    const { unmount } = render(<SshTerminalOverlay asset={mfaAsset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', {
+      id: 'ssh-1',
+      config: expect.objectContaining({
+        authMode: 'mfa',
+        mfaEnabled: true,
+        mfaPassword: 'main-secret',
+        auth: { Password: 'main-secret' },
+        kb_interactive: { enabled: true, password: 'main-secret' },
+      }),
+    }) })
+    unmount()
+  })
+
   it('shows the MFA prompt on kb-interactive and submits answers via ssh_kb_response', async () => {
     const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {

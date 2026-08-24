@@ -77,6 +77,24 @@ function buildSshAuth(config: Record<string, unknown>): Record<string, unknown> 
 }
 
 /**
+ * Build the Rust `KeyboardInteractiveConfig` from an asset config, mirroring
+ * the Rust-side translation (commands/ssh.rs parse): `mfaEnabled` → enabled,
+ * `mfaPassword` → password. The raw asset config stores the dialog-facing
+ * fields (authMode/mfaEnabled/mfaPassword), while the Rust `SshConfig` serde
+ * expects `kb_interactive`. Omitting this makes real connections fail with
+ * `[AUTH_FAILED] Server requires keyboard-interactive MFA` even though the
+ * test-connection dialog (which hand-writes `kb_interactive`) prompts fine.
+ * @param config - the hydrated asset config.
+ * @returns the serde `KeyboardInteractiveConfig`, or null when MFA is off.
+ */
+function buildKbInteractive(config: Record<string, unknown>): Record<string, unknown> | null {
+  const enabled = config.authMode === 'mfa' || config.mfaEnabled === true
+  if (!enabled) return null
+  const mfaPassword = typeof config.mfaPassword === 'string' ? config.mfaPassword : ''
+  return { enabled: true, ...(mfaPassword !== '' ? { password: mfaPassword } : {}) }
+}
+
+/**
  * Render one xterm instance backed by a StarHub interactive SSH session, with
  * cwd tracking for the SFTP follow-terminal flow.
  * @param props - selected SSH asset and overlay close callback.
@@ -234,11 +252,16 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
           void unlistenHostkey()
           return
         }
+        const kbInteractive = buildKbInteractive(asset.config)
         await tauriInvoke('ssh_connect', {
           id: sessionId,
           config: {
             ...asset.config,
             auth: buildSshAuth(asset.config),
+            // MFA/2FA:把对话框字段(mfaEnabled/mfaPassword)翻译成 Rust
+            // SshConfig 期望的 kb_interactive;缺此字段时正式连接遇到
+            // keyboard-interactive 服务器会误报 [AUTH_FAILED] 而不弹验证码。
+            ...(kbInteractive === null ? {} : { kb_interactive: kbInteractive }),
             pty_cols: term.cols,
             pty_rows: term.rows,
           },
