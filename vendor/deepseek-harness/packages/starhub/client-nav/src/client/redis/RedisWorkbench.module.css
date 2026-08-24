@@ -23,6 +23,13 @@
 .primaryButton { border: 1px solid var(--dsw-alias-interactive-accent); border-radius: 5px; padding: 6px 11px; background: var(--dsw-alias-interactive-accent); color: #07151b; cursor: pointer; font-size: 12px; font-weight: 650; }
 .primaryButton:not(:disabled):hover { filter: brightness(1.08); }
 .status { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 20px; color: var(--dsw-alias-label-tertiary); font-size: 12px; text-align: center; }
+.dbTree { flex: 1; overflow-y: auto; padding: 4px; }
+.dbNode { min-width: 0; }
+.dbRow { display: flex; align-items: center; gap: 4px; border: 1px solid transparent; border-radius: 5px; padding: 2px 5px; }
+.dbRow:hover { border-color: var(--dsw-alias-border-l2); background: var(--dsw-alias-interactive-bg-hover); }
+.dbName { overflow: hidden; color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-mono); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.dbChildren { padding-left: 14px; }
+.dbStatus { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 4px 10px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 .keyList { flex: 1; overflow-y: auto; padding: 4px; }
 .keyRow { display: flex; align-items: center; gap: 4px; border: 1px solid transparent; border-radius: 5px; padding: 3px 5px; }
 .keyRow:hover { border-color: var(--dsw-alias-border-l2); background: var(--dsw-alias-interactive-bg-hover); }

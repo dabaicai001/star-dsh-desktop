@@ -1,8 +1,15 @@
 /**
  * StarHub 原生 Redis 工作台(批次 2:Redis 工作台 React 化)。
  * 壳内全屏 overlay,替换 Vue embed RedisView。挂载按 asset.config 连
- * db_redis_connect,卸载断连。中央区:DB 切换 + 键总数 + 键列表(SCAN 分页
- * + 搜索过滤)+ 键操作(打开/重命名/删除/清空/新建)+ CLI(db_redis_execute)。
+ * db_redis_connect,卸载断连。
+ *
+ * 左侧为 **DB 树**:db0–db15 全部默认收起,点击某个 db 才展开并懒加载
+ * (db_redis_select 把客户端切换到该库,再 db_redis_db_size + db_redis_scan
+ * 取该 db 的键;键按 ':' 二次分组为文件夹树,文件夹同样默认收起,点击该行
+ * 才展开叶子)。同一时刻只展开一个 db——sidecar 的 Redis 客户端是单库语义
+ * (Select 即重建连接),展开态 db 恒等于客户端当前 db,键操作(打开/重命名/
+ * 删除/清空/新建)与 CLI(db_redis_execute)都作用在展开的库上。已加载的键
+ * 按 db 缓存,收起再展开不重复请求。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RustAsset } from '../store.ts'
@@ -11,13 +18,26 @@ import { allFolderPaths, buildKeyTree, countLeaves, type KeyTreeNode } from './k
 import { RedisValueEditor } from './RedisValueEditor.tsx'
 import css from './RedisWorkbench.module.css'
 
-/** 键列表加载态。 */
-interface Loadable {
+/** Redis 固定 DB 编号(单机 0-15)。 */
+const DB_INDEXES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+
+/** 单个 db 的懒加载缓存:展开时取一次,收起保留。 */
+interface DbLoadable {
   keys: RedisKeyInfo[]
   cursor: number
   loading: boolean
   error: string | null
+  /** DBSIZE 键总数(展开时与 SCAN 一起刷新)。 */
+  size: number
+  /** 本次加载使用的搜索匹配模式(缓存命中判定用)。 */
+  match: string
 }
+
+/** 未加载 db 的占位记录(patchDbList 的合并基底)。 */
+const EMPTY_DB_LOADABLE: DbLoadable = { keys: [], cursor: 0, loading: false, error: null, size: 0, match: '' }
+
+/** 无展开文件夹的占位集(toggleKeyFolder 从不原地改动,可安全共享)。 */
+const EMPTY_FOLDER_PATHS: ReadonlySet<string> = new Set()
 
 /** 新建 key 对话框输入。 */
 interface NewKeyDraft {
@@ -38,7 +58,7 @@ interface KeyTreeRowProps {
 }
 
 /**
- * 渲染一行树节点:文件夹行(箭头 + 段名 + 叶子计数,点击折叠/展开,子级递归)
+ * 渲染一行键树节点:文件夹行(箭头 + 段名 + 叶子计数,点击折叠/展开,子级递归)
  * 或叶子行(类型徽标 + 最后一段,操作沿用完整 key)。
  * @param props - 节点与回调。
  * @returns 该行(及展开时的子级行)。
@@ -97,10 +117,13 @@ function toCliText(v: unknown): string {
 export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () => void }) {
   const [connectError, setConnectError] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
-  const [currentDb, setCurrentDb] = useState(0)
-  const [dbSize, setDbSize] = useState(0)
+  /** 当前展开的 db;null = 全部收起。 */
+  const [expandedDb, setExpandedDb] = useState<number | null>(null)
+  /** 客户端当前所在 db(展开切换后恒等于展开的 db)。 */
+  const [activeDb, setActiveDb] = useState(0)
+  /** 各 db 懒加载缓存(键 + 总数 + 搜索匹配)。 */
+  const [dbLists, setDbLists] = useState<ReadonlyMap<number, DbLoadable>>(new Map())
   const [search, setSearch] = useState('')
-  const [list, setList] = useState<Loadable>({ keys: [], cursor: 0, loading: false, error: null })
   const [cliOpen, setCliOpen] = useState(false)
   const [cliInput, setCliInput] = useState('')
   const [cliOutput, setCliOutput] = useState<string>('')
@@ -110,8 +133,8 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
   const [newKeyDraft, setNewKeyDraft] = useState<NewKeyDraft>({ key: '', type: 'string', value: '' })
   const [toast, setToast] = useState<string | null>(null)
   const [openValue, setOpenValue] = useState<{ key: string; type: string } | null>(null)
-  // 键树文件夹展开态;null = 未初始化(首次按「全展开」呈现,与旧平铺视图等价)。
-  const [collapsedFolders, setCollapsedFolders] = useState<ReadonlySet<string>>(new Set())
+  /** 键树文件夹展开态:db → 已展开路径集(默认全收起,点击文件夹行才展开)。 */
+  const [expandedKeys, setExpandedKeys] = useState<ReadonlyMap<number, ReadonlySet<string>>>(new Map())
   const connRef = useRef<string | null>(null)
 
   const notify = useCallback((msg: string) => {
@@ -121,27 +144,38 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     /* v8 ignore stop */
   }, [])
 
-  const refreshSize = useCallback(async (connId: string) => {
+  /** 合并写入某个 db 的加载记录(不存在的 db 以 EMPTY 为基底)。 */
+  const patchDbList = useCallback((db: number, patch: Partial<DbLoadable>) => {
+    setDbLists(prev => {
+      const next = new Map(prev)
+      next.set(db, { ...(prev.get(db) ?? EMPTY_DB_LOADABLE), ...patch })
+      return next
+    })
+  }, [])
+
+  /** 刷新某个 db 的键总数(DBSIZE)。 */
+  const refreshSizeForDb = useCallback(async (connId: string, db: number) => {
     try {
       const { size } = await redisDBSize(connId)
-      setDbSize(size)
+      patchDbList(db, { size })
     } catch (e: unknown) {
       notify(`获取键数失败:${e instanceof Error ? e.message : String(e)}`)
     }
-  }, [notify])
+  }, [notify, patchDbList])
 
-  const loadKeys = useCallback(async (connId: string) => {
-    const match = search.trim() === '' ? undefined : search.trim()
-    setList(prev => ({ ...prev, loading: true, error: null }))
+  /** 懒加载某个 db 的键(SCAN 一页;带当前搜索过滤),写入该 db 缓存。 */
+  const loadKeysForDb = useCallback(async (connId: string, db: number) => {
+    const match = search.trim()
+    patchDbList(db, { loading: true, error: null })
     try {
-      const result = await redisScan(connId, 0, match)
-      setList({ keys: result.keys, cursor: result.cursor, loading: false, error: null })
+      const result = await redisScan(connId, 0, match === '' ? undefined : match)
+      patchDbList(db, { keys: result.keys, cursor: result.cursor, loading: false, error: null, match })
     } catch (e: unknown) {
-      setList(prev => ({ ...prev, loading: false, error: e instanceof Error ? e.message : String(e) }))
+      patchDbList(db, { loading: false, error: e instanceof Error ? e.message : String(e) })
     }
-  }, [search])
+  }, [search, patchDbList])
 
-  // 挂载建连一次,卸载断连
+  // 挂载建连一次,卸载断连;不自动取键(DB 树全部收起,点击才懒加载)。
   useEffect(() => {
     const config = asset.config
     const connParams = {
@@ -159,7 +193,6 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
         if (!info.connId) throw new Error('Redis 连接未返回 connId')
         connRef.current = info.connId
         setConnected(true)
-        await Promise.all([refreshSize(info.connId), loadKeys(info.connId)])
       })
       .catch((e: unknown) => {
         /* v8 ignore start -- `String(e)` 兜底非 Error;`!cancelled` 卸载守卫由成功路径覆盖 */
@@ -175,18 +208,56 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     // 只随资产 id
   }, [asset.id])
 
-  const switchDb = async (db: number) => {
+  /** 展开/收起某个 db;展开时切客户端(如需)并懒加载该 db 的键。 */
+  const toggleDb = async (db: number) => {
     const connId = connRef.current
     /* v8 ignore next -- 仅连接建立后触发 */
     if (connId === null) return
-    try {
-      await redisSelect(connId, db)
-      setCurrentDb(db)
+    if (expandedDb === db) {
+      // 收起:关闭值编辑器,已加载的键留在缓存里,再展开直接命中。
+      setExpandedDb(null)
       setOpenValue(null)
-      await Promise.all([refreshSize(connId), loadKeys(connId)])
-    } catch (e: unknown) {
-      notify(`切换 DB 失败:${e instanceof Error ? e.message : String(e)}`)
+      return
     }
+    setExpandedDb(db)
+    setOpenValue(null)
+    if (activeDb !== db) {
+      try {
+        await redisSelect(connId, db)
+        setActiveDb(db)
+      } catch (e: unknown) {
+        setExpandedDb(cur => (cur === db ? null : cur))
+        notify(`切换 DB 失败:${e instanceof Error ? e.message : String(e)}`)
+        return
+      }
+    }
+    const cached = dbLists.get(db)
+    const match = search.trim()
+    // 缓存命中(键 + 搜索匹配一致):不重复请求;若该 db 恰有在途刷新,其落盘
+    // 更新同样会刷新本条记录,跳过是安全的。
+    if (cached !== undefined && cached.match === match) return
+    await Promise.all([refreshSizeForDb(connId, db), loadKeysForDb(connId, db)])
+  }
+
+  /** 重新加载某个 db 的键与总数(错误重试 / 刷新钮共用)。 */
+  const reloadDb = async (db: number) => {
+    const connId = connRef.current
+    /* v8 ignore next -- 仅连接建立后触发 */
+    if (connId === null) return
+    await Promise.all([refreshSizeForDb(connId, db), loadKeysForDb(connId, db)])
+  }
+
+  /** 重新加载当前展开 db(键操作 / CLI / 清空后的数据同步)。 */
+  const refreshExpanded = async (connId: string) => {
+    /* v8 ignore next -- 调用方全部保证展开态:键行/刷新钮仅在展开时可用 */
+    if (expandedDb === null) return
+    await Promise.all([refreshSizeForDb(connId, expandedDb), loadKeysForDb(connId, expandedDb)])
+  }
+
+  /** 键变更操作后同步:展开时刷新其键,收起时只刷新当前 db 总数。 */
+  const syncAfterMutation = async (connId: string) => {
+    if (expandedDb === null) await refreshSizeForDb(connId, activeDb)
+    else await refreshExpanded(connId)
   }
 
   const deleteKey = async (key: string) => {
@@ -198,7 +269,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
       await redisDel(connId, [key])
       notify(`已删除:${key}`)
       setOpenValue(cur => (cur?.key === key ? null : cur))
-      await Promise.all([refreshSize(connId), loadKeys(connId)])
+      await refreshExpanded(connId)
     } catch (e: unknown) {
       notify(`删除失败:${e instanceof Error ? e.message : String(e)}`)
     }
@@ -216,7 +287,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
       notify('Key 已重命名')
       setRenaming(null)
       setRenameTo('')
-      await loadKeys(connId)
+      await refreshExpanded(connId)
     } catch (e: unknown) {
       notify(`重命名失败:${e instanceof Error ? e.message : String(e)}`)
     }
@@ -226,13 +297,13 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     const connId = connRef.current
     /* v8 ignore next -- 仅连接建立后触发 */
     if (connId === null) return
-    if (!window.confirm(`FLUSHDB — 将删除 db${currentDb} 全部 key,继续?`)) return
+    const target = expandedDb ?? activeDb
+    if (!window.confirm(`FLUSHDB — 将删除 db${target} 全部 key,继续?`)) return
     try {
       await redisFlushDB(connId)
-      setDbSize(0)
       setOpenValue(null)
-      notify(`db${currentDb} 已清空`)
-      await loadKeys(connId)
+      notify(`db${target} 已清空`)
+      await syncAfterMutation(connId)
     } catch (e: unknown) {
       notify(`清空 DB 失败:${e instanceof Error ? e.message : String(e)}`)
     }
@@ -250,7 +321,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
       setNewKeyOpen(false)
       setNewKeyDraft({ key: '', type: 'string', value: '' })
       notify('Key 已创建')
-      await Promise.all([refreshSize(connId), loadKeys(connId)])
+      await syncAfterMutation(connId)
     } catch (e: unknown) {
       notify(`创建失败:${e instanceof Error ? e.message : String(e)}`)
     }
@@ -264,7 +335,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     try {
       const res = await redisExecute(connId, command)
       setCliOutput(res.error ?? toCliText(res.result))
-      await Promise.all([refreshSize(connId), loadKeys(connId)])
+      await syncAfterMutation(connId)
     } catch (e: unknown) {
       setCliOutput(e instanceof Error ? e.message : String(e))
     }
@@ -272,27 +343,31 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
 
   const openKey = useCallback((key: string, type: string) =>{  setOpenValue({ key, type }) }, [])
 
-  // 键树:SCAN 结果按 ':' 分组;搜索态强制全展开(过滤结果直接可见)。
-  const keyTree = useMemo(() => buildKeyTree(list.keys), [list.keys])
-  const expandedFolders = useMemo(() => {
-    const all = allFolderPaths(keyTree)
-    if (search.trim() !== '') return all
-    const open = new Set(all)
-    for (const path of collapsedFolders) open.delete(path)
-    return open
-  }, [keyTree, collapsedFolders, search])
-
-  /** 折叠/展开文件夹(默认全展开,折叠集持久在会话内)。 */
-  const toggleFolder = useCallback((path: string) => {
-    setCollapsedFolders((prev) => {
-      const next = new Set(prev)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
+  /** 展开/收起某个 db 里的键文件夹(展开集按 db 隔离,会话内持久)。 */
+  const toggleKeyFolder = useCallback((db: number, path: string) => {
+    setExpandedKeys(prev => {
+      const next = new Map(prev)
+      const cur = new Set(next.get(db) ?? [])
+      if (cur.has(path)) cur.delete(path)
+      else cur.add(path)
+      next.set(db, cur)
       return next
     })
   }, [])
 
+  /** 当前展开 db 的加载记录与键树(收起时为空)。 */
+  const expandedEntry = expandedDb !== null ? dbLists.get(expandedDb) : undefined
+  const keyTree = useMemo(() => buildKeyTree(expandedEntry?.keys ?? []), [expandedEntry?.keys])
+  const expandedFolders = useMemo(() => {
+    // 搜索态强制全展开,让过滤结果直接可见;否则默认全收起,只显示已点开的文件夹。
+    if (search.trim() !== '') return allFolderPaths(keyTree)
+    if (expandedDb === null) return EMPTY_FOLDER_PATHS
+    return expandedKeys.get(expandedDb) ?? EMPTY_FOLDER_PATHS
+  }, [keyTree, expandedKeys, expandedDb, search])
+
   const id = connRef.current
+  const shownDb = expandedDb ?? activeDb
+  const shownEntry = dbLists.get(shownDb)
 
   return (
     <div className={css.backdrop}>
@@ -301,8 +376,8 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
           <div className={css.headLeft}>
             <span className={css.title}>{asset.name}</span>
             <span className={css.statusDot}>{connected ? '已连接' : '未连接'}</span>
-            <span className={css.badge}>db{currentDb}</span>
-            <span className={css.keyCount}>{dbSize.toLocaleString()} keys</span>
+            <span className={css.badge} data-testid="redis-head-badge">db{shownDb}</span>
+            <span className={css.keyCount} data-testid="redis-head-count">{(shownEntry?.size ?? 0).toLocaleString()} keys</span>
           </div>
           <button type="button" className={css.closeButton} onClick={onClose}>关闭</button>
         </header>
@@ -318,16 +393,12 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
           <div className={css.body}>
             <div className={css.side}>
               <div className={css.toolbar}>
-                <select className={css.dbSelect} value={currentDb} disabled={!connected}
-                  onChange={(e) => { void switchDb(Number(e.target.value)) }}>
-                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map(db => <option key={db} value={db}>db{db}</option>)}
-                </select>
                 <input className={css.searchInput} placeholder="搜索 key…" value={search} disabled={!connected}
                   onChange={(e) =>{  setSearch(e.target.value) }} aria-label="搜索 key" />
                 <button type="button" className={css.iconButton} title="刷新" aria-label="刷新"
-                  disabled={!connected || list.loading}
-                  /* v8 ignore next -- 刷新钮在未连接时 disabled,`c === null` 分支不可达 */
-                  onClick={() => { const c = connRef.current; if (c !== null) void loadKeys(c) }}>⟳</button>
+                  disabled={!connected || expandedDb === null || expandedEntry?.loading === true}
+                  /* v8 ignore next -- 刷新钮在未展开/未连接时 disabled,守卫分支不可达 */
+                  onClick={() => { const c = connRef.current; if (c !== null) void refreshExpanded(c) }}>⟳</button>
                 <button type="button" className={css.iconButton} title="清空 DB" aria-label="清空 DB"
                   disabled={!connected} onClick={() => void flushDb()}>⌀</button>
                 <button type="button" className={css.iconButton} title="CLI" aria-label="CLI"
@@ -336,26 +407,50 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                   disabled={!connected} onClick={() =>{  setNewKeyOpen(true) }}>＋</button>
               </div>
 
-              {list.loading && <div className={css.status}>加载键…</div>}
-              {!list.loading && list.error !== null && (
-                <div className={css.status}>
-                  <span>加载失败:{list.error}</span>
-                  <button type="button" className={css.retryButton}
-                    /* v8 ignore next -- 重试钮仅在已连接的错误态出现,`c === null` 分支不可达 */
-                    onClick={() => { const c = connRef.current; if (c !== null) void loadKeys(c) }}>重试</button>
-                </div>
-              )}
-              {!list.loading && list.error === null && list.keys.length === 0 && <div className={css.status}>暂无 key。</div>}
-              {!list.loading && list.error === null && list.keys.length > 0 && (
-                <div className={css.keyList}>
-                  {keyTree.map(node => (
-                    <KeyTreeRow key={node.path} node={node} depth={0} expanded={expandedFolders}
-                      onToggle={toggleFolder} onOpen={openKey}
-                      onRename={(key) => { setRenaming(key); setRenameTo(key) }}
-                      onDelete={key => void deleteKey(key)} />
-                  ))}
-                </div>
-              )}
+              <div className={css.dbTree} role="tree" aria-label="DB 列表">
+                {DB_INDEXES.map(db => {
+                  const open = expandedDb === db
+                  const entry = dbLists.get(db)
+                  return (
+                    <div className={css.dbNode} key={db} role="treeitem">
+                      <div className={css.dbRow}>
+                        <button type="button" className={css.keyMain} onClick={() =>{  void toggleDb(db) }}
+                          aria-expanded={open} aria-label={`数据库 db${db}`}>
+                          <span className={css.folderChevron}>{open ? '▾' : '▸'}</span>
+                          <span className={css.dbName}>db{db}</span>
+                          {entry !== undefined && <span className={css.folderCount}>{entry.size.toLocaleString()}</span>}
+                        </button>
+                      </div>
+                      {open && (
+                        <div className={css.dbChildren}>
+                          {(entry === undefined || entry.loading) && <div className={css.dbStatus}>加载键…</div>}
+                          {entry !== undefined && !entry.loading && entry.error !== null && (
+                            <div className={css.dbStatus}>
+                              <span>加载失败:{entry.error}</span>
+                              <button type="button" className={css.retryButton}
+                                /* v8 ignore next -- 重试钮仅在已连接 + 展开的错误态出现,守卫分支不可达 */
+                                onClick={() => { const c = connRef.current; if (c !== null) void reloadDb(db) }}>重试</button>
+                            </div>
+                          )}
+                          {entry !== undefined && !entry.loading && entry.error === null && entry.keys.length === 0 && (
+                            <div className={css.dbStatus}>暂无 key。</div>
+                          )}
+                          {entry !== undefined && !entry.loading && entry.error === null && entry.keys.length > 0 && (
+                            <div className={css.keyList}>
+                              {keyTree.map(node => (
+                                <KeyTreeRow key={node.path} node={node} depth={0} expanded={expandedFolders}
+                                  onToggle={(path) => toggleKeyFolder(db, path)} onOpen={openKey}
+                                  onRename={(key) => { setRenaming(key); setRenameTo(key) }}
+                                  onDelete={key => void deleteKey(key)} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
 
             <div className={css.main}>
