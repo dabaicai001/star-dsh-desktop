@@ -12,6 +12,13 @@
 - SQL 查询结果可编辑及无主键报错提示（转 K3）
 - 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
 
+## [0.95.3] - 2026-08-24
+
+### 修复
+- 🐛 GitHub Linux 构建失败根因修复(截图栈依赖链版本错配):`xcap 0.9.8 → pipewire/libspa 0.10.1` 要求系统 PipeWire/spa 头 ≥ 1.0,而 `libspa-sys` 的绑定是构建时用 bindgen 从系统 spa 头生成的,ubuntu-22.04 的 0.3.48 头缺 `spa_video_info_raw.flags`、`modifier` 还是 `int64`,且 `spa_meta_region_is_valid`/`spa_meta_first` 仅是宏(bindgen 无法导出成可调用函数)→ `cargo test --locked` 编译 libspa 报 E0425/E0560/E0308 共 7 错(exit 101);Windows 用 WGC 后端不碰该链所以绿。修复:Linux 构建基线升 `ubuntu-24.04`(PipeWire 1.0.5,meta 函数已是 static inline、链接层安全),glibc 下限 2.35 → 2.39,README / 技术方案 / 踩坑记录 / 已知坑索引同步。
+- 🐛 Linux 旧系统(Ubuntu 22.04 等 PipeWire < 1.0)点击截图不再静默失败:主进程 `screenshot_begin_region` 在隐藏主窗口前预检 `pipewire --version`,过旧直接返回「截图功能需要系统 PipeWire ≥ 1.0(Ubuntu 24.04 及以上),请升级系统后重试」;前端截图按钮失败从仅 console 改为可见 toast(`role=alert`,4s 自动消失),并补 `screenshot-button.client.spec.tsx` 覆盖。
+- 🐛 Linux x86_64 链接失败修复:截图栈 Wayland 后端 `libwayshot-xcap` 依赖 Rust `gbm 0.18`(FFI 链接 `-lgbm`),构建机缺 `libgbm-dev` → `rust-lld: unable to find library -lgbm`;`linux-compat.yml` / `release.yml` apt 依赖按 xcap 官方 Linux 清单补齐(`libxcb1-dev libxrandr-dev libdbus-1-dev libwayland-dev libegl-dev libgbm-dev`)。
+
 ## [0.95.2] - 2026-08-24
 
 ### 修复
@@ -94,12 +101,6 @@
 - ui-deliverables 新增 drawer 规格 7 例(分组/打开器/三种关闭/折叠/底栏门禁/焦点),数据派生补 1 例(diff 空文本行数、diffs 缺省时 locations 兜底),全包 100%。
 
 ---
-
-## [0.95.3] - 2026-08-24
-
-### 修复
-- 🐛 GitHub Linux 构建失败根因修复(截图栈依赖链版本错配):`xcap 0.9.8 → pipewire/libspa 0.10.1` 要求系统 PipeWire/spa 头 ≥ 1.0,而 `libspa-sys` 的绑定是构建时用 bindgen 从系统 spa 头生成的,ubuntu-22.04 的 0.3.48 头缺 `spa_video_info_raw.flags`、`modifier` 还是 `int64`,且 `spa_meta_region_is_valid`/`spa_meta_first` 仅是宏(bindgen 无法导出成可调用函数)→ `cargo test --locked` 编译 libspa 报 E0425/E0560/E0308 共 7 错(exit 101);Windows 用 WGC 后端不碰该链所以绿。修复:Linux 构建基线升 `ubuntu-24.04`(PipeWire 1.0.5,meta 函数已是 static inline、链接层安全),glibc 下限 2.35 → 2.39,README / 技术方案 / 踩坑记录 / 已知坑索引同步。
-- 🐛 Linux 旧系统(Ubuntu 22.04 等 PipeWire < 1.0)点击截图不再静默失败:主进程 `screenshot_begin_region` 在隐藏主窗口前预检 `pipewire --version`,过旧直接返回「截图功能需要系统 PipeWire ≥ 1.0(Ubuntu 24.04 及以上),请升级系统后重试」;前端截图按钮失败从仅 console 改为可见 toast(`role=alert`,4s 自动消失),并补 `screenshot-button.client.spec.tsx` 覆盖。
 
 ## [0.95.0] - 2026-08-24
 

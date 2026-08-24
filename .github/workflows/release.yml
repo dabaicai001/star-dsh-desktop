@@ -147,15 +147,21 @@ jobs:
               cpio \
               file \
               libayatana-appindicator3-dev \
+              libdbus-1-dev \
+              libegl-dev \
               libfuse2 \
+              libgbm-dev \
               libgtk-3-dev \
               libpipewire-0.3-dev \
               libspa-0.2-dev \
               librsvg2-dev \
               libsqlite3-dev \
               libssl-dev \
+              libwayland-dev \
               libwebkit2gtk-4.1-dev \
+              libxcb1-dev \
               libxdo-dev \
+              libxrandr-dev \
               patchelf \
               pkg-config \
               rpm && break

@@ -151,6 +151,7 @@
 ### v0.95.3 (2026-08-24)
 - 🐛 GitHub Linux 构建失败根因修复:截图栈 `xcap → pipewire/libspa 0.10.1` 要求系统 PipeWire/spa 头 ≥ 1.0,而 ubuntu-22.04 的 0.3.48 头过旧(`libspa-sys` 构建时 bindgen 从系统头生成绑定,缺 `flags` 字段、meta 函数仍是宏)→ `libspa` 编译 7 错;Linux 构建基线升 `ubuntu-24.04`(PipeWire 1.0.5),glibc 下限 2.35 → 2.39。
 - 🐛 Linux 旧系统(Ubuntu 22.04 等 PipeWire < 1.0)点击截图提示「需要系统 PipeWire ≥ 1.0(升级到 Ubuntu 24.04 及以上)」,不再静默失败;截图按钮失败从仅 console 改为可见 toast。
+- 🐛 Linux 链接依赖补齐:`libgbm-dev` 及 xcap 官方 Linux 编译依赖清单(xcb / randr / dbus / wayland / egl)进 CI,修复 `rust-lld: unable to find library -lgbm`。
 
 ### v0.95.2 (2026-08-24)
 - 🐛 会话头部 git 分支胶囊自动追踪外部切换:每 10s 轮询 + 页面重新可见立即刷新 + 打开面板顺带刷新——在其它终端/编辑器 checkout 后胶囊不再延迟到切换会话才更新。
