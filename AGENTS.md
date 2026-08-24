@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.95.3(🐛 GitHub Linux 构建失败根因修复(截图栈依赖链版本错配):`xcap 0.9.8 → pipewire/libspa 0.10.1` 要求系统 PipeWire/spa 头 ≥ 1.0,而 `libspa-sys` 的绑定是构建时用 bindgen 从系统 spa 头生成的,ubuntu-22.04 的 0.3.48 头缺 `spa_video_info_raw.flags`、`modifier` 还是 `int64`,且 `spa_meta_region_is_valid`/`spa_meta_first` 仅是宏(bindgen 无法导出成可调用函数)→ `cargo test --locked` 编译 libspa 报 E0425/E0560/E0308 共 7 错(exit 101);Windows 用 WGC 后端不碰该链所以绿。修复:Linux 构建基线升 `ubuntu-24.04`(PipeWire 1.0.5,meta 函数已是 static inline、链接层安全),glibc 下限 2.35 → 2.39,README / 技术方案 / 踩坑记录 / 已知坑索引同步。) |
+| 当前版本 | v0.95.4(🐛 区域截图向右/右上斜拖拽「断触」只截一小块:遮罩页拖拽从裸 mouse 事件改为 Pointer Events + `setPointerCapture`(align 踩坑记录 #10),并补 `touch-action: none`——指针划过右上角 ✕ 退出按钮/工具栏或离开窗口时选区不再中途冻结,触屏下 WebView 也不再把手势判定为滚动/平移而中断拖拽;删除 `mouseleave` 即结束拖拽的脆弱路径。选区几何经 8 方向穷举模拟验证方向对称,方向差异全部来自事件投递层。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-24 (v0.95.3)*
+*最后更新: 2026-08-24 (v0.95.4)*

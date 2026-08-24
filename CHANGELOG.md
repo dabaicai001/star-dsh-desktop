@@ -12,6 +12,11 @@
 - SQL 查询结果可编辑及无主键报错提示（转 K3）
 - 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
 
+## [0.95.4] - 2026-08-24
+
+### 修复
+- 🐛 区域截图向右/向右上斜拖拽经常「断触」、只截出一小块:遮罩页拖拽用裸 `mousedown/mousemove/mouseup` 且 `mouseleave` 即结束拖拽、无 pointer capture——指针一旦划过叠在画布上的右上角 ✕ 退出按钮(`#exitBtn`,34×34,未设 `pointer-events:none`)或工具栏,`mousemove` 立即停止、选区当场冻结成当时大小(「只截一小块」),在 ✕ 上松手甚至触发 click 直接取消整次截图;向右/右上方向的拖拽必然经过右上角,向左/向下从不经过,这正是方向差异的来源。改为 Pointer Events + `setPointerCapture`(align 踩坑记录 #10 约定):capture 后 move/up 始终派发给画布,划过 ✕/工具栏或离开窗口也不中断;画布补 `touch-action: none`,阻止 WebView 把手势判定为滚动/平移(触屏「断触」根因);删除 `mouseleave` 结束拖拽的脆弱路径,`pointercancel` 兜底收尾。
+
 ## [0.95.3] - 2026-08-24
 
 ### 修复

@@ -9,7 +9,7 @@
   body { font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; user-select: none; cursor: crosshair; }
 
   #stage { position: fixed; inset: 0; }
-  #stage canvas { position: absolute; left: 0; top: 0; }
+  #stage canvas { position: absolute; left: 0; top: 0; touch-action: none; }
 
   /* 三个画布完全重叠铺满窗口:base 承载底图与全部鼠标交互(拖拽选区),
      anno/overlay 纯视觉层(标注矩形、遮罩高亮)。不设
@@ -252,8 +252,14 @@ function drawAxisGuide(x1, y1, x2, y2) {
   overlayCtx.stroke()
 }
 
-// ---- 鼠标事件 ----
-baseCanvas.addEventListener('mousedown', function (e) {
+// ---- 指针事件(鼠标 / 触控 / 笔统一) ----
+// 窗口内拖拽手势必须用 Pointer Events + setPointerCapture(见 docs/踩坑记录.md
+// #10):capture 后 move/up 始终派发给 base 画布,即使指针划过右上角 ✕ 按钮、
+// 工具栏或短暂离开窗口,选区也不会中途「断触」冻结成小方块;
+// 兼容 mouse 事件与 mouseleave 不再参与拖拽。touch-action: none 由 CSS 提供,
+// 阻止 WebView 把手势判定为滚动/平移(触屏「断触」的根因)。
+baseCanvas.addEventListener('pointerdown', function (e) {
+  e.preventDefault() // 抑制触摸下的兼容 mouse 事件,避免重复处理
   var p = toCanvasCoord(e)
   if (annotating) {
     // 标注范围:选区内
@@ -262,6 +268,7 @@ baseCanvas.addEventListener('mousedown', function (e) {
     if (p.x >= bx && p.x <= bx + bw && p.y >= by && p.y <= by + bh) {
       drag = { mode: 'anno', startX: p.x, startY: p.y, bounds: { x: bx, y: by, w: bw, h: bh } }
       baseCanvas.style.cursor = 'crosshair'
+      try { baseCanvas.setPointerCapture(e.pointerId) } catch (err) { /* 指针已失效等,忽略 */ }
       return
     }
     return // 标注模式下点击范围外忽略
@@ -281,11 +288,12 @@ baseCanvas.addEventListener('mousedown', function (e) {
     var undoBtn = document.getElementById('undo')
     if (undoBtn) undoBtn.disabled = true
   }
+  try { baseCanvas.setPointerCapture(e.pointerId) } catch (err) { /* 指针已失效等,忽略 */ }
   drawOverlay()
   updateChrome()
 })
 
-baseCanvas.addEventListener('mousemove', function (e) {
+baseCanvas.addEventListener('pointermove', function (e) {
   var p = toCanvasCoord(e)
   if (!drag) {
     if (annotating || !sel) { baseCanvas.style.cursor = 'crosshair'; return }
@@ -347,8 +355,9 @@ function endDrag(e) {
   drawOverlay()
   updateChrome()
 }
-baseCanvas.addEventListener('mouseup', endDrag)
-baseCanvas.addEventListener('mouseleave', endDrag)
+baseCanvas.addEventListener('pointerup', endDrag)
+// 系统手势接管(如触屏边缘手势)等异常中断:兜底收尾,不残留拖拽态。
+baseCanvas.addEventListener('pointercancel', endDrag)
 
 baseCanvas.addEventListener('dblclick', function () {
   if (sel) confirmCapture()
