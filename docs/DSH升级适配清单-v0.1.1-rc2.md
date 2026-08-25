@@ -154,10 +154,18 @@ StarHub 的定制全部以插件形式存在,升级时只需重放「插件层�
 ### 测试适配
 - ✅ 删 `StarHubNav.tsx` + `StarHubNav.module.css` + `starhub-nav-overlay.client.spec.tsx`(组件退役)
 - ✅ `starhub-apply.client.spec.ts` 重写:槽清单断言改 rc.2 注册面
-  (`sidebar.footer.action` + `shell.overlay`×5 + header.actions×2 + input.left + settings×5);
-  selectSubcategory 语义改「写选择桥,不再联动布局」
-- ✅ `starhub-tool-workspace.client.spec.tsx` stub 补 `closeTools`/`selectSubcategory`/`useToolsPanel`
+  (`sidebar.footer.action` + `shell.overlay`×5 + header.actions×2 + input.left + settings×5)
+- ✅ `starhub-tool-workspace.client.spec.tsx` 适配工具面板形态(useToolsPanel/sessionCwd/文件树),
+  23/23 通过
 - ✅ `screenshot-button.client.spec.tsx` props 改 `addImages`
+
+### 回归测试(截至 checkpoint)
+- ✅ starhub host 包单测:78/78 通过(approval-bridge/domain-events/session-registry/live-context/
+  memory-context/memory-sink/tool-context/commit-message)
+- ✅ Rust `cargo test`:164 passed / 0 failed(SSH/MFA/DB 零回归)
+- ✅ client-nav 组件测试:823/823 通过、53 个 suite 中 51 个全绿;2 个 suite
+  (ai-chat-panel / starhub-apply)因 `@deepseek-ai/dsh-client-ui-slots` 连锁 lib 解析失败
+  (web-react 已 build,ui-slots 等 client 包 lib 尚未全量生成——见「待办:client 包 lib 补齐」)
 
 ### 侧栏导航 & 槽位迁移(rc.2 移除 `sidebar.navigation` / `workspace` / `details.workspace`)
 - ✅ **全部完成**:`packages/starhub/*` 在 client typecheck 下错误归零(typecheck 仅剩上游 rc.2 自身
