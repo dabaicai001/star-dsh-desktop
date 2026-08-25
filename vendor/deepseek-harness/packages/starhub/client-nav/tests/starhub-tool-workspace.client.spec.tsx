@@ -24,13 +24,15 @@ afterEach(cleanup)
  * the component's PropsRuntime requires (the component itself only reads the
  * injected face).
  */
-function workspaceProps(opts: { cwd?: string; sessionId?: string } = {}) {
+function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: boolean } = {}) {
   const assets = createSnapshotStore<StarHubAssetListState>({ assets: [], loading: false, error: null, preview: false })
   const bridge = createToolSelectionBridge()
   const fileTree = createSnapshotStore<{ open: boolean }>({ open: false })
+  const toolsPanel = createSnapshotStore<{ open: boolean }>({ open: opts.panelOpen ?? true })
   const useAssets = <S,>(sel: (s: StarHubAssetListState) => S) => sel(assets.getSnapshot())
   const useSelection = <S,>(sel: (s: ToolSelection) => S) => sel(bridge.source.getSnapshot())
   const useFileTree = <S,>(sel: (s: { open: boolean }) => S) => sel(fileTree.getSnapshot())
+  const useToolsPanel = <S,>(sel: (s: { open: boolean }) => S) => sel(toolsPanel.getSnapshot())
   const sessionId = opts.sessionId === undefined ? undefined : opts.sessionId as never
   const useSessions = ((sel: (s: { byId: Record<string, { cwd?: string } | undefined> }) => unknown) => {
     const state = {
@@ -44,15 +46,19 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string } = {}) {
     assets,
     bridge,
     fileTree,
+    toolsPanel,
     refreshAssets: vi.fn(),
     openConnectionManager: vi.fn(),
     openAiAssistant: vi.fn(),
     closeFileTree: vi.fn(),
     closeTools: vi.fn(),
     selectSubcategory: vi.fn(),
+    insertFileReference: vi.fn(),
+    sessionCwd: opts.cwd,
     useAssets,
     useSelection,
     useFileTree,
+    useToolsPanel,
     useSessions,
     // settings.update stub: the tool-context sync effect calls it and must
     // not throw in jsdom (no real wire).
@@ -64,7 +70,6 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string } = {}) {
     useInput: (() => undefined) as never,
     inputActions: {} as never,
     useWorkspaces: (() => undefined) as never,
-    useToolsPanel: (() => undefined) as never,
   }
 }
 

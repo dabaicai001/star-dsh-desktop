@@ -33,6 +33,7 @@ import { STARHUB_SUBCATEGORIES, assetSubtitle, type StarHubAsset, type StarHubSu
 import type { RustAsset, StarHubAssetListState, ToolSelection, ToolsPanelState } from './store.ts'
 import { TOOL_CONTEXT_NAMESPACE } from './tool-context.ts'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
+import { FileTreePanel } from './file-tree/FileTreePanel.tsx'
 import type { FileTreeState } from './file-tree/state.ts'
 import css from './StarHubToolWorkspace.module.css'
 
@@ -46,10 +47,16 @@ export interface StarHubToolWorkspaceInjected {
   openConnectionManager: (asset?: RustAsset) => void
   /** 聚焦(或新建)壳内 AI 会话:面板内「AI 助手」入口。 */
   openAiAssistant: () => void
+  /** 切回资产列表视图(文件树面板头部「返回资产列表」)。 */
+  closeFileTree: () => void
   /** 关闭工具面板(footer 入口再点或面板右上角 ×)。 */
   closeTools: () => void
   /** 选中一个子类(展开/聚焦该子类的资产列表)。 */
   selectSubcategory: (key: string) => void
+  /** 把引用文本追加进当前会话对话框输入框(文件树右键「引用文件/文件夹」)。 */
+  insertFileReference: (text: string) => void
+  /** 当前会话工作区 cwd(文件树根;overlay root scope 经全局 sessions 提供)。 */
+  sessionCwd: string | undefined
   hooks: {
     selection: SnapshotStore<ToolSelection>
     assets: SnapshotStore<StarHubAssetListState>
@@ -148,10 +155,12 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onEdit, onDelete }: {
  */
 export function StarHubToolWorkspace({
   api, openAsset, refreshAssets, openConnectionManager, openAiAssistant,
-  closeTools, selectSubcategory,
+  closeFileTree, closeTools, selectSubcategory, insertFileReference, sessionCwd,
   useSelection, useAssets, useFileTree, useToolsPanel,
 }: StarHubToolWorkspaceProps) {
-  const open = useToolsPanel(s => s.open)
+  // toolsPanel 开关:未提供该 hook(组件在旧测试桩/独立渲染下)时默认视为打开。
+  const panelOpen = useToolsPanel?.(s => s.open) ?? true
+  const open = panelOpen
   const assets = useAssets(s => s.assets)
   const loading = useAssets(s => s.loading)
   const error = useAssets(s => s.error)
@@ -218,9 +227,19 @@ export function StarHubToolWorkspace({
           </button>
         </header>
 
-        {fileTreeOpen ? (
+        {fileTreeOpen && sessionCwd !== undefined ? (
+          <FileTreePanel
+            cwd={sessionCwd}
+            onClose={closeFileTree}
+            insertReference={insertFileReference}
+          />
+        ) : activeSubcategory === null ? (
           <div className={css.tree}>
-            <div className={css.status}>文件树需要会话 cwd,工具面板暂不提供;请从会话头部「文件树」按钮打开。</div>
+            <div className={css.status}>请在左侧选择工具子类(终端 / 数据库 / Docker)。</div>
+            <button type="button" className={css.newButton} onClick={() =>{  openConnectionManager() }}>
+              <IconPlusOutline16 size={12} />
+              <span>新建连接</span>
+            </button>
           </div>
         ) : (
           <div className={css.tree}>

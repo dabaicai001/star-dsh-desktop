@@ -197,7 +197,8 @@ describe('client-nav apply (rc.2)', () => {
   it('provides the starhubFileViewer service', () => {
     const { ctx, provided } = fakeContext()
     applyPlugin(ctx)
-    expect(typeof provided.starhubFileViewer?.open).toBe('function')
+    const face = provided.starhubFileViewer as { open?: unknown } | undefined
+    expect(typeof face?.open).toBe('function')
   })
 
   it('invariant registers the package name', async () => {

@@ -50,8 +50,10 @@
     // rootDir rules make both paths depend on this runtime project reference.
     { "path": "./packages/compaction/compaction" },
     { "path": "./packages/client/ui-slots" },
+    { "path": "./packages/client/schema-form" },
     { "path": "./packages/client/ui-attachment" },
     { "path": "./packages/client/ui-primitives" },
+    { "path": "./packages/client/web-react" },
     { "path": "./packages/client/modules" },
     { "path": "./packages/client/hmr" },
     { "path": "./packages/client/connection/tsconfig.client.json" },

@@ -91,9 +91,26 @@ StarHub 的定制全部以插件形式存在,升级时只需重放「插件层�
 ## 二、构建链配置适配
 
 - ✅ `tsconfig.host.json` 的 `references` 补入 11 个 `packages/starhub/*` 包(client-nav 也进 host 聚合)
-- ✅ `tsconfig.client.json` 的 `references` 补入 `packages/starhub/client-nav`
+- ✅ `tsconfig.client.json` 的 `references` 补入 `packages/starhub/client-nav`;修复 add-starhub-refs 脚本
+  误删的 `schema-form` / `web-react` 两行 refs
 - ✅ `pnpm install` 通过(260 workspace 项目,starhub 包内部 junction 链接正常)
-- ⬜ 上游 remote 生成产物缺失核对(`@deepseek-ai/dsh-commands/remote` 等——确认是上游 build 步骤缺失还是 tree 替换遗漏)
+- ✅ root `package.json` 补 `unrun@0.3.1` devDep(tsdown 的 optional peer;上游 rc.2 未声明,
+  pnpm 11 strict 下不链接导致 tsdown 无法启动——vendored 侧补齐的可用性缺口)
+- ✅ `packages/client/web` 补 `@deepseek-ai/dsh-client-web-react` devDep(上游 rc.2 遗漏,
+  shell-bundled 面需在 devDeps 声明类型)
+- ✅ **上游一致性全量校验**:vendored 与上游 rc.2 对比 7899 个文件,除 `pnpm-lock.yaml`
+  (unrun 依赖)外全部一致、0 缺失——树替换完整,StarHub 定制未污染上游源码
+- ✅ **typert remote 生成**:manual emit 脚本为 7 个带 `./typert` export 的服务包
+  (commands/goal/file-reference/cordis-host-runner/plugin-inventory/message-feedback/session-reference)
+  生成 `lib/typert.host.*` + `lib/typert.remote-client.*`(上游 tsdown typertPlugin 在本环境
+  静默未落盘,补跑等价步骤;产物进入各包 lib,api/remotes 类型面随之完整)
+- 📌 上游 rc.2 自身的 typecheck/构建缺口(不影响 StarHub 打包,按解耦原则不修上游源码,留待上游吸收):
+  - `client/web` 的 `loader-status.ts` 缺 `KernelSignal`/`LoaderStatus` 导出(AppRoot import 了
+    rc.2 未导出的成员)——上游 rc.2 内部不一致
+  - **`pnpm run build`(干净环境)在本机(Windows + Node 22.14,上游要求 ^22.19||>=24)下
+    exit 0 但静默不产出部分产物**(vendor 层 cordis 等 `lib/index.js`、`packages/examples/jsonrpc-demo/lib/bin.js`
+    缺失)——上游 rc.2 构建环境门禁(疑似 Node 版本/平台差异),非 StarHub 引入;
+    StarHub 生产打包走 `package-dsh-runtime`(打包机重新 build),本地 dev 产物缺失不阻塞升级交付
 
 ## 三、StarHub 本地包 API 适配(rc.2)
 

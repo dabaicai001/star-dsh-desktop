@@ -4,16 +4,16 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "main": "lib/index.js",
+  "main": "lib/types/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
-      "default": "./lib/index.js"
+      "default": "./lib/types/index.js"
     },
     "./invariant": {
       "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
+      "default": "./lib/types/invariant.js"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json"

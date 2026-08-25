@@ -51,7 +51,7 @@ import { StarHubFooterButton } from './StarHubFooterButton.tsx'
 import { GitBranchPill } from './git/GitBranchPill.tsx'
 import { FileTreeButton } from './file-tree/FileTreeButton.tsx'
 import { createFileTreeBridge } from './file-tree/state.ts'
-import { StarHubToolWorkspace } from './StarHubToolWorkspace.tsx'
+import { StarHubToolWorkspace, type StarHubToolWorkspaceInjected } from './StarHubToolWorkspace.tsx'
 import { AboutTab } from './settings/about.tsx'
 import { AiTab } from './settings/ai.tsx'
 import { AlertTab } from './settings/alert.tsx'
@@ -184,7 +184,7 @@ export function apply(ctx: Context): void {
     order: 120,
     label: 'StarHub BastionSelect',
   }, BastionSelectCard))
-  const workspaceInject = () => ({
+  const workspaceInject = (): StarHubToolWorkspaceInjected => ({
     // The connection wire face for syncing the current tool context to
     // host settings (Path B plan 4.3).
     api: connection.api,
@@ -193,10 +193,27 @@ export function apply(ctx: Context): void {
     openConnectionManager: connectionManager.open,
     // 面板内「AI 助手」:打开壳内 AI 聊天面板(shell.overlay 承载)。
     openAiAssistant: () =>{  aiChat.open() },
+    // 文件树视图:面板内「文件树」开关(关闭回到资产列表)。
+    closeFileTree: fileTree.close,
     // 关闭工具面板(footer 入口再点或面板右上角 ×)。
     closeTools: () =>{  toolsPanel.close() },
     // 选中一个子类:写入选择桥,面板展开该子类的资产列表。
     selectSubcategory: (key: string) => { selection.selectSubcategory(key) },
+    // 文件树右键「引用文件/文件夹」:把 `@名称 (路径)` 追加进当前会话对话框。
+    insertFileReference: (text: string) => {
+      const current = sessions.list.getSnapshot().current
+      if (current === undefined) return
+      const binding = sessions.binding(current)
+      if (binding === undefined) return
+      const input = conversation.input.for(binding.ctx)
+      input.setDraft(input.state.getSnapshot().draft + text)
+    },
+    // 当前会话 cwd(文件树根;overlay root scope 无框架注入 sessionId,从全局取)。
+    sessionCwd: (() => {
+      const list = sessions.list.getSnapshot()
+      const current = list.current
+      return current !== undefined ? list.byId[current]?.cwd : undefined
+    })(),
     hooks: {
       selection: selection.source,
       assets: assets.source,
