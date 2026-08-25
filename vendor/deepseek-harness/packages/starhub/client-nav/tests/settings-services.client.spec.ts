@@ -14,6 +14,7 @@ import {
 } from '../src/client/settings/services.ts'
 import {
   AI_STORAGE_KEY, isMemoryRouteConfigured, loadAiSettings, normalizeAiSettings, saveAiSettings,
+  type AiSettings,
 } from '../src/client/settings/aiSettings.ts'
 
 /** jsdom 全局下的 Tauri IPC stub 挂载/卸载。 */
@@ -235,14 +236,17 @@ describe('memory services', () => {
 describe('aiSettings persistence bridge', () => {
   it('returns defaults when nothing is stored', () => {
     const settings = loadAiSettings()
-    // v0.92.0 起 memoryEnabled + memoryAutoReview 默认均为关闭;用户需在设置面板显式打开。
+    // v0.96.4 起「启用长期记忆」合并「自动沉淀记忆」为单开关,默认关闭。
     expect(settings.memoryEnabled).toBe(false)
-    expect(settings.memoryAutoReview).toBe(false)
     // v0.94.0 起记忆模型是硬前置:默认未配置,记忆功能整体关闭。
     expect(settings.memoryProvider).toBe('')
     expect(settings.memoryModel).toBe('')
     // 命令白名单已移除,随「统一走 deepseek-harness 权限体系」
     expect('commandWhitelist' in settings).toBe(false)
+    // 退役字段不再出现在归一化结果里
+    expect('memoryStoreToolOutputs' in settings).toBe(false)
+    expect('memoryWriteNeedsConfirm' in settings).toBe(false)
+    expect('memoryAutoReview' in settings).toBe(false)
     // 上下文预算/迭代步数/压缩阈值由 dsh harness 接管,不参与读写
     expect('compactTriggerRatio' in settings).toBe(false)
   })
@@ -258,44 +262,42 @@ describe('aiSettings persistence bridge', () => {
     expect(settings.memoryEnabled).toBe(false)
   })
 
-  it('normalizes malformed fields back to defaults', () => {
+  it('normalizes malformed fields back to defaults and drops retired memory fields', () => {
     const settings = normalizeAiSettings({
-      memoryStoreToolOutputs: 'yes' as never,
-      memoryProvider: 42 as never,
-      memoryModel: null as never,
+      memoryStoreToolOutputs: 'yes',
+      memoryProvider: 42,
+      memoryModel: null,
       memoryEnabled: false,
       memoryWriteNeedsConfirm: true,
       memoryAutoReview: false,
-    })
-    expect(settings.memoryStoreToolOutputs).toBe(false)
+    } as unknown as Partial<AiSettings>)
+    expect('memoryStoreToolOutputs' in settings).toBe(false)
     expect(settings.memoryProvider).toBe('')
     expect(settings.memoryModel).toBe('')
     expect(settings.memoryEnabled).toBe(false)
-    expect(settings.memoryWriteNeedsConfirm).toBe(true)
-    expect(settings.memoryAutoReview).toBe(false)
+    expect('memoryWriteNeedsConfirm' in settings).toBe(false)
+    expect('memoryAutoReview' in settings).toBe(false)
   })
 
-  it('forces both memory toggles off when the memory route is missing (v0.94.0 hard gate)', () => {
+  it('forces the memory toggle off when the memory route is missing (v0.94.0 hard gate)', () => {
     // 旧 localStorage 残留开启态但没配模型:归一化时强制归零,防漏网注入/沉淀。
     const settings = normalizeAiSettings({
       memoryProvider: '',
       memoryModel: '',
       memoryEnabled: true,
       memoryAutoReview: true,
-    })
+    } as unknown as Partial<AiSettings>)
     expect(settings.memoryEnabled).toBe(false)
-    expect(settings.memoryAutoReview).toBe(false)
   })
 
-  it('keeps memory toggles when the memory route is configured', () => {
+  it('keeps the memory toggle when the memory route is configured', () => {
     const settings = normalizeAiSettings({
       memoryProvider: 'deepseek-official',
       memoryModel: 'deepseek-chat',
       memoryEnabled: true,
       memoryAutoReview: true,
-    })
+    } as unknown as Partial<AiSettings>)
     expect(settings.memoryEnabled).toBe(true)
-    expect(settings.memoryAutoReview).toBe(true)
     expect(isMemoryRouteConfigured(settings)).toBe(true)
   })
 

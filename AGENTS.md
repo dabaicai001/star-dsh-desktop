@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.96.3(🔧 DSH 内核升级到上游 v0.1.1-rc.2 的适配收尾:补回 `tsconfig.base.json` 缺失的 `dsh-client-web-react` 与 10 个 `dsh-starhub-*` 显式 paths 映射、补回 `web/tsconfig.json` 丢失的 5 个 project references、恢复 `loader-status.ts` 升级时丢失的 `KernelSignal`/`createSignal`/`createLoaderStatusStore` 实现。回归:host/client typecheck 双零错误,host 单测 145 过、client-nav 857 过、Rust 164 过。已知限制:tsdown 全量构建需 Node `^22.19||>=24`(本机 22.14 下不可用)。另 GitHub 仓库更名为 `star-dsh-desktop`。) |
+| 当前版本 | v0.96.4(🐛 AI 助手记忆设置改造:删除「存档 tool 消息与工具调用」「记忆写入需逐条确认」两个已退役开关,「启用长期记忆」与「自动沉淀记忆」合并为单开关;修复长期记忆自动沉淀从不触发(memory-sink 计数用错事件词表 `message/*` → `user/message`/`assistant/message`);修复工具面板子类行死胡同与文件树按钮开错面板;修复 client-nav bundle-purity 违例(web-react 值导入 → 内置 useSyncExternalStore)。回归:starhub 1002 测试全过、host/client typecheck 双零、tsdown 全量构建可跑。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-25 (v0.96.3)*
+*最后更新: 2026-08-26 (v0.96.4)*

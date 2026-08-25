@@ -14,7 +14,7 @@ import {
   type AiMemoryRow,
 } from './services.ts'
 import { isMemoryRouteConfigured, loadAiSettings, saveAiSettings, type AiSettings } from './aiSettings.ts'
-import { syncMemoryAutoReview, syncMemoryEnabled, syncMemoryModel } from './memory-context.ts'
+import { syncMemoryEnabled, syncMemoryModel } from './memory-context.ts'
 import s from './settings.module.css'
 
 /** 卡容量上限(与 Rust 侧一致:user/asset=1375,global/folder=2200)。 */
@@ -37,9 +37,9 @@ function memoryScopeLabel(scope: string): string {
 
 /**
  * 渲染 AI 助手设置:记忆与上下文(即时生效)+ 记忆管理弹窗。
- * @param props.api - 连接线的 settings RPC 面;「启用长期记忆」「自动沉淀记忆」
- *   开关与「记忆模型」配置经它同步到 host 侧 memory-context / memory-sink
- *   插件(v0.92.0 起 namespace 未写过 = 关闭;v0.94.0 起记忆模型是硬前置,
+ * @param props.api - 连接线的 settings RPC 面;「启用长期记忆」总开关与
+ *   「记忆模型」配置经它同步到 host 侧 memory-context / memory-sink 插件
+ *   (v0.92.0 起 namespace 未写过 = 关闭;v0.94.0 起记忆模型是硬前置,
  *   未配置时开关禁用且 host 侧不注入/不沉淀/memory 工具锁死)。浏览器预览下
  *   可为空,此时记忆模型下拉不可用、开关仍受「已配置」门禁约束。
  * @returns AI tab 内容。
@@ -66,17 +66,12 @@ export function AiTab({ api }: { api?: IApiClient }) {
     saveAiSettings(aiSettings)
   }, [aiSettings])
 
-  // 「启用长期记忆」开关同步到 host 侧 memory-context 插件(挂载时补齐一次,
-  // 覆盖「上次关了但没开过设置页」的场景;旧运行时无该 namespace,失败静默)。
+  // 「启用长期记忆」总开关同步到 host 侧 memory-context / memory-sink 插件
+  // (挂载时补齐一次,覆盖「上次关了但没开过设置页」的场景;旧运行时无该
+  // namespace,失败静默)。v0.96.4 起 enabled 与 autoReview 同值下发。
   useEffect(() => {
     if (api !== undefined) syncMemoryEnabled(api, aiSettings.memoryEnabled)
   }, [api, aiSettings.memoryEnabled])
-
-  // 「自动沉淀记忆」开关同步到 host 侧 memory-sink 插件(v0.92.0,2026-08-22):
-  // 关闭则 memory-sink 在 agent/turn-stopping 钩子跳过 LLM 抽取。
-  useEffect(() => {
-    if (api !== undefined) syncMemoryAutoReview(api, aiSettings.memoryAutoReview)
-  }, [api, aiSettings.memoryAutoReview])
 
   // 「记忆模型」配置同步到 host 侧(v0.94.0,2026-08-23):provider + model
   // 成对下发,host 侧 memory-context / memory-sink 据此判定记忆功能是否可用。
@@ -251,33 +246,11 @@ export function AiTab({ api }: { api?: IApiClient }) {
           </div>
           <label className={s.checkboxRow}>
             <input
-              type="checkbox" checked={aiSettings.memoryStoreToolOutputs}
-              onChange={(event) =>{  updateSettings({ memoryStoreToolOutputs: event.target.checked }) }}
-            />
-            存档 tool 消息与工具调用
-          </label>
-          <label className={s.checkboxRow}>
-            <input
               type="checkbox" checked={aiSettings.memoryEnabled}
               disabled={!memoryConfigured}
               onChange={(event) =>{  updateSettings({ memoryEnabled: event.target.checked }) }}
             />
-            启用长期记忆
-          </label>
-          <label className={s.checkboxRow}>
-            <input
-              type="checkbox" checked={aiSettings.memoryWriteNeedsConfirm}
-              onChange={(event) =>{  updateSettings({ memoryWriteNeedsConfirm: event.target.checked }) }}
-            />
-            记忆写入需逐条确认
-          </label>
-          <label className={s.checkboxRow}>
-            <input
-              type="checkbox" checked={aiSettings.memoryAutoReview}
-              disabled={!memoryConfigured}
-              onChange={(event) =>{  updateSettings({ memoryAutoReview: event.target.checked }) }}
-            />
-            自动沉淀记忆
+            启用长期记忆与自动沉淀
           </label>
         </div>
       </div>

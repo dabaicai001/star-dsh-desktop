@@ -12,8 +12,7 @@
  *
  * @module StarHub AI chat panel (client)
  */
-import { useEffect, useRef, useState } from 'react'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ISessions, IWorkspaces, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { MessageText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -33,8 +32,13 @@ export interface AiChatPanelProps {
  * @returns the floating chat panel, or the "no session / start" guidance.
  */
 export function AiChatPanel({ sessions, workspaces, onClose }: AiChatPanelProps) {
-  // The session list is a stable bare source — bind once per render is safe.
-  const list = bindSnapshotSelector(sessions.list)(s => s)
+  // The session list is a stable bare source; subscribe with the built-in
+  // uSES hook (react is a baseline external — shell-side web-react glue is
+  // not importable from a dynamic client plugin).
+  const list = useSyncExternalStore(
+    (fn) => sessions.list.subscribe(fn),
+    () => sessions.list.getSnapshot(),
+  )
   const currentId = list.current
   return (
     <div className={css.backdrop} role="dialog" aria-label="AI 聊天">
@@ -109,13 +113,16 @@ function NoSession({ onCreate, onClose }: { onCreate: () => void; onClose: () =>
 }
 
 /**
- * Subscribe a bound child to the session face (stable `bindSnapshotSelector`
- * call, keeping Rules-of-Hooks order when the target switches) and render.
+ * Subscribe a bound child to the session face (built-in uSES hook, keeping
+ * Rules-of-Hooks order when the target switches) and render.
  */
 function ConversationBody({ session }: {
   session: SessionFace
 }) {
-  const snap = bindSnapshotSelector(session)(s => s)
+  const snap = useSyncExternalStore(
+    (fn) => session.subscribe(fn),
+    () => session.getSnapshot(),
+  )
   const gate = openStateView(snap.openState, snap.openError)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)

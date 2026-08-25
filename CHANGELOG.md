@@ -14,6 +14,21 @@
 
 ---
 
+## [0.96.4] - 2026-08-26
+
+### 修复
+- 🐛 长期记忆「自动沉淀」从不生效:memory-sink 的 `countMessages` 用错事件词表(`message/user` / `message/assistant` → dsh 实际的 `user/message` / `assistant/message`),导致 `shouldReview` 恒为 false、自动沉淀从不触发。
+- 🐛 工具面板(StarHub 工具抽屉)子类行死胡同:空态分支原先不渲染「终端 / 数据库 / Docker」子类行,导致永远无法选中任何子类;改为子类行始终渲染(空态仅提示)。
+- 🐛 会话头部「文件树」按钮开错面板:原先 `layout.openDetails()` 打开的是 ui-conversation 独占的工具调用详情列,与文件树本体(渲染在工具抽屉内)不接通;改为打开工具抽屉并切到文件树视图。
+- 🐛 文件树根目录 cwd 由注入期快照改为经 `useSessions` 响应式读取,避免切换会话后文件树仍指向旧工作区。
+
+### 变更
+- 🐛 AI 助手记忆设置改造:删除「存档 tool 消息与工具调用」「记忆写入需逐条确认」两个已退役开关(此前只是 UI 层状态、无真行为),「启用长期记忆」与「自动沉淀记忆」合并为单开关「启用长期记忆与自动沉淀」(host 侧 `enabled` 与 `autoReview` 同值下发)。
+- 🔧 清理死代码 `createStarHubNavStore`(rc.2 迁移后已无消费者)与相关过时注释/README。
+- 🐛 修复 `client-nav` 客户端包 bundle-purity 违例(此前无法跑通 tsdown 全量构建):`AiChatPanel` 值导入 shell 侧 React 胶水 `@deepseek-ai/dsh-client-web-react` 的 `bindSnapshotSelector`,改为 React 内置 `useSyncExternalStore`(react 是基线 external),并从 `package.json`/`tsconfig.json` 移除对 web-react 的依赖。
+
+---
+
 ## [0.96.3] - 2026-08-25
 
 ### 已完成(随下次代码版本发布)

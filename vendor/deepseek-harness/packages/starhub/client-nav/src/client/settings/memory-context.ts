@@ -10,29 +10,17 @@ import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 export const MEMORY_CONTEXT_NAMESPACE = 'starhub-memory-context'
 
 /**
- * 同步「启用长期记忆」开关到 host 侧 namespace(尽力而为,不打断设置交互)。
+ * 同步「启用长期记忆」总开关到 host 侧 namespace(尽力而为,不打断设置交互)。
+ * v0.96.4 起单一开关同时写 `enabled`(memory-context 预读注入)与 `autoReview`
+ * (memory-sink 自动沉淀)两个字段,替代原先「启用长期记忆」「自动沉淀记忆」
+ * 两个独立开关。namespace 未写过视为关闭(与 host 侧 explicit-true 语义一致)。
  * @param api - 连接线的 settings RPC 面。
- * @param enabled - 开关状态。
+ * @param enabled - 开关状态(两字段同值)。
  */
 export function syncMemoryEnabled(api: IApiClient, enabled: boolean): void {
   void api.settings.update({
     ns: MEMORY_CONTEXT_NAMESPACE,
-    patch: { enabled },
-  }).catch(() => {})
-}
-
-/**
- * 同步「自动沉淀记忆」开关到 host 侧 namespace(v0.92.0,2026-08-22):
- * 控制 `@deepseek-ai/dsh-starhub-memory-sink` 是否在 `agent/turn-stopping`
- * 钩子发起 LLM 抽取。namespace 未写过视为关闭(v0.92.0 起默认关,与 host 侧
- * isAutoReviewEnabled / pre-step 门禁的 explicit-true 语义一致)。
- * @param api - 连接线的 settings RPC 面。
- * @param autoReview - 开关状态。
- */
-export function syncMemoryAutoReview(api: IApiClient, autoReview: boolean): void {
-  void api.settings.update({
-    ns: MEMORY_CONTEXT_NAMESPACE,
-    patch: { autoReview },
+    patch: { enabled, autoReview: enabled },
   }).catch(() => {})
 }
 

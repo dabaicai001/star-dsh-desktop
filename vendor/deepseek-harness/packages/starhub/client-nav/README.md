@@ -4,11 +4,11 @@ StarHub 浏览器导航插件(方案 P1,重构版):把 StarHub 工作台挂进 d
 
 ## 行为
 
-- **侧栏导航**(`sidebar.navigation`):侧栏「工具」大类/子类导航,含资产列表;选择经 store/hooks 舱位下发,并同步写 `starhub-tool-context` settings namespace 供 AI 工具上下文注入。
-- **Overlay**(`shell.overlay` 两次):连接对话框(`openConnectionManager` / `closeConnectionManager`)与壳内文件查看窗(`FileViewerOverlay`,走 ui-conversation 的 `viewFile` 通道)。
-- **工具工作区**(`workspace` + `details.workspace`):右侧工具页(数据库/终端/SFTP/Docker/Redis/ES/资产页等),资产实例经 `openNewPage` 在桌面端开独立 webview 窗口(浏览器预览退化为新标签页)。
-- **会话头部**(`conversation.session.header.actions`):git 分支胶囊(切换/提交/推送/同步远程/AI 生成提交信息)。
-- **设置分区**(`settings.section` 五次):AI 助手(记忆模型配置 + 记忆与上下文开关 + 记忆管理弹窗)、插件、审计、告警、关于。
+- **工具入口**(`sidebar.footer.action`):侧栏底部「工具」按钮,打开 shell.overlay 承载的工具抽屉(终端 / 数据库 / Docker 子类 + 资产列表);选择经 store/hooks 舱位下发,并同步写 `starhub-tool-context` settings namespace 供 AI 工具上下文注入。
+- **Overlay**(`shell.overlay` 五次):连接对话框、壳内文件查看窗(`FileViewerOverlay`)、MFA 验证卡、堡垒机选机器卡、工具抽屉(`StarHubToolWorkspace`)。
+- **资产操作页**:数据库/终端/SFTP/Docker/Redis/ES 等资产实例经 `openNewPage` 在桌面端开独立 webview 窗口(浏览器预览退化为新标签页)。
+- **会话头部**(`conversation.session.header.actions`):git 分支胶囊(切换/提交/推送/同步远程/AI 生成提交信息)与文件树按钮(打开工具抽屉并切到项目文件目录树)。
+- **设置分区**(`settings.section` 五次):AI 助手(记忆模型配置 + 长期记忆总开关 + 记忆管理弹窗)、插件、审计、告警、关于。
 
 ## Model Experience
 
@@ -30,5 +30,4 @@ Not applicable — the package never participates in model requests.
 
 - 数据库/终端/SFTP 等重型工作台模块的测试覆盖率薄(terminal-cwd / xshell-quick-command / quick-commands / sftp-service 曾低至 3-44%,v0.92.2 补齐到 per-file 100%);交互路径复杂,后续仍需按模块补行为级用例。
 - 浏览器预览(:3085)下无 Tauri IPC,资产/数据库等操作退化为错误提示或预览态,与桌面端行为有差异(记忆模型下拉因此禁用)。
-- 「记忆写入需逐条确认」「存档 tool 消息」开关仍是 UI 层状态,未接入真行为(由 approval-bridge 与后续设置改造承接)。
 - 记忆模型下拉的数据源 `api.llm.models`(会话无关模型目录)只列出 provider 已暴露的模型;未列出的 model id 仍可在目录外存在,但下拉不会提供。

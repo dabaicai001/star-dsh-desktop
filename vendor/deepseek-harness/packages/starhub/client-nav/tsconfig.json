@@ -36,9 +36,6 @@
       "path": "../../client/runtime"
     },
     {
-      "path": "../../client/web-react"
-    },
-    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

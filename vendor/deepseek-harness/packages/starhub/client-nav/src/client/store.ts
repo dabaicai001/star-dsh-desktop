@@ -1,23 +1,19 @@
 /**
- * StarHub 壳级导航 + 资产状态(P1 方案)。
+ * StarHub 壳级资产/选择状态(P1 方案)。
  *
- * 状态按 scope 拆成三份,因为 dsh 的 store handle 有 one-handle-one-scope
- * 约束(共享 handle 首次挂载即钉死 scope,跨 scope 复用直接抛错),且
- * session-maybe 席位在无会话时不挂注册侧 store(useStore 不下发):
- * - `createStarHubNavStore`(root scope):侧栏「工具」大类展开态,只挂
- *   sidebar.navigation 一座席位;
- * - `createStarHubAssets`:资产列表(get_assets 结果)与拉取状态。两座
- *   工作区席位(workspace 无会话 / details.workspace 有会话)在无会话分支
- *   拿不到注册侧 store,故资产状态由 apply 持有的裸 source 经 inject
- *   hooks 舱位下发、经 refresh 回调驱动(同 ui-agent-preset 的 controller 范式);
- * - `createToolSelectionBridge`:跨 scope 的「当前子类 + 打开的资产实例」。
- *   选择状态必须跨 root(nav 点击)与 session-maybe(工作区列表/overlay
- *   读)两个 scope,同样走 apply 持有的裸 source + 注入回调。
- * - `createConnectionManagerOverlay`:连接管理 overlay(设置页资产 tab)
- *   的开关,同一裸 source 桥范式(session-maybe 工作区写,root overlay 读)。
+ * dsh 的 store handle 有 one-handle-one-scope 约束(共享 handle 首次挂载即
+ * 钉死 scope,跨 scope 复用直接抛错),且 session-maybe 席位在无会话时不挂
+ * 注册侧 store(useStore 不下发)。因此这些跨 scope 共享态一律由 apply 持有
+ * 的裸 source 承载、经 inject hooks 舱位下发、经注入回调写入(同
+ * ui-agent-preset 的 controller 范式):
+ * - `createStarHubAssets`:资产列表(get_assets 结果)与拉取状态;
+ * - `createToolSelectionBridge`:跨 scope 的「当前子类 + 打开的资产实例」;
+ * - `createConnectionManagerOverlay`:连接管理 overlay 的开关;
+ * - `createAiChatOverlay` / `createToolsPanelOverlay`:AI 聊天面板 / 工具
+ *   抽屉(shell.overlay 承载)的开关。
  */
 import {
-  createSnapshotStore, defineStore, type EngineStoreHandle, type SnapshotStore,
+  createSnapshotStore, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { routePrefixForAsset, STARHUB_SUBCATEGORIES, type StarHubAsset } from './sections.ts'
 
@@ -34,31 +30,6 @@ export interface RustAsset {
   last_used_at: number | null
   created_at: number
   updated_at: number
-}
-
-/** 壳内导航状态(root scope):「工具」大类展开态。 */
-type StarHubNavState = {
-  /** 「工具」大类是否展开(侧栏)。 */
-  categoryOpen: boolean
-}
-
-/** 导航写集合。 */
-type StarHubNavActions = {
-  toggleCategory: (draft: StarHubNavState) => void
-}
-
-/**
- * Create the root-scope navigation store handle (only the sidebar
- * navigation seat mounts it).
- * @returns the store handle (spec + type + identity + factory in one).
- */
-export function createStarHubNavStore(): EngineStoreHandle<StarHubNavState, StarHubNavActions> {
-  return defineStore({
-    init: (): StarHubNavState => ({ categoryOpen: true }),
-    actions: {
-      toggleCategory: (d) => { d.categoryOpen = !d.categoryOpen },
-    },
-  })
 }
 
 /** 资产列表状态:get_assets 结果与拉取状态。 */

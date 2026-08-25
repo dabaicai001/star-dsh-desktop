@@ -1,8 +1,8 @@
 /**
  * 会话文件树的状态桥(2026-08-24):头部「文件树」按钮(conversation.
- * session.header.actions)与右侧详情列的文件树面板(details.workspace 内的
- * StarHubToolWorkspace 视图切换)跨 scope 共享——同一裸 source 桥范式
- * (one-handle-one-scope,同 connectionManager / aiChat / fileViewer)。
+ * session.header.actions)与工具抽屉(StarHubToolWorkspace 内的视图切换)跨
+ * scope 共享——同一裸 source 桥范式(one-handle-one-scope,同
+ * connectionManager / aiChat / fileViewer)。
  */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 

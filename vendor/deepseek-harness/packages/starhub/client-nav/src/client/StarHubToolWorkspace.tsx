@@ -55,8 +55,6 @@ export interface StarHubToolWorkspaceInjected {
   selectSubcategory: (key: string) => void
   /** 把引用文本追加进当前会话对话框输入框(文件树右键「引用文件/文件夹」)。 */
   insertFileReference: (text: string) => void
-  /** 当前会话工作区 cwd(文件树根;overlay root scope 经全局 sessions 提供)。 */
-  sessionCwd: string | undefined
   hooks: {
     selection: SnapshotStore<ToolSelection>
     assets: SnapshotStore<StarHubAssetListState>
@@ -155,8 +153,8 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onEdit, onDelete }: {
  */
 export function StarHubToolWorkspace({
   api, openAsset, refreshAssets, openConnectionManager, openAiAssistant,
-  closeFileTree, closeTools, selectSubcategory, insertFileReference, sessionCwd,
-  useSelection, useAssets, useFileTree, useToolsPanel,
+  closeFileTree, closeTools, selectSubcategory, insertFileReference,
+  useSelection, useAssets, useFileTree, useToolsPanel, useSessions,
 }: StarHubToolWorkspaceProps) {
   // toolsPanel 开关:未提供该 hook(组件在旧测试桩/独立渲染下)时默认视为打开。
   const panelOpen = useToolsPanel?.(s => s.open) ?? true
@@ -169,6 +167,9 @@ export function StarHubToolWorkspace({
   const activeAssetId = useSelection(s => s.assetId)
   const activeRoutePrefix = useSelection(s => s.routePrefix)
   const fileTreeOpen = useFileTree(s => s.open)
+  // 当前会话 cwd 经 root-scope 的 useSessions 响应式读取(shell.overlay 无
+  // 框架注入 sessionId;注入期快照会过期,故此处订阅全局当前会话)。
+  const sessionCwd = useSessions?.(s => (s.current !== undefined ? s.byId[s.current]?.cwd : undefined))
 
   // 打开时(以及切换子类时)重新拉取(回调内部对并发拉取去重)。
   useEffect(() => { if (open) refreshAssets() }, [open, activeSubcategory, refreshAssets])
@@ -233,16 +234,11 @@ export function StarHubToolWorkspace({
             onClose={closeFileTree}
             insertReference={insertFileReference}
           />
-        ) : activeSubcategory === null ? (
-          <div className={css.tree}>
-            <div className={css.status}>请在左侧选择工具子类(终端 / 数据库 / Docker)。</div>
-            <button type="button" className={css.newButton} onClick={() =>{  openConnectionManager() }}>
-              <IconPlusOutline16 size={12} />
-              <span>新建连接</span>
-            </button>
-          </div>
         ) : (
           <div className={css.tree}>
+            {activeSubcategory === null && (
+              <div className={css.status}>点击展开一个子类(终端 / 数据库 / Docker)查看连接。</div>
+            )}
             {STARHUB_SUBCATEGORIES.map(subcategory => renderSubcategory(
               subcategory,
               assets,

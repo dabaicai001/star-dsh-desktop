@@ -105,7 +105,7 @@ describe('services extra branches', () => {
 })
 
 describe('aiSettings extra branches', () => {
-  it('recovers non-boolean memory flags and drops whitelist fields', () => {
+  it('recovers non-boolean memory flags and drops retired fields', () => {
     const legacyRaw = {
       commandWhitelist: 'nope',
       commandWhitelistVersion: 3,
@@ -117,8 +117,8 @@ describe('aiSettings extra branches', () => {
     expect('commandWhitelist' in settings).toBe(false)
     expect('commandWhitelistVersion' in settings).toBe(false)
     expect(settings.memoryEnabled).toBe(false)
-    expect(settings.memoryWriteNeedsConfirm).toBe(false)
-    expect(settings.memoryAutoReview).toBe(false)
+    expect('memoryWriteNeedsConfirm' in settings).toBe(false)
+    expect('memoryAutoReview' in settings).toBe(false)
   })
 
   it('saveAiSettings survives a missing store key', () => {
@@ -519,17 +519,15 @@ describe('ai extra branches', () => {
       render(<AiTab />)
       // 白名单已移除:不再出现输入框与保存反馈
       expect(screen.queryByPlaceholderText(/输入命令前缀/)).toBeNull()
-      // 四个记忆开关
-      fireEvent.click(screen.getByText('存档 tool 消息与工具调用'))
-      fireEvent.click(screen.getByText('记忆写入需逐条确认'))
-      // v0.92.0 起「自动沉淀记忆」默认 false,点击后变 true。
-      fireEvent.click(screen.getByText('自动沉淀记忆'))
+      // 已退役开关不再渲染
+      expect(screen.queryByText('存档 tool 消息与工具调用')).toBeNull()
+      expect(screen.queryByText('记忆写入需逐条确认')).toBeNull()
+      // 长期记忆总开关:点击变 true(自动沉淀同值)。
+      fireEvent.click(screen.getByText('启用长期记忆与自动沉淀'))
       const stored = () => JSON.parse(localStorage.getItem(AI_STORAGE_KEY) ?? '{}') as {
-        settings: { memoryStoreToolOutputs: boolean; memoryWriteNeedsConfirm: boolean; memoryAutoReview: boolean }
+        settings: { memoryEnabled: boolean }
       }
-      expect(stored().settings.memoryStoreToolOutputs).toBe(true)
-      expect(stored().settings.memoryWriteNeedsConfirm).toBe(true)
-      expect(stored().settings.memoryAutoReview).toBe(true)
+      expect(stored().settings.memoryEnabled).toBe(true)
       // 记忆管理:asset scope 分组 + 超容量标红 + 编辑/删除字符串失败
       fireEvent.click(screen.getByText('管理记忆'))
       expect(await screen.findByText('ASSET — abc')).toBeTruthy()
@@ -573,7 +571,7 @@ describe('ai extra branches', () => {
     }
   })
 
-  it('syncs both memory toggles to the host namespace when an api is present', async () => {
+  it('syncs the memory toggle to the host namespace when an api is present', async () => {
     const update = vi.fn<(request: unknown) => Promise<void>>(() => Promise.resolve())
     const api = {
       settings: { update },
@@ -585,16 +583,16 @@ describe('ai extra branches', () => {
     }))
     render(<AiTab api={api} />)
     await act(async () => { await Promise.resolve() })
-    // 挂载时把 localStorage 里的两个开关(v0.92.0 起默认 false)补齐到 host namespace。
-    expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: false } })
-    expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { autoReview: false } })
+    // 挂载时把 localStorage 里的开关(v0.92.0 起默认 false)补齐到 host namespace;
+    // v0.96.4 起 enabled 与 autoReview 同值下发。
+    expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: false, autoReview: false } })
     expect(update).toHaveBeenCalledWith({
       ns: 'starhub-memory-context',
       patch: { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
     })
-    fireEvent.click(screen.getByText('启用长期记忆'))
+    fireEvent.click(screen.getByText('启用长期记忆与自动沉淀'))
     await act(async () => { await Promise.resolve() })
-    expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: true } })
+    expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: true, autoReview: true } })
   })
 
   it('keeps rendering when the host namespace sync rejects (legacy runtime)', async () => {

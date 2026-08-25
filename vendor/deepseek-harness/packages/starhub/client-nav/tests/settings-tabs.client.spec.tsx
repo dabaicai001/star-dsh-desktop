@@ -324,7 +324,7 @@ describe('AiTab', () => {
     render(<AiTab />)
     expect(screen.queryByText('ls')).toBeNull()
     expect(screen.queryByPlaceholderText(/输入命令前缀/)).toBeNull()
-    expect(screen.getByText('启用长期记忆')).toBeTruthy()
+    expect(screen.getByText('启用长期记忆与自动沉淀')).toBeTruthy()
   })
 
   it('writes memory toggles immediately', async () => {
@@ -334,7 +334,7 @@ describe('AiTab', () => {
     }))
     render(<AiTab />)
     // v0.92.0 起 memoryEnabled 默认 false,点击后变 true → 写入 localStorage。
-    fireEvent.click(screen.getByText('启用长期记忆'))
+    fireEvent.click(screen.getByText('启用长期记忆与自动沉淀'))
     const stored = () => JSON.parse(localStorage.getItem(AI_STORAGE_KEY) ?? '{}') as {
       settings: { memoryEnabled: boolean }
     }
@@ -353,12 +353,12 @@ describe('AiTab', () => {
       expect(label).not.toBeNull()
       return label!.querySelector('input')!
     }
-    // 未配置模型:两个记忆功能开关禁用;tool 存档开关不受影响。
+    // 未配置模型:长期记忆总开关禁用。
     // (「即使勾选也会被归一化强制归零」的兜底由 settings-services 的
     // normalizeAiSettings 硬门测试覆盖。)
-    expect(inputOf('启用长期记忆').disabled).toBe(true)
-    expect(inputOf('自动沉淀记忆').disabled).toBe(true)
-    expect(inputOf('存档 tool 消息与工具调用').disabled).toBe(false)
+    expect(inputOf('启用长期记忆与自动沉淀').disabled).toBe(true)
+    expect(screen.queryByText('存档 tool 消息与工具调用')).toBeNull()
+    expect(screen.queryByText('记忆写入需逐条确认')).toBeNull()
   })
 
   it('configures the memory model via the catalog dropdowns and syncs to the namespace', async () => {
@@ -392,7 +392,7 @@ describe('AiTab', () => {
     render(<AiTab api={api} />)
     await act(async () => { await Promise.resolve() })
     // 未配置时「启用长期记忆」被归一化回 false 且禁用。
-    expect(screen.getByText('启用长期记忆').closest('label')!.querySelector('input')!.disabled).toBe(true)
+    expect(screen.getByText('启用长期记忆与自动沉淀').closest('label')!.querySelector('input')!.disabled).toBe(true)
     // 下拉选 provider + model
     fireEvent.change(screen.getByLabelText('记忆模型 provider'), { target: { value: 'deepseek-official' } })
     await act(async () => { await Promise.resolve() })
@@ -408,10 +408,10 @@ describe('AiTab', () => {
       patch: { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
     })
     // 配置后开关可用
-    expect(screen.getByText('启用长期记忆').closest('label')!.querySelector('input')!.disabled).toBe(false)
-    fireEvent.click(screen.getByText('启用长期记忆'))
+    expect(screen.getByText('启用长期记忆与自动沉淀').closest('label')!.querySelector('input')!.disabled).toBe(false)
+    fireEvent.click(screen.getByText('启用长期记忆与自动沉淀'))
     await act(async () => { await Promise.resolve() })
-    expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: true } })
+    expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: true, autoReview: true } })
   })
 
   it('manages memories: group by scope, edit with audit, two-step delete', async () => {

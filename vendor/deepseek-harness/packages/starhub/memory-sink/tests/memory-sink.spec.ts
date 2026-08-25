@@ -119,10 +119,10 @@ describe('normalizeFacts', () => {
 describe('countMessages', () => {
   it('counts user/assistant events', () => {
     const agent = makeAgent('/x', [
-      { type: 'message/user' },
-      { type: 'message/assistant' },
+      { type: 'user/message' },
+      { type: 'assistant/message' },
       { type: 'tool/result' },
-      { type: 'message/user' },
+      { type: 'user/message' },
     ])
     expect(countMessages(agent)).toEqual({ user: 2, assistant: 1 })
   })
@@ -217,8 +217,8 @@ describe('runTurnReview', () => {
     const llm = vi.fn()
     await runTurnReview({
       agent: makeAgent('/x', [
-        { type: 'message/user' }, { type: 'message/assistant' },
-        { type: 'message/user' }, { type: 'message/assistant' },
+        { type: 'user/message' }, { type: 'assistant/message' },
+        { type: 'user/message' }, { type: 'assistant/message' },
       ]),
       signal: new AbortController().signal,
       transport: undefined,
@@ -231,7 +231,7 @@ describe('runTurnReview', () => {
   it('skips when below message gate', async () => {
     const llm = vi.fn()
     await runTurnReview({
-      agent: makeAgent('/x', [{ type: 'message/user' }, { type: 'message/assistant' }]),
+      agent: makeAgent('/x', [{ type: 'user/message' }, { type: 'assistant/message' }]),
       signal: new AbortController().signal,
       transport: undefined,
       llm,
@@ -246,8 +246,8 @@ describe('runTurnReview', () => {
     controller.abort()
     await runTurnReview({
       agent: makeAgent('/x', [
-        { type: 'message/user' }, { type: 'message/assistant' },
-        { type: 'message/user' }, { type: 'message/assistant' },
+        { type: 'user/message' }, { type: 'assistant/message' },
+        { type: 'user/message' }, { type: 'assistant/message' },
       ]),
       signal: controller.signal,
       transport: undefined,
@@ -261,8 +261,8 @@ describe('runTurnReview', () => {
     const request = vi.fn()
     await runTurnReview({
       agent: makeAgent('/x', [
-        { type: 'message/user' }, { type: 'message/assistant' },
-        { type: 'message/user' }, { type: 'message/assistant' },
+        { type: 'user/message' }, { type: 'assistant/message' },
+        { type: 'user/message' }, { type: 'assistant/message' },
       ]),
       signal: new AbortController().signal,
       transport: { request } as unknown as JsonRpcTransportPeer,
@@ -276,8 +276,8 @@ describe('runTurnReview', () => {
     const llm = vi.fn()
     await runTurnReview({
       agent: makeAgent('/x', [
-        { type: 'message/user' }, { type: 'message/assistant' },
-        { type: 'message/user' }, { type: 'message/assistant' },
+        { type: 'user/message' }, { type: 'assistant/message' },
+        { type: 'user/message' }, { type: 'assistant/message' },
       ]),
       signal: new AbortController().signal,
       transport: undefined,
@@ -292,8 +292,8 @@ describe('runTurnReview', () => {
     const llm = vi.fn(async () => ({ facts: [{ content: 'persisted' }] }))
     await runTurnReview({
       agent: makeAgent('/x', [
-        { type: 'message/user' }, { type: 'message/assistant' },
-        { type: 'message/user' }, { type: 'message/assistant' },
+        { type: 'user/message' }, { type: 'assistant/message' },
+        { type: 'user/message' }, { type: 'assistant/message' },
       ]),
       signal: new AbortController().signal,
       transport: { request } as unknown as JsonRpcTransportPeer,
@@ -312,8 +312,8 @@ describe('runTurnReview', () => {
     const llm = vi.fn(async () => { throw new Error('boom') })
     await runTurnReview({
       agent: makeAgent('/x', [
-        { type: 'message/user' }, { type: 'message/assistant' },
-        { type: 'message/user' }, { type: 'message/assistant' },
+        { type: 'user/message' }, { type: 'assistant/message' },
+        { type: 'user/message' }, { type: 'assistant/message' },
       ]),
       signal: new AbortController().signal,
       transport: { request } as unknown as JsonRpcTransportPeer,
@@ -330,8 +330,8 @@ describe('runTurnReview', () => {
       const llm = vi.fn(() => new Promise<never>(() => {}))
       const reviewPromise = runTurnReview({
         agent: makeAgent('/x', [
-          { type: 'message/user' }, { type: 'message/assistant' },
-          { type: 'message/user' }, { type: 'message/assistant' },
+          { type: 'user/message' }, { type: 'assistant/message' },
+          { type: 'user/message' }, { type: 'assistant/message' },
         ]),
         signal: new AbortController().signal,
         transport: { request } as unknown as JsonRpcTransportPeer,
@@ -351,8 +351,8 @@ describe('runTurnReview', () => {
     const llm = vi.fn(async () => { throw 'plain failure' })
     await runTurnReview({
       agent: makeAgent('/x', [
-        { type: 'message/user' }, { type: 'message/assistant' },
-        { type: 'message/user' }, { type: 'message/assistant' },
+        { type: 'user/message' }, { type: 'assistant/message' },
+        { type: 'user/message' }, { type: 'assistant/message' },
       ]),
       signal: new AbortController().signal,
       transport: undefined,
@@ -437,8 +437,8 @@ describe('apply (turn-stopping hook)', () => {
   }
 
   const busyAgent = () => makeAgent('/x', [
-    { type: 'message/user' }, { type: 'message/assistant' },
-    { type: 'message/user' }, { type: 'message/assistant' },
+    { type: 'user/message' }, { type: 'assistant/message' },
+    { type: 'user/message' }, { type: 'assistant/message' },
   ])
 
   it('runs the review pipeline when autoReview and the memory route are on', async () => {

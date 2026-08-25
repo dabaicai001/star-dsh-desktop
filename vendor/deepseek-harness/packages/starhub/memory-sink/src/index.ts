@@ -149,8 +149,11 @@ export function countMessages(agent: MemorySinkAgent): { user: number; assistant
   let assistant = 0
   for (const event of events) {
     const { type } = event as { readonly type: string }
-    if (type === 'message/user') user += 1
-    else if (type === 'message/assistant') assistant += 1
+    // dsh 会话事件词表是 `user/message` / `assistant/message`(core/session
+    // SessionEventMap),不是旧的 `message/user` / `message/assistant`;旧名会把
+    // 计数恒为 0,导致 shouldReview 永远 false、自动沉淀从不触发(v0.96.4 修复)。
+    if (type === 'user/message') user += 1
+    else if (type === 'assistant/message') assistant += 1
   }
   return { user, assistant }
 }

@@ -92,11 +92,12 @@ const MEMORY_CARDS_METHOD = 'starhub/memory.cards'
 const MEMORY_CARDS_TIMEOUT_MS = 2_000
 
 /**
- * 「启用长期记忆」「自动沉淀记忆」开关与「记忆模型」配置的 namespace 值形状。
- * v0.92.0 (2026-08-22) 起前两者均默认关闭:用户需在设置 → AI 助手显式打开后
- * 才有记忆预读注入或自动沉淀;关闭状态 = 完全不调 RPC / 不写库。
- * v0.94.0 (2026-08-23) 起记忆模型是硬前置:`memoryProvider` + `memoryModel`
- * 必须成对非空,记忆功能才可能工作(未配置时即使开关打开也整体关闭)。
+ * 「启用长期记忆与自动沉淀」单开关(v0.96.4 起把原「启用长期记忆」「自动
+ * 沉淀记忆」两开关合并,client-nav 同值写 enabled 与 autoReview)与「记忆
+ * 模型」配置的 namespace 值形状。v0.92.0 (2026-08-22) 起均默认关闭:用户需在
+ * 设置 → AI 助手显式打开后才有记忆预读注入或自动沉淀;关闭状态 = 完全不调
+ * RPC / 不写库。v0.94.0 (2026-08-23) 起记忆模型是硬前置:`memoryProvider` +
+ * `memoryModel` 必须成对非空,记忆功能才可能工作(未配置时即使开关打开也整体关闭)。
  */
 export interface MemoryContextValue {
   /** 是否注入长期记忆;缺省 false(v0.92.0 起)。 */

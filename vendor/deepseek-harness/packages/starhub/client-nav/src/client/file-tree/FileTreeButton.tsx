@@ -1,6 +1,6 @@
 /**
  * 会话头部「文件树」按钮(2026-08-24):分支胶囊(GitBranchPill)旁边新增的
- * 第二个胶囊——点击打开右侧详情列并切到「文件树」视图(StarHubToolWorkspace
+ * 第二个胶囊——点击打开工具抽屉并切到「文件树」视图(StarHubToolWorkspace
  * 读到 fileTree bridge 后渲染目录树),再次点击切回资产列表。
  *
  * 数据源:会话 cwd 经框架 `useSessions` 读取;无 cwd(blank 会话/浏览器预览
@@ -17,7 +17,7 @@ import type { FileTreeState } from './state.ts'
 
 /** 注入面:切到/退出文件树视图的桥回调 + 文件树开关源。 */
 export interface FileTreeButtonInjected {
-  /** 打开文件树视图(组合:fileTree.open + 打开右侧详情列)。 */
+  /** 打开文件树视图(组合:fileTree.open + 打开工具抽屉)。 */
   openFileTree: () => void
   /** 关闭文件树视图(切回资产列表)。 */
   closeFileTree: () => void

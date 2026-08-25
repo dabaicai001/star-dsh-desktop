@@ -61,11 +61,11 @@ import { loadAiSettings } from './settings/aiSettings.ts'
 import { syncMemoryEnabled } from './settings/memory-context.ts'
 
 /**
- * Required services: the slot registry, the layout panel-action face, the
- * connection wire, the input-trigger pipeline (for the `@` source) and the
- * session/workspace/conversation services (for `starhub://ask-ai`).
+ * Required services: the slot registry, the connection wire, the input-trigger
+ * pipeline (for the `@` source) and the session/workspace/conversation services
+ * (for `starhub://ask-ai`).
  */
-export const inject = ['slots', 'layout', 'connection', 'inputTriggers', 'sessions', 'workspaces', 'conversation']
+export const inject = ['slots', 'connection', 'inputTriggers', 'sessions', 'workspaces', 'conversation']
 
 /**
  * Client plugin body: one root-scope store handle (sidebar) plus the
@@ -208,12 +208,6 @@ export function apply(ctx: Context): void {
       const input = conversation.input.for(binding.ctx)
       input.setDraft(input.state.getSnapshot().draft + text)
     },
-    // 当前会话 cwd(文件树根;overlay root scope 无框架注入 sessionId,从全局取)。
-    sessionCwd: (() => {
-      const list = sessions.list.getSnapshot()
-      const current = list.current
-      return current !== undefined ? list.byId[current]?.cwd : undefined
-    })(),
     hooks: {
       selection: selection.source,
       assets: assets.source,
@@ -252,8 +246,10 @@ export function apply(ctx: Context): void {
     order: 30,
     label: 'StarHub Git',
   }, GitBranchPill))
-  // 会话头部「文件树」按钮(2026-08-24):分支胶囊旁,点击打开右侧详情列并
-  // 切到项目文件目录树视图;再次点击切回资产列表。order 40:紧跟分支胶囊。
+  // 会话头部「文件树」按钮(2026-08-24):分支胶囊旁,点击打开工具抽屉
+  // (shell.overlay 承载的 StarHubToolWorkspace)并切到项目文件目录树视图;
+  // 再次点击切回资产列表。文件树本体渲染在工具抽屉内,故打开的是 toolsPanel
+  // 而非 rc.2 的 details 列(details 列由 ui-conversation 独占展示工具调用)。
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
     name: 'conversation.session.header.actions',
     id: 'starhub-file-tree',
@@ -262,7 +258,7 @@ export function apply(ctx: Context): void {
     inject: () => ({
       openFileTree: () => {
         fileTree.open()
-        ctx.layout.openDetails()
+        toolsPanel.open()
       },
       closeFileTree: fileTree.close,
       hooks: { fileTree: fileTree.source },

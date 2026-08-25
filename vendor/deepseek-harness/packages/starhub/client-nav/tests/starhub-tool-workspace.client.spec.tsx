@@ -34,8 +34,9 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
   const useFileTree = <S,>(sel: (s: { open: boolean }) => S) => sel(fileTree.getSnapshot())
   const useToolsPanel = <S,>(sel: (s: { open: boolean }) => S) => sel(toolsPanel.getSnapshot())
   const sessionId = opts.sessionId === undefined ? undefined : opts.sessionId as never
-  const useSessions = ((sel: (s: { byId: Record<string, { cwd?: string } | undefined> }) => unknown) => {
+  const useSessions = ((sel: (s: { current: string | undefined; byId: Record<string, { cwd?: string } | undefined> }) => unknown) => {
     const state = {
+      current: opts.sessionId,
       byId: opts.sessionId === undefined || opts.cwd === undefined
         ? {}
         : { [opts.sessionId]: { cwd: opts.cwd } },
@@ -54,7 +55,6 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
     closeTools: vi.fn(),
     selectSubcategory: vi.fn(),
     insertFileReference: vi.fn(),
-    sessionCwd: opts.cwd,
     useAssets,
     useSelection,
     useFileTree,
@@ -88,10 +88,14 @@ const sshAsset = {
 }
 
 describe('StarHubToolWorkspace', () => {
-  it('shows the guide when no subcategory is selected', () => {
+  it('shows the guide and subcategory rows when no subcategory is selected', () => {
     const props = workspaceProps()
     render(<StarHubToolWorkspace {...props} />)
-    expect(screen.getByText(/请在左侧选择工具子类/)).toBeTruthy()
+    expect(screen.getByText(/点击展开一个子类/)).toBeTruthy()
+    // 子类行始终渲染(否则永远无法选中,死胡同);「终端」出现在子类行上。
+    expect(screen.getByText('终端')).toBeTruthy()
+    expect(screen.getByText('数据库')).toBeTruthy()
+    expect(screen.getByText('Docker')).toBeTruthy()
   })
 
   it('calls refreshAssets on mount and on subcategory switch', () => {

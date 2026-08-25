@@ -217,7 +217,6 @@ describe('client-nav apply (rc.2)', () => {
 
   it('inject list declares the required services', () => {
     expect(injectList).toContain('slots')
-    expect(injectList).toContain('layout')
     expect(injectList).toContain('connection')
     expect(injectList).toContain('inputTriggers')
     expect(injectList).toContain('sessions')

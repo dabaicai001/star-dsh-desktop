@@ -29,6 +29,5 @@ Per-step snapshot; the text changes only when the memory contents change.
 ## Known Limitations and Deferred Work
 
 - 注入发生在每一步(pre-step),不跨步缓存卡片;SQLite 查询足够便宜,暂不引入缓存层。
-- 「记忆写入需逐条确认」「存档 tool 消息」两个设置开关仍是 UI 层状态(写路径由 approval-bridge 风险门承接),不在本包语义内。
-- 「自动沉淀记忆」开关 2026-08-22 (v0.92.0) 起接入 `@deepseek-ai/dsh-starhub-memory-sink`:开关同步到 namespace 的 `autoReview` 字段,memory-sink 在 `agent/turn-stopping` 后读取并据此跳过 LLM 抽取。
+- 「启用长期记忆与自动沉淀」单开关(v0.96.4 起合并)同步到 namespace 的 `enabled` 与 `autoReview` 两字段:memory-context 在 `agent/pre-step` 据此注入,memory-sink 在 `agent/turn-stopping` 后据此跳过 LLM 抽取。
 - memory 工具锁死门只按「路由是否配置」判定,不校验 provider 路由在 llm registry 里真实存在;配错 provider 由抽取/写入尝试时报错兜底。
