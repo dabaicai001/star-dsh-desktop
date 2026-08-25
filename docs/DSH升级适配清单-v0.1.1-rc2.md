@@ -192,6 +192,34 @@ StarHub 的定制全部以插件形式存在,升级时只需重放「插件层�
 
 ---
 
+## 五、升级后补丁重放记录
+
+> 整树替换会冲掉所有「直接改上游源文件」的本地补丁。本节逐条记录 rc.2 同步后被冲掉、
+> 之后又重新施加的补丁;下次升级(rc.3+)整树替换后必须逐项核对本节与方案 §11.9。
+
+- ✅ **§11.9 第 5 条:client-modules bundle 加载退避重试(v0.96.5 重施)**。
+  rc.2 整树替换把 `packages/client/modules/src/client/system.ts` 的 `fetchBundle` 拆分 +
+  `BUNDLE_RETRY_DELAYS`(300ms/1200ms,共 3 次尝试)冲回上游单次抓取版,安装版启动竞态
+  再次表现为「Failed to load plugins 点名 @deepseek-ai/dsh-session-log-export」。
+  v0.96.5 已在 rc.2 源码上重施同一补丁(`system.ts` + `manifest.ts` 两处 `loadBundle`
+  契约注释 + `loader.client.spec.ts` 重试成功/耗尽两用例,52 例全绿)。
+  该补丁无对应上游扩展面(`loadBundle` seam 的构造点在 shell kernel,插件层够不到),
+  属「补丁型改上游」的合法例外,升级后必须重放。
+- ✅ **§11.9 第 3 条:sdk-jsonrpc-server 暴露 `sdk-transport` / `sdk-notifications`(v0.96.5 重施)**。
+  rc.2 整树替换把 `packages/sdk/server/src/index.ts` 的 `ctx.provide('sdk-transport', transport)`、
+  `SdkNotificationDispatcher` 实例化 + `ctx.provide('sdk-notifications', …)` 与
+  `transport.onNotification` 接线全部冲掉(`notifications.ts` 新文件还在,但无人实例化)。
+  后果:approval-bridge / starhub-tools / memory-context / memory-sink / live-context
+  `ctx.get('sdk-transport')` 全落空,approval-bridge apply() fail-loud → dsh web 进程崩溃 →
+  安装版/开发版启动卡「Failed to load plugins」(点名插件 bundle 只是下游症状)。
+  v0.96.5 已在保留 rc.2 新增 `initialize` 门控的前提下重施该补丁。
+  本条与第 5 条同为「无上游扩展面、必须 touch 上游文件」的合法例外,升级后必须重放。
+- 核对结论:§11.9 第 1-2 条(Windows 打包补丁、tsconfig.host.json exclude)针对的是
+  python-sdk 打包链与 website/ 裁剪,rc.2 打包路径已不走该脚本,无需重放;第 4 条
+  (starhub-tools 包)本身是 starhub 本地包,随整树保留,不涉及上游文件。
+
+---
+
 ## 关键决策记录
 
 | 决策 | 结论 |

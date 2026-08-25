@@ -23,6 +23,7 @@ type Factory = ClientBundleRegistration['factory']
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   delete win.__ModuleLoader__
   for (const el of document.querySelectorAll('style, script')) el.remove()
 })
@@ -399,16 +400,53 @@ describe('default transport seam', () => {
     expect([...document.querySelectorAll('script')]).toEqual([])
   })
 
-  it('a script load failure is loud and removes the node', async () => {
-    vi.spyOn(document.head, 'append').mockImplementation((...nodes) => {
-      const script = nodes[0]
-      if (!(script instanceof HTMLScriptElement)) throw new Error('expected script node')
-      queueMicrotask(() => { script.dispatchEvent(new Event('error')) })
-    })
-    const b = bench([row('dee')], {}, { defaultTransport: true })
-    await expect(b.loader.prefetch('dee')).rejects.toThrow(
-      'bundle script /plugins/dee/client.js?rev=0 failed to load',
-    )
-    expect([...document.querySelectorAll('script')]).toEqual([])
+  it('a failed script load retries with backoff and a later attempt succeeds', async () => {
+    vi.useFakeTimers()
+    try {
+      let attempts = 0
+      vi.spyOn(document.head, 'append').mockImplementation((...nodes) => {
+        const script = nodes[0]
+        if (!(script instanceof HTMLScriptElement)) throw new Error('expected script node')
+        attempts += 1
+        queueMicrotask(() => {
+          if (attempts === 1) {
+            script.dispatchEvent(new Event('error'))
+          } else {
+            win.__ModuleLoader__?.load({ id: 'dee', factory: () => ({ marker: 'retried' }) })
+            script.dispatchEvent(new Event('load'))
+          }
+        })
+      })
+      const b = bench([row('dee')], {}, { defaultTransport: true })
+      const pending = b.loader.import('dee', '', {})
+      await vi.advanceTimersByTimeAsync(300)
+      const exports = await pending
+      expect((exports as { marker: string }).marker).toBe('retried')
+      expect(attempts).toBe(2)
+      expect([...document.querySelectorAll('script')]).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a persistent script load failure is loud after bounded retries and removes every node', async () => {
+    vi.useFakeTimers()
+    try {
+      const append = vi.spyOn(document.head, 'append').mockImplementation((...nodes) => {
+        const script = nodes[0]
+        if (!(script instanceof HTMLScriptElement)) throw new Error('expected script node')
+        queueMicrotask(() => { script.dispatchEvent(new Event('error')) })
+      })
+      const b = bench([row('dee')], {}, { defaultTransport: true })
+      const assertion = expect(b.loader.prefetch('dee')).rejects.toThrow(
+        'bundle script /plugins/dee/client.js?rev=0 failed to load',
+      )
+      await vi.runAllTimersAsync()
+      await assertion
+      expect(append).toHaveBeenCalledTimes(3)
+      expect([...document.querySelectorAll('script')]).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
