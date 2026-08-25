@@ -137,36 +137,27 @@ fn main() {
             // 之前建好,跳板页才能立刻开始轮询。
             create_main_window(app)?;
 
+            // 启动序列(db → sidecar → dsh web)整体放后台任务:setup 不再
+            // block_on 阻塞主线程(窗口消息循环停摆会表现为「无响应」,新机首启
+            // 冷启动慢时尤为明显),窗口保持响应,由 shell-placeholder 跳板页轮询
+            // dsh_web_url(幂等 ensure_started)在 web 就绪后自跳转。失败仅落日志:
+            // db/sidecar 失败时相关 command 各自报错;dsh web 失败时跳板页下次
+            // 轮询会自动重启(dsh_web_url → ensure_started 自愈),无需重开应用。
             let app_handle = app.handle().clone();
-            tauri::async_runtime::block_on(async {
-                db::init_database(&app_handle).await?;
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = db::init_database(&app_handle).await {
+                    tracing::error!("数据库初始化失败: {error}");
+                }
                 let manager = app_handle.state::<sidecar::SidecarManager>();
-                manager.start(&app_handle).await
-            })
-            .map_err(std::io::Error::other)?;
-
-            // 初始化 TransferManager(需要 AppHandle 用于 emit 进度/状态事件)
-            app.manage(TransferManager::new(app.handle().clone()));
-            // 截图会话状态(区域模式底图缓存)
-            app.manage(commands::screenshot::ScreenshotSession::default());
-
-            // 主壳融合 P4a:dsh web GUI 是唯一主壳(旧外壳已退役,逃生门随之移除)。
-            // 启动失败不致命——窗口停留在 shell-placeholder 跳板页轮询重试,错误落日志。
-            {
-                let app_handle = app.handle().clone();
-                let started = tauri::async_runtime::block_on({
-                    let app_handle = app_handle.clone();
-                    async move {
-                        let bridge = app_handle
-                            .state::<harness::HarnessManager>()
-                            .bridge();
-                        app_handle
-                            .state::<harness::web::DshWebManager>()
-                            .ensure_started(&app_handle, bridge)
-                            .await
-                    }
-                });
-                match started {
+                if let Err(error) = manager.start(&app_handle).await {
+                    tracing::error!("sidecar 启动失败: {error}");
+                }
+                let bridge = app_handle.state::<harness::HarnessManager>().bridge();
+                match app_handle
+                    .state::<harness::web::DshWebManager>()
+                    .ensure_started(&app_handle, bridge)
+                    .await
+                {
                     // dev 流里 devUrl 的 3185 是占位等待页(真实服务在 3186+),
                     // 跳转由占位页轮询脚本完成;prod 由 shell-placeholder 跳板页
                     // 轮询 dsh_web_url 后 location.replace。Rust 不参与窗口导航
@@ -174,7 +165,12 @@ fn main() {
                     Ok(url) => tracing::info!("dsh web 可用: {url}"),
                     Err(e) => tracing::error!("dsh web 启动失败: {e}"),
                 }
-            }
+            });
+
+            // 初始化 TransferManager(需要 AppHandle 用于 emit 进度/状态事件)
+            app.manage(TransferManager::new(app.handle().clone()));
+            // 截图会话状态(区域模式底图缓存)
+            app.manage(commands::screenshot::ScreenshotSession::default());
 
             Ok(())
         })

@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.95.4-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.95.5-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -148,6 +148,9 @@
 
 ## 当前版本
 
+### v0.95.5 (2026-08-25)
+- 🐛 新机首次安装启动窗口无响应、报「dsh 没有在运行」、第二次才正常:setup 里 `block_on` 阻塞主线程跑完 db+sidecar+dsh web 启动(冷启动可能超 30s 就绪上限),期间窗口消息循环停摆 → 「无响应」;dsh web 超时被杀后 `dsh_web_url` 只读状态不重启 → 卡死在跳板页「dsh web 未运行」需手动重开应用。修复:① setup 改用 `async_runtime::spawn` 后台拉起,窗口立即响应;② `dsh_web_url` 改调幂等 `ensure_started`,跳板页轮询在首启失败后自动重启自愈,无需重开;③ 就绪超时 30s→60s 留足首启冷启动余量。
+
 ### v0.95.4 (2026-08-24)
 - 🐛 区域截图向右/右上斜拖拽经常「断触」、只截出一小块:遮罩页拖拽改为 Pointer Events + `setPointerCapture`(align 踩坑记录 #10)并补 `touch-action: none`——指针划过右上角 ✕ 按钮/工具栏或离开窗口时选区不再中途冻结,触屏下 WebView 不再把手势当滚动/平移而中断拖拽;删除 `mouseleave` 即结束拖拽的脆弱路径。
 - 🐛 选区几何经 8 方向穷举模拟验证方向对称,方向差异全部来自事件投递层(无 pointer capture + `mouseleave` 结束拖拽)。
@@ -156,10 +159,6 @@
 - 🐛 GitHub Linux 构建失败根因修复:截图栈 `xcap → pipewire/libspa 0.10.1` 要求系统 PipeWire/spa 头 ≥ 1.0,而 ubuntu-22.04 的 0.3.48 头过旧(`libspa-sys` 构建时 bindgen 从系统头生成绑定,缺 `flags` 字段、meta 函数仍是宏)→ `libspa` 编译 7 错;Linux 构建基线升 `ubuntu-24.04`(PipeWire 1.0.5),glibc 下限 2.35 → 2.39。
 - 🐛 Linux 旧系统(Ubuntu 22.04 等 PipeWire < 1.0)点击截图提示「需要系统 PipeWire ≥ 1.0(升级到 Ubuntu 24.04 及以上)」,不再静默失败;截图按钮失败从仅 console 改为可见 toast。
 - 🐛 Linux 链接依赖补齐:`libgbm-dev` 及 xcap 官方 Linux 编译依赖清单(xcb / randr / dbus / wayland / egl)进 CI,修复 `rust-lld: unable to find library -lgbm`。
-
-### v0.95.2 (2026-08-24)
-- 🐛 会话头部 git 分支胶囊自动追踪外部切换:每 10s 轮询 + 页面重新可见立即刷新 + 打开面板顺带刷新——在其它终端/编辑器 checkout 后胶囊不再延迟到切换会话才更新。
-- 🐛 GitHub Linux 构建修复:apt 依赖补 `libpipewire-0.3-dev` + `libspa-0.2-dev`(截图栈 xcap 的 `libspa-sys` 此前在 Linux 构建报 `Cannot find libraries: libpipewire-0.3`)。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

@@ -11,7 +11,9 @@
 //!
 //! 端口:正式(release)实例默认 3085,开发(debug)实例默认 3185 —— 与本机
 //! 常驻正式实例的 3085 隔离;占用则递增重试(上限 +10);实际端口写回状态,经
-//! `dsh_web_url` command 暴露。就绪探测:轮询 GET / 直到 200(超时 30s)。
+//! `dsh_web_url` command 暴露。就绪探测:轮询 GET / 直到 200(超时 60s)。
+//! `dsh_web_url` 命令走幂等 ensure_started:未运行/上次启动失败时先拉起再返回,
+//! shell-placeholder 跳板页据此轮询,首启超时后自动重启自愈(v0.95.5)。
 //! P4a 起 dsh web 是唯一主壳(旧外壳与 STARHUB_DSH_WEB=0 逃生门已退役)。
 
 use std::fs;
@@ -39,8 +41,10 @@ pub const DEFAULT_PORT: u16 = 3185;
 pub const DEFAULT_PORT: u16 = 3085;
 /// 端口递增重试上限:`DEFAULT_PORT..=DEFAULT_PORT + MAX_PORT_OFFSET`。
 const MAX_PORT_OFFSET: u16 = 10;
-/// 就绪探测总超时。
-const READY_TIMEOUT: Duration = Duration::from_secs(30);
+/// 就绪探测总超时(新机首启冷启动:Defender 扫描 + Node 冷启动 + 首次物化
+/// DSH_HOME profile 可能很慢,超时会杀进程、由跳板页轮询 ensure_started 自愈;
+/// 60s 留足首启余量,二启缓存热后几秒即就绪)。
+const READY_TIMEOUT: Duration = Duration::from_secs(60);
 /// 就绪探测间隔。
 const READY_INTERVAL: Duration = Duration::from_millis(300);
 /// starhub-web 组合在 vendor 内的相对路径。
@@ -90,8 +94,6 @@ pub enum DshWebError {
     ReadyTimeout(u64),
     #[error("dsh web 端口全部被占用({start}..={end})")]
     NoFreePort { start: u16, end: u16 },
-    #[error("dsh web 未运行")]
-    NotRunning,
 }
 
 /// 一次成功启动的运行态:URL / 子进程句柄。
@@ -179,15 +181,6 @@ impl DshWebManager {
         Self {
             handle: tokio::sync::Mutex::new(None),
             start_lock: tokio::sync::Mutex::new(()),
-        }
-    }
-
-    /// 当前运行中的 dsh web URL(未运行返回错误)。
-    pub async fn url(&self) -> Result<String, DshWebError> {
-        let guard = self.handle.lock().await;
-        match guard.as_ref() {
-            Some(handle) => Ok(handle.url.clone()),
-            None => Err(DshWebError::NotRunning),
         }
     }
 

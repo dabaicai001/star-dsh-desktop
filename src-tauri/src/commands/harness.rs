@@ -1,5 +1,5 @@
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::harness::events::DomainEvent;
 use crate::harness::{
@@ -68,12 +68,21 @@ pub async fn dsh_shutdown(manager: State<'_, HarnessManager>) -> Result<Value, S
 }
 
 /// dsh web GUI 的实际 URL(主壳融合;端口被占时会递增,不能假设 3085)。
-/// 未运行(启动失败)时返回错误,shell-placeholder 跳板页据此轮询重试。
+/// 未运行(含上次启动失败)时**先幂等拉起再返回**——shell-placeholder 跳板页
+/// 据此轮询:新机首启冷启动慢、setup 里首次 ensure_started 就绪超时被杀后,
+/// 跳板页下一次轮询会自动重启 web 自愈,不再卡死在「dsh web 未运行」需要
+/// 手动重开应用(v0.95.5 修复)。ensure_started 幂等且被 start_lock 串行化,
+/// 与 setup 后台任务的并发调用只会等到同一份结果。
 #[tauri::command]
 pub async fn dsh_web_url(
+    app: AppHandle,
     manager: State<'_, crate::harness::web::DshWebManager>,
 ) -> Result<String, String> {
-    manager.url().await.map_err(|e| e.to_string())
+    let bridge = app.state::<HarnessManager>().bridge();
+    manager
+        .ensure_started(&app, bridge)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// 应答一条 `dsh://approval` 事件对应的审批请求(requestId 来自事件 payload)。
