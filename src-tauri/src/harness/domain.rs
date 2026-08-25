@@ -202,10 +202,12 @@ async fn exec_ssh_command(
     );
     let result = crate::commands::ssh::ssh_exec_core(
         &manager,
+        &app,
         conn_id,
         command,
         Some(timeout_sec),
         Some(&exec_id),
+        true,
     )
     .await;
     bridge.inflight_tools.lock().unwrap().remove(&exec_id);

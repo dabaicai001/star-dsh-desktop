@@ -12,6 +12,10 @@ use tokio::sync::{oneshot, Mutex};
 
 pub type PendingKeyboardResponses = Arc<Mutex<HashMap<String, oneshot::Sender<Vec<String>>>>>;
 pub type PendingHostKeyResponses = Arc<Mutex<HashMap<String, oneshot::Sender<(bool, bool)>>>>;
+/// 堡垒机 AI exec 的「选择机器」等待通道:session_id → 用户选择的机器项(字符串)。
+/// 方案A(v0.95.6):跳板机 + kb_interactive 的资产,AI exec 改走带 pty 的 shell,
+/// 先由用户在命令行卡里选机器,再把选择 + AI 命令写入同一 pty 执行。
+pub type PendingBastionResponses = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
 pub type SshWriteChannels = Arc<Mutex<HashMap<String, (u64, tokio::sync::mpsc::Sender<Vec<u8>>)>>>;
 
 /// 端口转发信息(返回给前端)

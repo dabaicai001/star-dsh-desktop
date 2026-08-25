@@ -3,8 +3,8 @@ use crate::registry::{DetachOutcome, SessionRegistry};
 use crate::sftp::transfer::TransferManager;
 use crate::ssh::session::SshSession;
 use crate::ssh::{
-    KeyboardInteractiveConfig, PendingHostKeyResponses, PendingKeyboardResponses, SftpLaunchMode,
-    SshAuth, SshConfig, SshSessionInfo, SshWriteChannels,
+    KeyboardInteractiveConfig, PendingBastionResponses, PendingHostKeyResponses,
+    PendingKeyboardResponses, SftpLaunchMode, SshAuth, SshConfig, SshSessionInfo, SshWriteChannels,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -77,6 +77,9 @@ pub struct SshManager {
     channels: SshWriteChannels,
     pub pending_kb: PendingKeyboardResponses,
     pub pending_hostkey: PendingHostKeyResponses,
+    /// 堡垒机 AI exec 的「选择机器」待应答通道(session_id → 用户选择的机器)。
+    /// 方案A(v0.95.6):AI exec 走带 pty 的 shell 时,先由用户在这里选机器。
+    pub pending_bastion: PendingBastionResponses,
     attempts: Arc<Mutex<HashMap<String, u64>>>,
     /// 在途 exec 命令的中断句柄:exec_id → 发送端。
     /// 放在 manager 层而不是 SshSession 里:exec 期间 session 锁被持有,
@@ -91,6 +94,7 @@ impl SshManager {
             channels: Arc::new(Mutex::new(HashMap::new())),
             pending_kb: Arc::new(Mutex::new(HashMap::new())),
             pending_hostkey: Arc::new(Mutex::new(HashMap::new())),
+            pending_bastion: Arc::new(Mutex::new(HashMap::new())),
             attempts: Arc::new(Mutex::new(HashMap::new())),
             exec_aborts: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -726,22 +730,27 @@ pub async fn test_ssh_connection(
 /// - `exec_id` 可选的执行 ID(前端生成);传入后可用 `ssh_exec_abort` 中断本次执行
 #[tauri::command]
 pub async fn ssh_exec(
+    app: tauri::AppHandle,
     manager: State<'_, SshManager>,
     id: String,
     command: String,
     timeout_sec: Option<u64>,
     exec_id: Option<String>,
 ) -> Result<String, String> {
-    ssh_exec_core(&manager, &id, &command, timeout_sec, exec_id.as_deref()).await
+    ssh_exec_core(&manager, &app, &id, &command, timeout_sec, exec_id.as_deref(), false).await
 }
 
 /// ssh_exec 的进程内核心(harness/domain.rs 复用;State 解引用为 &SshManager)。
+/// `bastion_interactive` = true 时(AI 域工具路径):若资产配置了 jump_host 且
+/// 启用 kb_interactive(堡垒机),改走带 pty 的 shell,先由用户选机器再执行命令。
 pub(crate) async fn ssh_exec_core(
     manager: &SshManager,
+    app_handle: &tauri::AppHandle,
     id: &str,
     command: &str,
     timeout_sec: Option<u64>,
     exec_id: Option<&str>,
+    bastion_interactive: bool,
 ) -> Result<String, String> {
     // 先从 sessions map 中取出 Arc(只持有主锁一瞬间),然后释放主锁,
     // 再对单个 session 加锁执行命令。这样不同 session 的 exec 和 connect
@@ -755,6 +764,19 @@ pub(crate) async fn ssh_exec_core(
     };
 
     let mut session = session_arc.lock().await;
+    // 堡垒机 pty 路径:jump_host + kb_interactive 时,普通 exec 通道被服务端
+    // 拒绝(Channel send error),需先经 pty 让用户选机器。仅 AI 域工具路径启用。
+    if bastion_interactive && session.is_bastion() {
+        return session
+            .exec_via_bastion_pty(
+                id,
+                Some(app_handle),
+                &manager.pending_bastion,
+                command,
+                timeout_sec.unwrap_or(10),
+            )
+            .await;
+    }
     match exec_id {
         Some(eid) => {
             let (abort_tx, abort_rx) = tokio::sync::oneshot::channel();
@@ -822,6 +844,25 @@ pub async fn ssh_kb_response(
     sender
         .send(responses)
         .map_err(|_| "Failed to send kb response (handler dropped)".to_string())
+}
+
+/// 应答堡垒机 AI exec 的「选择机器」(方案A/v0.95.6):
+/// 用户在 `ssh:bastion-select:<sessionId>` 浮层输入目标机器项后回传,
+/// 由 pending 通道恢复 `exec_via_bastion_pty` 的选机器流程。
+#[tauri::command]
+pub async fn ssh_bastion_response(
+    manager: State<'_, SshManager>,
+    id: String,
+    selection: String,
+) -> Result<(), String> {
+    let sender = {
+        let mut map = manager.pending_bastion.lock().await;
+        map.remove(&id)
+            .ok_or_else(|| format!("No pending bastion prompt for session {}", id))?
+    };
+    sender
+        .send(selection)
+        .map_err(|_| "Failed to send bastion response (handler dropped)".to_string())
 }
 
 #[tauri::command]

@@ -165,6 +165,18 @@ impl SshSession {
         self.config.effective_sftp_timeout_sec()
     }
 
+    /// 是否为「堡垒机 pty exec」场景:配置了跳板机(jump_host)且启用
+    /// keyboard-interactive MFA。这类资产在验证码通过后,登录壳会先呈现
+    /// 「选择机器」交互菜单,普通 exec 通道会被服务端拒绝。方案A(v0.95.6)。
+    pub fn is_bastion(&self) -> bool {
+        self.config.jump_host.is_some()
+            && self
+                .config
+                .kb_interactive
+                .as_ref()
+                .is_some_and(|kb| kb.enabled)
+    }
+
     /// 返回会话配置中的连接目标(host, port, username),
     /// 供会话列表展示(如命令广播对话框)使用。
     pub fn endpoint(&self) -> (String, u16, String) {
@@ -997,6 +1009,173 @@ impl SshSession {
                 }
             )),
         }
+    }
+
+    /// AI exec 会话在「跳板机 + kb_interactive」时的 pty 交互路径(方案A/v0.95.6)。
+    ///
+    /// 这类堡垒机在 keyboard-interactive 验证码通过后,登录壳会先呈现一个
+    /// 「选择机器」交互菜单;普通 exec 通道(无 pty、无机器选中)会被服务端拒绝,
+    /// 表现为 `[EXEC_FAILED] Failed to open exec channel: Channel send error`。
+    /// 选机器与 AI 命令必须在**同一通道**——堡垒机每次会话独立登录,新开 exec
+    /// 通道不会继承前面选中的机器。
+    ///
+    /// 这里改开带 pty 的 shell,分两阶段执行:
+    ///   1. 先把初始菜单输出透传前端(事件 `ssh:bastion-select:<sessionId>`),
+    ///      等用户经 `ssh_bastion_response` 选定机器,再把选择写入 pty;
+    ///   2. 把 AI 命令写入同一 pty,收集输出直到通道 Eof/Close/ExitStatus 或超时。
+    ///
+    /// 成功后返回「菜单 + 命令输出」,便于 AI/用户核对;失败即快速返回明确
+    /// 错误,不悬挂;普通 exec 路径(exec_inner)不受影响。
+    #[allow(clippy::too_many_arguments)]
+    pub async fn exec_via_bastion_pty(
+        &mut self,
+        session_id: &str,
+        app_handle: Option<&tauri::AppHandle>,
+        pending_bastion: &super::PendingBastionResponses,
+        command: &str,
+        timeout_sec: u64,
+    ) -> Result<String, String> {
+        let handle = self
+            .handle
+            .as_mut()
+            .ok_or_else(|| "SSH session not connected".to_string())?;
+        let mut channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|e| format!("[EXEC_FAILED] Failed to open exec channel: {}", e))?;
+        let (pty_cols, pty_rows) = self.config.effective_pty_size();
+        channel
+            .request_pty(true, "xterm-256color", pty_cols, pty_rows, 0, 0, &[])
+            .await
+            .map_err(|e| format!("[BASTION_FAILED] Failed to request PTY: {}", e))?;
+        channel
+            .request_shell(true)
+            .await
+            .map_err(|e| format!("[BASTION_FAILED] Failed to request shell: {}", e))?;
+
+        // 读取「选择机器」菜单的首屏输出:先等一小段(等 shell 打印菜单),再关闭读端。
+        let mut menu = Vec::<u8>::new();
+        let menu_window = Duration::from_millis(1500);
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let drain_menu = async {
+            loop {
+                tokio::select! {
+                    msg = channel.wait() => match msg {
+                        Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                            menu.extend_from_slice(&data);
+                            if menu.len() > 64 * 1024 { break; }
+                        }
+                        Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
+                        _ => {}
+                    },
+                    _ = tokio::time::sleep(menu_window) => break,
+                }
+            }
+        };
+        drain_menu.await;
+        let menu_text = String::from_utf8_lossy(&menu).to_string();
+
+        // 请求用户选择机器:emit 事件(通用事件带 sessionId,堡垒机浮层订阅)+
+        // 等 ssh_bastion_response(360s 超时,同 MFA)。
+        if let Some(app) = app_handle {
+            use tauri::Emitter;
+            let payload = serde_json::json!({
+                "sessionId": session_id,
+                "menu": menu_text,
+            });
+            let _ = app.emit("ssh:bastion-select", payload.clone());
+            let _ = app.emit(&format!("ssh:bastion-select:{}", session_id), payload);
+        }
+        let (resp_tx, resp_rx) = oneshot::channel();
+        pending_bastion
+            .lock()
+            .await
+            .insert(session_id.to_string(), resp_tx);
+        let selection = match tokio::time::timeout(Duration::from_secs(360), resp_rx).await {
+            Ok(Ok(s)) => s,
+            Ok(Err(_)) => {
+                pending_bastion.lock().await.remove(session_id);
+                return Err("[BASTION_TIMEOUT] 选择机器应答通道已断开".to_string());
+            }
+            Err(_) => {
+                pending_bastion.lock().await.remove(session_id);
+                return Err("[BASTION_TIMEOUT] 等待选择机器超时(360s)".to_string());
+            }
+        };
+        let selection = selection.trim().to_string();
+        if selection.is_empty() {
+            return Err("[BASTION_REJECTED] 未选择堡垒机目标机器".to_string());
+        }
+
+        let mut writer = channel.make_writer();
+        // 写入机器选择 + 回车,让堡垒机进入目标机。
+        writer
+            .write_all(format!("{}\n", selection).as_bytes())
+            .await
+            .map_err(|e| format!("[BASTION_FAILED] 写入机器选择失败: {}", e))?;
+        writer.flush().await.ok();
+        tokio::time::sleep(Duration::from_millis(600)).await;
+
+        // 把 AI 命令写入同一 pty;随后收集输出直到 Eof/Close/ExitStatus 或超时。
+        writer
+            .write_all(format!("{}\n", command).as_bytes())
+            .await
+            .map_err(|e| format!("[BASTION_FAILED] 写入命令失败: {}", e))?;
+        writer.flush().await.ok();
+        drop(writer);
+
+        let mut output = Vec::<u8>::new();
+        let mut truncated = false;
+        let mut exit_status: Option<u32> = None;
+        let collect = async {
+            loop {
+                match channel.wait().await {
+                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                        truncated |= append_capped(&mut output, &data, MAX_EXEC_OUTPUT_BYTES);
+                        if let Some(app) = app_handle {
+                            use tauri::Emitter;
+                            let _ = app.emit(
+                                &format!("ssh:bastion-output:{}", session_id),
+                                data.to_vec(),
+                            );
+                        }
+                    }
+                    Some(ChannelMsg::ExitStatus { exit_status: code }) => exit_status = Some(code),
+                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
+                    _ => {}
+                }
+            }
+        };
+        let timeout_sec = timeout_sec.clamp(1, MAX_EXEC_TIMEOUT_SEC);
+        let timed_out = timeout(Duration::from_secs(timeout_sec), collect).await.is_err();
+        if timed_out {
+            let _ = channel.close().await;
+            return Err(format!(
+                "[EXEC_TIMEOUT] 堡垒机命令超时({}s): {}",
+                timeout_sec, command
+            ));
+        }
+
+        let mut combined = String::new();
+        if !menu_text.trim().is_empty() {
+            combined.push_str(&format!("[堡垒机菜单]\n{}\n", menu_text.trim()));
+        }
+        let mut stdout = String::from_utf8_lossy(&output).to_string();
+        if truncated {
+            stdout.push_str(&format!(
+                "\n[OUTPUT_TRUNCATED] output exceeded {} bytes and was truncated",
+                MAX_EXEC_OUTPUT_BYTES
+            ));
+        }
+        combined.push_str(&stdout);
+        if exit_status.is_some_and(|c| c != 0) {
+            return Err(format!(
+                "[EXEC] 命令退出码 {}: {}",
+                exit_status.unwrap_or(0),
+                combined.trim()
+            ));
+        }
+        Ok(combined)
     }
 
     pub async fn open_sftp_with_info(
@@ -2011,6 +2190,37 @@ XQAAAAtzc2gtZWQyNTUxOQAAACCzPq7zfqLffKoBDe/eo04kH2XxtSmk9D7RQyf1xUqrYg
 AAAEC2BsIi0QwW2uFscKTUUXNHLsYX4FxlaSDSblbAj7WR7bM+rvN+ot98qgEN796jTiQf
 ZfG1KaT0PtFDJ/XFSqtiAAAAEHVzZXJAZXhhbXBsZS5jb20BAgMEBQ==
 -----END OPENSSH PRIVATE KEY-----"#;
+
+    /// 判断是否为「堡垒机 pty exec」场景:跳板机 + kb_interactive 启用。
+    #[test]
+    fn is_bastion_requires_jump_host_and_kb_enabled() {
+        let plain: SshConfig = serde_json::from_str(
+            r#"{"host":"h","port":22,"username":"u","auth":{"Password":"p"}}"#,
+        )
+        .unwrap();
+        assert!(!SshSession::new(plain).is_bastion());
+
+        // 只配跳板机、未启用 kb → 不是堡垒机 pty 场景
+        let jump_only: SshConfig = serde_json::from_str(
+            r#"{"host":"h","port":22,"username":"u","auth":{"Password":"p"},"jump_host":"b"}"#,
+        )
+        .unwrap();
+        assert!(!SshSession::new(jump_only).is_bastion());
+
+        // 跳板机 + kb 启用(无论有无主密码)→ 是
+        let bastion: SshConfig = serde_json::from_str(
+            r#"{"host":"h","port":22,"username":"u","auth":{"Password":"p"},"jump_host":"b","kb_interactive":{"enabled":true,"password":"pw"}}"#,
+        )
+        .unwrap();
+        assert!(SshSession::new(bastion).is_bastion());
+
+        // kb 启用但无跳板机 → 不是(直接连目标机的 MFA 不需要选机器)
+        let kb_only: SshConfig = serde_json::from_str(
+            r#"{"host":"h","port":22,"username":"u","auth":{"Password":"p"},"kb_interactive":{"enabled":true}}"#,
+        )
+        .unwrap();
+        assert!(!SshSession::new(kb_only).is_bastion());
+    }
 
     #[test]
     fn rewrite_host_header_replaces_existing_host() {

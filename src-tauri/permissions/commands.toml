@@ -236,6 +236,7 @@ commands.allow = [
   "ssh_get_trusted_host_key",
   "ssh_hostkey_response",
   "ssh_kb_response",
+  "ssh_bastion_response",
   "ssh_list_forwards",
   "ssh_parse_config_file",
   "ssh_remove_forward",

@@ -40,6 +40,7 @@ import {
 import { createFileViewerBridge } from './file-viewer/state.ts'
 import { FileViewerOverlay } from './file-viewer/FileViewerOverlay.tsx'
 import { MfaPromptCard } from './mfa/MfaPromptCard.tsx'
+import { BastionSelectCard } from './bastion/BastionSelectCard.tsx'
 import type { StarHubFileViewerFace } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { assetWindowUrl, type StarHubAsset } from './sections.ts'
 import { focusWindowByKey, openNewPage, tauriInvoke } from './tauri.ts'
@@ -190,6 +191,14 @@ export function apply(ctx: Context): void {
     order: 115,
     label: 'StarHub MFA',
   }, MfaPromptCard))
+  // 堡垒机「选择机器」浮层(2026-08-25,方案A/v0.95.6):AI 域工具经 pty 连堡垒机
+  // 后需先选机器再执行命令;只接管 dsh: 前缀会话。
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'starhub-bastion-select',
+    order: 120,
+    label: 'StarHub BastionSelect',
+  }, BastionSelectCard))
   const workspaceInject = () => ({
     // The connection wire face for syncing the current tool context to
     // host settings (Path B plan 4.3).

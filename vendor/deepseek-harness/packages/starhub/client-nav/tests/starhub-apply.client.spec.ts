@@ -16,6 +16,7 @@ import { GitBranchPill } from '../src/client/git/GitBranchPill.tsx'
 import { FileTreeButton } from '../src/client/file-tree/FileTreeButton.tsx'
 import { FileViewerOverlay } from '../src/client/file-viewer/FileViewerOverlay.tsx'
 import { MfaPromptCard } from '../src/client/mfa/MfaPromptCard.tsx'
+import { BastionSelectCard } from '../src/client/bastion/BastionSelectCard.tsx'
 import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
 import { STARHUB_FILE_SOURCE } from '../src/client/file-source.ts'
@@ -134,17 +135,17 @@ describe('client-nav apply', () => {
     expect(() =>{  applyHost() }).not.toThrow()
   })
 
-  it('registers the fourteen slots with their components in order', () => {
+  it('registers the fifteen slots with their components in order', () => {
     const { ctx, inject, register } = fakeContext()
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
-      'sidebar.navigation', 'shell.overlay', 'shell.overlay', 'shell.overlay', 'workspace', 'details.workspace',
+      'sidebar.navigation', 'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay', 'workspace', 'details.workspace',
       'conversation.session.header.actions', 'conversation.session.header.actions', 'conversation.input.left',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
     ])
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
-      StarHubNav, StarHubOverlay, FileViewerOverlay, MfaPromptCard, StarHubToolWorkspace, StarHubToolWorkspace,
+      StarHubNav, StarHubOverlay, FileViewerOverlay, MfaPromptCard, BastionSelectCard, StarHubToolWorkspace, StarHubToolWorkspace,
       GitBranchPill, FileTreeButton, ScreenshotButton,
       // AiTab 经 () => createElement(AiTab, { api }) 包装(传入 settings RPC 面),
       // 不再是裸引用,按函数断言。
@@ -183,7 +184,7 @@ describe('client-nav apply', () => {
     const { ctx, register, openDetails, toggleDetails } = fakeContext()
     applyPlugin(ctx)
     const navConfig = register.mock.calls[0]![0]
-    const workspaceConfig = register.mock.calls[4]![0]
+    const workspaceConfig = register.mock.calls[5]![0]
     const injected = navConfig.inject()
     const workspace = workspaceConfig.inject()
     // 先打开文件树(与头部按钮同桥)。
@@ -219,7 +220,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[4]![0].inject()
+      const injected = register.mock.calls[5]![0].inject()
       const overlay = register.mock.calls[1]![0].inject()
       // 壳内 overlay 不再承载 SSH/DB/Docker/Redis 工作台桥
       expect(overlay.hooks.sshTerminal).toBeUndefined()
@@ -245,7 +246,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[4]![0].inject()
+      const injected = register.mock.calls[5]![0].inject()
       const fullAsset = {
         id: 'a1', type: 'ssh', name: 'web-1', group_id: null, config: { host: '1.1.1.1' },
         key_id: null, tags: [], favorite: false, last_used_at: null, created_at: 0, updated_at: 0,
@@ -263,7 +264,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[4]![0].inject()
+      const injected = register.mock.calls[5]![0].inject()
       const dbAsset = {
         id: 'pg1', type: 'db', name: 'prod-db', group_id: null,
         config: { dbType: 'postgresql', host: 'h' },
@@ -284,7 +285,7 @@ describe('client-nav apply', () => {
     try {
       const { ctx, register } = fakeContext()
       applyPlugin(ctx)
-      const injected = register.mock.calls[4]![0].inject()
+      const injected = register.mock.calls[5]![0].inject()
       const esAsset = {
         id: 'es1', type: 'db', name: 'es-1', group_id: null,
         config: { dbType: 'elasticsearch', host: 'h' },
@@ -304,7 +305,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[4]![0].inject()
+      const injected = register.mock.calls[5]![0].inject()
       const dockerAsset = {
         id: 'd1', type: 'docker', name: 'docker-1', group_id: null,
         config: { dockerTransport: 'socket', socketPath: '/var/run/docker.sock' },
@@ -323,7 +324,7 @@ describe('client-nav apply', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const injected = register.mock.calls[4]![0].inject()
+      const injected = register.mock.calls[5]![0].inject()
       const redisAsset = {
         id: 'r1', type: 'db', name: 'redis-1', group_id: null,
         config: { dbType: 'redis', host: 'h' },
@@ -344,7 +345,7 @@ describe('client-nav apply', () => {
     try {
       const { ctx, register } = fakeContext()
       applyPlugin(ctx)
-      const workspaceConfig = register.mock.calls[4]![0]
+      const workspaceConfig = register.mock.calls[5]![0]
       const asset = {
         id: 'a1', type: 'ssh', name: 'web-1', group_id: null,
         config: { host: 'h' },
@@ -361,7 +362,7 @@ describe('client-nav apply', () => {
   it('workspace inject wires the api face, bridge callbacks and asset holder', () => {
     const { ctx, register, get } = fakeContext()
     applyPlugin(ctx)
-    const workspaceConfig = register.mock.calls[4]![0]
+    const workspaceConfig = register.mock.calls[5]![0]
     const injected = workspaceConfig.inject()
     expect(get).toHaveBeenCalledWith('connection')
     expect(injected.api.settings.update).toBeTypeOf('function')
@@ -374,7 +375,7 @@ describe('client-nav apply', () => {
   it('workspace inject exposes the file-tree hooks and reference insert face', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const workspaceConfig = register.mock.calls[4]![0]
+    const workspaceConfig = register.mock.calls[5]![0]
     const injected = workspaceConfig.inject()
     expect(injected.hooks.fileTree.getSnapshot()).toEqual({ open: false })
     expect(injected.closeFileTree).toBeTypeOf('function')
@@ -386,11 +387,11 @@ describe('client-nav apply', () => {
   it('file-tree header action opens the fileTree bridge and the details panel', () => {
     const { ctx, register, openDetails } = fakeContext()
     applyPlugin(ctx)
-    const config = register.mock.calls[7]![0]
+    const config = register.mock.calls[8]![0]
     expect(config.name).toBe('conversation.session.header.actions')
     expect(config.order).toBe(40)
     expect(config.id).toBe('starhub-file-tree')
-    expect(register.mock.calls[7]![1]).toBe(FileTreeButton)
+    expect(register.mock.calls[8]![1]).toBe(FileTreeButton)
     const injected = config.inject()
     expect(injected.hooks.fileTree.getSnapshot()).toEqual({ open: false })
     injected.openFileTree()
@@ -403,7 +404,7 @@ describe('client-nav apply', () => {
   it('workspace openAiAssistant opens the shell AI chat bridge without throwing', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const injected = register.mock.calls[4]![0].inject()
+    const injected = register.mock.calls[5]![0].inject()
     // 打开 AI 聊天面板桥(set snapshot);不抛错即覆盖该注入箭头。
     expect(() => { injected.openAiAssistant() }).not.toThrow()
   })
@@ -411,7 +412,7 @@ describe('client-nav apply', () => {
   it('registers the five starhub settings sections under the starhub group at orders 30-34', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const settingsConfigs = register.mock.calls.slice(9).map(c => c[0])
+    const settingsConfigs = register.mock.calls.slice(10).map(c => c[0])
     expect(settingsConfigs.map(c => c.id)).toEqual([
       'starhub-ai', 'starhub-plugins', 'starhub-audit', 'starhub-alert', 'starhub-about',
     ])
