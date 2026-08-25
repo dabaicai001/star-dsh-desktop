@@ -1,6 +1,6 @@
 [package]
 name = "starhub"
-version = "0.95.5"
+version = "0.96.0"
 edition = "2021"
 
 [dependencies]
@@ -36,11 +36,14 @@ bytes = "1"
 keyring-core = "1.0.0"
 # dsh 用户插件安装(支线 B):GitHub codeload zip 解包;只开 deflate,关掉其余压缩格式
 zip = { version = "2", default-features = false, features = ["deflate"] }
-# AI 对话截图(区域):跨平台屏幕捕获(Windows WGC / macOS ScreenCaptureKit / Linux X11+Wayland)
-xcap = { version = "0.9.8", features = ["image", "wgc"] }
-# 截图编码(PNG/JPEG)与多显示器拼接
-image = "0.25.10"
-base64 = "0.23.1"
+# AI 对话截图(区域):跨平台屏幕捕获(Windows WGC / macOS ScreenCaptureKit / Linux X11+Wayland)。
+# 仅在 `screenshot` 特性开启时引入:Linux 上 xcap → pipewire/libspa 0.10.1 需要系统
+# PipeWire/spa 头 ≥ 1.0(Ubuntu 24.04+),Ubuntu 22.04(glibc 2.35)无法编译/运行该链,
+# 因此「Ubuntu 22.04 兼容版」用 `--no-default-features` 关闭截图以回到 glibc 2.35 基线。
+xcap = { version = "0.9.8", features = ["image", "wgc"], optional = true }
+# 截图编码(PNG/JPEG)与多显示器拼接(仅截图特性)
+image = { version = "0.25.10", optional = true }
+base64 = { version = "0.23.1", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = "1.1.0"
@@ -56,8 +59,12 @@ zbus-secret-service-keyring-store = { version = "1.0.0", default-features = fals
 tauri-build = { version = "2", features = [] }
 
 [features]
-default = ["custom-protocol"]
+default = ["custom-protocol", "screenshot"]
 custom-protocol = ["tauri/custom-protocol"]
+# AI 对话截图(区域)。默认开启;面向旧系统(Ubuntu 22.04 / glibc 2.35,系统
+# PipeWire < 1.0)的兼容版用 `--no-default-features` 关闭截图,从而避免引入
+# xcap → pipewire/libspa 0.10.1(需 spa 头 ≥ 1.0)把 glibc 下限抬到 2.39。
+screenshot = ["dep:xcap", "dep:image", "dep:base64"]
 
 # 测试二进制编译内存兜底:本后端(8W+ 行 + russh/sqlx/reqwest/rustls 全家桶)
 # 的 debug 测试构建(-C debuginfo=2)峰值内存极高,27GB 本地机都曾在 LLVM 阶段

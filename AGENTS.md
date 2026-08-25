@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.95.5(🐛 新机首次安装启动窗口无响应、报「dsh 没有在运行」、第二次才正常:setup 里 `block_on` 阻塞主线程跑完 db+sidecar+dsh web 启动(冷启动可能超 30s 就绪上限),期间窗口消息循环停摆 → 「无响应」;dsh web 超时被杀后 `dsh_web_url` 只读状态不重启 → 卡死在跳板页「dsh web 未运行」需手动重开应用。修复:① setup 改用 `async_runtime::spawn` 后台拉起,窗口立即响应;② `dsh_web_url` 改调幂等 `ensure_started`,跳板页轮询在首启失败后自动重启自愈,无需重开;③ 就绪超时 30s→60s 留足首启冷启动余量。) |
+| 当前版本 | v0.96.0(🎉 Ubuntu 22.04 / glibc 2.35 兼容版：截图栈 `xcap → pipewire/libspa 0.10.1` 需系统 PipeWire ≥ 1.0，把 Linux 构建基线抬到 `ubuntu-24.04`(glibc 2.39)后旧系统装不了。为回归旧系统兼容，把 Rust 截图功能整体 gate 到新的 `screenshot` Cargo 特性（默认开启，保留主版本截图），并新增 `linux-legacy-2204.yml` 用 `ubuntu-22.04` runner 以 `--no-default-features` 构建**无截图**的 glibc 2.35 兼容 DEB/RPM（文件名带 `-ubuntu2204` 后缀，随 tag 附到同一 Release）。代价：内置 AI「区域截图」在兼容版不可用，前端按钮点击给出友好提示（命令未注册归并为「当前版本未编译截图功能」）。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-25 (v0.95.5)*
+*最后更新: 2026-08-25 (v0.96.0)*

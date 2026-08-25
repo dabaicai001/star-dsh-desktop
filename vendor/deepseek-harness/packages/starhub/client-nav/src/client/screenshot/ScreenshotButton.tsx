@@ -89,6 +89,13 @@ export function ScreenshotButton({
       // 老系统(Linux PipeWire < 1.0)等前置失败必须可见,不能只打 console:
       // Tauri invoke 的拒绝值是 Rust Err 的字符串,浏览器预览则是 Error。
       const message = error instanceof Error ? error.message : String(error)
+      // Ubuntu 22.04 兼容版(编译时关闭截图,未注册截图命令)点击时 invoke 会以
+      // "Command ... not found" / "not allowed" 之类的 ACL/命令缺失错误拒绝,这里
+      // 归并为对用户友好的提示,而不是暴露 Tauri 内部错误文案。
+      if (/not found|not allowed|not registered/i.test(message) && !/ipc unavailable|pipewire/i.test(message)) {
+        setToast('当前版本未编译截图功能(Ubuntu 22.04 兼容版);请使用支持截图的最新版本。')
+        return
+      }
       setToast(message)
     })
   }

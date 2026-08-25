@@ -10,6 +10,7 @@ pub mod file;
 pub mod harness;
 pub mod local;
 pub mod mcp;
+#[cfg(feature = "screenshot")]
 pub mod screenshot;
 pub mod secret;
 pub mod sftp;

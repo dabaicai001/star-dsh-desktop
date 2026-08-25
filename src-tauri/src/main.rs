@@ -169,7 +169,8 @@ fn main() {
 
             // 初始化 TransferManager(需要 AppHandle 用于 emit 进度/状态事件)
             app.manage(TransferManager::new(app.handle().clone()));
-            // 截图会话状态(区域模式底图缓存)
+            // 截图会话状态(区域模式底图缓存),仅截图特性启用时存在
+            #[cfg(feature = "screenshot")]
             app.manage(commands::screenshot::ScreenshotSession::default());
 
             Ok(())
@@ -192,6 +193,7 @@ fn main() {
             commands::ssh::test_ssh_connection,
             commands::ssh::read_ssh_private_key_file,
             commands::ssh::ssh_kb_response,
+            commands::ssh::ssh_bastion_response,
             commands::ssh::ssh_hostkey_response,
             commands::ssh::ssh_get_trusted_host_key,
             commands::ssh::ssh_add_local_forward,
@@ -224,11 +226,16 @@ fn main() {
             commands::sftp::sftp_list_transfers,
             commands::sftp::sftp_set_speed_limit,
             commands::sftp::sftp_retry_transfer,
-            // 截图(区域截图)
+            // 截图(区域截图),仅截图特性启用时注册
+            #[cfg(feature = "screenshot")]
             commands::screenshot::screenshot_list_monitors,
+            #[cfg(feature = "screenshot")]
             commands::screenshot::screenshot_begin_region,
+            #[cfg(feature = "screenshot")]
             commands::screenshot::screenshot_get_desktop,
+            #[cfg(feature = "screenshot")]
             commands::screenshot::screenshot_finish,
+            #[cfg(feature = "screenshot")]
             commands::screenshot::screenshot_cancel,
             // MySQL
             commands::db::db_mysql_connect,

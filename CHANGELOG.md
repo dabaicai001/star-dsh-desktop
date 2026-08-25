@@ -12,6 +12,13 @@
 - SQL 查询结果可编辑及无主键报错提示（转 K3）
 - 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
 
+---
+
+## [0.96.0] - 2026-08-25
+
+### 新增
+- 🎉 Ubuntu 22.04 / glibc 2.35 兼容版：截图栈 `xcap → pipewire/libspa 0.10.1` 需系统 PipeWire ≥ 1.0，把 Linux 构建基线抬到 `ubuntu-24.04`(glibc 2.39)后旧系统装不了。为回归旧系统兼容，把 Rust 截图功能整体 gate 到新的 `screenshot` Cargo 特性（默认开启，保留主版本截图），并新增 `linux-legacy-2204.yml` 用 `ubuntu-22.04` runner 以 `--no-default-features` 构建**无截图**的 glibc 2.35 兼容 DEB/RPM（文件名带 `-ubuntu2204` 后缀，随 tag 附到同一 Release）。代价：内置 AI「区域截图」在兼容版不可用，前端按钮点击给出友好提示（命令未注册归并为「当前版本未编译截图功能」）。
+
 ## [0.95.5] - 2026-08-25
 
 ### 修复

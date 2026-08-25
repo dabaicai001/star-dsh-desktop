@@ -64,6 +64,15 @@ describe('ScreenshotButton', () => {
     )
   })
 
+  it('maps a missing/unregistered command (legacy no-screenshot build) to a friendly hint', async () => {
+    const startRegion = vi.fn(() => Promise.reject('Command screenshot_begin_region not found'))
+    renderButton(startRegion)
+    fireEvent.click(screen.getByRole('button', { name: '截图' }))
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain('当前版本未编译截图功能'),
+    )
+  })
+
   it('auto-dismisses the toast after the duration', async () => {
     vi.useFakeTimers()
     const startRegion = vi.fn(() => Promise.reject('boom'))
