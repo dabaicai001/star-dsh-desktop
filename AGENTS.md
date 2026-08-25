@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.96.0(🎉 Ubuntu 22.04 / glibc 2.35 兼容版：截图栈 `xcap → pipewire/libspa 0.10.1` 需系统 PipeWire ≥ 1.0，把 Linux 构建基线抬到 `ubuntu-24.04`(glibc 2.39)后旧系统装不了。为回归旧系统兼容，把 Rust 截图功能整体 gate 到新的 `screenshot` Cargo 特性（默认开启，保留主版本截图），并新增 `linux-legacy-2204.yml` 用 `ubuntu-22.04` runner 以 `--no-default-features` 构建**无截图**的 glibc 2.35 兼容 DEB/RPM（文件名带 `-ubuntu2204` 后缀，随 tag 附到同一 Release）。代价：内置 AI「区域截图」在兼容版不可用，前端按钮点击给出友好提示（命令未注册归并为「当前版本未编译截图功能」）。) |
+| 当前版本 | v0.96.1(🐛 AI `@` 直连堡垒机(阿里云 BastionHost 公网入口,host 即堡垒机、未配跳板机)验证码通过后报错:堡垒机 pty 判定 `is_bastion()` 原先强制要求 `jump_host`,直连堡垒机 + kb-interactive MFA 资产被漏判,AI exec 走普通通道被服务端拒绝(Channel send error);改为只认 kb-interactive 启用,直连与跳板两种形态都走「带 pty 选机器」路径,菜单为空时跳过选机器直接执行命令。另移除 Ubuntu 22.04 无截图兼容版构建 `linux-legacy-2204.yml`。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-25 (v0.96.0)*
+*最后更新: 2026-08-25 (v0.96.1)*

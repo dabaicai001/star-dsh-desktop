@@ -14,6 +14,16 @@
 
 ---
 
+## [0.96.1] - 2026-08-25
+
+### 修复
+- 🐛 AI `@` 直连堡垒机(如阿里云 BastionHost 公网入口,host 即堡垒机、未配跳板机)验证码通过后报错:堡垒机 pty 判定 `is_bastion()` 原先强制要求 `jump_host`,直连堡垒机 + kb-interactive MFA 资产被漏判,AI exec 走普通通道被服务端拒绝(Channel send error)。改为只认 kb-interactive 启用,直连与跳板两种形态都走「带 pty 选机器」路径;菜单为空(普通 MFA 服务器无选机器菜单)时跳过选机器直接执行命令,不再卡在无人应答的选机器浮层。
+
+### 变更
+- 🔧 移除 `linux-legacy-2204.yml`(Ubuntu 22.04 / glibc 2.35 无截图兼容版构建),后续 Release 不再附 `-ubuntu2204` 包。
+
+---
+
 ## [0.96.0] - 2026-08-25
 
 ### 新增

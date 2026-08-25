@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.96.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.96.1-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
@@ -147,6 +147,10 @@
 ---
 
 ## 当前版本
+
+### v0.96.1 (2026-08-25)
+- 🐛 AI `@` 直连堡垒机(如阿里云 BastionHost 公网入口,host 即堡垒机、未配跳板机)在验证码通过后报错:堡垒机 pty 判定 `is_bastion()` 原先强制要求 `jump_host`,直连堡垒机 + kb-interactive MFA 资产被漏判,AI exec 走普通通道被服务端拒绝(Channel send error)。改为只认 kb-interactive 启用,直连与跳板两种形态都走「带 pty 选机器」路径;菜单为空(普通 MFA 服务器无选机器菜单)时跳过选机器直接执行命令。
+- 🔧 移除 `linux-legacy-2204.yml`(Ubuntu 22.04 / glibc 2.35 无截图兼容版构建),后续 Release 不再附 `-ubuntu2204` 包。
 
 ### v0.96.0 (2026-08-25)
 - ✨ 🎉 Ubuntu 22.04 / glibc 2.35 兼容版：截图栈 `xcap → pipewire/libspa 0.10.1` 需系统 PipeWire ≥ 1.0，把 Linux 构建基线抬到 `ubuntu-24.04`(glibc 2.39)后旧系统装不了。为回归旧系统兼容，把 Rust 截图功能整体 gate 到新的 `screenshot` Cargo 特性（默认开启，保留主版本截图），并新增 `linux-legacy-2204.yml` 用 `ubuntu-22.04` runner 以 `--no-default-features` 构建**无截图**的 glibc 2.35 兼容 DEB/RPM（文件名带 `-ubuntu2204` 后缀，随 tag 附到同一 Release）。代价：内置 AI「区域截图」在兼容版不可用，前端按钮点击给出友好提示（命令未注册归并为「当前版本未编译截图功能」）。

@@ -165,16 +165,19 @@ impl SshSession {
         self.config.effective_sftp_timeout_sec()
     }
 
-    /// 是否为「堡垒机 pty exec」场景:配置了跳板机(jump_host)且启用
-    /// keyboard-interactive MFA。这类资产在验证码通过后,登录壳会先呈现
-    /// 「选择机器」交互菜单,普通 exec 通道会被服务端拒绝。方案A(v0.95.6)。
+    /// 是否为「堡垒机 pty exec」场景:启用 keyboard-interactive MFA。
+    ///
+    /// 这类资产的登录壳在验证码通过后,会先呈现「选择机器」交互菜单,普通
+    /// exec 通道(无 pty、无机器选中)会被服务端拒绝。判定只认 kb_interactive:
+    /// 既覆盖「跳板机 + MFA」形态(jump_host + kb),也覆盖「直连堡垒机 + MFA」
+    /// 形态(host 即堡垒机,无 jump_host,如阿里云 BastionHost 公网入口)。
+    /// 方案A(v0.95.6)起初要求 jump_host,导致直连堡垒机资产被漏判,AI exec
+    /// 走普通通道在验证码通过后报错。
     pub fn is_bastion(&self) -> bool {
-        self.config.jump_host.is_some()
-            && self
-                .config
-                .kb_interactive
-                .as_ref()
-                .is_some_and(|kb| kb.enabled)
+        self.config
+            .kb_interactive
+            .as_ref()
+            .is_some_and(|kb| kb.enabled)
     }
 
     /// 返回会话配置中的连接目标(host, port, username),
@@ -1077,52 +1080,66 @@ impl SshSession {
 
         // 请求用户选择机器:emit 事件(通用事件带 sessionId,堡垒机浮层订阅)+
         // 等 ssh_bastion_response(360s 超时,同 MFA)。
-        if let Some(app) = app_handle {
-            use tauri::Emitter;
-            let payload = serde_json::json!({
-                "sessionId": session_id,
-                "menu": menu_text,
-            });
-            let _ = app.emit("ssh:bastion-select", payload.clone());
-            let _ = app.emit(&format!("ssh:bastion-select:{}", session_id), payload);
-        }
-        let (resp_tx, resp_rx) = oneshot::channel();
-        pending_bastion
-            .lock()
-            .await
-            .insert(session_id.to_string(), resp_tx);
-        let selection = match tokio::time::timeout(Duration::from_secs(360), resp_rx).await {
-            Ok(Ok(s)) => s,
-            Ok(Err(_)) => {
-                pending_bastion.lock().await.remove(session_id);
-                return Err("[BASTION_TIMEOUT] 选择机器应答通道已断开".to_string());
+        // 菜单为空说明登录壳没有「选择机器」交互(普通服务器只是做了
+        // keyboard-interactive 二次验证,不经过堡垒机选机),跳过选机器直接
+        // 执行命令,避免 AI 卡在无人应答的选机器浮层。
+        if !menu_text.trim().is_empty() {
+            if let Some(app) = app_handle {
+                use tauri::Emitter;
+                let payload = serde_json::json!({
+                    "sessionId": session_id,
+                    "menu": menu_text,
+                });
+                let _ = app.emit("ssh:bastion-select", payload.clone());
+                let _ = app.emit(&format!("ssh:bastion-select:{}", session_id), payload);
             }
-            Err(_) => {
-                pending_bastion.lock().await.remove(session_id);
-                return Err("[BASTION_TIMEOUT] 等待选择机器超时(360s)".to_string());
+            let (resp_tx, resp_rx) = oneshot::channel();
+            pending_bastion
+                .lock()
+                .await
+                .insert(session_id.to_string(), resp_tx);
+            let selection = match tokio::time::timeout(Duration::from_secs(360), resp_rx).await {
+                Ok(Ok(s)) => s,
+                Ok(Err(_)) => {
+                    pending_bastion.lock().await.remove(session_id);
+                    return Err("[BASTION_TIMEOUT] 选择机器应答通道已断开".to_string());
+                }
+                Err(_) => {
+                    pending_bastion.lock().await.remove(session_id);
+                    return Err("[BASTION_TIMEOUT] 等待选择机器超时(360s)".to_string());
+                }
+            };
+            let selection = selection.trim().to_string();
+            if selection.is_empty() {
+                return Err("[BASTION_REJECTED] 未选择堡垒机目标机器".to_string());
             }
-        };
-        let selection = selection.trim().to_string();
-        if selection.is_empty() {
-            return Err("[BASTION_REJECTED] 未选择堡垒机目标机器".to_string());
+
+            let mut writer = channel.make_writer();
+            // 写入机器选择 + 回车,让堡垒机进入目标机。
+            writer
+                .write_all(format!("{}\n", selection).as_bytes())
+                .await
+                .map_err(|e| format!("[BASTION_FAILED] 写入机器选择失败: {}", e))?;
+            writer.flush().await.ok();
+            tokio::time::sleep(Duration::from_millis(600)).await;
+
+            // 把 AI 命令写入同一 pty;随后收集输出直到 Eof/Close/ExitStatus 或超时。
+            writer
+                .write_all(format!("{}\n", command).as_bytes())
+                .await
+                .map_err(|e| format!("[BASTION_FAILED] 写入命令失败: {}", e))?;
+            writer.flush().await.ok();
+            drop(writer);
+        } else {
+            // 无选机器菜单:直接把 AI 命令写入 pty 执行。
+            let mut writer = channel.make_writer();
+            writer
+                .write_all(format!("{}\n", command).as_bytes())
+                .await
+                .map_err(|e| format!("[BASTION_FAILED] 写入命令失败: {}", e))?;
+            writer.flush().await.ok();
+            drop(writer);
         }
-
-        let mut writer = channel.make_writer();
-        // 写入机器选择 + 回车,让堡垒机进入目标机。
-        writer
-            .write_all(format!("{}\n", selection).as_bytes())
-            .await
-            .map_err(|e| format!("[BASTION_FAILED] 写入机器选择失败: {}", e))?;
-        writer.flush().await.ok();
-        tokio::time::sleep(Duration::from_millis(600)).await;
-
-        // 把 AI 命令写入同一 pty;随后收集输出直到 Eof/Close/ExitStatus 或超时。
-        writer
-            .write_all(format!("{}\n", command).as_bytes())
-            .await
-            .map_err(|e| format!("[BASTION_FAILED] 写入命令失败: {}", e))?;
-        writer.flush().await.ok();
-        drop(writer);
 
         let mut output = Vec::<u8>::new();
         let mut truncated = false;
@@ -2191,9 +2208,11 @@ AAAEC2BsIi0QwW2uFscKTUUXNHLsYX4FxlaSDSblbAj7WR7bM+rvN+ot98qgEN796jTiQf
 ZfG1KaT0PtFDJ/XFSqtiAAAAEHVzZXJAZXhhbXBsZS5jb20BAgMEBQ==
 -----END OPENSSH PRIVATE KEY-----"#;
 
-    /// 判断是否为「堡垒机 pty exec」场景:跳板机 + kb_interactive 启用。
+    /// 判断是否为「堡垒机 pty exec」场景:启用 keyboard-interactive MFA 即可。
+    /// 覆盖「跳板机 + kb」与「直连堡垒机 + kb」两种形态(直连堡垒机如阿里云
+    /// BastionHost 公网入口,host 即堡垒机、无 jump_host)。
     #[test]
-    fn is_bastion_requires_jump_host_and_kb_enabled() {
+    fn is_bastion_requires_kb_enabled_only() {
         let plain: SshConfig = serde_json::from_str(
             r#"{"host":"h","port":22,"username":"u","auth":{"Password":"p"}}"#,
         )
@@ -2214,12 +2233,12 @@ ZfG1KaT0PtFDJ/XFSqtiAAAAEHVzZXJAZXhhbXBsZS5jb20BAgMEBQ==
         .unwrap();
         assert!(SshSession::new(bastion).is_bastion());
 
-        // kb 启用但无跳板机 → 不是(直接连目标机的 MFA 不需要选机器)
+        // kb 启用但无跳板机 → 是:直连堡垒机(host 即堡垒机)同样需要选机器
         let kb_only: SshConfig = serde_json::from_str(
             r#"{"host":"h","port":22,"username":"u","auth":{"Password":"p"},"kb_interactive":{"enabled":true}}"#,
         )
         .unwrap();
-        assert!(!SshSession::new(kb_only).is_bastion());
+        assert!(SshSession::new(kb_only).is_bastion());
     }
 
     #[test]

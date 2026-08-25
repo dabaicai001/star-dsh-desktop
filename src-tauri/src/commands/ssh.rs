@@ -741,8 +741,9 @@ pub async fn ssh_exec(
 }
 
 /// ssh_exec 的进程内核心(harness/domain.rs 复用;State 解引用为 &SshManager)。
-/// `bastion_interactive` = true 时(AI 域工具路径):若资产配置了 jump_host 且
-/// 启用 kb_interactive(堡垒机),改走带 pty 的 shell,先由用户选机器再执行命令。
+/// `bastion_interactive` = true 时(AI 域工具路径):资产启用 kb_interactive
+/// MFA(堡垒机,含直连堡垒机与跳板机两种形态)时改走带 pty 的 shell,
+/// 先由用户选机器再执行命令。
 pub(crate) async fn ssh_exec_core(
     manager: &SshManager,
     app_handle: &tauri::AppHandle,
@@ -764,8 +765,9 @@ pub(crate) async fn ssh_exec_core(
     };
 
     let mut session = session_arc.lock().await;
-    // 堡垒机 pty 路径:jump_host + kb_interactive 时,普通 exec 通道被服务端
-    // 拒绝(Channel send error),需先经 pty 让用户选机器。仅 AI 域工具路径启用。
+    // 堡垒机 pty 路径:启用 kb_interactive MFA(直连堡垒机或跳板机)时,普通
+    // exec 通道被服务端拒绝(Channel send error),需先经 pty 让用户选机器。
+    // 仅 AI 域工具路径启用。
     if bastion_interactive && session.is_bastion() {
         return session
             .exec_via_bastion_pty(
