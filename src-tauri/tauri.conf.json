@@ -48,7 +48,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/dabaicai001/starhub/releases/latest/download/latest.json"
+        "https://github.com/dabaicai001/star-dsh-desktop/releases/latest/download/latest.json"
       ],
       "dialog": true,
       "pubkey": ""

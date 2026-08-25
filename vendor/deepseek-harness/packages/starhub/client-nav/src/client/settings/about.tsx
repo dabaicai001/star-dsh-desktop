@@ -71,7 +71,7 @@ export function AboutTab() {
         <div className={s.aboutLinks}>
           <a
             className={s.aboutLink}
-            href="https://github.com/dabaicai001/starhub"
+            href="https://github.com/dabaicai001/star-dsh-desktop"
             target="_blank"
             rel="noreferrer"
           >

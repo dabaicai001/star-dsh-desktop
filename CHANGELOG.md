@@ -12,6 +12,9 @@
 - SQL 查询结果可编辑及无主键报错提示（转 K3）
 - 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
 
+### 变更(随下次代码版本发布)
+- 🔧 GitHub 仓库更名为 `star-dsh-desktop`:`git remote`、README 下载/克隆链接、CHANGELOG 仓库地址、AGENTS.md 仓库信息、关于页 GitHub 链接、Tauri Updater 端点全部切换至新仓库名(旧地址仅剩 GitHub 自动重定向)。
+
 ---
 
 ## [0.96.1] - 2026-08-25
@@ -3311,7 +3314,7 @@
 
 ### 工程
 - MIT License 开源
-- 仓库地址:https://github.com/dabaicai001/starhub
+- 仓库地址:https://github.com/dabaicai001/star-dsh-desktop
 
 ---
 

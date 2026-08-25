@@ -25,7 +25,7 @@
 
 | 项 | 值 |
 |---|---|
-| GitHub | https://github.com/dabaicai001/starhub |
+| GitHub | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |

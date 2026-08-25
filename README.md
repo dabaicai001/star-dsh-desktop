@@ -12,7 +12,7 @@
 [![Version](https://img.shields.io/badge/version-v0.96.1-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
-[![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
+[![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
 
 </div>
@@ -31,7 +31,7 @@
 
 ## 下载安装
 
-前往 [GitHub Releases](https://github.com/dabaicai001/starhub/releases) 下载最新版本：
+前往 [GitHub Releases](https://github.com/dabaicai001/star-dsh-desktop/releases) 下载最新版本：
 
 | 平台 | 文件格式 | 安装方式 |
 |---|---|---|
@@ -215,7 +215,7 @@ UI 约定遵循 DeepSeek Harness 既有组件、图标与样式（`--dsw-*` toke
 
 ```bash
 # 克隆与安装
-git clone https://github.com/dabaicai001/starhub.git
+git clone https://github.com/dabaicai001/star-dsh-desktop.git
 cd starhub
 npm install
 pnpm --dir vendor/deepseek-harness install   # DSH 主壳依赖
