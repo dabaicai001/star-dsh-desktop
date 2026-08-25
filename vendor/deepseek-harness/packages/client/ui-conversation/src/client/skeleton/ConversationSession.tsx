@@ -18,6 +18,7 @@ export type ConversationSessionHeaderProps = ConversationSessionHeaderSlotProps
 interface Breadcrumb {
   readonly id: SessionId
   readonly displayTitle: string
+  readonly subagent: boolean
 }
 
 const DEFAULT_VIEW_ID = 'chat'
@@ -38,7 +39,11 @@ function deriveAncestry(list: SessionListState, id: SessionId): readonly Breadcr
     seen.add(cursor)
     const summary: SessionSummary | undefined = list.byId[cursor]
     if (summary === undefined) break
-    chain.unshift({ id: summary.id, displayTitle: summary.displayTitle })
+    chain.unshift({
+      id: summary.id,
+      displayTitle: summary.displayTitle,
+      subagent: summary.origin === 'subagent',
+    })
     if (summary.origin !== 'subagent') break
     cursor = summary.parentId
   }
@@ -56,7 +61,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
 /**
  * Renders Session header chrome above the resident conversation scrollport.
  * @param props - Strict Session store, view ledger, navigation, render, and locale shares.
- * @returns the hidden loading-session header or visible title and tabs.
+ * @returns the hidden blank-session header or visible title and tabs.
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useStore, actions,
@@ -69,14 +74,7 @@ export function ConversationSessionHeader({
   const ancestry = useSessions(s => deriveAncestry(s, sessionId), equalBreadcrumbs)
   const composerPhase = useSession(s => s.composerPhase)
   const blank = useSession(s => s.blank)
-  const openState = useSession(s => s.openState)
-  // Blank sessions hide the header only while the session is still opening
-  // (replay round-trip / cold / error) so the history wait never flashes
-  // chrome over the hero. Once the blank session is open, a fresh new-session
-  // page keeps the header visible: header-actions hosts the StarHub git
-  // branch pill, and a new-session page must show the workspace branch before
-  // the first message.
-  const hideChrome = blank && composerPhase === 'blank' && openState !== 'open'
+  const hideChrome = blank && composerPhase === 'blank'
 
   return (
     <header
@@ -90,17 +88,47 @@ export function ConversationSessionHeader({
               <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
                 {ancestry.map((summary, index) => {
                   const last = index === ancestry.length - 1
+                  const title = (
+                    <button
+                      type="button"
+                      className={clsx(
+                        css.crumb,
+                        summary.subagent && css.crumbSubagent,
+                        last && css.crumbCurrent,
+                      )}
+                      disabled={last}
+                      onClick={() => { open(summary.id) }}
+                    >
+                      {summary.displayTitle}
+                    </button>
+                  )
+                  const lineage = last || summary.subagent
+                  const lineageOwner = {
+                    lineageSessionId: summary.id,
+                    displayTitle: summary.displayTitle,
+                    ...last ? {} : { openTitle: () => { open(summary.id) } },
+                  }
                   return (
                     <span key={summary.id} className={css.crumbSeg}>
                       {index > 0 && <span className={css.crumbSep}>/</span>}
-                      <button
-                        type="button"
-                        className={clsx(css.crumb, last && css.crumbCurrent)}
-                        disabled={last}
-                        onClick={() => { open(summary.id) }}
-                      >
-                        {summary.displayTitle}
-                      </button>
+                      {lineage
+                        ? summary.subagent
+                          ? renderSlot(
+                            'conversation.session.header.lineage',
+                            lineageOwner,
+                            { fallback: title },
+                          )
+                          : (
+                            <>
+                              {title}
+                              {renderSlot(
+                                'conversation.session.header.lineage',
+                                lineageOwner,
+                                { fallback: null },
+                              )}
+                            </>
+                          )
+                        : title}
                     </span>
                   )
                 })}

@@ -29,12 +29,9 @@ type FileMutationRowProps = ToolCallViewProps & PropsLocale<'conversation'>
  * model-facing error text through its Output section and its first line in the
  * collapsed summary instead.
  */
-export function FileMutationRow({ toolName, block, cwd, openFile, viewFile, inspect, t }: FileMutationRowProps) {
-  const model = toolRowModel(toolName, block, cwd)
+export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect, t }: FileMutationRowProps) {
+  const model = toolRowModel(toolName, block, cwd, home)
   const diff = diffCardModel(block)
-  // 壳内查看窗:edit/write 点击文件名开「变更前/变更后」左右栏;hunk 的
-  // oldText 可能为 null(新建文件),查看窗按空串处理。
-  const diffs = diff?.card.diffs ?? []
   return (
     <ToolRow
       t={t}
@@ -50,13 +47,6 @@ export function FileMutationRow({ toolName, block, cwd, openFile, viewFile, insp
       state={model.state}
       filePath={model.filePath}
       onOpenFile={openFile}
-      onViewFile={viewFile === undefined ? undefined : (path) => {
-        viewFile({
-          kind: 'edit',
-          path,
-          diffs: diffs.map(h => ({ oldText: h.oldText ?? '', newText: h.newText })),
-        })
-      }}
       inspect={inspect}
     />
   )

@@ -23,9 +23,8 @@ import {
   fitProducedFiles, ProducedFiles, type ProducedFilesProps,
 } from '../src/client/ProducedFiles.tsx'
 import {
-  basename, deliverablesDefinition, producedEntriesForClosing, producedFileMentions,
-  producedForClosing, selectProducedFiles,
-  type DeliverablesTurnData, type ProducedEntry,
+  basename, deliverablesDefinition, producedFileMentions, producedForClosing, selectProducedFiles,
+  type DeliverablesTurnData,
 } from '../src/client/turn-deliverables.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as applyInvariant } from '../src/invariant.ts'
@@ -67,15 +66,8 @@ const turnLocation = (turn: number, deliverables?: DeliverablesTurnData): TurnLo
   return { turn, start: undefined, end: undefined, status: 'closed', steps: [], data }
 }
 
-const produced = (
-  ...values: ReadonlyArray<readonly [seq: number, path: string, over?: Partial<ProducedEntry>]>
-): DeliverablesTurnData => ({
-  produced: values.map(([seq, path, over]) => ({ seq, path, created: false, added: 0, removed: 0, ...over })),
-})
-
-/** One component-side produced entry (defaults: modified, no line estimate). */
-const entryOf = (path: string, over?: Partial<ProducedEntry>): ProducedEntry => ({
-  seq: 1, path, created: false, added: 0, removed: 0, ...over,
+const produced = (...values: ReadonlyArray<readonly [seq: number, path: string]>): DeliverablesTurnData => ({
+  produced: values.map(([seq, path]) => ({ seq, path })),
 })
 
 function tailOwner(
@@ -83,9 +75,8 @@ function tailOwner(
   seq: number,
   openFile: (path: string) => void = () => {},
   turn = 1,
-  viewFile?: TurnTailOwnerProps['viewFile'],
 ): TurnTailOwnerProps {
-  return { seq, openFile, viewFile, turn: turnLocation(turn, data) }
+  return { seq, openFile, turn: turnLocation(turn, data) }
 }
 
 interface TimelineSnapshot {
@@ -190,8 +181,7 @@ describe('produced-file Turn data', () => {
       [8, 'after.txt'],
     )
     expect(producedForClosing(data, 6)).toEqual(['out/index.html', 'out/app.css'])
-    expect(selectProducedFiles(tailOwner(data, 6))?.map(entry => entry.path))
-      .toEqual(['out/index.html', 'out/app.css'])
+    expect(selectProducedFiles(tailOwner(data, 6))).toEqual(['out/index.html', 'out/app.css'])
     expect(producedForClosing(undefined)).toEqual([])
     expect(selectProducedFiles(tailOwner(undefined, 9, () => {}, 2))).toBeNull()
   })
@@ -213,49 +203,6 @@ describe('produced-file Turn data', () => {
 
     expect(producedForClosing(deliverablesOf(value))).toEqual([
       'out/index.html', 'out/app.css', 'notes.md',
-    ])
-    // Diff cards derive the change shape from their own diffs: oldText null is a
-    // create (removed 0), hunk texts estimate the +/- lines; the generic edit
-    // shape carries no stats.
-    expect(producedEntriesForClosing(deliverablesOf(value))).toEqual([
-      { seq: 3, path: 'out/index.html', created: true, added: 1, removed: 0 },
-      { seq: 3, path: 'out/app.css', created: true, added: 1, removed: 0 },
-      { seq: 5, path: 'notes.md', created: false, added: 0, removed: 0 },
-    ])
-  })
-
-  it('derives modification stats from an edit diff (oldText present)', () => {
-    const value = assembler([
-      at(1, 'turn/start', { turn: 1 }),
-      call(2, 'edit', {
-        card: 'diff', title: 'Edit src/a.ts',
-        diffs: [{ path: 'src/a.ts', oldText: 'one\ntwo', newText: 'one\ntwo\nthree' }],
-        locations: [{ path: 'src/a.ts' }],
-      }),
-      result(3, 'edit'),
-    ])
-    expect(producedEntriesForClosing(deliverablesOf(value))).toEqual([
-      { seq: 3, path: 'src/a.ts', created: false, added: 3, removed: 2 },
-    ])
-  })
-
-  it('falls back to locations when a diff card omits diffs, and counts an empty text as zero lines', () => {
-    const value = assembler([
-      at(1, 'turn/start', { turn: 1 }),
-      call(2, 'fallback', {
-        card: 'diff', title: 'Write lo.ts', diffs: [], locations: [{ path: 'lo.ts' }],
-      }),
-      result(3, 'fallback'),
-      call(4, 'blank', {
-        card: 'diff', title: 'Edit blank.ts',
-        diffs: [{ path: 'blank.ts', oldText: 'a', newText: '' }],
-        locations: [{ path: 'blank.ts' }],
-      }),
-      result(5, 'blank'),
-    ])
-    expect(producedEntriesForClosing(deliverablesOf(value))).toEqual([
-      { seq: 3, path: 'lo.ts', created: false, added: 0, removed: 0 },
-      { seq: 5, path: 'blank.ts', created: false, added: 0, removed: 1 },
     ])
   })
 
@@ -339,7 +286,7 @@ describe('ProducedFiles row', () => {
   ): Pick<ProducedFilesProps, 'isLoopback' | 'useHostDescription'> => {
     const description = canOpenPath === undefined
       ? undefined
-      : { version: 'test', cwd: '/workspace', attachedSessions: 1, canOpenPath }
+      : { version: 'test', cwd: '/workspace', attachedSessions: 1, home: '/h', canOpenPath }
     return {
       isLoopback,
       useHostDescription: selector => selector(description),
@@ -360,8 +307,7 @@ describe('ProducedFiles row', () => {
   })
 
   it('keeps one measured line, updates on resize, and opens a file or the workspace folder', () => {
-    const entries = ['deep/a.html', 'b.css', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts']
-      .map(path => entryOf(path))
+    const paths = ['deep/a.html', 'b.css', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts']
     const openFile = vi.fn<(path: string) => void>()
     let available = 226
     let resize: ResizeObserverCallback | undefined
@@ -387,21 +333,17 @@ describe('ProducedFiles row', () => {
       .mockImplementation(function getProbeRect(this: HTMLElement) {
         if (this.closest('[aria-hidden="true"]') === null) return rect(0)
         if (this.tagName !== 'BUTTON') return rect(60)
-        if (this.textContent === 'a.html' || this.textContent === 'b.css') return rect(50)
-        // The remainder probe is a button now (it opens the drawer).
-        if (this.textContent !== null && this.textContent.includes('个文件')) return rect(60)
-        return rect(100)
+        return rect(this.textContent === 'a.html' || this.textContent === 'b.css' ? 50 : 100)
       })
 
     const view = render(
-      <ProducedFiles matched={entries} openFile={openFile} {...capability(true)} t={t} />,
+      <ProducedFiles matched={paths} openFile={openFile} {...capability(true)} t={t} />,
     )
     expect(view.getByText('产物')).toBeTruthy()
     const row = view.container.querySelector('[data-produced-files-row]')
     if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
-    // The third probe is 100px: two chips plus the remainder fit, three do not;
-    // the remainder itself is a button that opens the drawer.
-    expect(within(row).getAllByRole('button')).toHaveLength(3)
+    // The third probe is 100px: two chips plus the remainder fit, three do not.
+    expect(within(row).getAllByRole('button')).toHaveLength(2)
     expect(within(row).getByText('+ 5 个文件')).toBeTruthy()
     const chip = view.getByRole('button', { name: '打开 deep/a.html' })
     expect(chip.textContent).toBe('a.html')
@@ -410,31 +352,26 @@ describe('ProducedFiles row', () => {
     fireEvent.click(chip)
     expect(openFile).toHaveBeenCalledWith('deep/a.html')
 
-    // The native-folder action moved into the drawer's footer (v0.92.1).
-    fireEvent.click(within(row).getByText('+ 5 个文件'))
     const showFolder = view.getByRole('button', { name: '在文件夹中显示' })
     fireEvent.click(showFolder)
     expect(openFile).toHaveBeenLastCalledWith('.')
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(view.queryByRole('dialog')).toBeNull()
 
     available = 150
     act(() => { resize?.([], {} as ResizeObserver) })
-    expect(within(row).getAllByRole('button')).toHaveLength(2)
+    expect(within(row).getAllByRole('button')).toHaveLength(1)
     expect(within(row).getByText('+ 6 个文件')).toBeTruthy()
 
-    // A missing/unsupported computed gap falls back to zero rather than NaN:
-    // two 50px chips plus the remainder fit 165px, the next 100px chip does not.
+    // A missing/unsupported computed gap falls back to zero rather than NaN.
     vi.stubGlobal('getComputedStyle', () => ({ columnGap: '', gap: '' } as CSSStyleDeclaration))
     available = 165
     act(() => { resize?.([], {} as ResizeObserver) })
-    expect(within(row).getAllByRole('button')).toHaveLength(3)
+    expect(within(row).getAllByRole('button')).toHaveLength(2)
 
     // Ref callbacks leave nulls in the probe arrays when the candidate set
     // shrinks; the replacement observer must skip those stale slots.
     observeNode.mockClear()
     view.rerender(
-      <ProducedFiles matched={entries.slice(0, 1)} openFile={openFile} {...capability(true)} t={t} />,
+      <ProducedFiles matched={paths.slice(0, 1)} openFile={openFile} {...capability(true)} t={t} />,
     )
     expect(within(row).getAllByRole('button')).toHaveLength(1)
     expect(observeNode).toHaveBeenCalledTimes(3)
@@ -444,113 +381,23 @@ describe('ProducedFiles row', () => {
     bounds.mockRestore()
   })
 
-  it('opens the remainder in the right-edge drawer with grouped sections and stats', () => {
-    const entries = [
-      entryOf('src/new-page.tsx', { created: true, added: 120 }),
-      entryOf('src/api.ts', { added: 8, removed: 2 }),
-      entryOf('src/util.ts'), entryOf('src/a.ts'), entryOf('src/b.ts'),
-      entryOf('src/c.ts'), entryOf('src/d.ts'),
-    ]
-    const openFile = vi.fn<(path: string) => void>()
-    const viewFile = vi.fn<NonNullable<ProducedFilesProps['viewFile']>>()
-    vi.stubGlobal('ResizeObserver', undefined)
-    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
-      configurable: true,
-      get(this: HTMLElement) { return this.hasAttribute('data-produced-files-row') ? 100 : 0 },
-    })
-    const rect = (width: number): DOMRect => ({
-      x: 0, y: 0, width, height: 22, top: 0, right: width, bottom: 22, left: 0,
-      toJSON: () => ({}),
-    })
-    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockImplementation(function getProbeRect(this: HTMLElement) {
-        if (this.closest('[aria-hidden="true"]') === null) return rect(0)
-        // Chip probes are wide enough that none fit; the remainder fits alone.
-        return rect(this.textContent !== null && this.textContent.includes('个文件') ? 60 : 150)
-      })
-
-    const view = render(
-      <ProducedFiles
-        matched={entries}
-        openFile={openFile}
-        viewFile={viewFile}
-        {...capability(false)}
-        t={t}
-      />,
-    )
-    // Default form: no inline list container, the drawer stays unmounted.
-    const more = view.getByRole('button', { name: '+ 7 个文件' })
-    expect(more.getAttribute('aria-expanded')).toBe('false')
-    expect(view.queryByRole('dialog')).toBeNull()
-
-    fireEvent.click(more)
-    expect(more.getAttribute('aria-expanded')).toBe('true')
-    const drawer = view.container.querySelector('[data-produced-files-drawer]')
-    if (!(drawer instanceof HTMLElement)) throw new Error('produced drawer missing')
-    expect(within(drawer).getByText('本轮改动文件(共 7 个)')).toBeTruthy()
-    // Every file is listed — grouped 新增 (1) over 修改 (6) — with the diff
-    // +/- estimate (scoped to the drawer: the hidden width probes render the
-    // same chip content).
-    expect(within(drawer).getByRole('button', { name: '新增(1)' })).toBeTruthy()
-    expect(within(drawer).getByRole('button', { name: '修改(6)' })).toBeTruthy()
-    const listRows = within(drawer).getAllByRole('button', { name: /^打开 / })
-    expect(listRows).toHaveLength(7)
-    expect(within(drawer).getByText('+120')).toBeTruthy()
-    expect(within(drawer).getByText('+8')).toBeTruthy()
-    expect(within(drawer).getByText('-2')).toBeTruthy()
-    // Drawer rows open through the same viewer-first opener as the chips, and
-    // opening a file does not close the drawer.
-    fireEvent.click(within(drawer).getByRole('button', { name: '打开 src/api.ts' }))
-    expect(viewFile).toHaveBeenCalledWith({ kind: 'read', path: 'src/api.ts' })
-    expect(openFile).not.toHaveBeenCalled()
-    expect(view.getByRole('dialog')).toBeTruthy()
-
-    // The × button closes the drawer and focus returns to the remainder button.
-    fireEvent.click(within(drawer).getByRole('button', { name: '关闭' }))
-    expect(view.queryByRole('dialog')).toBeNull()
-    expect(document.activeElement).toBe(more)
-    bounds.mockRestore()
-  })
-
-  it('prefers the in-app viewer for chip clicks when viewFile is available', () => {
-    const openFile = vi.fn<(path: string) => void>()
-    const viewFile = vi.fn<NonNullable<ProducedFilesProps['viewFile']>>()
-    const view = render(
-      <ProducedFiles
-        matched={[entryOf('deep/a.html')]}
-        openFile={openFile}
-        viewFile={viewFile}
-        {...capability(true)}
-        t={t}
-      />,
-    )
-    fireEvent.click(view.getByRole('button', { name: '打开 deep/a.html' }))
-    expect(viewFile).toHaveBeenCalledWith({ kind: 'read', path: 'deep/a.html' })
-    expect(openFile).not.toHaveBeenCalled()
-  })
-
-  it('keeps the folder action out of the drawer without overflow or a local native opener', () => {
+  it('keeps the folder action absent without overflow or a local native opener', () => {
     const openFile = vi.fn<(path: string) => void>()
     const view = render(
-      <ProducedFiles matched={[entryOf('a.md')]} openFile={openFile} {...capability(true)} t={t} />,
+      <ProducedFiles matched={['a.md']} openFile={openFile} {...capability(true)} t={t} />,
     )
     const overflowing = ['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md', 'g.md']
-      .map(path => entryOf(path))
-    // No overflow → no remainder button → the drawer (and its footer) is unreachable.
-    expect(view.queryByRole('button', { name: /^\+ \d+ 个文件$/ })).toBeNull()
+    expect(view.queryByRole('button', { name: '在文件夹中显示' })).toBeNull()
     for (const unavailable of [capability(false), capability(true, false), capability(undefined)]) {
       view.rerender(<ProducedFiles matched={overflowing} openFile={openFile} {...unavailable} t={t} />)
-      fireEvent.click(view.getByRole('button', { name: /^\+ \d+ 个文件$/ }))
       expect(view.queryByRole('button', { name: '在文件夹中显示' })).toBeNull()
-      fireEvent.keyDown(document, { key: 'Escape' })
-      expect(view.queryByRole('dialog')).toBeNull()
     }
   })
 
   it('uses singular English copy when exactly one file is hidden', () => {
     const view = render(
       <ProducedFiles
-        matched={['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md', 'g.md'].map(path => entryOf(path))}
+        matched={['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md', 'g.md']}
         openFile={() => {}}
         {...capability(false)}
         t={makeTranslate(en)}
@@ -641,19 +488,6 @@ describe('plugin registration', () => {
     const service = (ctx as unknown as { get(name: string): ChatFileMentions | undefined }).get('chatFileMentions')
     const mentions = service?.forClosing(owner)
     mentions?.resolve('report.html')?.open()
-    expect(opened).toEqual(['site/report.html'])
-    // An owner carrying the chat view's viewFile (StarHub in-app viewer) routes
-    // mention opens through it instead of the OS opener.
-    const viewed: unknown[] = []
-    const viewerOwner = tailOwner(
-      produced([2, 'site/report.html']),
-      3,
-      (path) => { opened.push(path) },
-      1,
-      (request) => { viewed.push(request) },
-    )
-    service?.forClosing(viewerOwner)?.resolve('report.html')?.open()
-    expect(viewed).toEqual([{ kind: 'read', path: 'site/report.html' }])
     expect(opened).toEqual(['site/report.html'])
     // A turn that produced nothing yields no vocabulary at all.
     expect(service?.forClosing(tailOwner(undefined, 2))).toBeUndefined()

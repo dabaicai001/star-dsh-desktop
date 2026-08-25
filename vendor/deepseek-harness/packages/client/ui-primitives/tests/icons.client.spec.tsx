@@ -16,10 +16,8 @@ const icons = Object.fromEntries(
 const iconNames = Object.keys(icons)
 
 describe('ic_ds_ icon set', () => {
-  // The StarHub fork extends the upstream barrel with three product glyphs
-  // (Sparkle / Inspect / Skill); keep the count pinned to the vendored set.
-  it('exports the full icon set (70 upstream + 3 StarHub glyphs)', () => {
-    expect(iconNames.length).toBe(73)
+  it('exports the full icon set (46 deepsuite + 20 figma extracts + four product glyphs outside those sets)', () => {
+    expect(iconNames.length).toBe(70)
   })
 
   it.each(iconNames)('%s renders an svg with currentColor fills and no hardcoded palette', (name) => {
@@ -66,5 +64,18 @@ describe('FishLogo', () => {
     expect(container.querySelectorAll('path')).toHaveLength(1)
     expect(container.innerHTML).toContain('currentColor')
     expect(container.innerHTML).not.toContain('M0 0L23.16')
+  })
+})
+
+describe('BrandWordmark', () => {
+  it('can render the name artwork with or without its leading mark', () => {
+    const view = render(<primitives.BrandWordmark />)
+    const svg = view.container.querySelector('svg')!
+    expect(svg.getAttribute('width')).toBe('182')
+    expect(svg.getAttribute('viewBox')).toBe('0 0 182 24')
+
+    view.rerender(<primitives.BrandWordmark includeMark={false} />)
+    expect(svg.getAttribute('width')).toBe('156')
+    expect(svg.getAttribute('viewBox')).toBe('26 0 156 24')
   })
 })

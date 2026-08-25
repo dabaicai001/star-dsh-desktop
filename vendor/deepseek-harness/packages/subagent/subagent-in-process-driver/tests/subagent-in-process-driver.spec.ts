@@ -82,32 +82,6 @@ describe('startInProcessRun', () => {
     await run.dispose()
   })
 
-  it('inherits the parent session model switch over the parent creation options', async () => {
-    const { ctx, parent } = await setup([textResponse('parent turn'), textResponse('driver answer')])
-    // Simulate a mid-session model switch: the /model picker updates the
-    // session selection, which the agent/request waterfall applies — the
-    // logged request header then names the switched route, and the child must
-    // inherit THAT route rather than the parent's frozen creation options.
-    ctx.on('agent/request', async (_payload, next) => {
-      const config = await next()
-      return config.model === 'mock' ? { ...config, provider: 'mock', model: 'switched-model', maxTokens: 2048 } : config
-    })
-    parent.followup(createUserMessage({ content: [{ type: 'text', text: 'parent turn' }], source: { kind: 'user' } }))
-    await parent.whenIdle()
-
-    const run = await startInProcessRun(request(parent), {})
-
-    const child = ctx.agents.get(run.id)!
-    expect(child.options).toMatchObject({
-      provider: 'mock',
-      model: 'switched-model',
-      maxTokens: 2048,
-      subagentDepth: 1,
-    })
-    await expect(run.result).resolves.toMatchObject({ stopReason: 'completed' })
-    await run.dispose()
-  })
-
   it('reports a prompt a pre-step rejection discarded as refusal, not completion', async () => {
     const { ctx, parent } = await setup([])
     // A UserPromptSubmit deny or a policy plugin: the child claims its prompt,

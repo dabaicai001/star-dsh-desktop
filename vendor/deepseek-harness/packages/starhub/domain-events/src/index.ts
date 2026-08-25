@@ -15,7 +15,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { SdkNotificationHub } from '@deepseek-ai/dsh-sdk-jsonrpc-server'
+// StarHub 本地补丁模块(sdk/server/src/notifications.ts,不在上游导出面):
+// 经该包 ./src/* 透出直接导入,避免依赖上游 index 的 re-export。
+import type { SdkNotificationHub } from '@deepseek-ai/dsh-sdk-jsonrpc-server/src/notifications.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'starhub-domain-events'

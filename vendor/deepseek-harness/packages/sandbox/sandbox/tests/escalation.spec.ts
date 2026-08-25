@@ -81,25 +81,13 @@ describe('approveEscalation', () => {
     expect(seen[0]?.reason).toBe('escalate sandbox to workspace-write: the user asked to write in the workspace')
   })
 
-  it('a request the effective mode already covers is granted as-is without asking (no-op)', async () => {
+  it('a non-widening request fails closed with its own text and never asks', async () => {
     const seen: unknown[] = []
     const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
-    // Requesting the same mode the call already runs under: satisfied, no ask.
-    await expect(approveEscalation(req({ requestedMode: 'read-only' }), spy)).resolves.toBe('read-only')
-    // Requesting a NARROWER mode than the standing full-access mode: the call
-    // runs at danger-full-access regardless, so the ask is a redundant no-op —
-    // weaker models echoing sandbox_permissions from a full-access session must
-    // not fail every call.
-    await expect(approveEscalation(req({ requestedMode: 'workspace-write', effectiveMode: 'danger-full-access' as never }), spy))
-      .resolves.toBe('danger-full-access')
-    expect(seen).toEqual([])
-  })
-
-  it('a request for an unknown mode fails closed with its own text and never asks', async () => {
-    const seen: unknown[] = []
-    const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
-    await expect(approveEscalation(req({ requestedMode: 'some-unknown-mode' }), spy))
+    await expect(approveEscalation(req({ requestedMode: 'read-only' }), spy))
       .rejects.toThrow(/not strictly wider than this call's current "read-only" mode/)
+    await expect(approveEscalation(req({ requestedMode: 'workspace-write', effectiveMode: 'danger-full-access' as never }), spy))
+      .rejects.toThrow(/not strictly wider/)
     expect(seen).toEqual([])
   })
 

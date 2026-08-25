@@ -1,1 +1,1 @@
-47f943859bef60e4160492346772ded9b24f765a 2026-08-13 19:38:46 +0800 Merge pull request #2519 from deepseek-harness/feat/npm-public
+b150a551b8d465e31e418e1b2eaf5e79bbb7d28e 2026-08-26 Merge pull request #2908 from deepseek-harness/release/dsh-0.1.1-rc.2

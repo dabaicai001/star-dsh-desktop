@@ -518,15 +518,6 @@
   line-height: 18px;
 }
 
-/* The image-input toggle row: checkbox plus hint on one line. */
-.modelCheckbox {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  cursor: pointer;
-}
-
 .modelEmpty {
   padding: 12px;
   border: 1px dashed var(--dsw-alias-border-l3);
@@ -651,6 +642,12 @@ select.input {
      ui-theme styles/scrollbar.css for the contract). */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.candidateActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
 }
 
 .candidateList {

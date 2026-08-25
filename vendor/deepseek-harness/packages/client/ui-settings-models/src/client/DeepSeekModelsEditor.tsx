@@ -16,14 +16,8 @@ import styles from './ModelsSection.module.css'
 /** One catalog entry kept structurally open so hidden or future fields survive an edit. */
 export type DeepSeekModelDraft = Record<string, unknown>
 
-/** Whether a model draft declares the image input modality (`input` contains 'image'). */
-function supportsImage(model: DeepSeekModelDraft): boolean {
-  const input = model['input']
-  return Array.isArray(input) && input.includes('image')
-}
-
 /** The catalog fields this editor writes. */
-type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens' | 'input'
+type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens'
 
 /** The two token counts edited as K/M-suffixed text behind a row's disclosure. */
 type CapacityField = 'contextWindow' | 'maxTokens'
@@ -349,21 +343,6 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                     <div className={styles['modelAdvanced']}>
                       {capacityField(model, index, 'contextWindow', props.defaultContextWindow)}
                       {capacityField(model, index, 'maxTokens', props.defaultMaxTokens)}
-                      <label className={styles['modelField']}>
-                        <span className={styles['modelFieldLabel']}>{props.t('imageInput')}</span>
-                        <label className={styles['modelCheckbox']}>
-                          <input
-                            type="checkbox"
-                            checked={supportsImage(model)}
-                            aria-label={`${props.t('imageInput')} ${String(index + 1)}`}
-                            disabled={props.disabled}
-                            onChange={(event) => {
-                              update(index, 'input', event.target.checked ? ['text', 'image'] : undefined)
-                            }}
-                          />
-                          <span className={styles['modelFieldLabel']}>{props.t('imageInputHint')}</span>
-                        </label>
-                      </label>
                     </div>
                   )
                   : null}

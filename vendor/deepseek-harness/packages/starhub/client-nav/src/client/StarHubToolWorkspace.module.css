@@ -1,26 +1,144 @@
-/* StarHub tool workspace column: header (label + count + refresh + 新建连接)
-   above the asset rows; status block doubles as the guide/loading/preview/
-   error/empty state container. Tokens follow the dsw alias set. */
+/* StarHub tools side panel (rc.2 overlay form): full-viewport mask + a
+   right-edge drawer showing the subcategory/asset tree. Tokens follow the
+   dsw alias set. */
 
-.root {
+.layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.layer > * {
+  pointer-events: auto;
+}
+
+.mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  animation: maskIn 0.14s ease-out;
+}
+
+@keyframes maskIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  max-width: 85vw;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  background: var(--dsw-bg-panel, var(--dsw-bg-primary, #fff));
+  border-left: 1px solid var(--dsw-border, rgba(127, 127, 127, 0.2));
+  box-shadow: var(--dsw-shadow-popover, 0 6px 24px rgba(0, 0, 0, 0.2));
+  animation: slideIn 0.16s ease-out;
   font-size: 13px;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
 .header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 4px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--dsw-border, rgba(127, 127, 127, 0.12));
 }
 
 .title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dsw-alias-label-primary);
+}
+
+.closeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.closeButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.tree {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.node {
+  display: flex;
+  flex-direction: column;
+}
+
+.category {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
   color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.category:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.category.active {
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.categoryLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assetGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0 6px 22px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .count {
@@ -102,6 +220,11 @@
 
 .row:hover {
   background: var(--dsw-alias-interactive-bg-hover-accent);
+}
+
+.row.active {
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--dsw-alias-label-primary);
 }
 
 .badge {

@@ -57,18 +57,9 @@ export function resolveChildDepth(parent: Agent, maxDepth: number | undefined): 
 }
 
 /**
- * Resolve the child's `AgentOptions`: the parent's CURRENT model route unless
- * the request overrides it, stamped with the child's own delegation depth.
- *
- * The parent's `options` hold the route it was CREATED with; a user switching
- * the model mid-session (ui-model-selection → `session.selectModel`) updates
- * the session's logged request header, not the frozen creation options. A
- * child spawned after such a switch would otherwise inherit a stale default
- * (e.g. the deployment default deepseek route) instead of the model the user
- * actually selected. The session's latest `request/header` config is the
- * durable per-session route — it is what the parent's own requests run under —
- * so it wins over the creation options, which remain the fallback for a
- * session that has never made a request.
+ * Resolve the child's `AgentOptions`: the parent's provider/model/maxTokens
+ * route unless the request overrides it, stamped with the child's own
+ * delegation depth.
  * @param parent - the delegating parent whose route the child inherits.
  * @param requested - per-child overrides, if any.
  * @param childDepth - the resolved delegation depth to stamp.
@@ -79,10 +70,9 @@ export function resolveChildAgentOptions(
   requested: AgentOptions | undefined,
   childDepth: number,
 ): AgentOptions {
-  const header = parent.session.requestHeader()?.config
-  const parentProvider = header?.provider ?? parent.options.provider
-  const parentModel = header?.model ?? parent.options.model
-  const parentMaxTokens = header?.maxTokens ?? parent.options.maxTokens
+  const parentProvider = parent.options.provider
+  const parentModel = parent.options.model
+  const parentMaxTokens = parent.options.maxTokens
   return {
     ...parentProvider !== undefined ? { provider: parentProvider } : {},
     ...parentModel !== undefined ? { model: parentModel } : {},

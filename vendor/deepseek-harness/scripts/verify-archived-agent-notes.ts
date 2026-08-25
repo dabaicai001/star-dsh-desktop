@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { relative, resolve, sep } from 'node:path'
+import { resolve } from 'node:path'
 import { AGENT_NOTE_CLASSES, agentNoteRoot } from './agent-note-tree.ts'
 import {
   extendArchiveManifest,
@@ -23,6 +23,7 @@ if (args.length > 0 && !writeMode) {
 const archiveRoot = resolve(agentNoteRoot, 'archived')
 const manifestPath = resolve(archiveRoot, 'manifest.json')
 const repoRoot = resolve(agentNoteRoot, '../..')
+const manifestRepoPath = '.agents/notes/archived/manifest.json'
 const errors: string[] = []
 const allowedRootFiles = new Set(['AGENTS.md', 'manifest.json'])
 const kinds = new Set<string>()
@@ -63,13 +64,6 @@ function runGit(args: string[]): string {
   if (result.status !== 0) throw new Error(result.stderr.trim() || `git exited with status ${result.status}`)
   return result.stdout
 }
-
-// `git show <ref>:<path>` resolves <path> against the repository root, so a
-// vendored checkout nested inside a larger repo (StarHub keeps this tree under
-// vendor/deepseek-harness) must prefix the manifest path with its directory.
-const gitToplevel = runGit(['rev-parse', '--show-toplevel']).trim()
-const repoPrefix = relative(resolve(gitToplevel), repoRoot).split(sep).join('/')
-const manifestRepoPath = (repoPrefix === '' ? '' : `${repoPrefix}/`) + '.agents/notes/archived/manifest.json'
 
 function readBaselineManifest(ref: string): ArchiveManifest {
   runGit(['cat-file', '-e', `${ref}^{commit}`])

@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   createSnapshotStore, EMPTY_CONVERSATION_VIEWS,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -624,12 +624,9 @@ describe('DetailsPanel Output section', () => {
     expect(view.getByText('该调用不在当前窗口内')).toBeTruthy()
   })
 
-  it('no selection at all renders the workspace fallback guidance', () => {
+  it('no selection at all renders the guidance line and the default title', () => {
     const view = mount(snapshot(), null)
-    // Path B Phase 0 Step 2: the column hosts the StarHub tool workspace
-    // title when no call is selected; with no workspace registrant in this
-    // harness, the original guidance line is the fallback.
-    expect(view.getByText('StarHub 工具')).toBeTruthy()
+    expect(view.getByText('详情')).toBeTruthy()
     expect(view.getByText('点击消息流中的工具行查看详情')).toBeTruthy()
   })
 

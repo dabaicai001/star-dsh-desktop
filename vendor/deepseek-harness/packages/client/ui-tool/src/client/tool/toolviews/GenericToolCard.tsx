@@ -33,10 +33,10 @@ export interface GenericToolCardProps extends ToolCallOwnerProps {
   t: ToolTreeProps['t']
 }
 
-export function GenericToolCard({ toolName, block, cwd, openFile, viewFile, inspect, t }: GenericToolCardProps) {
-  const model = toolRowModel(toolName, block, cwd)
+export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect, t }: GenericToolCardProps) {
+  const model = toolRowModel(toolName, block, cwd, home)
   const terminal = terminalCardModel(block, cwd)
-  const read = readCardModel(block, cwd)
+  const read = readCardModel(block, cwd, home)
   const diff = diffCardModel(block)
   const search = searchCardModel(block)
   const web = webCardModel(block)
@@ -71,20 +71,6 @@ export function GenericToolCard({ toolName, block, cwd, openFile, viewFile, insp
       state={state}
       filePath={model.filePath}
       onOpenFile={singleFile ? openFile : undefined}
-      onViewFile={singleFile && viewFile !== undefined
-        ? (path) => {
-          // 带 diff 卡的调用开「变更前/变更后」,其余开当前文件内容。
-          if (diff !== null) {
-            viewFile({
-              kind: 'edit',
-              path,
-              diffs: diff.card.diffs.map(h => ({ oldText: h.oldText ?? '', newText: h.newText })),
-            })
-          } else {
-            viewFile({ kind: 'read', path })
-          }
-        }
-        : undefined}
       inspect={inspect}
     />
   )

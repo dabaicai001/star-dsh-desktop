@@ -14,13 +14,13 @@ Status: implemented
 
 ## 决定
 
-上游的 `website/docs.ts` 拥有分区位置。`sections` 按 locale 声明各分组，`sectionSpec(locale, label)` 返回分组的位置与折叠行为，当某 locale 未为该 label 声明位置时抛错。未出现在声明中的分组现在会让构建失败，而不是静默排到最前。位置按 locale 声明，是因为两侧侧边栏各自命名分组，而两侧共用的标签 `SDK` 无法同时相对 `入门` 和相对 `Guide` 取同一位次。
+[website/docs.ts](../../../../website/docs.ts) 拥有分区位置。`sections` 按 locale 声明各分组，`sectionSpec(locale, label)` 返回分组的位置与折叠行为，当某 locale 未为该 label 声明位置时抛错。未出现在声明中的分组现在会让构建失败，而不是静默排到最前。位置按 locale 声明，是因为两侧侧边栏各自命名分组，而两侧共用的标签 `SDK` 无法同时相对 `入门` 和相对 `Guide` 取同一位次。
 
 子系统页按关注点分组——总览、内核与作用域、会话与持久化、模型与上下文、执行与工具、策略与交互、平台与接入——其中六个主题组保持折叠，直到某一组包含正在阅读的页面。这些分组排在参考侧边栏的最后：展开时它们的数量超过其余所有分组之和，因此排在它们之后的任何内容都只能靠滚过整个列表才能到达。页面 `order` 由数组位置推导，不再手写数字。
 
 `landingLink(locale, collection)` 依据 `orderedPages`——即侧边栏所用的同一套排序——推导每个导航项的目标，因此导航项始终打开该分区已发布的首个页面。
 
-`scripts/project-doc-site.ts` 中的 `projectedPageContent` 会丢弃语言切换行和仓库徽章。切换行的匹配被限制在前八行内，因此展示该约定的教程仍能渲染出它的示例。
+[scripts/project-doc-site.ts](../../../../scripts/project-doc-site.ts) 中的 `projectedPageContent` 会丢弃语言切换行和仓库徽章。切换行的匹配被限制在前八行内，因此展示该约定的教程仍能渲染出它的示例。
 
 导航栏标题是内联进 `siteTitle` 的 DeepSeek 字标，VitePress 会将其按 HTML 渲染。内联正是让字标的 `currentColor` 填充跟随当前主题的原因；`themeConfig.logo` 渲染为 `<img>`，会把字标固定为文件声明的颜色，并且需要为每套主题各准备一份资源。侧边栏滚动条平时不可见，滚动时出现，通过 `data-` 属性而非 class 标记，因为 Vue 在 patch 该元素时会整体重写 `class`。
 

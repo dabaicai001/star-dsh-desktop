@@ -24,7 +24,7 @@ import { DbDataGrid, cellText } from './DbDataGrid.tsx'
 import { SqlEditor, type SqlCompletionSchema } from './SqlEditor.tsx'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
 import {
-  IconChartOutline16, IconCloseOutline16, IconCodeOutline16, IconInspectOutline12,
+  IconCloseOutline16, IconCodeOutline16, IconDataOutline16, IconInspectOutline12,
   IconPlayOutline16, IconRefreshOutline14,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -705,7 +705,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                   title={showMonitor ? '收起监控面板' : '展开监控面板'}
                   aria-label="监控面板"
                   aria-pressed={showMonitor}
-                ><IconChartOutline16 size={15} /></button>
+                ><IconDataOutline16 size={15} /></button>
               )}
             </div>
             {connected ? (

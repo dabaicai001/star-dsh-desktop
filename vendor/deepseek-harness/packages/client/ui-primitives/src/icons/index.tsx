@@ -460,27 +460,6 @@ export const IconEnhanceOutline16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
-/** ic_ds_restart_outline_16 */
-export const IconRestartOutline16 = ({ size = 16, className }: IconProps) => (
-  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M13.337 3.885V0.75l2.163 2.163-2.163 2.163V2.954A6.294 6.294 0 1 0 14.25 8h-1.4a4.894 4.894 0 1 1-1.136-3.115H13.337Z" fill="currentColor" />
-  </svg>
-)
-
-/** ic_ds_terminal_outline_16 */
-export const IconTerminalOutline16 = ({ size = 16, className }: IconProps) => (
-  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M1.25 2.5A1.25 1.25 0 0 1 2.5 1.25h11A1.25 1.25 0 0 1 14.75 2.5v11a1.25 1.25 0 0 1-1.25 1.25h-11a1.25 1.25 0 0 1-1.25-1.25v-11Zm1.4.15v10.7h10.7V2.65H2.65Zm1.225 2.158 2.36 2.36-2.36 2.36.99.99 3.35-3.35-3.35-3.35-.99.99Zm4.25 5.042h4v1.4h-4v-1.4Z" fill="currentColor" />
-  </svg>
-)
-
-/** ic_ds_chart_outline_16 */
-export const IconChartOutline16 = ({ size = 16, className }: IconProps) => (
-  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M1.25 1.25h1.4v12.1h12.1v1.4H1.25V1.25Zm3.1 8.1h1.9v2.6h-1.9v-2.6Zm3.7-4.1h1.9v6.7h-1.9v-6.7Zm3.7-2.6h1.9v9.3h-1.9v-9.3Z" fill="currentColor" />
-  </svg>
-)
-
 /** ic_ds_trash_outline_16 */
 export const IconTrashOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

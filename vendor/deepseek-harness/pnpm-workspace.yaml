@@ -7,7 +7,7 @@ packages:
   - native/landlock-run/packages/*
   # Product assemblies over the package tier; apps/cli owns the `dsh` bin.
   - apps/*
-  # StarHub vendor copy omits the upstream website/ documentation site.
+  - website
   # The runnable demo leaves join as ONE workspace member: examples/package.json
   # declares the union of every leaf's cordis.yml plugins as workspace:*, so a
   # plain-node (`:lib`) boot of any leaf (examples/<leaf>/cordis.yml) resolves its
@@ -23,12 +23,6 @@ packages:
 # Vendored framework packages keep their upstream semver ranges, while local
 # builds must resolve those matching names to this workspace's pinned sources.
 linkWorkspacePackages: true
-
-# The committed lockfile was resolved against the npmmirror registry (China
-# mirror). On clean CI runners pnpm 11.3+ re-verifies every tarball URL against
-# registry.npmjs.org and rejects the mirror URLs (ERR_PNPM_TARBALL_URL_MISMATCH),
-# so trust the already-reviewed lockfile instead of re-verifying each entry.
-trustLockfile: true
 
 overrides:
   '@deepseek-ai/cosmokit': 'link:vendor/cosmokit'
@@ -75,4 +69,4 @@ minimumReleaseAgeExclude:
   - node-addon-require-builtin@0.1.4
 
 patchedDependencies:
-  node-pty@1.1.0: patches/node-pty@1.1.0.patch
+  node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch

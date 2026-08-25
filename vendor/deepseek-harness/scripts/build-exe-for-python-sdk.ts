@@ -11,6 +11,7 @@ import { existsSync, statSync } from 'node:fs'
 import { chmod, copyFile, cp, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
+import { resolveLinuxNodePtyAddon } from './build-exe-for-python-sdk-native-pty.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -49,7 +50,7 @@ const ASSET_GLOBS = [
   'node_modules/**/*.wasm',
 ]
 
-const PLATFORMS = ['linux', 'macos', 'win'] as const
+const PLATFORMS = ['linux', 'macos'] as const
 const ARCHES = ['x64', 'arm64'] as const
 type Platform = (typeof PLATFORMS)[number]
 type Arch = (typeof ARCHES)[number]
@@ -111,7 +112,7 @@ class Target {
    * @returns the host target; throws on an unsupported host platform or arch.
    */
   static host(): Target {
-    const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : process.platform === 'win32' ? 'win' : undefined
+    const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : undefined
     if (platform === undefined) {
       throw new Error(`build-exe-for-python-sdk: unsupported host platform ${process.platform}; pass --targets explicitly.`)
     }
@@ -377,11 +378,10 @@ class SingleExeBuild {
   /**
    * Package one target; SEA mode accepts one target per invocation.
    * @param target - the pkg target triple to build.
-   * @returns the executable path and, on macOS, its helper path.
+   * @returns the executable and ripgrep sidecar paths, plus the macOS spawn helper path when required.
    */
   async pack(target: Target): Promise<string[]> {
-    // pkg appends .exe for Windows outputs; name the product accordingly.
-    const product = join(this.outDir, `${OUTPUT_BASENAME}-${target.platform}-${target.arch}${target.platform === 'win' ? '.exe' : ''}`)
+    const product = join(this.outDir, `${OUTPUT_BASENAME}-${target.platform}-${target.arch}`)
     await this.prepareNativePty(target)
     if (!this.cli.dryRun) await mkdir(this.outDir, { recursive: true })
     await this.run(`pkg ${target.spec}`, pnpmBin(), [
@@ -397,7 +397,8 @@ class SingleExeBuild {
     if (!this.cli.dryRun && !existsSync(product)) {
       throw new Error(`build-exe-for-python-sdk: product ${product} is missing after the pkg run; inspect ${this.outDir}.`)
     }
-    if (target.platform !== 'macos') return [product]
+    const ripgrep = await this.copyRipgrepSidecar(target, product)
+    if (target.platform !== 'macos') return [product, ripgrep]
     const spawnHelper = `${product}-spawn-helper`
     const source = join(this.staging, 'node_modules', 'node-pty', 'prebuilds', `darwin-${target.arch}`, 'spawn-helper')
     if (this.cli.dryRun) {
@@ -406,12 +407,36 @@ class SingleExeBuild {
       await copyFile(source, spawnHelper)
       await chmod(spawnHelper, 0o755)
     }
-    return [product, spawnHelper]
+    return [product, ripgrep, spawnHelper]
+  }
+
+  /** Copy the target ripgrep binary beside the executable so Node can spawn it outside pkg's virtual filesystem. */
+  private async copyRipgrepSidecar(target: Target, product: string): Promise<string> {
+    const platform = target.platform === 'macos' ? 'darwin' : target.platform
+    const source = join(
+      this.staging,
+      'node_modules',
+      '@vscode',
+      `ripgrep-${platform}-${target.arch}`,
+      'bin',
+      'rg',
+    )
+    const destination = `${product}-rg`
+    if (this.cli.dryRun) {
+      console.log(`build-exe-for-python-sdk: [dry-run] cp ${source} ${destination}`)
+      return destination
+    }
+    if (!existsSync(source)) {
+      throw new Error(`build-exe-for-python-sdk: target ripgrep binary is missing at ${source}.`)
+    }
+    await copyFile(source, destination)
+    await chmod(destination, 0o755)
+    return destination
   }
 
   /**
-   * Put the target node-pty addon in the staged closure. Linux npm installs
-   * build it from source, but legacy deploy omits that side-effect directory.
+   * Put the target node-pty addon in the staged closure. The release workflow
+   * provides a manylinux build; ordinary installs use node-pty's target prebuild.
    * @param target - the pkg target whose native addon is being staged.
    */
   private async prepareNativePty(target: Target): Promise<void> {
@@ -419,8 +444,16 @@ class SingleExeBuild {
     if (this.cli.dryRun) console.log(`build-exe-for-python-sdk: [dry-run] rm -rf ${stagedBuild}`)
     else await rm(stagedBuild, { recursive: true, force: true })
     if (target.platform !== 'linux') return
-    const source = join(root, 'packages', 'subprocess', 'subprocess-local', 'node_modules', 'node-pty', 'build', 'Release', 'pty.node')
+    const packageDirectory = join(
+      root,
+      'packages',
+      'subprocess',
+      'subprocess-local',
+      'node_modules',
+      'node-pty',
+    )
     const destination = join(stagedBuild, 'Release', 'pty.node')
+    const source = resolveLinuxNodePtyAddon(packageDirectory, target.arch)
     if (this.cli.dryRun) {
       console.log(`build-exe-for-python-sdk: [dry-run] cp ${source} ${destination}`)
       return
@@ -492,9 +525,6 @@ class SingleExeBuild {
       const child = spawn(command, args, {
         cwd: root,
         stdio: 'inherit',
-        // Windows cannot spawn .cmd without a shell (EINVAL since the Node
-        // CVE-2024-27980 hardening); upstream never runs this on Windows.
-        shell: process.platform === 'win32',
         // Artifact builds must not mutate or validate a developer's Git hooks.
         env: { ...process.env, CI: 'true' },
       })

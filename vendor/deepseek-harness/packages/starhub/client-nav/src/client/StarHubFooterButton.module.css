@@ -1,0 +1,24 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-fg-tertiary, currentColor);
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font: inherit;
+  transition: background 0.12s ease;
+}
+
+.button:hover {
+  background: var(--dsw-bg-hover, rgba(127, 127, 127, 0.12));
+  color: var(--dsw-fg-primary, currentColor);
+}
+
+.label {
+  font-size: 12px;
+  white-space: nowrap;
+}

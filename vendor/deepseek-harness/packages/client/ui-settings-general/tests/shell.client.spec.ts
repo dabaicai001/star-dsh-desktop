@@ -2,6 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '../src/client/index.ts'
 import type { SettingsRootInjected } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
@@ -22,6 +23,7 @@ async function bench() {
     isLoopback: false,
   } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
+  await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry }
 }
 
@@ -49,7 +51,7 @@ const CHILD_SPECS = {
 
 describe('ui-settings apply', () => {
   it('declares only the slot registry (a pure composition face, no locale)', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'settingsScope'])
   })
 
   it('registers the shell and declares every child slot, before or after the declaration', async () => {
@@ -98,33 +100,6 @@ describe('ui-settings apply', () => {
     expect(listener).toHaveBeenCalled()
     expect(sections.getSnapshot()).not.toBe(rows)
     off()
-  })
-
-  it('projects section groups and group labels into nav rows', async () => {
-    const b = await bench()
-    declare(b.slots)
-    await b.ctx.plugin({ inject: [...inject], apply }).await()
-    const { sections } = injectedOf(b.slots).hooks
-    // String group label and thunk group label both resolve; absent label is
-    // left undefined (the renderer falls back to the group key).
-    b.slots.register({
-      name: 'settings.section', id: 's1', order: 30, label: 'AI',
-      group: 'starhub', groupLabel: 'StarHub',
-    } as never, () => null)
-    b.slots.register({
-      name: 'settings.section', id: 's2', order: 31, label: 'Plugins', group: 'starhub',
-    } as never, () => null)
-    b.slots.register({
-      name: 'settings.section', id: 's3', order: 32, label: 'About',
-      group: 'starhub', groupLabel: () => 'STAR',
-    } as never, () => null)
-    const rows = sections.getSnapshot()
-    const grouped = rows.filter(r => r.group !== undefined)
-    expect(grouped).toEqual([
-      { id: 's1', order: 30, label: 'AI', group: 'starhub', groupLabel: 'StarHub' },
-      { id: 's2', order: 31, label: 'Plugins', group: 'starhub' },
-      { id: 's3', order: 32, label: 'About', group: 'starhub', groupLabel: 'STAR' },
-    ])
   })
 
   it('projects onboarding entries into stable coordinator order', async () => {

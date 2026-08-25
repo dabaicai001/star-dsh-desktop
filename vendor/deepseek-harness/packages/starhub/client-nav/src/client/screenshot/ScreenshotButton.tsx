@@ -10,7 +10,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ComposerAttachment, DraftAttachmentId } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { tauriListen } from '../tauri.ts'
 import css from './ScreenshotButton.module.css'
 
@@ -21,8 +20,8 @@ export interface ScreenshotResult {
 }
 
 export type ScreenshotButtonProps = PropsRuntime<'conversation.input.left'> & {
-  /** 把浏览器 File 注册为会话 draft 附件(conversation 服务包装)。 */
-  createDraftImages: (files: readonly File[]) => readonly ComposerAttachment[]
+  /** 把浏览器 File 注册为会话 draft 附件并挂进输入(rc.2 conversation 服务包装)。 */
+  addImages: ((files: readonly File[]) => string | null) | undefined
   /** 开始区域截图。 */
   startRegion: () => Promise<void>
 }
@@ -41,38 +40,35 @@ const SCISSORS_ICON = (
 /**
  * 把截图事件结果追加进当前会话输入框附件。
  * @param payload - `screenshot:result` 事件负载。
- * @param createDraftImages - draft 附件注册回调。
- * @param addImages - 会话输入动作(把 draft id 挂进输入机)。
+ * @param addImages - rc.2 conversation 附件注册回调(返回错误消息或 null)。
  */
 function ingestScreenshot(
   payload: ScreenshotResult,
-  createDraftImages: ScreenshotButtonProps['createDraftImages'],
-  addImages: ((ids: readonly DraftAttachmentId[]) => boolean) | undefined,
+  addImages: ScreenshotButtonProps['addImages'],
 ): void {
   const raw = payload.data
   if (!payload.ok || raw == null || raw.length === 0) return
+  if (addImages === undefined) return
   const bytes = raw instanceof Uint8Array ? new Uint8Array(raw) : new Uint8Array(raw)
   const file = new File([bytes], 'screenshot.png', { type: 'image/png' })
-  const images = createDraftImages([file])
-  if (images.length > 0) addImages?.(images.map(image => image.id))
+  addImages([file])
 }
 
 /** 截图失败提示自动消失时长。 */
 const TOAST_DURATION_MS = 4000
 
 export function ScreenshotButton({
-  createDraftImages,
+  addImages,
   startRegion,
-  inputActions,
 }: ScreenshotButtonProps): JSX.Element {
   const [toast, setToast] = useState<string | null>(null)
   // 事件回调经 ref 转发,监听本身只挂一次(避免 props 抖动重建订阅)。
-  const latest = useRef({ createDraftImages, addImages: inputActions?.addImages })
-  latest.current = { createDraftImages, addImages: inputActions?.addImages }
+  const latest = useRef({ addImages })
+  latest.current = { addImages }
 
   useEffect(() => {
     const unlisten = tauriListen<ScreenshotResult>('screenshot:result', payload => {
-      ingestScreenshot(payload, latest.current.createDraftImages, latest.current.addImages)
+      ingestScreenshot(payload, latest.current.addImages)
     })
     return () => { void unlisten.then(dispose => dispose()) }
   }, [])

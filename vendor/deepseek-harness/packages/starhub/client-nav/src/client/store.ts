@@ -176,6 +176,34 @@ export function createAiChatOverlay(): AiChatOverlay {
   }
 }
 
+/** StarHub 工具面板(侧栏底部入口打开的 overlay)开关状态。 */
+export interface ToolsPanelState {
+  open: boolean
+}
+
+/** 工具面板开关桥:footer 按钮写 open,shell.overlay 席位读渲染。 */
+export interface ToolsPanelOverlay {
+  open: () => void
+  close: () => void
+  source: SnapshotStore<ToolsPanelState>
+}
+
+/**
+ * Create the apply-owned tools-panel bridge. The footer action button opens
+ * it (侧栏底部「工具」入口); the shell.overlay seat renders the workspace
+ * surface — the same bare-source bridge pattern as the AI chat panel
+ * (one-handle-one-scope).
+ * @returns the bridge (bare source + open/close callbacks).
+ */
+export function createToolsPanelOverlay(): ToolsPanelOverlay {
+  const source = createSnapshotStore<ToolsPanelState>({ open: false })
+  return {
+    open: () =>{  source.set({ open: true }) },
+    close: () =>{  source.set({ open: false }) },
+    source,
+  }
+}
+
 /** 跨 scope 的当前工具选择:子类 + 打开的资产实例(含派生好的路由前缀)。 */
 export interface ToolSelection {
   /** 当前选中的子类 key(STARHUB_SUBCATEGORIES[].key);null = 未选。 */

@@ -10,21 +10,14 @@ import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-client-runtime/client'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
-/** One produced file: path plus the change shape the call's diff declared. */
-export interface ProducedEntry {
+interface ProducedPath {
   readonly seq: number
   readonly path: string
-  /** True when the call created or overwrote the file (diff `oldText` is null). */
-  readonly created: boolean
-  /** Estimated added lines (the call diff's `newText` line count; 0 when unknown). */
-  readonly added: number
-  /** Estimated removed lines (the call diff's `oldText` line count; 0 for creates/unknown). */
-  readonly removed: number
 }
 
 /** Immutable produced-file facts published against one Turn. */
 export interface DeliverablesTurnData {
-  readonly produced: readonly ProducedEntry[]
+  readonly produced: readonly ProducedPath[]
 }
 
 declare module '@deepseek-ai/dsh-client-runtime/client' {
@@ -39,11 +32,6 @@ interface DeliverablesState extends DeliverablesTurnData {
   readonly calls: ReadonlyMap<string, ToolResultNode['callView']>
 }
 
-/** Line count of one diff text (empty text is zero lines, not one). */
-function lineCount(text: string): number {
-  return text === '' ? 0 : text.split('\n').length
-}
-
 /**
  * Paths a call view reports having created or changed, by render intent rather
  * than tool name: a diff card, or a generic card whose kind is `edit` (the
@@ -51,26 +39,12 @@ function lineCount(text: string): number {
  * nothing to open — a read looked, a delete removed, a terminal ran. Only
  * root call views enter this Turn accumulator; nested Code Mode dispatches
  * preserve the pre-assembly behavior and do not contribute independently.
- *
- * A diff card's own `diffs` carry the per-file change shape (`oldText: null`
- * marks a create/overwrite, and the hunk texts estimate the +/- line counts);
- * its `locations` remain the fallback when a presenter omitted diffs.
  */
-function producedPaths(view: ToolResultNode['callView']): readonly Omit<ProducedEntry, 'seq'>[] {
+function producedPaths(view: ToolResultNode['callView']): readonly string[] {
   if (view === null) return []
-  if (view.card === 'diff') {
-    if (view.diffs.length > 0) {
-      return view.diffs.map(diff => ({
-        path: diff.path,
-        created: diff.oldText === null,
-        added: lineCount(diff.newText),
-        removed: diff.oldText === null ? 0 : lineCount(diff.oldText),
-      }))
-    }
-    return (view.locations ?? []).map(location => ({ path: location.path, created: false, added: 0, removed: 0 }))
-  }
+  if (view.card === 'diff') return (view.locations ?? []).map(location => location.path)
   if (view.card === 'generic' && view.kind === 'edit') {
-    return (view.locations ?? []).map(location => ({ path: location.path, created: false, added: 0, removed: 0 }))
+    return (view.locations ?? []).map(location => location.path)
   }
   return []
 }
@@ -93,44 +67,31 @@ function producedPaths(view: ToolResultNode['callView']): readonly Omit<Produced
  * boundaries from neighboring presentation Nodes.
  * @param data - engine-published Deliverables data for one Turn.
  * @param seq - closing Assistant seq; later Tool settlements are excluded.
- * @returns Produced entries in first-seen order; empty when the turn wrote nothing.
- */
-export function producedEntriesForClosing(
-  data: Readonly<DeliverablesTurnData> | undefined,
-  seq = Number.POSITIVE_INFINITY,
-): readonly ProducedEntry[] {
-  if (data === undefined) return []
-  const entries: ProducedEntry[] = []
-  const seen = new Set<string>()
-  for (const produced of data.produced) {
-    if (produced.seq > seq || seen.has(produced.path)) continue
-    seen.add(produced.path)
-    entries.push(produced)
-  }
-  return entries
-}
-
-/**
- * Files produced by one Turn data value, paths only.
- * @param data - engine-published Deliverables data for one Turn.
- * @param seq - closing Assistant seq; later Tool settlements are excluded.
  * @returns Produced paths in first-seen order; empty when the turn wrote nothing.
  */
 export function producedForClosing(
   data: Readonly<DeliverablesTurnData> | undefined,
   seq = Number.POSITIVE_INFINITY,
 ): readonly string[] {
-  return producedEntriesForClosing(data, seq).map(entry => entry.path)
+  if (data === undefined) return []
+  const paths: string[] = []
+  const seen = new Set<string>()
+  for (const produced of data.produced) {
+    if (produced.seq > seq || seen.has(produced.path)) continue
+    seen.add(produced.path)
+    paths.push(produced.path)
+  }
+  return paths
 }
 
 /**
  * Claim the turn-tail chain only when its closing turn produced files.
  * @param owner - Turn-tail owner currency for the closing assistant.
- * @returns Produced entries as the component's match, or null to decline before mount.
+ * @returns Produced paths as the component's match, or null to decline before mount.
  */
-export function selectProducedFiles(owner: TurnTailOwnerProps): readonly ProducedEntry[] | null {
-  const entries = producedEntriesForClosing(owner.turn.data.get('deliverables'), owner.seq)
-  return entries.length === 0 ? null : entries
+export function selectProducedFiles(owner: TurnTailOwnerProps): readonly string[] | null {
+  const paths = producedForClosing(owner.turn.data.get('deliverables'), owner.seq)
+  return paths.length === 0 ? null : paths
 }
 
 /** Turn-local successful mutation accumulator; it publishes no view Node. */
@@ -162,7 +123,7 @@ export const deliverablesDefinition: ConversationNodeDefinition<DeliverablesStat
     if (result.isError === true) return context.state
     const callId = String(match.event.data.message.source.callId)
     const additions = producedPaths(context.state.calls.get(callId) ?? null)
-      .map(entry => ({ ...entry, seq: match.event.seq }))
+      .map(path => ({ seq: match.event.seq, path }))
     return additions.length === 0
       ? context.state
       : { ...context.state, produced: [...context.state.produced, ...additions] }

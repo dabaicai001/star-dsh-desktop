@@ -60,16 +60,25 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.sectionTitle {
+  flex: none;
+  min-height: 26px;
+  padding: 6px 10px 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.sectionTitle:not(:first-child) {
+  margin-top: 4px;
+}
+
 .itemIcon {
   display: inline-flex;
   flex: none;
-  /* min-width, not fixed: glyph icons (e.g. ⚑) keep the 16px seat while short
-     text badges (source-supplied type marks like 终端 / 数据库) size to content. */
-  min-width: 16px;
-  width: auto;
+  width: 16px;
   height: 16px;
-  padding: 0 2px;
-  box-sizing: border-box;
   align-items: center;
   justify-content: center;
   color: var(--dsw-alias-label-tertiary);

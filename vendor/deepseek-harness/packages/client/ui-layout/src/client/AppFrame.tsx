@@ -10,7 +10,7 @@
  * through the three framework shares — zero cordis or framework imports,
  * zero self-made hooks.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT } from './columns.ts'
@@ -20,7 +20,7 @@ import css from './AppFrame.module.css'
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'workspace' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
 
 /** Center column grid item (session-body building block). */
@@ -98,6 +98,15 @@ export function AppFrame({
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
 
+  const lastSession = useRef(detailsSession)
+  useLayoutEffect(() => {
+    if (detailsSession === undefined) return
+    if (lastSession.current !== undefined && lastSession.current !== detailsSession) {
+      actions.closeDetails()
+    }
+    lastSession.current = detailsSession
+  }, [actions, detailsSession])
+
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.
   useEffect(() => {
     const el = frameRef.current
@@ -130,7 +139,7 @@ export function AppFrame({
   const sidebarPreference = sidebarCollapsed
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
-  const cols = computeColumns(viewport, sidebarPreference, panels.details)
+  const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
   const colsRef = useRef(cols)
   colsRef.current = cols
 
@@ -176,15 +185,10 @@ export function AppFrame({
         {/* Both column occupants stay at fixed tree positions from first
             paint — no loading gate: a bare status line reads worse than
             the shell's own pending rendering. The conversation
-            is session-maybe; the strict details entry renders empty while
-            no session is current, so the StarHub tool workspace (a
-            session-maybe seat) takes over the column in that state. */}
+            is session-maybe; the strict details entry naturally renders
+            empty while no session is current. */}
         <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
-        <DetailsColumn>
-          {detailsSession === undefined
-            ? renderSlot('workspace', {})
-            : renderSlot('details', {})}
-        </DetailsColumn>
+        <DetailsColumn>{renderSlot('details', {})}</DetailsColumn>
       </>
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}

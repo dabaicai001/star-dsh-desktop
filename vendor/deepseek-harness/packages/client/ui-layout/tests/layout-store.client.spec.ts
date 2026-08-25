@@ -85,16 +85,6 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().details).toBe(0)
   })
 
-  it('toggleDetails flips closed → default and open → closed', () => {
-    const { store, actions } = createLayoutStore().create()
-    actions.toggleDetails()
-    expect(store.getSnapshot().details).toBe(DETAILS_DEFAULT)
-    actions.toggleDetails()
-    expect(store.getSnapshot().details).toBe(0)
-    actions.toggleDetails()
-    expect(store.getSnapshot().details).toBe(DETAILS_DEFAULT)
-  })
-
   it('does not persist panel geometry', () => {
     const first = createLayoutStore().create()
     first.actions.setSidebar(400)

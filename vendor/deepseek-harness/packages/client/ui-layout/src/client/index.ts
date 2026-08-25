@@ -66,25 +66,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * inside it — registering here replaces the column and takes that seat
      * with it. Absent an occupant the column renders nothing.
      *
-     * Session scope: the panel inspects the CURRENT session's tool calls
-     * through the shared chat store, and the store handle pins to one scope
-     * (session), so the column cannot become session-maybe. While no session
-     * is current the frame renders the `workspace` seat in this column
-     * instead, so the StarHub tool workspace stays reachable without a
-     * session (Path B Phase 0 Step 2).
-     *
      * No owner props: the framework injects the session id and hooks for the
      * `session` scope, and `ctx.layout` owns whether the column is open.
      */
     'details': { kind: 'single'; scope: 'session'; owner: DetailsOwnerProps }
-    /**
-     * The StarHub tool workspace (Path B Phase 0 Step 2, plan option B): a
-     * session-maybe seat rendered in the details column while no session is
-     * current, so in-shell tools stay reachable with no conversation. StarHub
-     * registers its workspace component here; with a current session the
-     * `details` seat owns the column instead.
-     */
-    'workspace': { kind: 'single'; scope: 'session-maybe'; owner: DetailsOwnerProps }
     /**
      * Frame-wide floating layer, above every column and outside their scroll
      * containers. Deliberately generic and unowned by any feature: a badge, a
@@ -138,8 +123,6 @@ export function apply(ctx: ClientContext): void {
         'sidebar': { kind: 'single', scope: 'root' },
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
-        // Path B Phase 0 Step 2: the StarHub tool workspace (no-session column occupant).
-        'workspace': { kind: 'single', scope: 'session-maybe' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per

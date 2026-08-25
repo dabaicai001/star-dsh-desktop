@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { PassThrough, Writable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as agentCore from '@deepseek-ai/dsh-agent-spine-demo'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as jsonrpc from '../src/index.ts'
@@ -57,12 +58,17 @@ async function settle(): Promise<void> {
 /** Mount the real plugin on a minimal harness with in-memory stdio and exit. */
 async function mountPlugin(
   storageDir: string,
-  options: { writeDelayMs?: number; failFlush?: boolean } = {},
+  options: {
+    writeDelayMs?: number
+    failFlush?: boolean
+    beforeServer?: (ctx: Context) => Promise<void> | void
+  } = {},
 ): Promise<ApplyHarness> {
   const ctx = new Context()
   await ctx.plugin(agentCore, { workspaceContext: false })
   await ctx.plugin(JsonlSessionPersistence, { root: storageDir })
   await new Promise(resolve => setTimeout(resolve, 50))
+  await options.beforeServer?.(ctx)
 
   const input = new PassThrough()
   const events: WireEvent[] = []
@@ -165,6 +171,58 @@ describe('dsh-sdk-jsonrpc-server plugin apply', () => {
       })
       expect(harness.exits()).toEqual([])
     } finally {
+      await harness.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not answer initialize until async sibling Loader entries settle', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-apply-readiness-'))
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
+    let markStarted!: () => void
+    let release!: () => void
+    const started = new Promise<void>((resolve) => { markStarted = resolve })
+    const ready = new Promise<void>((resolve) => { release = resolve })
+    let delayedEntry: Promise<string> | undefined
+    const harness = await mountPlugin(storageDir, {
+      beforeServer: async (ctx) => {
+        await ctx.plugin(Loader)
+        ctx.loader.builtins['delayed-readiness'] = {
+          async apply() {
+            markStarted()
+            await ready
+          },
+        }
+        delayedEntry = ctx.loader.create({ name: 'cordis:delayed-readiness' })
+        await started
+      },
+    })
+    try {
+      const initialize = {
+        jsonrpc: '2.0',
+        id: 'init-delayed',
+        method: 'initialize',
+        params: { cwd: storageDir, provider: 'deepseek-official', model: 'apply-model' },
+      }
+      const probe = { jsonrpc: '2.0', id: 'probe-during-delay', method: 'nope/unknown' }
+      harness.sendRaw(`${JSON.stringify(initialize)}\n${JSON.stringify(probe)}\n`)
+
+      // The transport processes independent requests concurrently. Receiving
+      // this later probe proves the preceding initialize handler has reached
+      // its Loader wait, without relying on a scheduler delay.
+      await harness.waitForFrame(frame => frame.id === 'probe-during-delay', 'probe while initialize waits')
+      expect(harness.frames().some(frame => frame.id === 'init-delayed')).toBe(false)
+
+      release()
+      await delayedEntry
+      const response = await harness.waitForFrame(frame => frame.id === 'init-delayed', 'initialize response after Loader settlement')
+      expect(response).toMatchObject({
+        id: 'init-delayed',
+        result: { serverInfo: { name: 'deepseek-harness-sdk-runtime' } },
+      })
+    } finally {
+      release()
+      await Promise.allSettled(delayedEntry === undefined ? [] : [delayedEntry])
       await harness.dispose()
       await rm(storageDir, { recursive: true, force: true })
     }
@@ -297,59 +355,6 @@ describe('dsh-sdk-jsonrpc-server plugin apply', () => {
       await settle()
       expect(harness.frames().length).toBe(before)
       expect(harness.exits()).toEqual([])
-    } finally {
-      await harness.dispose()
-      await rm(storageDir, { recursive: true, force: true })
-    }
-  })
-
-  it('exposes sdk-notifications and dispatches inbound notification frames to subscribers', async () => {
-    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-apply-notification-'))
-    const harness = await mountPlugin(storageDir)
-    try {
-      const notifications = harness.ctx.get('sdk-notifications') as {
-        subscribe(method: string, handler: (params: unknown) => void): () => void
-      } | undefined
-      expect(notifications).toBeDefined()
-
-      const received: unknown[] = []
-      const dispose = notifications?.subscribe('starhub/registry.sync', (params) => { received.push(params) })
-      const params = { sessions: [{ assetId: 'a1', sessionId: 's1', kind: 'ssh', attachedBy: ['shell'] }] }
-      harness.send({ jsonrpc: '2.0', method: 'starhub/registry.sync', params })
-
-      await waitFor(() => received.length > 0 ? received[0] : undefined, 'registry.sync delivery')
-      expect(received[0]).toEqual(params)
-      dispose?.()
-
-      // After the disposer, the same frame reaches nobody (silent drop).
-      const before = received.length
-      harness.send({ jsonrpc: '2.0', method: 'starhub/registry.sync', params })
-      await settle()
-      expect(received.length).toBe(before)
-    } finally {
-      await harness.dispose()
-      await rm(storageDir, { recursive: true, force: true })
-    }
-  })
-
-  it('isolates a throwing notification subscriber without breaking the read loop', async () => {
-    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-apply-notification-throw-'))
-    const harness = await mountPlugin(storageDir)
-    try {
-      const notifications = harness.ctx.get('sdk-notifications') as {
-        subscribe(method: string, handler: (params: unknown) => void): () => void
-      } | undefined
-      notifications?.subscribe('starhub/domain.event', () => { throw new Error('subscriber exploded') })
-
-      harness.send({ jsonrpc: '2.0', method: 'starhub/domain.event', params: { kind: 'ssh.exec_completed' } })
-      // The throwing subscriber must not surface as an error frame or kill the loop.
-      await settle()
-
-      harness.send({ jsonrpc: '2.0', id: 'after-notification', method: 'initialize', params: { cwd: storageDir, provider: 'deepseek-official', model: 'post-throw-model' } })
-      const response = await harness.waitForFrame(frame => frame.id === 'after-notification', 'request after throwing notification')
-      expect(response.result).toEqual({ serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } })
-      // No error frames were written for the dropped notification.
-      expect(harness.frames().filter(frame => frame.error !== undefined)).toEqual([])
     } finally {
       await harness.dispose()
       await rm(storageDir, { recursive: true, force: true })

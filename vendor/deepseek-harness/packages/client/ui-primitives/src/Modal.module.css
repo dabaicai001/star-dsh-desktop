@@ -32,20 +32,12 @@
   border-radius: 24px;
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv3);
-  /* Elevated surface: rebind the scrollbar indirection to the l2 pair so the
-     scrollable body (fixed-height dialogs) skins its bar correctly. */
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .content {
   display: flex;
   flex-direction: column;
   width: 100%;
-  /* Grow when the owner className pins a dialog height (file viewer and
-     similar); a no-op on auto-height dialogs. */
-  flex: 1;
-  min-height: 0;
 }
 
 /* Header row (figma Title row): pad l24/t22/r14/b12, SPACE_BETWEEN —
@@ -100,11 +92,6 @@
   min-width: 0;
   margin-top: 20px;
   padding: 0 24px;
-  /* Stretch + scroll inside fixed-height dialogs; auto-height dialogs are
-     unaffected because the dialog box itself sizes to content. */
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
 }
 
 .footer {

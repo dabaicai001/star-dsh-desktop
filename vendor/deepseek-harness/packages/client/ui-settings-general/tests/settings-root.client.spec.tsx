@@ -7,7 +7,7 @@ import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 
 afterEach(cleanup)
 
-type Row = { id: string; order: number; label: string; group?: string; groupLabel?: string }
+type Row = { id: string; order: number; label: string }
 type Step = { id: string; order: number }
 
 /** Slot-content stand-ins: the shell renders whatever the seats contribute. */
@@ -265,59 +265,5 @@ describe('SettingsPanel navigation', () => {
     expect(listeners.size).toBe(1)
     view.unmount()
     expect(listeners.size).toBe(0)
-  })
-})
-
-describe('SettingsPanel grouped navigation', () => {
-  const GROUPED_ROWS: Row[] = [
-    { id: 'general', order: 0, label: 'General' },
-    { id: 'starhub-ai', order: 30, label: 'AI 助手', group: 'starhub', groupLabel: 'StarHub' },
-    { id: 'starhub-plugins', order: 31, label: '插件', group: 'starhub' },
-  ]
-
-  it('renders grouped rows under a collapsible header using the group label', () => {
-    mount({ rows: GROUPED_ROWS })
-    openPanel()
-    const header = screen.getByRole('button', { name: 'StarHub' })
-    expect(header.getAttribute('aria-expanded')).toBe('true') // 默认展开
-    expect(screen.getByRole('button', { name: 'AI 助手' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '插件' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'General' })).toBeTruthy() // 平铺行保留
-  })
-
-  it('collapses and re-expands a group, keeping the active section rendered', () => {
-    mount({ rows: GROUPED_ROWS })
-    openPanel()
-    fireEvent.click(screen.getByRole('button', { name: 'AI 助手' }))
-    expect(screen.getByTestId('section-starhub-ai')).toBeTruthy()
-    const header = screen.getByRole('button', { name: 'StarHub' })
-    fireEvent.click(header) // 折叠
-    expect(screen.queryByRole('button', { name: 'AI 助手' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '插件' })).toBeNull()
-    expect(screen.getByTestId('section-starhub-ai')).toBeTruthy() // 内容区保留当前项
-    expect(screen.getByRole('button', { name: 'StarHub' }).getAttribute('aria-expanded')).toBe('false')
-    fireEvent.click(screen.getByRole('button', { name: 'StarHub' })) // 再展开
-    expect(screen.getByRole('button', { name: 'AI 助手' })).toBeTruthy()
-  })
-
-  it('falls back to the group key and orders groups by their minimum member order', () => {
-    mount({
-      rows: [
-        { id: 'a2', order: 31, label: 'A2', group: 'g1' },
-        { id: 'a1', order: 30, label: 'A1', group: 'g1' },
-        { id: 'general', order: 0, label: 'General' },
-        { id: 'b1', order: 32, label: 'B1', group: 'g2', groupLabel: 'G2' },
-      ],
-    })
-    openPanel()
-    expect(screen.getByRole('button', { name: 'g1' })).toBeTruthy() // 无 groupLabel → 用 group key
-    expect(screen.getByRole('button', { name: 'G2' })).toBeTruthy()
-    const labels = Array.from(screen.getByRole('navigation').querySelectorAll('button'))
-      .map(b => b.textContent)
-      .filter((text): text is string => text !== null && text.length > 0)
-    // 组内按 order 排序
-    expect(labels.indexOf('A1')).toBeLessThan(labels.indexOf('A2'))
-    // 组头顺序 = 组内最小 order(30 < 32)
-    expect(labels.indexOf('A1')).toBeLessThan(labels.indexOf('B1'))
   })
 })

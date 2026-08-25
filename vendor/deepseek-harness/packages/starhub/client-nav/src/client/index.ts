@@ -28,25 +28,26 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: the connection service merge (ctx.get('connection') typing).
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { ISessions, IWorkspaces } from '@deepseek-ai/dsh-client-runtime/client'
-import type { IConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createStarHubAssetSource } from './asset-source.ts'
 import { createStarhubFileSource } from './file-source.ts'
 import { createAskAiHandler, createOpenAssetHandler, subscribeHostEvents } from './host-events.ts'
 import {
-  createAiChatOverlay, createConnectionManagerOverlay, createStarHubAssets, createStarHubNavStore, createToolSelectionBridge,
+  createAiChatOverlay, createConnectionManagerOverlay, createStarHubAssets, createToolSelectionBridge,
+  createToolsPanelOverlay,
 } from './store.ts'
 import { createFileViewerBridge } from './file-viewer/state.ts'
 import { FileViewerOverlay } from './file-viewer/FileViewerOverlay.tsx'
 import { MfaPromptCard } from './mfa/MfaPromptCard.tsx'
 import { BastionSelectCard } from './bastion/BastionSelectCard.tsx'
-import type { StarHubFileViewerFace } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { FileViewTarget } from './file-viewer/state.ts'
 import { assetWindowUrl, type StarHubAsset } from './sections.ts'
 import { focusWindowByKey, openNewPage, tauriInvoke } from './tauri.ts'
 import { ScreenshotButton } from './screenshot/ScreenshotButton.tsx'
-import { StarHubNav } from './StarHubNav.tsx'
 import { StarHubOverlay } from './StarHubOverlay.tsx'
+import { StarHubFooterButton } from './StarHubFooterButton.tsx'
 import { GitBranchPill } from './git/GitBranchPill.tsx'
 import { FileTreeButton } from './file-tree/FileTreeButton.tsx'
 import { createFileTreeBridge } from './file-tree/state.ts'
@@ -78,11 +79,12 @@ export const inject = ['slots', 'layout', 'connection', 'inputTriggers', 'sessio
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
-  const navStore = createStarHubNavStore()
   const assets = createStarHubAssets()
   const selection = createToolSelectionBridge()
   const connectionManager = createConnectionManagerOverlay()
   const aiChat = createAiChatOverlay()
+  // 工具面板(侧栏底部入口 → shell.overlay):footer 按钮写 open,overlay 席位读渲染。
+  const toolsPanel = createToolsPanelOverlay()
   // 壳内文件查看窗(2026-08-21):viewFile 回调经 starhubFileViewer 服务写入,
   // shell.overlay 席位渲染;服务面类型定义在 ui-conversation contract。
   const fileViewer = createFileViewerBridge()
@@ -91,7 +93,7 @@ export function apply(ctx: Context): void {
   const fileTree = createFileTreeBridge()
   ctx.provide('starhubFileViewer', {
     open: (target) => { fileViewer.open(target) },
-  } satisfies StarHubFileViewerFace)
+  } satisfies { open: (target: FileViewTarget) => void })
   // 服务面:注入数组已声明依赖,读取必然非空;conversation 在预填时退化处理。
   const connection = ctx.get('connection') as ConnectionHandle
   // 「启用长期记忆」初始同步:host 侧 memory-context 插件的 namespace 未写过
@@ -101,7 +103,7 @@ export function apply(ctx: Context): void {
   const sessions = ctx.get('sessions') as ISessions
   const workspaces = ctx.get('workspaces') as IWorkspaces
   // inject 声明了 required 'conversation',加载后必然存在(cordis ctx.get 返回可空)。
-  const conversation = ctx.get('conversation') as IConversation
+  const conversation = ctx.get('conversation') as unknown as ConversationController
   // StarHub 工作台的历史令牌(--dsw-accent / --dsw-font-mono / --dsw-shadow-popover
   // 等)不在 dsh 令牌表内:经主题覆盖层注入,深浅色各一值,presenter 写到 body
   // 内联样式;独立 React 窗口无插件树,同值声明在 window-shell.css。
@@ -128,33 +130,16 @@ export function apply(ctx: Context): void {
       // 开窗失败(如 IPC 未授权)打日志,不阻断主壳交互
       .catch((e: unknown) => { console.error('打开资产页面失败:', e) })
   }
-  ctx.slots.inject('sidebar.navigation', () => ctx.slots.register({
-    name: 'sidebar.navigation',
-    id: 'starhub-nav',
-    order: 20,
-    label: 'StarHub',
-    store: navStore,
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action',
+    id: 'starhub-tools',
+    order: 10,
+    label: 'StarHub 工具',
     inject: () => ({
-      // 子类点击:切到不同子类只换内容、保证右侧工作区列打开;重复点击
-      // 当前子类才 toggle 收起(修:切子类误收起右侧栏)。
-      selectSubcategory: (key: string) => {
-        const same = selection.source.getSnapshot().subcategory === key
-        selection.selectSubcategory(key)
-        // 文件树打开时点任意子类:先切回该子类的资产列表(头部「文件树」与
-        // 侧栏子类互斥——点哪个哪个在上面,避免文件树一直压住资产列表),
-        // 再按「切换子类 vs 重复点击同一子类」决定右侧栏开合。
-        if (fileTree.source.getSnapshot().open) {
-          fileTree.close()
-          ctx.layout.openDetails()
-        } else if (same) {
-          ctx.layout.toggleDetails()
-        } else {
-          ctx.layout.openDetails()
-        }
-      },
-      hooks: { selection: selection.source },
+      // 打开工具面板(shell.overlay 席位承载的 StarHubToolWorkspace)。
+      openTools: () =>{  toolsPanel.open() },
     }),
-  }, StarHubNav))
+  }, StarHubFooterButton))
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
     id: 'starhub-overlay',
@@ -206,33 +191,27 @@ export function apply(ctx: Context): void {
     openAsset: openAssetPage,
     refreshAssets: assets.refresh,
     openConnectionManager: connectionManager.open,
-    // 右侧栏「AI 助手」:打开壳内 AI 聊天面板(shell.overlay 承载)。
+    // 面板内「AI 助手」:打开壳内 AI 聊天面板(shell.overlay 承载)。
     openAiAssistant: () =>{  aiChat.open() },
-    // 文件树视图:头部按钮打开后,工作区列切为目录树;「返回资产列表」关闭。
-    closeFileTree: fileTree.close,
-    // 文件树右键「引用文件/文件夹」:把 `@名称 (路径)` 追加进当前会话对话框。
-    insertFileReference: (text: string) => {
-      const current = sessions.list.getSnapshot().current
-      if (current === undefined) return
-      const binding = sessions.binding(current)
-      if (binding === undefined) return
-      const input = conversation.input.for(binding.ctx)
-      input.setDraft(input.state.getSnapshot().draft + text)
-    },
+    // 关闭工具面板(footer 入口再点或面板右上角 ×)。
+    closeTools: () =>{  toolsPanel.close() },
+    // 选中一个子类:写入选择桥,面板展开该子类的资产列表。
+    selectSubcategory: (key: string) => { selection.selectSubcategory(key) },
     hooks: {
       selection: selection.source,
       assets: assets.source,
       fileTree: fileTree.source,
+      toolsPanel: toolsPanel.source,
     },
   })
-  // 两座工作区席位都不声明注册侧 store:session-maybe 无会话分支不下发
-  // useStore,资产/选择状态全部由上面的 hooks 舱位供给。
-  ctx.slots.inject('workspace', () => ctx.slots.register({
-    name: 'workspace',
-    inject: workspaceInject,
-  }, StarHubToolWorkspace))
-  ctx.slots.inject('details.workspace', () => ctx.slots.register({
-    name: 'details.workspace',
+  // 工具面板(rc.2 适配):`workspace`/`details.workspace` 槽在 rc.2 已不存在,
+  // 改挂 shell.overlay,由侧栏底部「工具」入口(footer.action → toolsPanel 桥)开。
+  // shell.overlay 是 list 槽、root scope:不开注册侧 store,全部经 hooks 舱位下发。
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'starhub-tools-panel',
+    order: 105,
+    label: 'StarHub 工具面板',
     inject: workspaceInject,
   }, StarHubToolWorkspace))
   // 契约 §6.1:`@` 资产 source(ui-input-trigger 流水线);pick 轻绑定上下文,
@@ -281,7 +260,24 @@ export function apply(ctx: Context): void {
     order: 10,
     label: 'StarHub 截图',
     inject: () => ({
-      createDraftImages: (files: readonly File[]) => conversation.createDraftImages(files),
+      // rc.2 附件管线:createDraftImages 注册 draft → input shell addImages 挂进输入。
+      // 无当前会话(session-maybe 空态)时 shell 不存在,addImages 置 undefined(按钮仍可截图,
+      // 结果无处挂载时静默丢弃)。
+      addImages: (files: readonly File[]): string | null => {
+        const current = sessions.list.getSnapshot().current
+        if (current === undefined) return null
+        const binding = sessions.binding(current)
+        if (binding === undefined) return null
+        try {
+          const images = conversation.createDraftImages(files)
+          if (!conversation.input.for(binding.ctx).addImages(images.map(image => image.id))) {
+            conversation.releaseDraftImages(images)
+          }
+          return null
+        } catch (error: unknown) {
+          return error instanceof Error ? error.message : String(error)
+        }
+      },
       startRegion: () => tauriInvoke<void>('screenshot_begin_region'),
     }),
   }, ScreenshotButton))
@@ -301,11 +297,10 @@ export function apply(ctx: Context): void {
       conversation,
     }),
   }), 'starhub: tauri host events')
-  // 设置融入底部设置齿轮:dsh 设置面板侧栏的 StarHub 可展开分组(点击
-  // 分组头展开/收起,点子项右侧直渲对应 tab——两列,无内部嵌套列)。
-  // group='starhub' 由 ui-settings-general 的 SettingsRoot 渲染为折叠分组;
-  // 5 个子 section 分别直渲 AI/插件/审计/告警/关于。order 30 起排在
-  // 通用(0)/模型(10)/插件(15)/Agent 预设(20)之后。
+  // 设置融入底部设置齿轮:dsh 设置面板侧栏的 StarHub 分区(平铺,rc.2 上游
+  // SettingsSectionRow 只支持 id/order/label,无分组字段——5 个 tab 直接
+  // 以平铺 section 呈现;order 30 起排在通用(0)/模型(10)/插件(15)/
+  // Agent 预设(20)之后)。
   const starhubTabs: ReadonlyArray<{
     id: string
     order: number
@@ -324,8 +319,6 @@ export function apply(ctx: Context): void {
       id: tab.id,
       order: tab.order,
       label: tab.label,
-      group: 'starhub',
-      groupLabel: 'StarHub',
     }, tab.component))
   }
 }

@@ -14,10 +14,8 @@ import type { Readable, Writable } from 'node:stream'
 import Schema from '@deepseek-ai/schemastery'
 import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
 import { HarnessSdkJsonRpcServer } from './server.ts'
-import { SdkNotificationDispatcher } from './notifications.ts'
 
 export * from './server.ts'
-export * from './notifications.ts'
 
 export const name = 'sdk-jsonrpc-server'
 // Only the agent factory is required; initialize reads the optional LLM seam with ctx.get().
@@ -59,19 +57,6 @@ export function apply(ctx: Context, config: JsonRpcConfig): void {
   const exit = config.exit ?? ((code: number): void => { process.exit(code) })
 
   const transport = new JsonRpcLineTransport(input, output)
-  // StarHub 本地补丁(P1-4,不在上游):把 stdio transport 以可选服务形式
-  // 暴露给同组合内的 starhub-tools 插件,使工具执行可经 SDK 双向 request
-  // (server→client,方法 starhub/tool.execute)桥回宿主进程。该服务名不走
-  // Context 接口声明合并(宿主私有协议),消费方用 ctx.get('sdk-transport')
-  // 读取并自行窄化;provide 的生命周期跟随本插件 fiber,卸载即摘除。
-  ctx.provide('sdk-transport', transport)
-  // StarHub 本地补丁(联动契约 §0/§2.1,不在上游):把入站 notification(无 id
-  // 帧)按 method 名多路分发给订阅插件,以 `sdk-notifications` 可选服务暴露
-  // (subscribe(method, handler) => disposer)。与 sdk-transport 同为宿主私有
-  // 服务,不走 Context 接口声明合并,消费方 ctx.get 后自行窄化;未订阅的
-  // 方法静默忽略,订阅者异常被隔离,均不打断 transport 的读循环。
-  const notifications = new SdkNotificationDispatcher()
-  ctx.provide('sdk-notifications', notifications)
   const server = new HarnessSdkJsonRpcServer(ctx, transport, {
     maxTokensAsSuccess: resolvedConfig.maxTokensAsSuccess,
   })
@@ -89,16 +74,18 @@ export function apply(ctx: Context, config: JsonRpcConfig): void {
   }
 
   transport.onRequest(async (method, params) => {
+    // `initialize` is the SDK's readiness boundary. This plugin can activate
+    // before async sibling Loader entries (for example an MCP client's initial
+    // tool discovery), so do not advertise a ready runtime until the complete
+    // current tree has settled. A hand-built context without Loader remains
+    // immediately usable.
+    if (method === 'initialize') await ctx.get('loader')?.await()
     const result = await server.handleRequest(method, params)
     if (method === 'shutdown') {
       // Run after the handler result is written; the task then flushes, disposes, and exits.
       setImmediate(() => { void disposeAndExit() })
     }
     return result
-  })
-
-  transport.onNotification((method, params) => {
-    notifications.dispatch(method, params)
   })
 
   ctx.effect(() => {

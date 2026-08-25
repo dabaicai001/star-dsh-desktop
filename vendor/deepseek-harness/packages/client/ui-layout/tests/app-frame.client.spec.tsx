@@ -4,7 +4,7 @@
  * store instance (createLayoutStore().create() — the test-sanctioned engine
  * path), a recording renderSlot stub, and a render-prop SessionProvider stub
  * (the real one is framework-wired to the renderer host; its own behavior is
- * web-react's spec territory). Drag sequences (pointer capture + rAF flush),
+ * ui-renderer's spec territory). Drag sequences (pointer capture + rAF flush),
  * concession response to viewport change, and details staying mounted at
  * zero width are the preserved behavior assertions. jsdom has no layout
  * engine, so the frame width comes from a mocked getBoundingClientRect and
@@ -61,7 +61,6 @@ function mountFrame() {
     if (key === 'sidebar') return <div data-testid="sidebar-content" />
     if (key === 'conversation') return <div data-testid="center-content" />
     if (key === 'details') return <div data-testid="details-content" />
-    if (key === 'workspace') return <div data-testid="workspace-content" />
     if (key === 'conversation.empty') return <div data-testid="empty-content" />
     return <div data-testid="other-content" />
   }) as AppFrameProps['renderSlot']
@@ -173,32 +172,35 @@ describe('AppFrame', () => {
     expect(slotCalls.map(c => c.key)).toContain('details')
   })
 
-  it('keeps the details column open across session switches (workspace takes over without a session)', () => {
-    // Path B Phase 0 Step 2: the column stays at its preference while no
-    // session is current, and the workspace seat (StarHub tool surface)
-    // renders there instead of the session-scoped details panel.
-    const { frame, instance, rerenderFrame, getByTestId, queryByTestId } = mountFrame()
+  it('ignores unselected states and closes only when the Session id changes', () => {
+    const { frame, instance, rerenderFrame } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0])
 
     act(() => { instance.actions.openDetails() })
     expect(tracks(frame)).toEqual([280, 360])
-    expect(getByTestId('details-content')).toBeTruthy()
 
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })
+    expect(tracks(frame)).toEqual([280, 0])
+
+    act(() => { instance.actions.openDetails() })
+    selectedSession.current = 's-blank' as SessionId
+    selectedSessionBlank.current = true
+    act(() => { rerenderFrame() })
+    expect(tracks(frame)).toEqual([280, 0])
+    expect(instance.getSnapshot().details).toBe(360)
+
+    selectedSession.current = 's-next' as SessionId
+    selectedSessionBlank.current = false
+    act(() => { rerenderFrame() })
     expect(tracks(frame)).toEqual([280, 360])
 
-    // No current session: the workspace seat owns the column.
     selectedSession.current = undefined
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 360])
-    expect(getByTestId('workspace-content')).toBeTruthy()
-    expect(queryByTestId('details-content')).toBeNull()
-
+    expect(tracks(frame)).toEqual([280, 0])
     selectedSession.current = 's-test' as SessionId
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 360])
-    expect(getByTestId('details-content')).toBeTruthy()
+    expect(tracks(frame)).toEqual([280, 0])
   })
 
   it('keeps details closed when the first Session materializes', () => {

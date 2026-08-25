@@ -95,11 +95,6 @@ export interface ToolRowProps {
   /** Open the path with the host OS default application (already cwd-resolved). */
   onOpenFile?: ((path: string) => void) | undefined
   /**
-   * Open the path in the in-app viewer window (StarHub file viewer); takes
-   * precedence over onOpenFile when both are set.
-   */
-  onViewFile?: ((path: string) => void) | undefined
-  /**
    * Jump to this call in the trajectory view: a hover-revealed Inspect pill
    * over the expanded body. Absent = no affordance.
    */
@@ -149,7 +144,6 @@ export function ToolRow({
   state,
   filePath,
   onOpenFile,
-  onViewFile,
   inspect,
 }: ToolRowProps) {
   const [expanded, setExpanded] = useState(false)
@@ -176,16 +170,13 @@ export function ToolRow({
   // the call args has nothing left to sit beside.
   const suffix = failureLine === null ? summarySuffix ?? null : null
   // The failure line is error prose, not the path: no open-file affordance.
-  const fileLink = filePath !== undefined && (onViewFile ?? onOpenFile) !== undefined && failureLine === null
+  const fileLink = filePath !== undefined && onOpenFile !== undefined && failureLine === null
   const toggleExpand = () => {
     setExpanded(v => !v)
   }
   const openFile = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
-    if (filePath === undefined) return
-    // 壳内查看窗优先(StarHub file viewer);未接入时退回 OS 默认打开。
-    const open = onViewFile ?? onOpenFile
-    open?.(filePath)
+    if (filePath !== undefined) onOpenFile?.(filePath)
   }
   // Keep Enter/Space on the focused path link from bubbling to the row's
   // keydown handler, which would preventDefault() the key and toggle expand

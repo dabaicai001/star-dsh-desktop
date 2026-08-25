@@ -14,9 +14,7 @@ Status: implemented
 
 ## 决策
 
-**完成的一轮以它产出的文件收尾。** 该行是独立插件 `@deepseek-ai/dsh-client-ui-deliverables`，注册进 chat 视图在收尾消息正文与其 IconActions 之间渲染的 `conversation.chat.turnTail` 空位——ui-conversation 拥有空位与 owner 通货（节点、收尾 seq、`openFile`，后来还有 `viewFile`），插件拥有全部策略。`producedForClosing` 从改写工具自身的跟随文件词表读出路径——diff 卡片，或 `kind` 为 `edit` 的 generic 卡片（即 `str_replace_editor` 的 insert 所呈现的形状）——因此无论收尾消息是否点名，这一轮的产出都会被列出；新的改写工具靠声明自己做了什么加入，而不是靠被加进某张名单。read、删除与失败的调用不贡献任何条目；同一路径在一轮内按首见顺序只出现一次；累积在 turn 边界重置，因此一轮若先改写文件、随后没有正文内容就结束，不会溢进下一轮的行里。单行 lane 会测量 chip 和本地化剩余计数，再显示能放下的最大前缀（至多六个）及 `+ N 个文件`。cordis.yml 中的一行即可把该交互面组合进来或去掉；未注册的空位什么也不渲染。
-
-该行后来升级为完整改动文件清单（2026-08-22）。条目改从 diff 卡片自身的 `diffs` 派生（`locations` 兜底），因此每个条目带变化形状：新增还是修改（`oldText: null` 即新建/覆盖）以及按 hunk 文本估算的 +/- 行数，小编号直接显示在 chip 名称旁。剩余计数是按钮：点击打开贴右边缘的 drawer(2026-08-23 起;最初一版是在 lane 下方行内展开,被产品反馈否决),按新增/修改分组列出全部产物文件,每行一个文件带完整路径与行数——一轮改动很多文件时不再只剩放得下的前缀。**在文件夹中显示**操作随之移入 drawer 底栏,loopback + `canOpenPath` 门禁不变。chip 与 drawer 行同样优先走 chat 视图的 `viewFile`（壳内文件查看窗），`openFile` 兜底；见[文件查看窗 note](2026-08-21-starhub-file-viewer-overlay.md)。
+**完成的一轮以它产出的文件收尾。** 该行是独立插件 `@deepseek-ai/dsh-client-ui-deliverables`，注册进 chat 视图在收尾消息正文与其 IconActions 之间渲染的 `conversation.chat.turnTail` 空位——ui-conversation 拥有空位与 owner 通货（节点、收尾 seq、`openFile`），插件拥有全部策略。`producedForClosing` 从改写工具自身的跟随文件 `locations` 中读出路径——diff 卡片，或 `kind` 为 `edit` 的 generic 卡片（即 `str_replace_editor` 的 insert 所呈现的形状）——因此无论收尾消息是否点名，这一轮的产出都会被列出；新的改写工具靠声明自己做了什么加入，而不是靠被加进某张名单。read、删除与失败的调用不贡献任何条目；同一路径在一轮内按首见顺序只出现一次；累积在 turn 边界重置，因此一轮若先改写文件、随后没有正文内容就结束，不会溢进下一轮的行里。单行 lane 会测量 chip 和本地化剩余计数，再显示能放下的最大前缀（至多六个）及 `+ N 个文件`。cordis.yml 中的一行即可把该交互面组合进来或去掉；未注册的空位什么也不渲染。
 
 **路径链接读得出是链接。** 静止状态下就带下划线，而不只在悬停时。这是本次改动中更小的那一半，却是修复中更大的那一半。
 

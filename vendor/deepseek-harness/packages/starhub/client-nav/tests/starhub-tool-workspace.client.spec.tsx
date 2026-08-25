@@ -48,7 +48,8 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string } = {}) {
     openConnectionManager: vi.fn(),
     openAiAssistant: vi.fn(),
     closeFileTree: vi.fn(),
-    insertFileReference: vi.fn(),
+    closeTools: vi.fn(),
+    selectSubcategory: vi.fn(),
     useAssets,
     useSelection,
     useFileTree,
@@ -63,6 +64,7 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string } = {}) {
     useInput: (() => undefined) as never,
     inputActions: {} as never,
     useWorkspaces: (() => undefined) as never,
+    useToolsPanel: (() => undefined) as never,
   }
 }
 

@@ -27,8 +27,6 @@ export interface ILayout {
   openDetails(): void
   /** Close the details panel. */
   closeDetails(): void
-  /** Toggle the details panel (closed ⟷ contract default width). */
-  toggleDetails(): void
 }
 
 /** Cross-plugin panel-action face (ctx.layout). */
@@ -59,11 +57,6 @@ export class LayoutController implements ILayout {
   /** Close the details panel. */
   closeDetails(): void {
     this.#require().closeDetails()
-  }
-
-  /** Toggle the details panel (closed ⟷ contract default width). */
-  toggleDetails(): void {
-    this.#require().toggleDetails()
   }
 
   #require(): PanelActions {

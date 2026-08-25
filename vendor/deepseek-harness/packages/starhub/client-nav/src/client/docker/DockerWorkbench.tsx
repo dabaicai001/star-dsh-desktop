@@ -18,9 +18,9 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  IconChartOutline16, IconCloseOutline16, IconInspectOutline12, IconPaperclipOutline16,
-  IconPlayOutline16, IconRefreshOutline14, IconRestartOutline16, IconStopFill16,
-  IconTerminalOutline16, IconTrashOutline16,
+  IconCloseOutline16, IconCodeOutline16, IconDataOutline16, IconInspectOutline12, IconPaperclipOutline16,
+  IconPlayOutline16, IconRefreshOutline14, IconRefreshOutline16, IconStopFill16,
+  IconTrashOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RustAsset } from '../store.ts'
 import { tauriInvoke } from '../tauri.ts'
@@ -520,10 +520,10 @@ function ContainersView({
             <div className={css.rowActions}>
               <RowAction label="启动" disabled={c.state === 'running'} onClick={() =>{  onAction('start', c) }}><IconPlayOutline16 size={14} /></RowAction>
               <RowAction label="停止" disabled={c.state !== 'running'} onClick={() =>{  onAction('stop', c) }}><IconStopFill16 size={14} /></RowAction>
-              <RowAction label="重启" onClick={() =>{  onAction('restart', c) }}><IconRestartOutline16 size={14} /></RowAction>
-              <RowAction label="终端" onClick={() =>{  onExec(c) }}><IconTerminalOutline16 size={14} /></RowAction>
+              <RowAction label="重启" onClick={() =>{  onAction('restart', c) }}><IconRefreshOutline16 size={14} /></RowAction>
+              <RowAction label="终端" onClick={() =>{  onExec(c) }}><IconCodeOutline16 size={14} /></RowAction>
               <RowAction label="日志" onClick={() =>{  onOpenLogs(c) }}><IconInspectOutline12 size={14} /></RowAction>
-              <RowAction label="统计" onClick={() =>{   onToggleStats(c) }}><IconChartOutline16 size={14} /></RowAction>
+              <RowAction label="统计" onClick={() =>{   onToggleStats(c) }}><IconDataOutline16 size={14} /></RowAction>
               <RowAction label="删除" danger onClick={() =>{  onAction('remove', c) }}><IconTrashOutline16 size={14} /></RowAction>
             </div>
           </div>

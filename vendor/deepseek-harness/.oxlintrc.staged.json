@@ -11,6 +11,7 @@
     ".claude/**",
     "**/.doc-typecheck-*/**",
     "**/.node-next-types-*/**",
+    "website/.generated/**",
     "vendor/**",
     "native/**",
     "**/*.js",

@@ -10,10 +10,10 @@
  * sessions-derived empty-Hero fact is active. Visible dialog chrome belongs
  * to the step, so a mounted-but-deciding step paints nothing here.
  */
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  IconAgentPresetOutline16, IconChevronDownOutline14, IconCloseOutline16, IconDataOutline16,
+  IconAgentPresetOutline16, IconCloseOutline16, IconDataOutline16,
   IconPersonalizationOutline16, IconSettingsOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
@@ -25,36 +25,6 @@ function navIcon(id: string) {
   if (id === 'agent-presets') return <IconAgentPresetOutline16 className={css.navIcon} size={16} />
   if (id === 'plugins') return <IconPersonalizationOutline16 className={css.navIcon} size={16} />
   return <IconSettingsOutline16 className={css.navIcon} size={16} />
-}
-
-/** 导航条目:平铺行或可折叠分组(组内成员共享 group key)。 */
-type NavItem =
-  | { kind: 'row'; row: SettingsSectionRow }
-  | { kind: 'group'; key: string; label: string; rows: SettingsSectionRow[] }
-
-/** 把 ledger rows 投影为排序后的导航条目:无 group 平铺,有 group 聚合。
- *  分组头顺序 = 组内最小 order,组之间按该 order 与平铺行统一排序。 */
-function buildNavItems(rows: readonly SettingsSectionRow[]): NavItem[] {
-  const plain: NavItem[] = []
-  const byGroup = new Map<string, { label: string; order: number; rows: SettingsSectionRow[] }>()
-  for (const row of rows) {
-    if (row.group === undefined) {
-      plain.push({ kind: 'row', row })
-      continue
-    }
-    const entry = byGroup.get(row.group) ?? {
-      label: row.groupLabel ?? row.group, order: row.order, rows: [],
-    }
-    entry.rows.push(row)
-    entry.order = Math.min(entry.order, row.order)
-    byGroup.set(row.group, entry)
-  }
-  const groups: NavItem[] = Array.from(byGroup.entries()).map(([key, g]) => ({
-    kind: 'group', key, label: g.label,
-    rows: [...g.rows].sort((a, b) => a.order - b.order),
-  }))
-  const orderOf = (item: NavItem) => item.kind === 'row' ? item.row.order : (item.rows[0]?.order ?? 0)
-  return [...plain, ...groups].sort((a, b) => orderOf(a) - orderOf(b))
 }
 
 type PanelProps = {
@@ -75,17 +45,6 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
   // projection falls back to the first row when the id is gone.
   const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
   const titleId = useId()
-  // 分组折叠态(组件局部;默认展开)
-  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set())
-  const items = useMemo(() => buildNavItems(rows), [rows])
-  const toggleGroup = useCallback((key: string) => {
-    setCollapsedGroups((previous) => {
-      const next = new Set(previous)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }, [])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -106,43 +65,16 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
         <nav className={css.nav}>
           <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
           <div className={css.navList}>
-            {items.map(item => item.kind === 'group' ? (
-              <Fragment key={item.key}>
-                <button
-                  type="button"
-                  className={css.navGroup}
-                  aria-expanded={!collapsedGroups.has(item.key)}
-                  onClick={() => { toggleGroup(item.key) }}
-                >
-                  <IconChevronDownOutline14
-                    size={12}
-                    className={collapsedGroups.has(item.key) ? css.chevron : css.chevronOpen}
-                  />
-                  <span className={css.navGroupLabel}>{item.label}</span>
-                </button>
-                {!collapsedGroups.has(item.key) && item.rows.map(row => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    className={clsx(css.navCell, css.navSub, row.id === active && css.active)}
-                    aria-current={row.id === active ? 'true' : undefined}
-                    onClick={() => { onSelect(row.id) }}
-                  >
-                    {navIcon(row.id)}
-                    <span className={css.navLabel}>{row.label}</span>
-                  </button>
-                ))}
-              </Fragment>
-            ) : (
+            {rows.map(row => (
               <button
-                key={item.row.id}
+                key={row.id}
                 type="button"
-                className={clsx(css.navCell, item.row.id === active && css.active)}
-                aria-current={item.row.id === active ? 'true' : undefined}
-                onClick={() => { onSelect(item.row.id) }}
+                className={clsx(css.navCell, row.id === active && css.active)}
+                aria-current={row.id === active ? 'true' : undefined}
+                onClick={() => { onSelect(row.id) }}
               >
-                {navIcon(item.row.id)}
-                <span className={css.navLabel}>{item.row.label}</span>
+                {navIcon(row.id)}
+                <span className={css.navLabel}>{row.label}</span>
               </button>
             ))}
           </div>

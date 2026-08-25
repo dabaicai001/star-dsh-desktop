@@ -18,10 +18,6 @@ export interface SettingsSectionRow {
   id: string
   order: number
   label: string
-  /** Optional nav group key: rows sharing it render under one collapsible group header. */
-  group?: string
-  /** Group header display text (used when the group first appears). */
-  groupLabel?: string
 }
 
 /** One ordered onboarding step projected from a slot registration. */

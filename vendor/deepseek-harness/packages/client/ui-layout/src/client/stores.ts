@@ -33,7 +33,6 @@ type LayoutActions = {
   setNarrow: (draft: LayoutState, narrow: boolean) => void
   openDetails: (draft: LayoutState) => void
   closeDetails: (draft: LayoutState) => void
-  toggleDetails: (draft: LayoutState) => void
 }
 
 /**
@@ -67,8 +66,6 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       },
       openDetails: (d) => { if (d.details === 0) d.details = DETAILS_DEFAULT },
       closeDetails: (d) => { d.details = 0 },
-      // Toggle the details panel: closed → default width, open → closed.
-      toggleDetails: (d) => { d.details = d.details === 0 ? DETAILS_DEFAULT : 0 },
     },
   })
   return handle

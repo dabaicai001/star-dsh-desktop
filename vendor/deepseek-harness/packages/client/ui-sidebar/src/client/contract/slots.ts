@@ -16,11 +16,16 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
-     * Primary navigation actions pinned at the top of the main region, above
-     * the workspace/session browser. Declared by this package's 'sidebar'
-     * entry; each action receives only the column state.
+     * Brand mark rendered in the expanded brand row and collapsed rail.
+     * Declared by this package's `sidebar` entry; deployments may replace
+     * the shell's fish fallback without replacing the surrounding controls.
      */
-    'sidebar.navigation': { kind: 'list'; scope: 'root'; owner: SidebarNavigationOwnerProps }
+    'sidebar.brand.mark': { kind: 'single'; scope: 'root'; owner: SidebarBrandMarkOwnerProps }
+    /**
+     * Brand name rendered beside the expanded mark. Declared by this
+     * package's `sidebar` entry; the shell supplies a generic text fallback.
+     */
+    'sidebar.brand.name': { kind: 'single'; scope: 'root'; owner: SidebarBrandNameOwnerProps }
     /**
      * The workspace/session browsing region: section header, search, the
      * grouped/flat session list, and every workspace dialog. Declared by this
@@ -42,6 +47,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+/** Geometry supplied to the sidebar brand-mark occupant. */
+export interface SidebarBrandMarkOwnerProps {
+  /** Requested square edge in pixels. */
+  size: number
+}
+
+/** Empty owner share for the sidebar brand-name occupant. */
+export interface SidebarBrandNameOwnerProps {
+  /** Marker field: the occupant owns its own content and width. */
+  children?: never
+}
+
 /**
  * Owner share of the browser hole — the only facts crossing the shell/region
  * boundary. Business data and actions arrive through the region's own inject.
@@ -53,14 +70,8 @@ export interface SidebarSectionOwnerProps {
   expandSidebar: () => void
 }
 
-/** Owner share of an action pinned at the top of the sidebar main region. */
-export interface SidebarNavigationOwnerProps {
-  /** Whether the sidebar renders wide content (false = 56px rail). */
-  wide: boolean
-}
-
 /**
- * Owner share of the settings seat: the column display state the
+ * Owner share of the sidebar settings seat: the column display state the
  * occupant's trigger row must render against (wide row vs rail icon).
  */
 export interface SidebarSettingsOwnerProps {
@@ -97,5 +108,11 @@ export type SidebarRootInjected = {
  */
 export type SidebarRootComponentProps =
   PropsRuntime<'sidebar'>
-  & PropsRenderSlots<'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action' | 'sidebar.navigation'>
+  & PropsRenderSlots<
+    | 'sidebar.brand.mark'
+    | 'sidebar.brand.name'
+    | 'sidebar.workspaces'
+    | 'sidebar.settings'
+    | 'sidebar.footer.action'
+  >
   & SidebarRootInjected & PropsLocale<'sidebar'>

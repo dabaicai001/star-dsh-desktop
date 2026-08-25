@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionId, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { readLocalTextFile, writeLocalTextFile } from './file-service.ts'
 import { diffLines } from './diff-lines.ts'
-import type { FileViewTarget, FileViewerState } from './state.ts'
+import type { FileViewDiff, FileViewTarget, FileViewerState } from './state.ts'
 import css from './FileViewerOverlay.module.css'
 
 /** 注册注入面:查看窗 hooks 舱位 + 关闭回调。 */
@@ -169,7 +169,7 @@ export function FileViewerOverlay({ useSessions, useFileViewer, closeViewer }: F
         const latest = await readLocalTextFile(target.path)
         const applied = applyDiffs(
           latest.content,
-          target.diffs.map((d, i) => ({ oldText: d.oldText, newText: parts[i] ?? d.newText })),
+          target.diffs.map((d: FileViewDiff, i: number) => ({ oldText: d.oldText, newText: parts[i] ?? d.newText })),
         )
         await writeLocalTextFile(target.path, applied)
       }

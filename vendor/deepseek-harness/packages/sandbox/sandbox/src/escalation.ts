@@ -141,31 +141,6 @@ export interface EscalationRequest {
 }
 
 /**
- * The closed set of every mode a call could request — the ladder's rungs.
- * `WIDER_MODES` keys are the narrower rungs; `danger-full-access` has no key
- * because nothing is wider than it, but it is still a valid request target.
- */
-const SANDBOX_MODES: readonly SandboxMode[] = ['read-only', 'workspace-write', 'danger-full-access']
-
-/**
- * Whether one mode already grants at least what another requests — the inverse
- * of strict widening. A request whose target the effective mode already covers
- * is a redundant ask, not an escalation: the call runs at the effective mode
- * anyway, so granting costs nothing and the ask is satisfied without prompting
- * anyone. Only closed-vocabulary targets are judged; an unknown mode stays a
- * hard refusal (fail-closed).
- * @param effective - the call's standing mode.
- * @param requested - the mode the call requested.
- * @returns whether the requested mode is a known rung the effective mode already grants.
- */
-function modeCovers(effective: SandboxMode, requested: string): boolean {
-  if (!SANDBOX_MODES.includes(requested as SandboxMode)) return false
-  if (requested === effective) return true
-  if (effective === 'danger-full-access') return true
-  return (WIDER_MODES[requested as SandboxMode] ?? []).includes(effective)
-}
-
-/**
  * Resolve a sandbox-escalation request BEFORE anything executes: check strict
  * widening against the call's effective mode, then resolve the approval
  * channel, then map every outcome — the ordered fail-closed sequence both
@@ -185,13 +160,6 @@ export async function approveEscalation<A, C>(request: EscalationRequest, approv
   // deliberately not a schema constraint (the enum is the closed target
   // vocabulary; the effective mode is per-call truth).
   if (!(WIDER_MODES[effectiveMode] ?? []).includes(mode as SandboxMode)) {
-    // A request the effective mode already covers is redundant, not hostile:
-    // the call runs at the effective mode regardless, so the ask is satisfied
-    // as-is without prompting anyone. Only a target the effective mode does
-    // NOT grant (an unknown or narrower-than-current-though-uncovered mode)
-    // is refused. This keeps weaker models that echo `sandbox_permissions`
-    // from a full-access session failing on every call.
-    if (modeCovers(effectiveMode, mode)) return effectiveMode
     throw new Error(`sandbox escalation to "${mode}" is not strictly wider than this call's current "${effectiveMode}" mode`)
   }
   if (approval.approver === undefined) {

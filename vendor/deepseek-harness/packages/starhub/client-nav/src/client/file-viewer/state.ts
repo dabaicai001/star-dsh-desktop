@@ -5,7 +5,19 @@
  * (one-handle-one-scope,同 connectionManager / aiChat)。
  */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { FileViewRequest } from '@deepseek-ai/dsh-client-ui-conversation/client'
+
+/** 一次 before/after 变更 hunk(edit 查看请求用)。 */
+export interface FileViewDiff {
+  /** 变更前文本(null oldText 的纯新增由调用方归一化掉)。 */
+  readonly oldText: string
+  /** 变更后文本。 */
+  readonly newText: string
+}
+
+/** 壳内文件查看请求:`read` 看当前内容,`edit` 看前后 hunk 对比。 */
+export type FileViewRequest =
+  | { readonly kind: 'read'; readonly path: string }
+  | { readonly kind: 'edit'; readonly path: string; readonly diffs: readonly FileViewDiff[] }
 
 /** 查看窗打开目标:查看请求 + 来源会话 id(据此门禁「AI 运行中只能查看」)。 */
 export type FileViewTarget = FileViewRequest & { readonly sessionId: string }
