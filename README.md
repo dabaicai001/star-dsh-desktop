@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.96.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.96.3-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,19 +148,16 @@
 
 ## 当前版本
 
+### v0.96.3 (2026-08-25)
+- 🔧 GitHub 仓库更名为 `star-dsh-desktop`:`git remote`、README 下载/克隆链接、CHANGELOG 仓库地址、AGENTS.md 仓库信息、关于页 GitHub 链接、Tauri Updater 端点全部切换至新仓库名(旧地址仅剩 GitHub 自动重定向)。
+- 🔧 DSH 内核升级到上游 v0.1.1-rc.2 的适配收尾:补回 `tsconfig.base.json` 缺失的 `dsh-client-web-react` 与 10 个 `dsh-starhub-*` 显式 paths 映射(修复测试把包解析到 node_modules lib 的连锁失败)、补回 `web/tsconfig.json` 丢失的 5 个 project references、恢复 `loader-status.ts` 升级时丢失的 `KernelSignal`/`createSignal`/`createLoaderStatusStore` 实现(修复 client typecheck 6 个错误)、修正 2 个此前从未真正运行的测试断言。回归:host typecheck / client typecheck 双零错误,host 单测 145 过、client-nav 857 过、Rust 164 过。已知限制:tsdown 全量构建需 Node `^22.19||>=24`(本机 22.14 下不可用),lib/ 产物被 .gitignore 忽略,换环境需重跑 tsc + `emit-typert-remotes.mjs`(详见 docs/DSH升级交接说明.md)。
+
 ### v0.96.1 (2026-08-25)
 - 🐛 AI `@` 直连堡垒机(如阿里云 BastionHost 公网入口,host 即堡垒机、未配跳板机)在验证码通过后报错:堡垒机 pty 判定 `is_bastion()` 原先强制要求 `jump_host`,直连堡垒机 + kb-interactive MFA 资产被漏判,AI exec 走普通通道被服务端拒绝(Channel send error)。改为只认 kb-interactive 启用,直连与跳板两种形态都走「带 pty 选机器」路径;菜单为空(普通 MFA 服务器无选机器菜单)时跳过选机器直接执行命令。
 - 🔧 移除 `linux-legacy-2204.yml`(Ubuntu 22.04 / glibc 2.35 无截图兼容版构建),后续 Release 不再附 `-ubuntu2204` 包。
 
 ### v0.96.0 (2026-08-25)
 - ✨ 🎉 Ubuntu 22.04 / glibc 2.35 兼容版：截图栈 `xcap → pipewire/libspa 0.10.1` 需系统 PipeWire ≥ 1.0，把 Linux 构建基线抬到 `ubuntu-24.04`(glibc 2.39)后旧系统装不了。为回归旧系统兼容，把 Rust 截图功能整体 gate 到新的 `screenshot` Cargo 特性（默认开启，保留主版本截图），并新增 `linux-legacy-2204.yml` 用 `ubuntu-22.04` runner 以 `--no-default-features` 构建**无截图**的 glibc 2.35 兼容 DEB/RPM（文件名带 `-ubuntu2204` 后缀，随 tag 附到同一 Release）。代价：内置 AI「区域截图」在兼容版不可用，前端按钮点击给出友好提示（命令未注册归并为「当前版本未编译截图功能」）。
-
-### v0.95.5 (2026-08-25)
-- 🐛 新机首次安装启动窗口无响应、报「dsh 没有在运行」、第二次才正常:setup 里 `block_on` 阻塞主线程跑完 db+sidecar+dsh web 启动(冷启动可能超 30s 就绪上限),期间窗口消息循环停摆 → 「无响应」;dsh web 超时被杀后 `dsh_web_url` 只读状态不重启 → 卡死在跳板页「dsh web 未运行」需手动重开应用。修复:① setup 改用 `async_runtime::spawn` 后台拉起,窗口立即响应;② `dsh_web_url` 改调幂等 `ensure_started`,跳板页轮询在首启失败后自动重启自愈,无需重开;③ 就绪超时 30s→60s 留足首启冷启动余量。
-
-### v0.95.4 (2026-08-24)
-- 🐛 区域截图向右/右上斜拖拽经常「断触」、只截出一小块:遮罩页拖拽改为 Pointer Events + `setPointerCapture`(align 踩坑记录 #10)并补 `touch-action: none`——指针划过右上角 ✕ 按钮/工具栏或离开窗口时选区不再中途冻结,触屏下 WebView 不再把手势当滚动/平移而中断拖拽;删除 `mouseleave` 即结束拖拽的脆弱路径。
-- 🐛 选区几何经 8 方向穷举模拟验证方向对称,方向差异全部来自事件投递层(无 pointer capture + `mouseleave` 结束拖拽)。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

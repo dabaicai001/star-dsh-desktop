@@ -21,10 +21,22 @@
       "path": "../ui-slots"
     },
     {
+      "path": "../ui-attachment"
+    },
+    {
       "path": "../ui-primitives"
     },
     {
+      "path": "../schema-form"
+    },
+    {
+      "path": "../web-react"
+    },
+    {
       "path": "../ui-renderer"
+    },
+    {
+      "path": "../runtime"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

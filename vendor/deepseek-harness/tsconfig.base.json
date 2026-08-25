@@ -179,9 +179,25 @@
       "@deepseek-ai/dsh-host-frontend-static": ["./packages/host/frontend-static/src"],
       "@deepseek-ai/dsh-host-plugin-inventory": ["./packages/host/plugin-inventory/src"],
       "@deepseek-ai/dsh-host-plugin-inventory/types": ["./packages/host/plugin-inventory/src/types.ts"],
+      // starhub/ packages are hyphenated past the wildcard's single capture
+      // (dsh-* → packages/starhub/<capture>/src would resolve the capture to
+      // "starhub-<pkg>", not "<pkg>"), so they get explicit mappings like the
+      // host/client packages above (restored from the pre-rc.2 copy).
+      "@deepseek-ai/dsh-starhub-tools": ["./packages/starhub/tools/src"],
+      "@deepseek-ai/dsh-starhub-session-registry": ["./packages/starhub/session-registry/src"],
+      "@deepseek-ai/dsh-starhub-domain-events": ["./packages/starhub/domain-events/src"],
+      "@deepseek-ai/dsh-starhub-live-context": ["./packages/starhub/live-context/src"],
+      "@deepseek-ai/dsh-starhub-approval-bridge": ["./packages/starhub/approval-bridge/src"],
+      "@deepseek-ai/dsh-starhub-host-static": ["./packages/starhub/host-static/src"],
+      "@deepseek-ai/dsh-starhub-tool-context": ["./packages/starhub/tool-context/src"],
+      "@deepseek-ai/dsh-starhub-client-nav": ["./packages/starhub/client-nav/src"],
+      "@deepseek-ai/dsh-starhub-commit-message": ["./packages/starhub/commit-message/src"],
+      "@deepseek-ai/dsh-starhub-memory-context": ["./packages/starhub/memory-context/src"],
+      "@deepseek-ai/dsh-starhub-memory-sink": ["./packages/starhub/memory-sink/src"],
       "@deepseek-ai/dsh-client-ui-slots": ["./packages/client/ui-slots/src"],
       "@deepseek-ai/dsh-client-ui-attachment": ["./packages/client/ui-attachment/src"],
       "@deepseek-ai/dsh-client-ui-primitives": ["./packages/client/ui-primitives/src"],
+      "@deepseek-ai/dsh-client-web-react": ["./packages/client/web-react/src"],
       "@deepseek-ai/dsh-client-ui-renderer": ["./packages/client/ui-renderer/src"],
       "@deepseek-ai/dsh-client-ui-renderer/client": ["./packages/client/ui-renderer/src/client"],
       "@deepseek-ai/dsh-client-ui-renderer/invariant": ["./packages/client/ui-renderer/src/invariant.ts"],
@@ -285,7 +301,8 @@
         "./packages/identity/*/src",
         "./packages/test-support/*/src",
         "./packages/host/*/src",
-        "./packages/client/*/src"
+        "./packages/client/*/src",
+        "./packages/starhub/*/src"
       ]
     }
   }

@@ -119,11 +119,17 @@ describe('client-nav apply (rc.2)', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
     const footerConfig = register.mock.calls[0]![0]
-    const injected = footerConfig.inject() as { openTools: () => void; hooks: { toolsPanel: { getSnapshot: () => { open: boolean } } } }
+    const injected = footerConfig.inject() as { openTools: () => void }
     expect(injected.openTools).toBeTypeOf('function')
-    expect(injected.hooks.toolsPanel.getSnapshot()).toEqual({ open: false })
+    // toolsPanel 快照桥挂在工具面板(workspace)槽的 inject hooks 舱位,footer 只负责打开。
+    const panelConfig = register.mock.calls[5]![0]
+    const panelInjected = panelConfig.inject() as {
+      openTools?: never
+      hooks: { toolsPanel: { getSnapshot: () => { open: boolean } } }
+    }
+    expect(panelInjected.hooks.toolsPanel.getSnapshot()).toEqual({ open: false })
     injected.openTools()
-    expect(injected.hooks.toolsPanel.getSnapshot()).toEqual({ open: true })
+    expect(panelInjected.hooks.toolsPanel.getSnapshot()).toEqual({ open: true })
   })
 
   it('tools panel inject selects a subcategory through the selection bridge', () => {
@@ -190,8 +196,9 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     const sources = registerSource.mock.calls.map(c => c[0])
     expect(sources).toHaveLength(2)
-    expect(sources[0]).toMatchObject({ id: STARHUB_ASSET_SOURCE })
-    expect(sources[1]).toMatchObject({ id: STARHUB_FILE_SOURCE })
+    // rc.2 InputTriggerSource 以 name 标识 source(无顶层 id 字段)。
+    expect(sources[0]).toMatchObject({ name: STARHUB_ASSET_SOURCE })
+    expect(sources[1]).toMatchObject({ name: STARHUB_FILE_SOURCE })
   })
 
   it('provides the starhubFileViewer service', () => {

@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.96.1(🐛 AI `@` 直连堡垒机(阿里云 BastionHost 公网入口,host 即堡垒机、未配跳板机)验证码通过后报错:堡垒机 pty 判定 `is_bastion()` 原先强制要求 `jump_host`,直连堡垒机 + kb-interactive MFA 资产被漏判,AI exec 走普通通道被服务端拒绝(Channel send error);改为只认 kb-interactive 启用,直连与跳板两种形态都走「带 pty 选机器」路径,菜单为空时跳过选机器直接执行命令。另移除 Ubuntu 22.04 无截图兼容版构建 `linux-legacy-2204.yml`。) |
+| 当前版本 | v0.96.3(🔧 DSH 内核升级到上游 v0.1.1-rc.2 的适配收尾:补回 `tsconfig.base.json` 缺失的 `dsh-client-web-react` 与 10 个 `dsh-starhub-*` 显式 paths 映射、补回 `web/tsconfig.json` 丢失的 5 个 project references、恢复 `loader-status.ts` 升级时丢失的 `KernelSignal`/`createSignal`/`createLoaderStatusStore` 实现。回归:host/client typecheck 双零错误,host 单测 145 过、client-nav 857 过、Rust 164 过。已知限制:tsdown 全量构建需 Node `^22.19||>=24`(本机 22.14 下不可用)。另 GitHub 仓库更名为 `star-dsh-desktop`。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-25 (v0.96.1)*
+*最后更新: 2026-08-25 (v0.96.3)*
