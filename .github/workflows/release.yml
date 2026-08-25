@@ -242,9 +242,123 @@ jobs:
             src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error
 
+  # Ubuntu 22.04 / glibc 2.35 兼容版(无截图):截图栈 xcap → pipewire/libspa 0.10.1
+  # 需系统 PipeWire/spa 头 ≥ 1.0(仅 24.04+ 满足),22.04 无法编译该链。这里在
+  # ubuntu-22.04 runner 上以 `--no-default-features`(关闭 screenshot 特性)构建,
+  # 不引入 xcap/pipewire,glibc 下限回到 2.35,文件名加 `-ubuntu2204` 后缀与主力包区分。
+  linux-legacy:
+    name: Linux legacy / Ubuntu 22.04 (no screenshot)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            cpio \
+            file \
+            libayatana-appindicator3-dev \
+            libdbus-1-dev \
+            libegl-dev \
+            libfuse2 \
+            libgbm-dev \
+            libgtk-3-dev \
+            libpipewire-0.3-dev \
+            libspa-0.2-dev \
+            librsvg2-dev \
+            libsqlite3-dev \
+            libssl-dev \
+            libwayland-dev \
+            libwebkit2gtk-4.1-dev \
+            libxcb1-dev \
+            libxdo-dev \
+            libxrandr-dev \
+            patchelf \
+            pkg-config \
+            rpm
+          dpkg -s libwebkit2gtk-4.1-dev >/dev/null 2>&1 || { echo "ERROR: libwebkit2gtk-4.1-dev not installed"; exit 1; }
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.x
+          cache-dependency-path: sidecar/go.sum
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal
+          rustup default 1.96.0
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install dsh runtime dependencies
+        run: pnpm --dir vendor/deepseek-harness install --frozen-lockfile
+
+      - name: Build release sidecar
+        run: npm run sidecar:build:release
+
+      - name: Package dsh runtime
+        run: npm run package:dsh-runtime
+
+      - name: Build StarHub React window resources
+        run: npm run build:window
+
+      - name: Build Linux desktop bundles (no screenshot, glibc 2.35 baseline)
+        # `--no-default-features` 关闭截图特性:不引入 xcap/pipewire,编译在
+        # Ubuntu 22.04 的旧头文件上即可通过,产物 glibc 下限回到 2.35。
+        # 注意:`--no-default-features` 是 cargo 参数,须经 `--` 透传给 runner;
+        # `--bundles deb,rpm` 是 tauri 自身参数,放在 `--` 之前。
+        run: npx tauri build --bundles deb,rpm -- --no-default-features
+
+      - name: Audit packages, sidecar and shared libraries
+        run: bash scripts/verify-linux-bundles.sh src-tauri/target/release/bundle amd64
+
+      - name: Rename legacy bundles (distinct from the glibc 2.39 build)
+        # 同 Release 里 linux job 也产出 StarHub-<version>-1.<arch>.deb/.rpm,
+        # publish 用 merge-multiple 合并后会同名冲突/覆盖。加 `-ubuntu2204` 后缀区分。
+        run: |
+          cd src-tauri/target/release/bundle
+          for f in deb/*.deb rpm/*.rpm; do
+            dir="$(dirname "$f")"
+            base="$(basename "$f")"
+            name="${base%.*}"
+            ext="${base##*.}"
+            case "$base" in
+              *ubuntu2204*) : ;;
+              *) mv "$f" "$dir/${name}-ubuntu2204.${ext}" ;;
+            esac
+          done
+          ls -la deb rpm
+
+      - name: Upload Linux legacy bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: starhub-linux-ubuntu2204-${{ github.ref_name }}
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+          if-no-files-found: error
+
   publish:
     name: Publish GitHub Release
-    needs: [windows, linux, linux-legacy-2204]
+    needs: [windows, linux, linux-legacy]
     runs-on: ubuntu-22.04
 
     steps:
