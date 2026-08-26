@@ -233,7 +233,16 @@ export async function runTurnReview(params: {
   // 记忆模型硬前置:未配置路由不沉淀(开关打开了也没用,与设置 UI 一致)。
   if (params.route === undefined) return
   if (params.signal.aborted) return
-  if (!shouldReview(countMessages(params.agent))) return
+  // 消息数门槛:仅当 `agent.session.events` 能提供计数时才用 `shouldReview` 拦截。
+  // DSH web 会话(DSH GUI 内核)的消息事件并不总是进入 `session.events`(实证
+  // `session.jsonl.zstd` 只有 session 头、无 user/assistant 事件),此时计数恒为 0,
+  // 若强依赖计数会让自动沉淀永远不触发。已触发 `agent/turn-stopping` 本身就代表
+  // 本轮回合确有对话,因此计数缺失(0/0)时不再拦截,交由专属记忆模型的 LLM 抽取
+  // 自行判断是否有值得沉淀的持久事实(空轮次返回 {"facts":[]} 不落库,零写入成本)。
+  const counts = countMessages(params.agent)
+  if (counts.user > 0 || counts.assistant > 0) {
+    if (!shouldReview(counts)) return
+  }
   if (params.llm === undefined) return
   let timeout: ReturnType<typeof setTimeout> | undefined
   try {

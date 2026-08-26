@@ -9,7 +9,7 @@ StarHub 本地 host 包(2026-08-22,v0.92.0):agent/turn-stopping 钩子把当轮�
   - 未写过 → 视为关闭(v0.92.0 起默认关,与设置单开关默认关闭一致)
   - `autoReview === true` 才整段执行;关闭则整段跳过
 - **记忆模型硬前置(v0.94.0)**:`memoryProvider` + `memoryModel` 必须成对非空,否则整段跳过(开关打开也没用,与设置「只有配置了才能勾选」对齐)。
-- 通过门禁 `shouldReview({user, assistant})`(消息数 ≥ 4);太短的会话不调 LLM。
+- 消息数门禁 `shouldReview({user, assistant})`(消息数 ≥ 4):**仅当 `agent.session.events` 能提供 user/assistant 计数时生效**。DSH web 会话(DSH GUI 内核)的消息事件并不总是进入 `session.events`(实证 `session.jsonl.zstd` 只有 session 头、无消息事件),此时计数为 0/0,若强依赖计数会让自动沉淀永远不触发;已触发 `turn-stopping` 本身就代表本轮回合确有对话,因此计数缺失时不再拦截,交由记忆模型 LLM 转取自行判断(空轮次返回 `{"facts":[]}` 不落库)。
 - 抽取走**专属记忆模型路由**(`ctx.llm.stream`,provider/model 取自上面两个字段);调用 LLM 抽取(6 秒超时),返回 `{"facts":[{"content":"..."}]}`;抽取提示里带工作区/项目名(目录末段)。
 - `normalizeFacts` 收敛 scope → `folder:<cwd>` 或 `global`(根据 cwd 决定);去空、限 280 字符/条、限 8 条/批。
 - 逐条经 sdk-transport 反向 RPC `starhub/memory.write` 调 Rust `ai_memory_add`(2 秒超时);失败/超时/[FULL]/[DUPLICATE] 全部吞掉,不污染 turn 链。
@@ -25,7 +25,7 @@ No direct message injection — the hook reads the `starhub-memory-context` sett
 
 #### Token effect
 
-One independent LLM call per 4+ message turn; steady-state cost is near zero.
+One independent LLM call per eligible turn (a turn with ≥4 event counts when countable, or any `turn-stopping` when events are absent); steady-state cost is near zero because an empty turn returns `{"facts":[]}` without a write.
 
 #### KV Cache effect
 

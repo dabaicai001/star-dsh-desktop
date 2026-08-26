@@ -307,6 +307,24 @@ describe('runTurnReview', () => {
       scope: 'folder:/x', content: 'persisted',
     })
   })
+  it('does not gate on absent session events (v0.98.x web-kernel fix)', async () => {
+    // DSH web 会话的消息事件并不总进入 session.events(count 为 0/0);已触发
+    // turn-stopping 即代表本轮回合确有对话,因此计数缺失时应放行,由 LLM 自行判断。
+    const request = vi.fn(async () => ({}))
+    const llm = vi.fn(async () => ({ facts: [{ content: 'kept-absent' }] }))
+    await runTurnReview({
+      agent: makeAgent('/x', []), // events 为空,count = {user:0, assistant:0}
+      signal: new AbortController().signal,
+      transport: { request } as unknown as JsonRpcTransportPeer,
+      llm,
+      autoReviewEnabled: true,
+      route: ROUTE,
+    })
+    expect(llm).toHaveBeenCalledOnce()
+    expect(request).toHaveBeenCalledWith(MEMORY_WRITE_METHOD, {
+      scope: 'folder:/x', content: 'kept-absent',
+    })
+  })
   it('swallows LLM errors and does not write', async () => {
     const request = vi.fn()
     const llm = vi.fn(async () => { throw new Error('boom') })
