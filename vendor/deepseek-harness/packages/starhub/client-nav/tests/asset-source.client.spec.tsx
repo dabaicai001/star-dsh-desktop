@@ -95,22 +95,22 @@ describe('createStarHubAssetSource', () => {
     })
     const { source } = makeHarness(assets, vi.fn())
     await expect(source.candidates(proj(), req('WEB'))).resolves.toEqual([
-      { name: 'web-1', icon: '终端', description: 'deploy@10.0.0.5' },
-      { name: 'web-2', icon: '终端', description: '10.0.0.6' },
+      { name: 'web-1', icon: 'SSH', description: 'deploy@10.0.0.5' },
+      { name: 'web-2', icon: 'SSH', description: '10.0.0.6' },
     ])
     // 无副标题的资产:候选不带 description 键(exactOptionalPropertyTypes)
     await expect(source.candidates(proj(), req('local-1'))).resolves.toEqual([
-      { name: 'local-1', icon: '终端' },
+      { name: 'local-1', icon: 'SSH' },
     ])
   })
 
   it.each([
-    ['ssh', {}, '终端'],
-    ['db', { dbType: 'mysql' }, '数据库'],
-    ['db', { dbType: 'redis' }, '数据库'],
-    ['db', { dbType: 'kafka' }, '终端'],
-    ['db', {}, '数据库'],
-    ['docker', {}, 'Docker⚠'],
+    ['ssh', {}, 'SSH'],
+    ['db', { dbType: 'mysql' }, 'DB'],
+    ['db', { dbType: 'redis' }, 'DB'],
+    ['db', { dbType: 'kafka' }, 'SSH'],
+    ['db', {}, 'DB'],
+    ['docker', {}, 'Docker'],
     ['local', {}, '本机'],
   ])('candidate icon marks the tool category: type %s → %s', async (type, config, badge) => {
     const assets = createStarHubAssets()
@@ -231,7 +231,7 @@ describe('createStarHubAssetSource', () => {
     })
     const { source } = makeHarness(assets, vi.fn(() => Promise.resolve({ result: { ok: true } })))
     const [candidate] = await source.candidates(proj(), req(''))
-    expect(candidate?.icon).toBe('Docker⚠')
+    expect(candidate?.icon).toBe('Docker')
     expect(candidate?.description).toBe('删除操作需用户确认')
     const outcome = source.onPick(pickOf(candidate!))
     expect(outcome).toMatchObject({

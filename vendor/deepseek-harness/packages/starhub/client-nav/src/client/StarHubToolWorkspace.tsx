@@ -22,7 +22,6 @@ import { useEffect, useState } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the 'shell.overlay' SlotMap row (declared by ui-layout).
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   IconCloseOutline16, IconCopyOutline16, IconEditOutline16, IconNewChatOutline16, IconPlusOutline16,
@@ -31,7 +30,6 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { STARHUB_SUBCATEGORIES, assetSubtitle, type StarHubAsset, type StarHubSubcategory } from './sections.ts'
 import type { RustAsset, StarHubAssetListState, ToolSelection, ToolsPanelState } from './store.ts'
-import { TOOL_CONTEXT_NAMESPACE } from './tool-context.ts'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
 import { FileTreePanel } from './file-tree/FileTreePanel.tsx'
 import type { FileTreeState } from './file-tree/state.ts'
@@ -39,8 +37,6 @@ import css from './StarHubToolWorkspace.module.css'
 
 /** Business face injected by the registration: the connection wire + bridge/asset writes. */
 export interface StarHubToolWorkspaceInjected {
-  /** 连接线面;absent 时跳过 tool-context 同步(无宿主 settings RPC 的场景)。 */
-  api?: IApiClient
   openAsset: (asset: StarHubAsset) => void
   refreshAssets: () => void
   /** 打开连接对话框:不传资产 = 新建;传资产 = 编辑(含删除入口)。 */
@@ -152,7 +148,7 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onEdit, onDelete }: {
  * @returns null when closed; otherwise the drawer layer.
  */
 export function StarHubToolWorkspace({
-  api, openAsset, refreshAssets, openConnectionManager, openAiAssistant,
+  openAsset, refreshAssets, openConnectionManager, openAiAssistant,
   closeFileTree, closeTools, selectSubcategory, insertFileReference,
   useSelection, useAssets, useFileTree, useToolsPanel, useSessions,
 }: StarHubToolWorkspaceProps) {
@@ -165,7 +161,6 @@ export function StarHubToolWorkspace({
   const preview = useAssets(s => s.preview)
   const activeSubcategory = useSelection(s => s.subcategory)
   const activeAssetId = useSelection(s => s.assetId)
-  const activeRoutePrefix = useSelection(s => s.routePrefix)
   const fileTreeOpen = useFileTree(s => s.open)
   // 当前会话 cwd 经 root-scope 的 useSessions 响应式读取(shell.overlay 无
   // 框架注入 sessionId;注入期快照会过期,故此处订阅全局当前会话)。
@@ -174,60 +169,12 @@ export function StarHubToolWorkspace({
   // 打开时(以及切换子类时)重新拉取(回调内部对并发拉取去重)。
   useEffect(() => { if (open) refreshAssets() }, [open, activeSubcategory, refreshAssets])
 
-  // 4.3: 当前工具选择 → host settings(供 agent/pre-step 注入 AI 上下文)。
-  // 全量四字段:取消选中写空串清除,避免过期资产滞留成 AI 上下文。
-  useEffect(() => {
-    if (api === undefined) return
-    const subcategory = STARHUB_SUBCATEGORIES.find(s => s.key === activeSubcategory)
-    const asset = activeAssetId !== null ? assets.find(a => a.id === activeAssetId) : undefined
-    const patch = {
-      subcategory: subcategory?.key ?? '',
-      assetId: asset?.id ?? '',
-      assetName: asset?.name ?? '',
-      routePrefix: (activeAssetId !== null ? activeRoutePrefix : null) ?? subcategory?.routePrefix ?? '',
-    }
-    void api.settings.update({ ns: TOOL_CONTEXT_NAMESPACE, patch }).catch(() => {})
-  }, [api, activeSubcategory, activeAssetId, activeRoutePrefix, assets])
-
   if (!open) return null
 
   return (
     <div className={css.layer}>
       <div className={css.mask} aria-hidden="true" onClick={closeTools} />
       <aside className={css.panel} role="dialog" aria-modal="true" aria-label="StarHub 工具">
-        <header className={css.header}>
-          <span className={css.title}>StarHub 工具</span>
-          <span className={css.spacer} />
-          <button
-            type="button"
-            className={css.iconButton}
-            title="AI 助手"
-            aria-label="AI 助手"
-            onClick={() =>{  openAiAssistant() }}
-          >
-            <IconNewChatOutline16 size={13} />
-          </button>
-          <button
-            type="button"
-            className={css.iconButton}
-            title="刷新"
-            aria-label="刷新"
-            disabled={loading}
-            onClick={() =>{  refreshAssets() }}
-          >
-            <IconRefreshOutline14 size={13} />
-          </button>
-          <button
-            type="button"
-            className={css.closeButton}
-            title="关闭工具面板"
-            aria-label="关闭工具面板"
-            onClick={closeTools}
-          >
-            <IconCloseOutline16 size={14} />
-          </button>
-        </header>
-
         {fileTreeOpen && sessionCwd !== undefined ? (
           <FileTreePanel
             cwd={sessionCwd}
@@ -235,30 +182,69 @@ export function StarHubToolWorkspace({
             insertReference={insertFileReference}
           />
         ) : (
-          <div className={css.tree}>
-            {activeSubcategory === null && (
-              <div className={css.status}>点击展开一个子类(终端 / 数据库 / Docker)查看连接。</div>
-            )}
-            {STARHUB_SUBCATEGORIES.map(subcategory => renderSubcategory(
-              subcategory,
-              assets,
-              activeSubcategory,
-              activeAssetId,
-              loading,
-              error,
-              preview,
-              {
-                openAsset,
-                openConnectionManager,
-                refreshAssets,
-                selectSubcategory,
-              },
-            ))}
-            <button type="button" className={css.newButton} onClick={() =>{  openConnectionManager() }}>
-              <IconPlusOutline16 size={12} />
-              <span>新建连接</span>
-            </button>
-          </div>
+          <>
+            <header className={css.header}>
+              <span className={css.title}>StarHub 工具</span>
+              <span className={css.spacer} />
+              <button
+                type="button"
+                className={css.iconButton}
+                title="新建连接"
+                aria-label="新建连接"
+                onClick={() =>{  openConnectionManager() }}
+              >
+                <IconPlusOutline16 size={13} />
+              </button>
+              <button
+                type="button"
+                className={css.iconButton}
+                title="AI 助手"
+                aria-label="AI 助手"
+                onClick={() =>{  openAiAssistant() }}
+              >
+                <IconNewChatOutline16 size={13} />
+              </button>
+              <button
+                type="button"
+                className={css.iconButton}
+                title="刷新"
+                aria-label="刷新"
+                disabled={loading}
+                onClick={() =>{  refreshAssets() }}
+              >
+                <IconRefreshOutline14 size={13} />
+              </button>
+              <button
+                type="button"
+                className={css.closeButton}
+                title="关闭工具面板"
+                aria-label="关闭工具面板"
+                onClick={closeTools}
+              >
+                <IconCloseOutline16 size={14} />
+              </button>
+            </header>
+            <div className={css.tree}>
+              {activeSubcategory === null && (
+                <div className={css.status}>点击展开一个子类(终端 / 数据库 / Docker)查看连接。</div>
+              )}
+              {STARHUB_SUBCATEGORIES.map(subcategory => renderSubcategory(
+                subcategory,
+                assets,
+                activeSubcategory,
+                activeAssetId,
+                loading,
+                error,
+                preview,
+                {
+                  openAsset,
+                  openConnectionManager,
+                  refreshAssets,
+                  selectSubcategory,
+                },
+              ))}
+            </div>
+          </>
         )}
       </aside>
     </div>

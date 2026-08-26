@@ -142,13 +142,13 @@ describe('StarHubToolWorkspace', () => {
     expect(screen.getByText(/暂无 Docker 连接/)).toBeTruthy()
   })
 
-  it('renders the header with the matching count and opens the connection manager from 新建连接', () => {
+  it('renders the header with the matching count and opens the connection manager from the header + button', () => {
     const props = workspaceProps()
     props.bridge.selectSubcategory('terminal')
     props.assets.update((d) => { d.assets = [sshAsset] })
     render(<StarHubToolWorkspace {...props} />)
     expect(screen.getByText('1')).toBeTruthy()
-    screen.getByText('新建连接').click()
+    screen.getByLabelText('新建连接').click()
     expect(props.openConnectionManager).toHaveBeenCalledTimes(1)
   })
 
@@ -180,36 +180,9 @@ describe('StarHubToolWorkspace', () => {
 
   it('skips the settings sync when the api face is absent', () => {
     const props = workspaceProps()
-    props.api = undefined as never
     props.bridge.selectSubcategory('terminal')
     render(<StarHubToolWorkspace {...props} />)
     expect(screen.getByText('终端')).toBeTruthy()
-  })
-
-  it('syncs the opened asset into the tool-context settings patch', () => {
-    const props = workspaceProps()
-    const update = vi.fn((..._args: unknown[]) => Promise.resolve({ result: { ok: true } }))
-    props.api = { settings: { update } } as never
-    props.bridge.selectSubcategory('terminal')
-    props.assets.update((d) => { d.assets = [sshAsset] })
-    const view = render(<StarHubToolWorkspace {...props} />)
-    props.bridge.openAsset({ id: 'a1', type: 'ssh', name: 'prod-server', config: { host: '10.0.0.5', username: 'deploy' } })
-    view.rerender(<StarHubToolWorkspace {...props} />)
-    expect(update).toHaveBeenCalled()
-    const arg = update.mock.calls.at(-1)?.[0] as { patch?: { assetId?: string; assetName?: string; routePrefix?: string } } | undefined
-    const patch = arg?.patch
-    expect(patch?.assetId).toBe('a1')
-    expect(patch?.assetName).toBe('prod-server')
-    expect(patch?.routePrefix).toBe('/ssh')
-  })
-
-  it('swallows settings-sync failures', () => {
-    const props = workspaceProps()
-    const update = vi.fn((..._args: unknown[]) => Promise.reject(new Error('settings down')))
-    props.api = { settings: { update } } as never
-    props.bridge.selectSubcategory('terminal')
-    render(<StarHubToolWorkspace {...props} />)
-    expect(update).toHaveBeenCalled()
   })
 
   it('refreshes from the header refresh button', () => {

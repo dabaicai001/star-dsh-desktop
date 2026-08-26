@@ -351,6 +351,10 @@ impl DshWebManager {
         let mut cmd = Command::new(&paths.node_path);
         cmd.arg(CLI_BIN_REL)
             .arg("web")
+            // StarHub 壳自带 WebView 主窗口,dsh web 就绪后由壳内轮询跳转;
+            // 传 --no-open 阻止 dsh CLI 再打开一个默认浏览器页(startup.ts 的
+            // openBrowser 默认 true;--no-open 可关),否则用户会看到一个多余的浏览器页。
+            .arg("--no-open")
             .current_dir(&runtime_dir)
             // 2026-08-18:stdin/stdout 接入共享 JSON-RPC 桥,让壳内(web)会话能经
             // sdk-jsonrpc-server 反向调 starhub_* 工具(走 Rust 主进程执行);之前的

@@ -30,6 +30,16 @@ export function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Pro
   return internals.invoke(cmd, args) as Promise<T>
 }
 
+/**
+ * 读取 dsh 设置文件(settings.yaml)的绝对路径。桌面端经 Tauri `dsh_settings_path`
+ * 命令解析(与 web GUI 的 DSH_SETTINGS_PATH 同源);浏览器预览无 Tauri IPC 时
+ * reject,由调用方展示预览提示。
+ * @returns settings.yaml 绝对路径。
+ */
+export function dshSettingsPath(): Promise<string> {
+  return tauriInvoke<string>('dsh_settings_path')
+}
+
 /** Event payload envelope delivered by the Tauri event plugin to listen callbacks. */
 interface TauriEventEnvelope<T> {
   event: string

@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.96.5(🐛 **根治「安装版启动即 Failed to load plugins、换回老版本也启动不了」**:`healProfilesModuleFallback`(dsh-app-boot profile.ts 的 `ensureSymlink`)对 `$DSH_HOME/profiles/node_modules` 下**非符号链接的真实目录**原先 fail-loud 抛错(`exists and is not a symlink`),导致 dsh web 进程启动即退出、GUI 报「failed to import loader entry … client-modules: bundle script … failed to load」。该污染(旧版本复制回退残留 / 杀毒或云同步把 junction 解引用成普通目录 / 中断安装)持久存在于 DSH_HOME,任何版本启动都会在同一处崩溃——**这解释了「换回老版本也启动不了」且清理 AppData 前无法自愈**。修复:`ensureSymlink` 遇到非符号链接条目改为**隔离备份**(改名为 `<name>.dshbak-<timestamp>`,不删除用户数据)后重建 junction,启动继续、下次 heal 保持正确链接;隔离/重建失败仍 fail-loud 兜底。配套:`profile.spec.ts` 原「real directory 抛错」用例改为「隔离 + 重建 + 数据保留 + 不重复备份」自愈断言,app-boot 106 例全绿。) |
+| 当前版本 | v0.98.0(✨ 设置「打开配置文件」改为**壳内打开并支持编辑保存**:新增 Tauri `dsh_settings_path` 返回 `settings.yaml` 路径,StarHub 插件注册 `settings.action`(plugin 形式,不改上游工具视图)经 `starhubFileViewer` 在壳内打开;对话 Read/Edit 工具卡文件名点击同走壳内文件查看窗(改 `ui-conversation/openFile` 优先 `starhubFileViewer`,回退原生打开器)。) |
 
 ---
 
@@ -162,6 +162,7 @@ starhub/
 - StarHub 交互界面由 DeepSeek Harness React UI 提供；改动遵循 `vendor/deepseek-harness` 的组件、图标和样式约定。
 - 不新增 Vue、Vuetify、Pinia 或 Vue Router 依赖。
 - 面向用户的文案应复用 DSH 已有的本地化与界面模式。
+- **新功能优先以 DSH 插件形式注入，禁止改 DSH 内核源码**：任何新增能力都落在 StarHub 自己的包（`vendor/deepseek-harness/packages/starhub/*`）里，经 DSH 的**槽位系统（`ctx.slots.register` / `slots.inject`）**或 **Cordis 服务（`ctx.provide` / `ctx.get`）**接入，而不是改上游 `packages/client/*`、`packages/bundle/*` 等 DSH 源码。仅两种例外允许动 vendor 源码：(1) 修 DSH 自身确实是 bug 的地方（在注释/文档标注「上游补丁」及复现）；(2) 该能力在 DSH 扩展点上无法表达且改动最小（如给一个注入函数加一次 `ctx.get` 优先分支）。判断：能否用「StarHub 插件注册一个槽 / 提供或消费一个服务」表达？能 → 走插件；不能 → 先回退到最小、带注释的 vendor 改动。
 
 ---
 
@@ -463,4 +464,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-26 (v0.96.5)*
+*最后更新: 2026-08-26 (v0.98.0)*

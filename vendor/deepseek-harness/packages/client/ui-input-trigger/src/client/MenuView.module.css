@@ -77,10 +77,13 @@
 .itemIcon {
   display: inline-flex;
   flex: none;
-  width: 16px;
-  height: 16px;
+  min-width: 16px;
+  height: 22px;
+  padding: 0 6px;
   align-items: center;
   justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
   color: var(--dsw-alias-label-tertiary);
 }
 

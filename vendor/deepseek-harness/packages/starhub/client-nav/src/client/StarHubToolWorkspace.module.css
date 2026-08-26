@@ -177,25 +177,6 @@
   cursor: default;
 }
 
-.newButton {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px;
-  border: none;
-  border-radius: 6px;
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 12px;
-}
-
-.newButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover-accent);
-}
-
 .list {
   display: flex;
   flex-direction: column;

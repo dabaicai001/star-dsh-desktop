@@ -11,6 +11,7 @@ import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the 'sidebar.footer.action' SlotMap row (declared by ui-sidebar).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { IconDataOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import clsx from 'clsx'
 import css from './StarHubFooterButton.module.css'
 
 /** Business face injected by the registration: open the tool workspace panel. */
@@ -34,12 +35,12 @@ export function StarHubFooterButton({ wide, openTools }: StarHubFooterButtonProp
     <Tooltip label="StarHub 工具" delayMs={500} disabled={wide}>
       <button
         type="button"
-        className={css.button}
+        className={clsx(css.button, !wide && css.rail)}
         aria-label="StarHub 工具"
         title="StarHub 工具"
         onClick={openTools}
       >
-        <IconDataOutline16 size={wide ? 14 : 18} />
+        <IconDataOutline16 size={wide ? 16 : 18} />
         {wide ? <span className={css.label}>工具</span> : null}
       </button>
     </Tooltip>

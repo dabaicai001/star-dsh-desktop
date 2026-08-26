@@ -1,0 +1,10 @@
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error {
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+}

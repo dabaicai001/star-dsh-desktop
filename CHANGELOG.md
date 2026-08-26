@@ -14,6 +14,19 @@
 
 ---
 
+## [0.98.0] - 2026-08-26
+
+### 已完成
+- ✨ 设置「打开配置文件」改为**壳内打开并支持编辑保存**:新增 Tauri `dsh_settings_path` 返回 `settings.yaml` 路径,StarHub 插件注册 `settings.action`(plugin 形式,不改上游工具视图)经 `starhubFileViewer` 在壳内打开;对话 Read/Edit 工具卡文件名点击同走壳内文件查看窗(改 `ui-conversation/openFile` 优先 `starhubFileViewer`,回退原生打开器)。
+- ✨ 侧栏底部「工具」入口图标/字号与「设置」对齐(wide 16px + 14px label,42px 行高)。
+- ✨ 工具面板头部新增「+」新建连接按钮,移除底部「新建连接」;文件树视图不再叠加重复的「StarHub 工具」标题栏。
+- 🐛 修复侧栏工具面板顶栏「+」、工具抽屉子类行、文件树头部按钮逻辑(不再双标题栏、视图切换正确)。
+- 🐛 修复工具面板/文件树/文件信息弹窗无法上下滚动(flex 撑满 + overflow 修正)。
+- 🐛 AI `@` 菜单工具图标被挤压竖排:工具徽标改短词(SSH/DB/Docker/本机)+ 菜单 `.itemIcon` 放宽为单行(nowrap)。
+- ✨ 设置「插件」tab 改名「插件市场」。
+- ✨ AI 记忆模型未配置时自动默认目录里第一个可用 provider/model,免手动选一次才生效。
+- 🔧 `starhub-tool-context` 仅在 `@` 引用工具时注入(移除工具面板/子类选择的自动同步),避免每条对话都带上下文。
+
 ## [0.96.5] - 2026-08-26
 
 ### 修复

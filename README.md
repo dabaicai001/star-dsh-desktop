@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.96.5-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.98.0-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -147,6 +147,17 @@
 ---
 
 ## 当前版本
+
+### v0.98.0 (2026-08-26)
+- 🔧 ✨ 设置「打开配置文件」改为**壳内打开并支持编辑保存**:新增 Tauri `dsh_settings_path` 返回 `settings.yaml` 路径,StarHub 插件注册 `settings.action`(plugin 形式,不改上游工具视图)经 `starhubFileViewer` 在壳内打开;对话 Read/Edit 工具卡文件名点击同走壳内文件查看窗(改 `ui-conversation/openFile` 优先 `starhubFileViewer`,回退原生打开器)。
+- 🔧 ✨ 侧栏底部「工具」入口图标/字号与「设置」对齐(wide 16px + 14px label,42px 行高)。
+- 🔧 ✨ 工具面板头部新增「+」新建连接按钮,移除底部「新建连接」;文件树视图不再叠加重复的「StarHub 工具」标题栏。
+- 🔧 🐛 修复侧栏工具面板顶栏「+」、工具抽屉子类行、文件树头部按钮逻辑(不再双标题栏、视图切换正确)。
+- 🔧 🐛 修复工具面板/文件树/文件信息弹窗无法上下滚动(flex 撑满 + overflow 修正)。
+- 🔧 🐛 AI `@` 菜单工具图标被挤压竖排:工具徽标改短词(SSH/DB/Docker/本机)+ 菜单 `.itemIcon` 放宽为单行(nowrap)。
+- 🔧 ✨ 设置「插件」tab 改名「插件市场」。
+- 🔧 ✨ AI 记忆模型未配置时自动默认目录里第一个可用 provider/model,免手动选一次才生效。
+- 🔧 🔧 `starhub-tool-context` 仅在 `@` 引用工具时注入(移除工具面板/子类选择的自动同步),避免每条对话都带上下文。
 
 ### v0.96.5 (2026-08-26)
 - 🐛 🐛 **根治「安装版启动即 Failed to load plugins、换回老版本也启动不了」**:`healProfilesModuleFallback`(dsh-app-boot profile.ts 的 `ensureSymlink`)对 `$DSH_HOME/profiles/node_modules` 下**非符号链接的真实目录**原先 fail-loud 抛错(`exists and is not a symlink`),导致 dsh web 进程启动即退出、GUI 报「failed to import loader entry … client-modules: bundle script … failed to load」。该污染(旧版本复制回退残留 / 杀毒或云同步把 junction 解引用成普通目录 / 中断安装)持久存在于 DSH_HOME,任何版本启动都会在同一处崩溃——**这解释了「换回老版本也启动不了」且清理 AppData 前无法自愈**。修复:`ensureSymlink` 遇到非符号链接条目改为**隔离备份**(改名为 `<name>.dshbak-<timestamp>`,不删除用户数据)后重建 junction,启动继续、下次 heal 保持正确链接;隔离/重建失败仍 fail-loud 兜底。配套:`profile.spec.ts` 原「real directory 抛错」用例改为「隔离 + 重建 + 数据保留 + 不重复备份」自愈断言,app-boot 106 例全绿。

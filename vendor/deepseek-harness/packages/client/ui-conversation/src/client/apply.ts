@@ -399,7 +399,19 @@ export function apply(ctx: Context): void {
         fileMentions: owner => ctx.get('chatFileMentions')?.forClosing(owner),
         openFile: (path) => {
           const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
-          return workspaces.openPath(resolveWorkspacePath(cwd, path))
+          const resolved = resolveWorkspacePath(cwd, path)
+          // StarHub 壳内文件查看窗(可选服务,由 StarHub 插件 ctx.provide 注入):
+          // 提供时先在壳内打开(read 模式,可编辑保存),失败/未提供回退到
+          // 宿主原生打开器(workspaces.openPath)。跨插件走 ctx.get 服务路由,
+          // 不改上游工具视图渲染器。
+          const viewer = ctx.get('starhubFileViewer') as
+            | { open: (target: { kind: 'read'; path: string; sessionId: string }) => void }
+            | undefined
+          if (viewer !== undefined) {
+            viewer.open({ kind: 'read', path: resolved, sessionId })
+            return Promise.resolve()
+          }
+          return workspaces.openPath(resolved)
         },
         loadOlder: () => { void scoped.loadOlder() },
         loadImage: attachment => conversation.resolveImage(sessionId, attachment),

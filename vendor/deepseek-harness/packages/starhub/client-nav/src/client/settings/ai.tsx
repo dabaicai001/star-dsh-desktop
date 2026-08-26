@@ -102,6 +102,21 @@ export function AiTab({ api }: { api?: IApiClient }) {
     setAiSettings(current => ({ ...current, ...patch }))
   }
 
+  // 记忆模型未配置时,从模型目录自动默认第一个 provider 的首个模型
+  // (v0.96.x):记忆功能硬前置是 provider+model 成对非空,默认空导致用户必须
+  // 手动选一次才生效。这里仅在「从未配置」时自动补一个可用模型,不覆盖用户
+  // 已作出的选择;目录为空(未建任何模型)时保持未配置。
+  useEffect(() => {
+    if (modelGroups.length === 0) return
+    if (aiSettings.memoryProvider !== '' || aiSettings.memoryModel !== '') return
+    const first = modelGroups.find(group => group.models.length > 0)
+    const model = first?.models[0]
+    if (first === undefined || model === undefined) return
+    updateSettings({ memoryProvider: first.id, memoryModel: model.id })
+    // 仅依赖目录:modelGroups 变化才重估,避免 aiSettings 自身变化触发自环。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelGroups])
+
   const loadMemories = async () => {
     setMemoryLoading(true)
     setMemoryError('')

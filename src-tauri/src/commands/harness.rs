@@ -85,6 +85,18 @@ pub async fn dsh_web_url(
         .map_err(|e| e.to_string())
 }
 
+/// 返回 dsh 设置文件(settings.yaml)的绝对路径,供壳内「打开配置文件」在
+/// 浏览器内读改(而不是调原生打开器)。路径解析复用 dsh_home_dir,与 web GUI
+/// 的 DSH_SETTINGS_PATH 同源(见 build_spawn_env)。请求只携带返回一个只读
+/// 路径,浏览器拿到后经 local_read_text_file / local_write_text_file 读写,
+/// 不会让浏览器载荷选择任意文件系统目标。
+#[tauri::command]
+pub async fn dsh_settings_path(app: AppHandle) -> Result<String, String> {
+    crate::harness::web::dsh_home_dir(&app)
+        .map(|dir| dir.join("settings.yaml").to_string_lossy().into_owned())
+        .map_err(|e| e.to_string())
+}
+
 /// 应答一条 `dsh://approval` 事件对应的审批请求(requestId 来自事件 payload)。
 /// approved=true → 桥返回 `{outcome: "allowed-once"}`,false → `"rejected"`;
 /// 已超时/未知 requestId 时幂等成功(前端可能重复应答或应答晚到)。

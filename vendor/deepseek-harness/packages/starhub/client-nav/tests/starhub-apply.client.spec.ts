@@ -26,6 +26,7 @@ import { AboutTab } from '../src/client/settings/about.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
 import { AuditTab } from '../src/client/settings/audit.tsx'
 import { PluginsTab } from '../src/client/settings/plugins.tsx'
+import { OpenConfigAction } from '../src/client/settings/OpenConfigAction.tsx'
 import { apply as applyInvariant } from '../src/invariant.ts'
 
 afterEach(() => {
@@ -103,6 +104,7 @@ describe('client-nav apply (rc.2)', () => {
       'conversation.session.header.actions', 'conversation.session.header.actions',
       'conversation.input.left',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
+      'settings.action',
     ])
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
@@ -112,6 +114,7 @@ describe('client-nav apply (rc.2)', () => {
       ScreenshotButton,
       // AiTab 经 () => createElement(AiTab, { api }) 包装,按函数断言。
       expect.any(Function), PluginsTab, AuditTab, AlertTab, AboutTab,
+      OpenConfigAction,
     ])
   })
 

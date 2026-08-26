@@ -6,6 +6,11 @@
   gap: 8px;
   padding: 12px;
   font-size: 13px;
+  /* Fill the overlay panel and let the tree region own the scroll: without
+     this the root grows to content height and .tree's overflow-y never
+     engages, so a long tree cannot scroll. */
+  flex: 1;
+  min-height: 0;
 }
 
 .header {
@@ -13,6 +18,7 @@
   align-items: center;
   gap: 6px;
   padding: 0 4px;
+  flex: none;
 }
 
 .title {
@@ -151,6 +157,7 @@
 
 .tree {
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;

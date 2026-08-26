@@ -57,6 +57,7 @@ import { AiTab } from './settings/ai.tsx'
 import { AlertTab } from './settings/alert.tsx'
 import { AuditTab } from './settings/audit.tsx'
 import { PluginsTab } from './settings/plugins.tsx'
+import { OpenConfigAction } from './settings/OpenConfigAction.tsx'
 import { loadAiSettings } from './settings/aiSettings.ts'
 import { syncMemoryEnabled } from './settings/memory-context.ts'
 
@@ -185,9 +186,6 @@ export function apply(ctx: Context): void {
     label: 'StarHub BastionSelect',
   }, BastionSelectCard))
   const workspaceInject = (): StarHubToolWorkspaceInjected => ({
-    // The connection wire face for syncing the current tool context to
-    // host settings (Path B plan 4.3).
-    api: connection.api,
     openAsset: openAssetPage,
     refreshAssets: assets.refresh,
     openConnectionManager: connectionManager.open,
@@ -321,7 +319,7 @@ export function apply(ctx: Context): void {
     component: () => JSX.Element
   }> = [
     { id: 'starhub-ai', order: 30, label: 'AI 助手', component: () => createElement(AiTab, { api: connection.api }) },
-    { id: 'starhub-plugins', order: 31, label: '插件', component: PluginsTab },
+    { id: 'starhub-plugins', order: 31, label: '插件市场', component: PluginsTab },
     { id: 'starhub-audit', order: 32, label: '审计日志', component: AuditTab },
     { id: 'starhub-alert', order: 33, label: '告警规则', component: AlertTab },
     { id: 'starhub-about', order: 34, label: '关于', component: AboutTab },
@@ -334,4 +332,17 @@ export function apply(ctx: Context): void {
       label: tab.label,
     }, tab.component))
   }
+  // 设置「打开配置文件」(壳内编辑,插件形式):dsh 上游默认把配置文件交原生
+  // 打开器(外跳);这里由 StarHub 注册 settings.action(先于上游 order,
+  // 用 order -1 置顶),读取 settings.yaml 路径后经 starhubFileViewer 在壳内
+  // 打开(支持编辑保存)。仅桌面端(Tauri IPC)可用;浏览器预览静默降级。
+  ctx.slots.inject('settings.action', () => ctx.slots.register({
+    name: 'settings.action',
+    id: 'starhub-open-config',
+    order: -1,
+    inject: () => ({
+      openInShell: (target) => { fileViewer.open(target) },
+      sessionId: sessions.list.getSnapshot().current,
+    }),
+  }, OpenConfigAction))
 }

@@ -55,11 +55,11 @@ export function renderAssetReference(asset: { id: string; name: string; type?: s
  */
 export function assetToolBadge(asset: { type: string; config: Record<string, unknown> }): string {
   const route = routeNameForAsset(asset)
-  if (route === 'ssh-terminal' || route === 'db-broker') return '终端'
+  if (route === 'ssh-terminal' || route === 'db-broker') return 'SSH'
   // Docker 候选带 ⚠ 特别标注:删除类操作受硬约束(必须先经用户确认)。
-  if (route === 'docker') return 'Docker⚠'
+  if (route === 'docker') return 'Docker'
   if (route === 'local') return '本机'
-  return '数据库'
+  return 'DB'
 }
 
 /**
