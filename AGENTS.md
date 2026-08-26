@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.98.6(🐛 修复全新会话泄漏旧会话绑定的资产记忆卡:长期记忆注入(`starhub-memory-context` / `handle_memory_cards`)原先用 `resolve_asset` 沿 subagent 父链解析会话资产绑定,导致一个全新会话(无 `@`)也会继承旧会话绑定的资产并注入 `asset:` 记忆卡。注入(读)路径改为 `resolve_asset_strict` —— 严格只命中当前会话自身绑定的资产,不沿父链继承;memory 工具的写入路径仍用 `resolve_asset`(保留子代理继承父会话绑定的合理语义)。) |
+| 当前版本 | v0.98.7(🐛 修复堡垒机「选择机器」浮层只显示一行:原实现用固定 1.9s 窗口抓取 pty 菜单并解析,GateShell 类堡垒机登录后先打印 `Is getting the instances, please wait` 加载提示,真正的服务器列表要等实例拉取完才刷出,导致抓到的"菜单"只有 loading 一行。v0.98.7 改为原汁原味实时终端——后端不再抓取/解析/过滤菜单,pty 输出持续流式广播到 `ssh:bastion-output:<sessionId>`,前端 `BastionSelectCard` 内嵌真实 xterm 终端原样显示,用户在终端里敲序号选机器(键盘经 `ssh_write` 写回),选好后点「执行 AI 命令」恢复阶段2 执行 AI 命令;未新增 Tauri 命令或权限。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-26 (v0.98.6)*
+*最后更新: 2026-08-26 (v0.98.7)*

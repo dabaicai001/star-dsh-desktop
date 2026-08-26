@@ -18,5 +18,13 @@ rem   scripts\cargo-env.bat build --release
 
 if "%STARHUB_VCVARS%"=="" set "STARHUB_VCVARS=D:\c++1\VC\Auxiliary\Build\vcvars64.bat"
 call "%STARHUB_VCVARS%" >nul 2>&1
+rem vcvars may reset PATH and drop cargo; ensure the rust toolchain bin is on
+rem PATH. Prefer the rustup proxy dir (Cargo home bin) when present, else fall
+rem back to the active toolchain's own bin (cargo/rustc live there too).
+if not exist "%USERPROFILE%\.cargo\bin\cargo.exe" (
+  if exist "%USERPROFILE%\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\cargo.exe" (
+    set "PATH=%USERPROFILE%\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin;%PATH%"
+  )
+)
 cd /d "%~dp0..\src-tauri"
 cargo %*

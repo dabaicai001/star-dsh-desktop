@@ -14,6 +14,11 @@
 
 ---
 
+## [0.98.7] - 2026-08-26
+
+### 已完成
+- 🐛 修复堡垒机「选择机器」浮层只显示一行 / 菜单被当成单条选项的问题(AI 域工具路径):`exec_via_bastion_pty` 原先用固定 1.9s 窗口抓取 pty 菜单并解析,而 GateShell 类堡垒机登录后先打印 `Is getting the instances, please wait` 的加载提示,真正的服务器列表要等实例拉取完才刷出,导致抓到的"菜单"只有 loading 一行,前端解析成唯一一个条目。v0.98.7 改为**原汁原味实时终端**:后端打开 pty shell 后不再抓取/解析/过滤菜单,把 pty 输出持续流式广播到 `ssh:bastion-output:<sessionId>`,前端 `BastionSelectCard` 内嵌真实 xterm 终端原样显示菜单(颜色/光标/翻页交互全保留),用户在终端里像平时手动连堡垒机那样敲序号选机器;键盘输入经既有 `ssh_write` 写回 pty。选好后点「执行 AI 命令」(经 `ssh_bastion_response` 传非空哨兵)恢复 `exec_via_bastion_pty` 阶段2,把 AI 命令写入同一 pty 并采集输出回传;「取消」传空串。写通道/窗口尺寸复用 `channels` 与 `ssh_resize`,未新增 Tauri 命令或权限。
+
 ## [0.98.6] - 2026-08-26
 
 ### 已完成

@@ -782,6 +782,7 @@ pub(crate) async fn ssh_exec_core(
                 id,
                 Some(app_handle),
                 &manager.pending_bastion,
+                manager.channels.clone(),
                 command,
                 timeout_sec.unwrap_or(10),
             )
@@ -856,9 +857,13 @@ pub async fn ssh_kb_response(
         .map_err(|_| "Failed to send kb response (handler dropped)".to_string())
 }
 
-/// 应答堡垒机 AI exec 的「选择机器」(方案A/v0.95.6):
-/// 用户在 `ssh:bastion-select:<sessionId>` 浮层输入目标机器项后回传,
-/// 由 pending 通道恢复 `exec_via_bastion_pty` 的选机器流程。
+/// 触发堡垒机 AI exec 在「实时终端」里执行 AI 命令。
+///
+/// v0.98.7 起堡垒机选机器改为「原汁原味实时终端」:底层 pty 输出持续流式广播到
+/// 前端内嵌 xterm,用户在终端里敲序号选机器;本命令即前端点击「执行 AI 命令」后
+/// 回传的 run 信号,由 pending 通道恢复 `exec_via_bastion_pty` 的阶段2(写命令)。
+///
+/// 传空字符串表示用户放弃(取消),后端按取消处理;传任意非空串表示继续执行。
 #[tauri::command]
 pub async fn ssh_bastion_response(
     manager: State<'_, SshManager>,

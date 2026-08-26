@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.98.6-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.98.7-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,15 +148,14 @@
 
 ## 当前版本
 
+### v0.98.7 (2026-08-26)
+- 🔧 🐛 修复堡垒机「选择机器」浮层只显示一行(AI 域工具路径):`exec_via_bastion_pty` 原用固定 1.9s 窗口抓取 pty 菜单并解析,而 GateShell 类堡垒机登录后先打印 `Is getting the instances, please wait` 加载提示,真正的服务器列表要等实例拉取完才刷出,导致抓到的"菜单"只有 loading 一行、前端解析成唯一条目。v0.98.7 改为**原汁原味实时终端**:后端不再抓取/解析/过滤菜单,pty 输出持续流式广播到 `ssh:bastion-output:<sessionId>`,前端 `BastionSelectCard` 内嵌真实 xterm 终端原样显示(颜色/光标/翻页交互全保留),用户在终端里敲序号选机器(键盘经 `ssh_write` 写回);选好后点「执行 AI 命令」(经 `ssh_bastion_response` 传非空哨兵)恢复阶段2,把 AI 命令写入同一 pty 并采集输出回传;「取消」传空串。写通道/窗口尺寸复用 `channels` 与 `ssh_resize`,未新增 Tauri 命令或权限。
+
 ### v0.98.6 (2026-08-26)
 - 🔧 🐛 修复全新会话泄漏旧会话绑定的资产记忆卡:长期记忆注入(`starhub-memory-context` / `handle_memory_cards`)原先用 `resolve_asset` 沿 subagent 父链解析会话资产绑定,导致一个全新会话(无 `@`)也会继承旧会话绑定的资产并注入 `asset:` 记忆卡。注入(读)路径改为 `resolve_asset_strict` —— 严格只命中当前会话自身绑定的资产,不沿父链继承;memory 工具的写入路径仍用 `resolve_asset`(保留子代理继承父会话绑定的合理语义)。
 
 ### v0.98.5 (2026-08-26)
 - 🔧 🐛 修复堡垒机「选择机器」浮层显示与交互(AI 域工具路径):(1) GateShell 登录壳的彩色菜单在 pty 输出里混入 ANSI 控制码(颜色/光标/清行),原样透传 `<pre>` 时渲染成乱码;后端 `exec_via_bastion_pty` 现先经 `strip_ansi` 剥离控制序列,前端只接收干净菜单。(2) 用户输入 001/002 无效:菜单实际要求 `:{行号}<Enter>` 跳转(GateShell 的 Jump 语义),后端改写目标机跳转命令为 `:{selection}\n`。(3) 前端 `BastionSelectCard` 把清洗后的菜单解析成可点击/可上下翻页(↑/↓、j/k)的机器列表,回车或点击即选中回传,替代原先的裸文本输入。(4) 前端 `MfaPromptCard` 进入「连接成功」态后无出口(记录为后端 `ssh:mfa-connected` 信号触发)会卡死;现新增「完成」关闭按钮并复位状态。
-
-### v0.98.4 (2026-08-26)
-- 🔧 🐛 修复文件查看窗/文件信息弹窗编辑区撑不开、底部大量留白:上游 `Modal.module.css` 的 `.content`/`.body` 缺 `flex:1; min-height:0; overflow:auto`,定高弹窗里编辑区/预览区无法拉伸。该补丁(f5a3a109「文件查看窗撑满高度」)被 rc.2 整树同步覆盖丢失,且未进「补丁重放记录」→ v0.98.2 复发。v0.98.4 重施,并登记进升级清单防下次丢失。
-- 🔧 🐛 修复打包时 StarHub client 包 lib 未重建导致的「源码修复不进产物」(文件树状态、AI 按钮移除、Modal 拉伸等看似全部没生效):`build:lib:client` 先 `tsc -b` 产出 lib/types,tsdown 据此打包 lib/client.js;tsc -b 增量判定依据各包 `lib/tsconfig.tsbuildinfo` 的 mtime,一旦它晚于源码则跳过重编译,lib 保持旧代码。`package-dsh-runtime` 打包前现清除所有 client 包(`packages/starhub/*`、`packages/client/*`)的 tsbuildinfo,强制 `build:lib:client` 全量重编译,产物必然反映最新源码;下次升级(整树同步后)也不再出现「修复不进产物」。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

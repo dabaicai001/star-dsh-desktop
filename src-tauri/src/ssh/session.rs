@@ -1032,7 +1032,8 @@ impl SshSession {
         }
     }
 
-    /// AI exec 会话在「跳板机 + kb_interactive」时的 pty 交互路径(方案A/v0.95.6)。
+    /// AI exec 会话在「跳板机 + kb_interactive」时的 pty 交互路径(方案A/v0.95.6,
+    /// v0.98.7 改为「原汁原味实时终端」)。
     ///
     /// 这类堡垒机在 keyboard-interactive 验证码通过后,登录壳会先呈现一个
     /// 「选择机器」交互菜单;普通 exec 通道(无 pty、无机器选中)会被服务端拒绝,
@@ -1040,19 +1041,25 @@ impl SshSession {
     /// 选机器与 AI 命令必须在**同一通道**——堡垒机每次会话独立登录,新开 exec
     /// 通道不会继承前面选中的机器。
     ///
-    /// 这里改开带 pty 的 shell,分两阶段执行:
-    ///   1. 先把初始菜单输出透传前端(事件 `ssh:bastion-select:<sessionId>`),
-    ///      等用户经 `ssh_bastion_response` 选定机器,再把选择写入 pty;
-    ///   2. 把 AI 命令写入同一 pty,收集输出直到通道 Eof/Close/ExitStatus 或超时。
+    /// 这里改开带 pty 的 shell,不再解析/过滤「选择机器」菜单,而是把 pty 输出
+    /// **原汁原味**透传给前端内嵌的 xterm 终端,让用户像平时手动连堡垒机那样
+    /// 直接在终端里敲序号选机器。分两阶段:
+    ///   1. 选机器(阶段1):pty 输出流式广播到 `ssh:bastion-output:<sessionId>
+    ///      (前端 `ssh_bastion_continue` 命令还未触发);用户敲的键经 `channels`
+    ///      里注册的写通道写回 pty(`ssh_write`,与交互终端共用写通道机制)。
+    ///   2. 执行 AI 命令(阶段2):用户在内嵌终端选好机器后点「执行 AI 命令」,
+    ///      前端经 `ssh_bastion_continue` 回传 run 信号;这里把 AI 命令写入同一
+    ///      pty,再采集输出回传给 AI,同时继续流式广播给终端。
     ///
-    /// 成功后返回「菜单 + 命令输出」,便于 AI/用户核对;失败即快速返回明确
-    /// 错误,不悬挂;普通 exec 路径(exec_inner)不受影响。
+    /// 成功后返回「命令输出」(不含菜单;菜单已在终端里实时显示)。失败即快速
+    /// 返回明确错误,不悬挂;普通 exec 路径(exec_inner)不受影响。
     #[allow(clippy::too_many_arguments)]
     pub async fn exec_via_bastion_pty(
         &mut self,
         session_id: &str,
         app_handle: Option<&tauri::AppHandle>,
         pending_bastion: &super::PendingBastionResponses,
+        channels: super::SshWriteChannels,
         command: &str,
         timeout_sec: u64,
     ) -> Result<String, String> {
@@ -1064,10 +1071,6 @@ impl SshSession {
             .channel_open_session()
             .await
             .map_err(|e| format!("[EXEC_FAILED] Failed to open exec channel: {}", e))?;
-        // 选中机器后,写入 pty 的跳转命令前缀。GateShell 类堡垒机菜单要求
-        // `: {number}<Enter>` 才跳转(见菜单 Jump: Use :{number}<Enter>);
-        // 部分产品也接受裸行号。这里用「冒号 + 行号」直写,失败时由调用方回退。
-        let jump_prefix = ":";
         let (pty_cols, pty_rows) = self.config.effective_pty_size();
         channel
             .request_pty(true, "xterm-256color", pty_cols, pty_rows, 0, 0, &[])
@@ -1078,117 +1081,147 @@ impl SshSession {
             .await
             .map_err(|e| format!("[BASTION_FAILED] Failed to request shell: {}", e))?;
 
-        // 读取「选择机器」菜单的首屏输出:先等一小段(等 shell 打印菜单),再关闭读端。
-        let mut menu = Vec::<u8>::new();
-        let menu_window = Duration::from_millis(1500);
-        tokio::time::sleep(Duration::from_millis(400)).await;
-        let drain_menu = async {
-            loop {
-                tokio::select! {
-                    msg = channel.wait() => match msg {
-                        Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
-                            menu.extend_from_slice(&data);
-                            if menu.len() > 64 * 1024 { break; }
-                        }
-                        Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
-                        _ => {}
-                    },
-                    _ = tokio::time::sleep(menu_window) => break,
-                }
-            }
-        };
-        drain_menu.await;
-        let menu_text = strip_ansi(&String::from_utf8_lossy(&menu)).to_string();
+        // 写通道 + 窗口尺寸:与 open_shell 一致,前端 ssh_write / ssh_resize 均复用。
+        let (write_tx, mut write_rx) = mpsc::channel::<Vec<u8>>(SSH_WRITE_CHANNEL_CAPACITY);
+        let (resize_tx, mut resize_rx) = watch::channel((pty_cols, pty_rows));
+        self.resize_tx = Some(resize_tx);
+        {
+            let mut ch = channels.lock().await;
+            ch.insert(session_id.to_string(), (0, write_tx));
+        }
 
-        // 请求用户选择机器:emit 事件(通用事件带 sessionId,堡垒机浮层订阅)+
-        // 等 ssh_bastion_response(360s 超时,同 MFA)。
-        // 菜单为空说明登录壳没有「选择机器」交互(普通服务器只是做了
-        // keyboard-interactive 二次验证,不经过堡垒机选机),跳过选机器直接
-        // 执行命令,避免 AI 卡在无人应答的选机器浮层。
-        if !menu_text.trim().is_empty() {
-            if let Some(app) = app_handle {
-                use tauri::Emitter;
-                let payload = serde_json::json!({
-                    "sessionId": session_id,
-                    "menu": menu_text,
-                });
-                let _ = app.emit("ssh:bastion-select", payload.clone());
-                let _ = app.emit(&format!("ssh:bastion-select:{}", session_id), payload);
-            }
-            let (resp_tx, resp_rx) = oneshot::channel();
-            pending_bastion
-                .lock()
-                .await
-                .insert(session_id.to_string(), resp_tx);
-            let selection = match tokio::time::timeout(Duration::from_secs(360), resp_rx).await {
-                Ok(Ok(s)) => s,
-                Ok(Err(_)) => {
+        let mut writer = channel.make_writer();
+
+        // 预登记 run 信号通道:前端点击「执行 AI 命令」后经 ssh_bastion_continue
+        // 回传。该通道在阶段2 前一直挂起,用户可随时在终端选机器。
+        let (run_tx, mut run_rx) = oneshot::channel::<String>();
+        pending_bastion
+            .lock()
+            .await
+            .insert(session_id.to_string(), run_tx);
+
+        // 通知前端打开「实时终端」浮层:广播通用事件(带 sessionId,浮层订阅)+
+        // 精确事件。不再携带解析后的菜单文本——菜单由 pty 输出原样流式透传。
+        if let Some(app) = app_handle {
+            use tauri::Emitter;
+            let payload = serde_json::json!({ "sessionId": session_id });
+            let _ = app.emit("ssh:bastion-select", payload.clone());
+            let _ = app.emit(&format!("ssh:bastion-select:{}", session_id), payload);
+        }
+
+        // —— 阶段1:选机器 ——
+        // 持续把 pty 输出流式广播给前端终端;用户的键盘输入(write_rx)写回 pty;
+        // 直到收到 run 信号(值为 ``)或超时/断线。
+        let run_received = {
+            // 阶段1 等待窗口与 MFA 相同(360s)。
+            match tokio::time::timeout(Duration::from_secs(360), async {
+                loop {
+                    tokio::select! {
+                        msg = channel.wait() => {
+                            match msg {
+                                Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                                    if let Some(app) = app_handle {
+                                        let _ = app.emit(
+                                            &format!("ssh:bastion-output:{}", session_id),
+                                            data.to_vec(),
+                                        );
+                                    }
+                                }
+                                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
+                                    return Err(());
+                                }
+                                _ => {}
+                            }
+                        }
+                        data = write_rx.recv() => {
+                            let bytes = match data {
+                                Some(b) => b,
+                                None => return Err(()),
+                            };
+                            if writer.write_all(&bytes).await.is_err() {
+                                return Err(());
+                            }
+                            writer.flush().await.ok();
+                        }
+                        resize_result = resize_rx.changed() => {
+                            if resize_result.is_ok() {
+                                let (cols, rows) = *resize_rx.borrow_and_update();
+                                if let Err(error) = channel.window_change(cols, rows, 0, 0).await {
+                                    tracing::warn!(session_id, cols, rows, %error, "resize bastion PTY failed");
+                                }
+                            }
+                        }
+                        run = &mut run_rx => {
+                            match run {
+                                Ok(value) => return Ok(value),
+                                Err(_) => return Err(()),
+                            }
+                        }
+                    }
+                }
+            })
+            .await
+            {
+                Ok(Ok(value)) => value,
+                Ok(Err(())) => {
                     pending_bastion.lock().await.remove(session_id);
-                    return Err("[BASTION_TIMEOUT] 选择机器应答通道已断开".to_string());
+                    let _ = channel.close().await;
+                    return Err("[BASTION_CLOSED] 堡垒机通道关闭,未能选择目标机器".to_string());
                 }
                 Err(_) => {
                     pending_bastion.lock().await.remove(session_id);
-                    return Err("[BASTION_TIMEOUT] 等待选择机器超时(360s)".to_string());
+                    let _ = channel.close().await;
+                    return Err("[BASTION_TIMEOUT] 等待选择堡垒机目标机器超时(360s)".to_string());
                 }
-            };
-            let selection = selection.trim().to_string();
-            if selection.is_empty() {
-                return Err("[BASTION_REJECTED] 未选择堡垒机目标机器".to_string());
             }
+        };
+        pending_bastion.lock().await.remove(session_id);
 
-            let mut writer = channel.make_writer();
-            // 写入机器选择 + 回车,让堡垒机进入目标机。GateShell 类菜单跳转
-            // 要求冒号前缀(`:{行号}<Enter>`),前端的 selection 可以是行号或
-            // 名称;若用户直接带了冒号则不重复添加。
-            let jump_cmd = if selection.starts_with(jump_prefix) || selection.starts_with('{') {
-                selection.clone()
-            } else {
-                format!("{jump_prefix}{selection}")
-            };
-            writer
-                .write_all(format!("{}\n", jump_cmd).as_bytes())
-                .await
-                .map_err(|e| format!("[BASTION_FAILED] 写入机器选择失败: {}", e))?;
-            writer.flush().await.ok();
-            tokio::time::sleep(Duration::from_millis(600)).await;
-
-            // 把 AI 命令写入同一 pty;随后收集输出直到 Eof/Close/ExitStatus 或超时。
-            writer
-                .write_all(format!("{}\n", command).as_bytes())
-                .await
-                .map_err(|e| format!("[BASTION_FAILED] 写入命令失败: {}", e))?;
-            writer.flush().await.ok();
-            drop(writer);
-        } else {
-            // 无选机器菜单:直接把 AI 命令写入 pty 执行。
-            let mut writer = channel.make_writer();
-            writer
-                .write_all(format!("{}\n", command).as_bytes())
-                .await
-                .map_err(|e| format!("[BASTION_FAILED] 写入命令失败: {}", e))?;
-            writer.flush().await.ok();
-            drop(writer);
+        // run 值为空串 = 用户取消,不执行 AI 命令。
+        if run_received.trim().is_empty() {
+            return Err("[BASTION_CANCELLED] 用户取消堡垒机目标机器选择".to_string());
         }
+
+        // —— 阶段2:执行 AI 命令 ——
+        // 用户已在终端选好机器,把 AI 命令写入同一 pty,采集输出回传给 AI。
+        writer
+            .write_all(format!("{}\n", command).as_bytes())
+            .await
+            .map_err(|e| format!("[BASTION_FAILED] 写入命令失败: {}", e))?;
+        writer.flush().await.ok();
 
         let mut output = Vec::<u8>::new();
         let mut truncated = false;
         let mut exit_status: Option<u32> = None;
         let collect = async {
             loop {
-                match channel.wait().await {
-                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
-                        truncated |= append_capped(&mut output, &data, MAX_EXEC_OUTPUT_BYTES);
-                        if let Some(app) = app_handle {
-                            use tauri::Emitter;
-                            let _ = app.emit(
-                                &format!("ssh:bastion-output:{}", session_id),
-                                data.to_vec(),
-                            );
+                tokio::select! {
+                    msg = channel.wait() => {
+                        match msg {
+                            Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                                truncated |= append_capped(&mut output, &data, MAX_EXEC_OUTPUT_BYTES);
+                                if let Some(app) = app_handle {
+                                    let _ = app.emit(
+                                        &format!("ssh:bastion-output:{}", session_id),
+                                        data.to_vec(),
+                                    );
+                                }
+                            }
+                            Some(ChannelMsg::ExitStatus { exit_status: code }) => exit_status = Some(code),
+                            Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
+                            _ => {}
                         }
                     }
-                    Some(ChannelMsg::ExitStatus { exit_status: code }) => exit_status = Some(code),
-                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
-                    _ => {}
+                    data = write_rx.recv() => {
+                        let bytes = match data {
+                            Some(b) => b,
+                            None => break,
+                        };
+                        if writer.write_all(&bytes).await.is_err() {
+                            break;
+                        }
+                        writer.flush().await.ok();
+                    }
                 }
             }
         };
@@ -1202,10 +1235,6 @@ impl SshSession {
             ));
         }
 
-        let mut combined = String::new();
-        if !menu_text.trim().is_empty() {
-            combined.push_str(&format!("[堡垒机菜单]\n{}\n", menu_text.trim()));
-        }
         let mut stdout = strip_ansi(&String::from_utf8_lossy(&output)).to_string();
         if truncated {
             stdout.push_str(&format!(
@@ -1213,15 +1242,14 @@ impl SshSession {
                 MAX_EXEC_OUTPUT_BYTES
             ));
         }
-        combined.push_str(&stdout);
         if exit_status.is_some_and(|c| c != 0) {
             return Err(format!(
                 "[EXEC] 命令退出码 {}: {}",
                 exit_status.unwrap_or(0),
-                combined.trim()
+                stdout.trim()
             ));
         }
-        Ok(combined)
+        Ok(stdout)
     }
 
     pub async fn open_sftp_with_info(

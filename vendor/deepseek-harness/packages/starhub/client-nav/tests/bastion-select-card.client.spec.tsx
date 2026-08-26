@@ -1,17 +1,48 @@
 // @vitest-environment jsdom
 /**
- * 堡垒机「选择机器」浮层:只接管 `dsh:` 前缀会话的通用 `ssh:bastion-select` 事件,
- * 其余会话不弹浮层;显示堡垒机菜单,用户输入目标机器项后经 `ssh_bastion_response`
- * 回传,提交后清空状态;空选择禁用提交。
+ * 堡垒机「选择机器」浮层(v0.98.7 实时终端):只接管 `dsh:` 前缀会话的通用
+ * `ssh:bastion-select` 事件,其余会话不弹浮层;浮层内嵌 xterm 终端,订阅
+ * `ssh:bastion-output:<sessionId>` 渲染 pty 输出,键盘输入经 `ssh_write` 回传;
+ * 「执行 AI 命令」经 `ssh_bastion_response` 传非空哨兵,「取消」传空串。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+
+// xterm 依赖真实实例在 jsdom 下会因缺 matchMedia 抛错,这里按
+// ssh-terminal-overlay 的既有模式打桩,聚焦组件的订阅/回传行为。
+vi.mock('@xterm/xterm', () => ({
+  Terminal: class {
+    cols = 80
+    rows = 24
+    loadAddon() {}
+    open() {}
+    focus() {}
+    dispose() {}
+    write() {}
+    onData() {
+      return { dispose: vi.fn() }
+    }
+  },
+}))
+
+vi.mock('@xterm/addon-fit', () => ({
+  FitAddon: class {
+    fit() {}
+  },
+}))
+
 import { BastionSelectCard } from '../src/client/bastion/BastionSelectCard.tsx'
+
+class ResizeObserverMock {
+  observe() {}
+  disconnect() {}
+}
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver
 })
 
 /** 挂载 Tauri internals:transformCallback 记录监听回调,invoke 记录调用。 */
@@ -28,7 +59,7 @@ function stubInternals(callbacks: Array<(event: unknown) => void>, invoke: Retur
 }
 
 describe('BastionSelectCard', () => {
-  it('prompts for dsh-prefixed sessions, shows the menu, and submits the selection', async () => {
+  it('opens for dsh-prefixed sessions and submits the run sentinel on execute', async () => {
     const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
       if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
@@ -44,23 +75,20 @@ describe('BastionSelectCard', () => {
     }) })
 
     const onEvent = callbacks[0]!
-    onEvent({ event: 'ssh:bastion-select', id: 1, payload: {
-      sessionId: 'dsh:asset-1:ssh',
-      menu: "1) web-1\n2) db-1\n请选择:",
-    } })
+    onEvent({ event: 'ssh:bastion-select', id: 1, payload: { sessionId: 'dsh:asset-1:ssh' } })
+    ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver = ResizeObserverMock
     await waitFor(() =>{  expect(screen.getByText('堡垒机选择机器')).toBeTruthy() })
     expect(screen.getByText(/AI 连接 asset-1/)).toBeTruthy()
-    expect(screen.getByText(/1\) web-1/)).toBeTruthy()
 
-    const input = screen.getByLabelText('目标机器（输入菜单中的序号或名称）') as HTMLInputElement
-    fireEvent.change(input, { target: { value: '2' } })
-    fireEvent.click(screen.getByText('确认并继续'))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_bastion_response', { id: 'dsh:asset-1:ssh', selection: '2' }) })
-    expect(screen.queryByText('堡垒机选择机器')).toBeNull()
+    // 终端容器存在;「执行 AI 命令」发送非空哨兵并进入执行中态。
+    const runButton = screen.getByText('执行 AI 命令') as HTMLButtonElement
+    fireEvent.click(runButton)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_bastion_response', { id: 'dsh:asset-1:ssh', selection: '__run__' }) })
+    expect(screen.queryByText('执行中…')).toBeTruthy()
     unmount()
   })
 
-  it('disabled submit until a non-empty selection is entered; Escape-empty cancels', async () => {
+  it('cancel sends an empty selection and closes the overlay', async () => {
     const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
       if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
@@ -71,39 +99,13 @@ describe('BastionSelectCard', () => {
     await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
 
     const onEvent = callbacks[0]!
-    onEvent({ event: 'ssh:bastion-select', id: 1, payload: {
-      sessionId: 'dsh:asset-2:ssh',
-      menu: '1) a\n2) b\n请选择:',
-    } })
+    onEvent({ event: 'ssh:bastion-select', id: 1, payload: { sessionId: 'dsh:asset-2:ssh' } })
+    ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver = ResizeObserverMock
     await waitFor(() =>{  expect(screen.getByText('堡垒机选择机器')).toBeTruthy() })
-    expect((screen.getByText('确认并继续') as HTMLButtonElement).disabled).toBe(true)
 
-    // 空选择点「取消」→ 回传空字符串(表示未选择)
     fireEvent.click(screen.getByText('取消'))
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_bastion_response', { id: 'dsh:asset-2:ssh', selection: '' }) })
-    unmount()
-  })
-
-  it('sends the selection on Enter in the input field', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
-    const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
-      return Promise.resolve(null)
-    })
-    stubInternals(callbacks, invoke)
-    const { unmount } = render(<BastionSelectCard />)
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
-
-    const onEvent = callbacks[0]!
-    onEvent({ event: 'ssh:bastion-select', id: 1, payload: {
-      sessionId: 'dsh:asset-3:ssh',
-      menu: '1) a\n请选择:',
-    } })
-    await waitFor(() =>{  expect(screen.getByText('堡垒机选择机器')).toBeTruthy() })
-    const input = screen.getByLabelText('目标机器（输入菜单中的序号或名称）') as HTMLInputElement
-    fireEvent.change(input, { target: { value: '1' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_bastion_response', { id: 'dsh:asset-3:ssh', selection: '1' }) })
+    expect(screen.queryByText('堡垒机选择机器')).toBeNull()
     unmount()
   })
 
@@ -118,8 +120,8 @@ describe('BastionSelectCard', () => {
     await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
 
     const onEvent = callbacks[0]!
-    onEvent({ event: 'ssh:bastion-select', id: 1, payload: { sessionId: 'asset-1', menu: '1) a\n请选择:' } })
-    onEvent({ event: 'ssh:bastion-select', id: 1, payload: { sessionId: 'test-123', menu: '1) a\n请选择:' } })
+    onEvent({ event: 'ssh:bastion-select', id: 1, payload: { sessionId: 'asset-1' } })
+    onEvent({ event: 'ssh:bastion-select', id: 1, payload: { sessionId: 'test-123' } })
     expect(queryByText('堡垒机选择机器')).toBeNull()
     unmount()
   })
