@@ -277,11 +277,19 @@ pub(crate) async fn connect_session(
         session.disconnect();
         return Err("Connection aborted by client".to_string());
     }
+    // 目标机认证完成后:若本次连接实际走了 keyboard-interactive(MFA),向对应
+    // 弹窗发精确的「目标机已连接」信号,让 MFA 弹窗等用户在确认连接成功后复用该
+    // 会话。注意:仅认证链(含跳板机/堡垒机选机器后的目标机)全部完成才算成功,
+    // 跳板机本身的 MFA 不算「连接成功」。发射前先取 mfa_used,再把 session 移入 Arc。
+    let mfa_used = session.mfa_used();
     sessions.insert(id, Arc::new(Mutex::new(session)));
+    if mfa_used {
+        use tauri::Emitter;
+        let _ = app_handle.emit(&format!("ssh:mfa-connected:{id}"), id.clone());
+    }
 
     Ok(info)
 }
-
 // ── 联动 M1(docs/联动实施-桥接契约-2026-08-17.md §4):ssh_attach / ssh_detach ──
 // 附着语义:SessionRegistry 维护 assetId → sessionId 视图(refcount + attachedBy);
 // 有活 session 复用(refcount+1),否则按资产存档建连;detach 归零才真断。

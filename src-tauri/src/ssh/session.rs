@@ -140,6 +140,9 @@ pub struct SshSession {
     heartbeat_abort: Option<tokio::task::AbortHandle>,
     remote_forwards: RemoteForwards,
     port_forwards: Vec<PortForwardEntry>,
+    /// 认证期间是否实际走了 keyboard-interactive(MFA)且已通过。
+    /// 供 connect_session 在会话落库后向弹窗发精确的「连接成功」信号。
+    mfa_used: bool,
     /// Web 网关:本地 HTTP 代理,上游经 SSH direct-tcpip 通道转发。
     web_gateway: Option<super::web_gateway::GatewayHandle>,
     /// 浏览类 SFTP 操作(list/stat/remove/mkdir/rename/read/write)复用的通道,
@@ -156,6 +159,7 @@ impl SshSession {
             heartbeat_abort: None,
             remote_forwards: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             port_forwards: Vec::new(),
+            mfa_used: false,
             web_gateway: None,
             browse_sftp: None,
         }
@@ -190,6 +194,13 @@ impl SshSession {
         )
     }
 
+    /// 认证期间是否实际走了 keyboard-interactive(MFA)且已通过。
+    /// 仅在整条 auth 链(含跳板机/堡垒机选机器后的目标机认证)完成后为 true;
+    /// 供 connect_session 在会话落库后向 MFA 弹窗发「目标机已连接」信号。
+    pub fn mfa_used(&self) -> bool {
+        self.mfa_used
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn connect_and_auth(
         host: &str,
@@ -202,7 +213,7 @@ impl SshSession {
         pending_kb: &super::PendingKeyboardResponses,
         pending_hostkey: &super::PendingHostKeyResponses,
         remote_forwards: RemoteForwards,
-    ) -> Result<client::Handle<super::auth::SshHandler>, String> {
+    ) -> Result<(client::Handle<super::auth::SshHandler>, bool), String> {
         let socket_addr = format!("{}:{}", host, port);
 
         let config = client::Config {
@@ -240,6 +251,7 @@ impl SshSession {
             // 始终先尝试主认证(password / key / password+key)
             let remaining = authenticate_primary(&mut handle, username, auth).await?;
 
+            let mut mfa_used = false;
             if remaining.is_empty() {
                 // 主认证成功,无需 MFA
                 debug!("Primary auth succeeded for {}:{}", host, port);
@@ -249,7 +261,7 @@ impl SshSession {
                     "Primary auth done, server requires keyboard-interactive MFA for {}:{}",
                     host, port
                 );
-                authenticate_keyboard_interactive(
+                mfa_used = authenticate_keyboard_interactive(
                     &mut handle,
                     username,
                     kb_interactive,
@@ -269,7 +281,7 @@ impl SshSession {
                 );
             }
 
-            Ok(handle)
+            Ok((handle, mfa_used))
         };
 
         match timeout(connect_timeout, connect_and_auth_fut).await {
@@ -299,7 +311,9 @@ impl SshSession {
                 .unwrap_or(&self.config.username);
             let jump_auth = self.config.jump_auth.as_ref().unwrap_or(&self.config.auth);
 
-            let jump_handle = Self::connect_and_auth(
+            // 跳板机也走完整认证(含可能的 bastion 选机器);其 MFA 标记不
+            // 代表目标机已连接——「连接成功」必须以目标机认证完成为准。
+            let (jump_handle, _jump_mfa_used) = Self::connect_and_auth(
                 jump_host,
                 jump_port,
                 jump_username,
@@ -372,7 +386,7 @@ impl SshSession {
                 debug!("Primary auth succeeded for target via jump host");
             } else if kb_enabled && remaining.contains(&MethodKind::KeyboardInteractive) {
                 debug!("Primary auth done, server requires keyboard-interactive MFA for target via jump host");
-                authenticate_keyboard_interactive(
+                self.mfa_used = authenticate_keyboard_interactive(
                     &mut handle,
                     &self.config.username,
                     &self.config.kb_interactive,
@@ -392,7 +406,9 @@ impl SshSession {
 
             handle
         } else {
-            Self::connect_and_auth(
+            // 直连目标机:connect_and_auth 返回 (handle, mfa_used)。直连路径下
+            // 认证完成的即目标机本身,故 mfa_used 直接落 self。
+            let (handle, mfa_used) = Self::connect_and_auth(
                 &self.config.host,
                 self.config.port,
                 &self.config.username,
@@ -404,7 +420,9 @@ impl SshSession {
                 pending_hostkey,
                 Arc::clone(&self.remote_forwards),
             )
-            .await?
+            .await?;
+            self.mfa_used = mfa_used;
+            handle
         };
 
         let handle = Arc::new(handle);
@@ -2053,6 +2071,9 @@ fn decode_private_key(
 }
 
 /// 执行 keyboard-interactive MFA（驱动 russh 的 start/respond API）
+///
+/// @returns Ok(true) 表示实际走完了 keyboard-interactive(MFA)且已通过;
+/// Ok(false) 表示 kb 未启用(调用方按未触发 MFA 处理)。
 async fn authenticate_keyboard_interactive(
     handle: &mut Handle<super::auth::SshHandler>,
     username: &str,
@@ -2060,10 +2081,10 @@ async fn authenticate_keyboard_interactive(
     session_id: &str,
     app_handle: Option<&tauri::AppHandle>,
     pending_kb: &super::PendingKeyboardResponses,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let kb = kb_config.as_ref().ok_or("kb_interactive config missing")?;
     if !kb.enabled {
-        return Ok(());
+        return Ok(false);
     }
 
     let kb_password = kb.password.clone();
@@ -2159,7 +2180,8 @@ async fn authenticate_keyboard_interactive(
         }
     }
 
-    Ok(())
+    // 走到这里说明 keyboard-interactive 已实际执行且通过(Success break)。
+    Ok(true)
 }
 
 /// 判断 prompt 是否匹配 TOTP 关键词

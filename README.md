@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.98.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.98.2-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -147,6 +147,9 @@
 ---
 
 ## 当前版本
+
+### v0.98.2 (2026-08-26)
+- 🔧 🔧 MFA 连接精确「目标机已连接」信号:后端把「连接成功」定义为**目标机认证全部完成**(跳板机/堡垒机选机器只是中间态),在 `connect_session` 会话落库后发 `ssh:mfa-connected:<sessionId>`;前端 MFA 卡订阅该信号展示「连接成功,会话可复用」。前端独立弹窗 UI 待后续轮落地。
 
 ### v0.98.1 (2026-08-26)
 - 🔧 🐛 壳内文件查看窗/文件信息弹窗被上游 Modal 默认宽 `min(380px, 100%)` 覆盖,缩成窄窗且长内容无法滚动:`.viewer` 与 `.dialog` 宽度加 `!important`,FileInfoDialog 经 `contentClassName` 让内容区撑满固定高度并承接滚动。

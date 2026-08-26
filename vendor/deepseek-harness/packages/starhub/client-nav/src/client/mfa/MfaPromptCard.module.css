@@ -5,6 +5,7 @@
 .hint { overflow: hidden; color: #9eb6cc; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .body { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
 .instructions { color: #c9ddf0; font-size: 12px; line-height: 1.5; }
+.connected { color: #7fe3a0; font-size: 13px; line-height: 1.5; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .label { color: #a9c2d9; font-size: 12px; }
 .input { box-sizing: border-box; width: 100%; border: 1px solid #41698c; border-radius: 5px; padding: 8px 9px; outline: none; background: #101d2b; color: #e4f2ff; font: inherit; font-size: 13px; font-family: var(--dsw-font-mono); }

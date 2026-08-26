@@ -2,7 +2,8 @@
 /**
  * 主壳 MFA 验证卡:只接管 `dsh:` 前缀会话的通用 `ssh:kb-interactive` 事件,
  * 其余(交互终端 assetId / 测试连接 test-*)不弹窗;输入 TOTP 后经
- * `ssh_kb_response` 回传,提交后清空状态。
+ * `ssh_kb_response` 回传;提交后等待 `ssh:mfa-connected:<sessionId>` 精确信号,
+ * 收到即展示「目标机已连接,会话可复用」反馈。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -57,7 +58,37 @@ describe('MfaPromptCard', () => {
     fireEvent.change(screen.getByLabelText('Verification code'), { target: { value: '987654' } })
     fireEvent.click(screen.getByText('提交验证码'))
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_kb_response', { id: 'dsh:asset-1:ssh', responses: ['987654'] }) })
-    expect(screen.queryByLabelText('MFA 验证')).toBeNull()
+    // 提交后应答已回传;卡仍展示等待后端连接成功信号(可能有第二轮 MFA)。
+    expect(screen.getByLabelText('MFA 验证')).toBeTruthy()
+    unmount()
+  })
+
+  it('shows connected feedback when the target-machine success signal arrives', async () => {
+    const callbacks: Array<(event: unknown) => void> = []
+    const invoke = vi.fn((command: string) => {
+      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
+      return Promise.resolve(null)
+    })
+    stubInternals(callbacks, invoke)
+
+    const { unmount } = render(<MfaPromptCard />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
+    expect(invoke).toHaveBeenCalledWith('plugin:event|listen', { event: 'ssh:kb-interactive', target: { kind: 'Any' }, handler: callbacks.length })
+
+    // 触发 kb-interactive:挂载 dsh: 会话 + 订阅精确 connected 信号。
+    const onEvent = callbacks[0]!
+    onEvent({ event: 'ssh:kb-interactive', id: 1, payload: {
+      sessionId: 'dsh:asset-3:ssh',
+      instructions: 'Enter OTP',
+      prompts: [{ prompt: 'TOTP', echo: false }],
+      autoFill: [null],
+    } })
+    await waitFor(() =>{  expect(screen.getByLabelText('MFA 验证')).toBeTruthy() })
+    // 精确信号监听已订阅(第 2 个 listen 是 ssh:mfa-connected:dsh:asset-3:ssh)。
+    const connectedEvent = callbacks[callbacks.length - 1]!
+    connectedEvent({ event: 'ssh:mfa-connected:dsh:asset-3:ssh', id: 2, payload: { sessionId: 'dsh:asset-3:ssh' } })
+    await waitFor(() =>{  expect(screen.getByText(/连接成功/)).toBeTruthy() })
+    expect(screen.getByText(/会话可复用/)).toBeTruthy()
     unmount()
   })
 
