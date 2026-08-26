@@ -282,7 +282,7 @@ pub(crate) async fn connect_session(
     // 会话。注意:仅认证链(含跳板机/堡垒机选机器后的目标机)全部完成才算成功,
     // 跳板机本身的 MFA 不算「连接成功」。发射前先取 mfa_used,再把 session 移入 Arc。
     let mfa_used = session.mfa_used();
-    sessions.insert(id, Arc::new(Mutex::new(session)));
+    sessions.insert(id.clone(), Arc::new(Mutex::new(session)));
     if mfa_used {
         use tauri::Emitter;
         let _ = app_handle.emit(&format!("ssh:mfa-connected:{id}"), id.clone());

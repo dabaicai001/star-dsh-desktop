@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.98.2(🔧 MFA 连接精确「目标机已连接」信号:后端把「连接成功」定义为**目标机认证全部完成**(跳板机/堡垒机选机器只是中间态),在 `connect_session` 会话落库后发 `ssh:mfa-connected:<sessionId>`;前端 MFA 卡订阅该信号展示「连接成功,会话可复用」。前端独立弹窗 UI 待后续轮落地。) |
+| 当前版本 | v0.98.3(🐛 修复 `connect_session` MFA 信号处的编译错误:`sessions.insert(id, ...)` 先把 `id` move 进会话表,随后 `emit("ssh:mfa-connected:{id}", id.clone())` 再借用 `id` 导致 `E0382 borrow of moved value`,release 打包编译失败;改为 `insert(id.clone(), ...)` 保留原始 `id` 供发射信号使用。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-26 (v0.98.2)*
+*最后更新: 2026-08-26 (v0.98.3)*

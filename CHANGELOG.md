@@ -14,6 +14,11 @@
 
 ---
 
+## [0.98.3] - 2026-08-26
+
+### 已完成
+- 🐛 修复 `connect_session` MFA 信号处的编译错误:`sessions.insert(id, ...)` 先把 `id` move 进会话表,随后 `emit("ssh:mfa-connected:{id}", id.clone())` 再借用 `id` 导致 `E0382 borrow of moved value`,release 打包编译失败;改为 `insert(id.clone(), ...)` 保留原始 `id` 供发射信号使用。
+
 ## [0.98.2] - 2026-08-26
 
 ### 已完成
