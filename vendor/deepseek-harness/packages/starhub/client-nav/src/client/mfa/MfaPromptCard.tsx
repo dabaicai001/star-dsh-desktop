@@ -90,6 +90,13 @@ export function MfaPromptCard() {
   const connectedNow = connected !== null
   const hintPieces = kbPrompt.sessionId.replace(/^dsh:/, '').replace(/:ssh$/, '')
 
+  // 关闭整张卡片:连接成功态点击「完成」后关掉,避免「连接成功」态无出口卡死。
+  const closeCard = (): void => {
+    setKbPrompt(null)
+    setConnected(null)
+    setKbAnswers([])
+  }
+
   return (
     <div className={css.backdrop} role="dialog" aria-modal="true" aria-label="MFA 验证">
       <section className={css.card}>
@@ -129,7 +136,9 @@ export function MfaPromptCard() {
           )}
         </div>
         <footer className={css.footer}>
-          {!connectedNow && (
+          {connectedNow ? (
+            <button type="button" className={css.submit} onClick={closeCard}>完成</button>
+          ) : (
             <button type="button" className={css.submit} onClick={submit}>提交验证码</button>
           )}
         </footer>

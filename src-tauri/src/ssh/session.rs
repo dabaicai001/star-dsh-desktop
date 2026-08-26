@@ -1064,6 +1064,10 @@ impl SshSession {
             .channel_open_session()
             .await
             .map_err(|e| format!("[EXEC_FAILED] Failed to open exec channel: {}", e))?;
+        // 选中机器后,写入 pty 的跳转命令前缀。GateShell 类堡垒机菜单要求
+        // `: {number}<Enter>` 才跳转(见菜单 Jump: Use :{number}<Enter>);
+        // 部分产品也接受裸行号。这里用「冒号 + 行号」直写,失败时由调用方回退。
+        let jump_prefix = ":";
         let (pty_cols, pty_rows) = self.config.effective_pty_size();
         channel
             .request_pty(true, "xterm-256color", pty_cols, pty_rows, 0, 0, &[])
@@ -1094,7 +1098,7 @@ impl SshSession {
             }
         };
         drain_menu.await;
-        let menu_text = String::from_utf8_lossy(&menu).to_string();
+        let menu_text = strip_ansi(&String::from_utf8_lossy(&menu)).to_string();
 
         // 请求用户选择机器:emit 事件(通用事件带 sessionId,堡垒机浮层订阅)+
         // 等 ssh_bastion_response(360s 超时,同 MFA)。
@@ -1133,9 +1137,16 @@ impl SshSession {
             }
 
             let mut writer = channel.make_writer();
-            // 写入机器选择 + 回车,让堡垒机进入目标机。
+            // 写入机器选择 + 回车,让堡垒机进入目标机。GateShell 类菜单跳转
+            // 要求冒号前缀(`:{行号}<Enter>`),前端的 selection 可以是行号或
+            // 名称;若用户直接带了冒号则不重复添加。
+            let jump_cmd = if selection.starts_with(jump_prefix) || selection.starts_with('{') {
+                selection.clone()
+            } else {
+                format!("{jump_prefix}{selection}")
+            };
             writer
-                .write_all(format!("{}\n", selection).as_bytes())
+                .write_all(format!("{}\n", jump_cmd).as_bytes())
                 .await
                 .map_err(|e| format!("[BASTION_FAILED] 写入机器选择失败: {}", e))?;
             writer.flush().await.ok();
@@ -1195,7 +1206,7 @@ impl SshSession {
         if !menu_text.trim().is_empty() {
             combined.push_str(&format!("[堡垒机菜单]\n{}\n", menu_text.trim()));
         }
-        let mut stdout = String::from_utf8_lossy(&output).to_string();
+        let mut stdout = strip_ansi(&String::from_utf8_lossy(&output)).to_string();
         if truncated {
             stdout.push_str(&format!(
                 "\n[OUTPUT_TRUNCATED] output exceeded {} bytes and was truncated",
@@ -2218,6 +2229,58 @@ fn is_password_prompt(prompt: &str) -> bool {
         || lower.contains("口令")
 }
 
+/// 去掉终端 ANSI/VT 控制序列,仅保留可见文本。
+///
+/// 堡垒机(GateShell 等)登录取色菜单会在 pty 输出里混入 `\x1b[...m`(颜色)、
+/// `\x1b[...H`(光标定位)、`\x1b[...K`(清行)、`\x1b[?25l/h`(光标显隐)等
+/// 控制码。这类输出若原样透传 `<pre>`,会渲染成"文字+控制码"乱码;这里在
+/// emit 前端 / 组装返回文本前统一剥掉,让选机器浮层显示干净菜单。
+fn strip_ansi(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            // CSI 序列:\x1b[ ... 终止于 0x40..=0x7e(字母/符号)
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for c in chars.by_ref() {
+                    if ('\u{40}'..='\u{7e}').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            // 非 CSI 的 ESC 序列(如 \x1b(M 字符集指定、\x1b7/\x1b8 存取光标):
+            // ESC 后可能跟若干个中间字节(0x20..=0x2f),再以最终字节(0x30..=0x7e)
+            // 结束;整体吞掉,避免把最终字节误当文本保留。
+            else {
+                // 先消费一个字符;若它是中间字节(0x20..=0x2f),继续消费直到最终字节。
+                let mut consumed = 0usize;
+                while let Some(next) = chars.next() {
+                    consumed += 1;
+                    let b = next as u32;
+                    // 中间字节范围 0x20..=0x2f;最终字节范围 0x30..=0x7e。
+                    if !('\u{20}'..='\u{2f}').contains(&next) {
+                        break;
+                    }
+                    if b > 0x7e {
+                        break;
+                    }
+                    if consumed > 16 {
+                        break; // 防御:异常长序列直接丢弃剩余
+                    }
+                }
+            }
+        } else if ch == '\r' {
+            // 回车控制符:CRLF 菜单行尾统一归并为 \n,避免前端 <pre> 渲染出多余
+            // 空行或 \r 残留。这里直接丢弃 \r,保留后续 \n。
+            // 注:孤立 \r(AI 菜单里作"光标回列首")并非可显示文本,一并去掉。
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2384,6 +2447,32 @@ ZfG1KaT0PtFDJ/XFSqtiAAAAEHVzZXJAZXhhbXBsZS5jb20BAgMEBQ==
         assert!(!is_password_prompt("Verification code"));
         assert!(!is_password_prompt("Username"));
         assert!(!is_password_prompt(""));
+    }
+
+    #[test]
+    fn test_strip_ansi_removes_csi_color_and_cursor_sequences() {
+        // 颜色(SGR \x1b[32m)、光标定位(\x1b[23;1H)、清行(\x1b[K)、光标显隐
+        // (\x1b[?25l / \x1b[?25h)、右移(\x1b[1024D)、下移(\x1b[1B)全部剥掉。
+        let raw = "\x1b[0;36mGateShell\x1b[32m=> Is getting\x1b[23;1H\x1b[K\x1b[?25l\r\n  1  db-prod 10.0.1.5\x1b[0m\x1b[?25h";
+        let clean = strip_ansi(raw);
+        assert!(!clean.contains('\u{1b}'));
+        assert_eq!(clean, "GateShell=> Is getting\n  1  db-prod 10.0.1.5");
+    }
+
+    #[test]
+    fn test_strip_ansi_preserves_plain_text() {
+        let text = "  2  web-01  10.0.1.6\nJump: Use :{number}<Enter>";
+        assert_eq!(strip_ansi(text), text);
+    }
+
+    #[test]
+    fn test_strip_ansi_handles_two_byte_and_charset_escapes() {
+        // \x1b7 / \x1b8(保存/恢复光标)是两字节序列,应整体去掉。
+        assert_eq!(strip_ansi("abc\x1b7def"), "abcdef");
+        assert_eq!(strip_ansi("abc\x1b8def"), "abcdef");
+        // \x1b(M 这类字符集指定序列:ESC 后接中间字符('(')与最终字节('M'),
+        // 均应被剥掉,只留后继文本。
+        assert_eq!(strip_ansi("abc\x1b(Mdef"), "abcdef");
     }
 
     #[test]
