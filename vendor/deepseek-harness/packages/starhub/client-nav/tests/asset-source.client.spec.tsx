@@ -184,10 +184,10 @@ describe('createStarHubAssetSource', () => {
         clipboardText: '@web-1',
       },
     })
-    // 轻绑定:settings.update 写 starhub-tool-context 全量四字段补丁
+    // 轻绑定:settings.update 写 starhub-tool-context 全量五字段补丁
     expect(update).toHaveBeenCalledWith({
       ns: TOOL_CONTEXT_NAMESPACE,
-      patch: { subcategory: 'terminal', assetId: 'a1', assetName: 'web-1', routePrefix: '' },
+      patch: { sessionId: 's1', subcategory: 'terminal', assetId: 'a1', assetName: 'web-1', routePrefix: '' },
     })
   })
 
@@ -209,6 +209,7 @@ describe('createStarHubAssetSource', () => {
     expect(update).toHaveBeenCalledWith({
       ns: TOOL_CONTEXT_NAMESPACE,
       patch: {
+        sessionId: 's1',
         subcategory,
         assetId: id,
         assetName: `${type}-asset`,

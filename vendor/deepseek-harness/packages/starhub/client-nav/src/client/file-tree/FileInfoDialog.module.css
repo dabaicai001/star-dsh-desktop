@@ -1,19 +1,28 @@
 /* 文件信息弹窗:与 Read 卡「查看文件」同规格的大对话框 + 行号预览,全部走 dsw 语义令牌。 */
 
-/* 与 FileViewerOverlay 同尺寸:宽模态,内容在 .body 内滚动。 */
+/* 与 FileViewerOverlay 同尺寸:宽模态,内容在 .body 内滚动。
+   上游 Modal 默认 .dialog 设了 width: min(380px, 100%),会级联覆盖这里的
+   宽模态;用 !important 让文件信息弹窗始终全宽呈现。 */
 .dialog {
-  width: min(1080px, calc(100vw - 64px));
+  width: min(1080px, calc(100vw - 64px)) !important;
   height: calc(100vh - 64px);
   display: flex;
   flex-direction: column;
 }
 
-.body {
-  display: flex;
-  min-width: 0;
+/* 作为 Modal 的 contentClassName:让 .content 链(header + body)填满固定高度的
+   卡片,并把垂直滚动交给这个内容区——否则 body 不会长高,长文件预览只能撑开
+   卡片高度,超过视口后被 .dialog 的 overflow:hidden 裁掉,没有上下滚动。 */
+.dialogContent {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.body {
+  display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 10px;
 }

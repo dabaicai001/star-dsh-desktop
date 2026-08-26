@@ -1,7 +1,9 @@
 /* 壳内文件查看窗:宽模态 + 左右栏编辑器,全部走 dsw 语义令牌。 */
 
 .viewer {
-  width: min(1080px, calc(100vw - 64px));
+  /* 上游 Modal 默认 .dialog 设了 width: min(380px, 100%),会级联覆盖这里的
+     宽模态;用 !important 让文件查看窗始终全宽呈现。 */
+  width: min(1080px, calc(100vw - 64px)) !important;
   height: calc(100vh - 64px);
   display: flex;
   flex-direction: column;

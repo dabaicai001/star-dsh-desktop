@@ -109,14 +109,15 @@ export function createStarHubAssetSource(deps: StarHubAssetSourceDeps): InputTri
       // 名单的变更源就是资产快照(get_assets 刷新 / preview 切换)。
       return deps.assets.source.subscribe(listener)
     },
-    onPick({ candidate }) {
+    onPick({ candidate, session }) {
       const asset = byCandidate.get(candidate)
       if (asset === undefined) {
         // 非本 source 产出的候选(防御路径):退回普通文本引用。
         return { text: `@${candidate.name} ` }
       }
-      // 轻绑定:只写 settings 上下文,不切窗口、不打断输入。
-      bindAssetContext(deps.api, deps.selection.source.getSnapshot(), asset)
+      // 轻绑定:只写 settings 上下文,不切窗口、不打断输入。附会话 id,
+      // host 侧 tool-context 只对触发绑定的会话注入(会话级作用域)。
+      bindAssetContext(deps.api, deps.selection.source.getSnapshot(), asset, session.sessionId)
       const sub = assetSubtitle(asset)
       // Docker 资产管理标签也带 ⚠ 标注(候选行与输入框里的引用都醒目)。
       const dockerMark = asset.type === 'docker' ? ` ${DOCKER_REFERENCE_TAG}` : ''

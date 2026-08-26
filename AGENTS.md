@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.98.0(✨ 设置「打开配置文件」改为**壳内打开并支持编辑保存**:新增 Tauri `dsh_settings_path` 返回 `settings.yaml` 路径,StarHub 插件注册 `settings.action`(plugin 形式,不改上游工具视图)经 `starhubFileViewer` 在壳内打开;对话 Read/Edit 工具卡文件名点击同走壳内文件查看窗(改 `ui-conversation/openFile` 优先 `starhubFileViewer`,回退原生打开器)。) |
+| 当前版本 | v0.98.1(🐛 壳内文件查看窗/文件信息弹窗被上游 Modal 默认宽 `min(380px, 100%)` 覆盖,缩成窄窗且长内容无法滚动:`.viewer` 与 `.dialog` 宽度加 `!important`,FileInfoDialog 经 `contentClassName` 让内容区撑满固定高度并承接滚动。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-26 (v0.98.0)*
+*最后更新: 2026-08-26 (v0.98.1)*

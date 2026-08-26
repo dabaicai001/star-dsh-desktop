@@ -83,10 +83,13 @@ export interface AskAiDeps {
 export function createAskAiHandler(deps: AskAiDeps): (payload: AskAiPayload) => void {
   return (payload) => {
     if (payload.assetId !== undefined) {
+      // 取当前会话 id 作作用域:host 侧 tool-context 只对触发绑定(ask-ai)
+      // 的会话注入,避免全局粘性扩散到普通对话。
+      const current = deps.sessions.list.getSnapshot().current
       bindAssetContext(deps.api, deps.selection.source.getSnapshot(), {
         id: payload.assetId,
         name: payload.assetName ?? '',
-      })
+      }, current ?? '')
     }
     void routeAskAi(payload.text, deps.sessions, deps.workspaces, deps.conversation)
   }

@@ -24,7 +24,7 @@ import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  IconCloseOutline16, IconCopyOutline16, IconEditOutline16, IconNewChatOutline16, IconPlusOutline16,
+  IconCloseOutline16, IconCopyOutline16, IconEditOutline16, IconPlusOutline16,
   IconRefreshOutline14, IconRightUpOutline16, IconTrashOutline16,
   writeClipboard, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -41,8 +41,6 @@ export interface StarHubToolWorkspaceInjected {
   refreshAssets: () => void
   /** 打开连接对话框:不传资产 = 新建;传资产 = 编辑(含删除入口)。 */
   openConnectionManager: (asset?: RustAsset) => void
-  /** 聚焦(或新建)壳内 AI 会话:面板内「AI 助手」入口。 */
-  openAiAssistant: () => void
   /** 切回资产列表视图(文件树面板头部「返回资产列表」)。 */
   closeFileTree: () => void
   /** 关闭工具面板(footer 入口再点或面板右上角 ×)。 */
@@ -148,7 +146,7 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onEdit, onDelete }: {
  * @returns null when closed; otherwise the drawer layer.
  */
 export function StarHubToolWorkspace({
-  openAsset, refreshAssets, openConnectionManager, openAiAssistant,
+  openAsset, refreshAssets, openConnectionManager,
   closeFileTree, closeTools, selectSubcategory, insertFileReference,
   useSelection, useAssets, useFileTree, useToolsPanel, useSessions,
 }: StarHubToolWorkspaceProps) {
@@ -194,15 +192,6 @@ export function StarHubToolWorkspace({
                 onClick={() =>{  openConnectionManager() }}
               >
                 <IconPlusOutline16 size={13} />
-              </button>
-              <button
-                type="button"
-                className={css.iconButton}
-                title="AI 助手"
-                aria-label="AI 助手"
-                onClick={() =>{  openAiAssistant() }}
-              >
-                <IconNewChatOutline16 size={13} />
               </button>
               <button
                 type="button"

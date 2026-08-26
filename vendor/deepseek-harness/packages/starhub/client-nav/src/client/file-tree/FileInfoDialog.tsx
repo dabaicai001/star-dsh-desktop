@@ -147,6 +147,7 @@ export function FileInfoDialog({ path, onClose, onReference }: {
       title={`文件信息 — ${name}`}
       closeLabel="关闭"
       className={css.dialog ?? ''}
+      contentClassName={css.dialogContent ?? ''}
       footer={(
         <>
           <span style={{ flex: 1 }} />

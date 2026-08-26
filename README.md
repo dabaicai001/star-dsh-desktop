@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.98.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.98.1-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -147,6 +147,13 @@
 ---
 
 ## 当前版本
+
+### v0.98.1 (2026-08-26)
+- 🔧 🐛 壳内文件查看窗/文件信息弹窗被上游 Modal 默认宽 `min(380px, 100%)` 覆盖,缩成窄窗且长内容无法滚动:`.viewer` 与 `.dialog` 宽度加 `!important`,FileInfoDialog 经 `contentClassName` 让内容区撑满固定高度并承接滚动。
+- 🔧 🐛 关闭工具面板(点遮罩/空白/×)未复位文件树视图:下回点会话头部「文件」胶囊走的是 `closeFileTree` 而非 `openFileTree`,看起来没反应;`closeTools` 现同时 `fileTree.close()`。
+- 🔧 🐛 设置里出现两个「打开配置文件」:上游 `ui-settings-general` 的原生打开按钮与 StarHub 壳内按钮并存——starhub-web profile 给 `api-gateway` 设 `nativeOpen: false`,让上游 `hasDocument` 为 false 不再渲染,只留壳内(对齐 Read/Edit 弹框)按钮;并把 `dsh_settings_path` 补进 `commands.toml` ACL,消除「Command … not allowed by ACL」报错。
+- 🔧 🔧 `starhub-tool-context` 改为**会话级作用域**:绑定 `@` 资产时记录触发会话 id(`sessionId`),host 侧 pre-step 只对 `agent.session.id` 一致的会话注入,普通对话/其它会话不再带上下文。
+- 🔧 🔧 移除工具面板头部「AI 助手」图标按钮(用户红框标出,非必要入口);对应注入字段与测试断言一并删除。
 
 ### v0.98.0 (2026-08-26)
 - 🔧 ✨ 设置「打开配置文件」改为**壳内打开并支持编辑保存**:新增 Tauri `dsh_settings_path` 返回 `settings.yaml` 路径,StarHub 插件注册 `settings.action`(plugin 形式,不改上游工具视图)经 `starhubFileViewer` 在壳内打开;对话 Read/Edit 工具卡文件名点击同走壳内文件查看窗(改 `ui-conversation/openFile` 优先 `starhubFileViewer`,回退原生打开器)。

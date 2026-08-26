@@ -30,6 +30,8 @@ export const TOOL_CONTEXT_NAMESPACE = 'starhub-tool-context'
 
 /** Schema-validated shape written by client-nav. */
 export interface StarHubToolContextValue {
+  /** 触发本次绑定的会话 id;仅该会话在 pre-step 时注入(会话级作用域)。 */
+  sessionId?: string
   /** 当前子类 key(terminal / database / docker);空 = 未选中。 */
   subcategory?: string
   /** 当前选中资产的 id;空 = 未选中资产。 */
@@ -42,6 +44,7 @@ export interface StarHubToolContextValue {
 
 /** Schemastery validation for the namespace value. */
 export const ToolContextSchema: z<StarHubToolContextValue> = z.object({
+  sessionId: z.string(),
   subcategory: z.string(),
   assetId: z.string(),
   assetName: z.string(),
@@ -89,12 +92,16 @@ export function apply(ctx: Context): void {
   const scope = ctx.settings.register(ns, ToolContextSchema)
 
   ctx.on('agent/pre-step', async (
-    { signal },
+    { agent, signal },
     next,
   ): Promise<PreStepDecision> => {
     const decision = await next()
     if (decision.kind === 'reject' || signal.aborted) return decision
     const value = scope.get()
+    // 会话级作用域:仅当本次触发绑定的会话(agent.session.id)与 namespace
+    // 里记录的 sessionId 一致时才注入;普通对话/其他会话不注入,避免全局粘性
+    // 让每条对话都带上 starhub-tool-context 上下文。
+    if (value.sessionId === undefined || value.sessionId !== agent.session.id) return decision
     const text = renderToolContext(value)
     if (text === null) return decision
     return {

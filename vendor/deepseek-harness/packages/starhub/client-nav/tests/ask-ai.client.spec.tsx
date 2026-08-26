@@ -103,7 +103,7 @@ describe('createAskAiHandler', () => {
     handler({ text: 'web-1 报错', assetId: 'a1', assetName: 'web-1' })
     expect(update).toHaveBeenCalledWith({
       ns: TOOL_CONTEXT_NAMESPACE,
-      patch: { subcategory: 'terminal', assetId: 'a1', assetName: 'web-1', routePrefix: '' },
+      patch: { sessionId: 's1', subcategory: 'terminal', assetId: 'a1', assetName: 'web-1', routePrefix: '' },
     })
   })
 
@@ -112,7 +112,7 @@ describe('createAskAiHandler', () => {
     handler({ text: 'x', assetId: 'a1' })
     expect(update).toHaveBeenCalledWith({
       ns: TOOL_CONTEXT_NAMESPACE,
-      patch: { subcategory: '', assetId: 'a1', assetName: '', routePrefix: '' },
+      patch: { sessionId: 's1', subcategory: '', assetId: 'a1', assetName: '', routePrefix: '' },
     })
   })
 

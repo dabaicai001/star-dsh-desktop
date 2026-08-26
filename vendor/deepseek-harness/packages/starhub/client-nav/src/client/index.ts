@@ -189,12 +189,15 @@ export function apply(ctx: Context): void {
     openAsset: openAssetPage,
     refreshAssets: assets.refresh,
     openConnectionManager: connectionManager.open,
-    // 面板内「AI 助手」:打开壳内 AI 聊天面板(shell.overlay 承载)。
-    openAiAssistant: () =>{  aiChat.open() },
     // 文件树视图:面板内「文件树」开关(关闭回到资产列表)。
     closeFileTree: fileTree.close,
-    // 关闭工具面板(footer 入口再点或面板右上角 ×)。
-    closeTools: () =>{  toolsPanel.close() },
+    // 关闭工具面板(footer 入口再点或面板右上角 ×,或点遮罩空白)。
+    // 一并复位文件树视图:面板已关,若 fileTree.open 仍为 true,下回点会话
+    // 头部「文件」胶囊会走到 closeFileTree 而非 openFileTree,看起来没反应。
+    closeTools: () => {
+      fileTree.close()
+      toolsPanel.close()
+    },
     // 选中一个子类:写入选择桥,面板展开该子类的资产列表。
     selectSubcategory: (key: string) => { selection.selectSubcategory(key) },
     // 文件树右键「引用文件/文件夹」:把 `@名称 (路径)` 追加进当前会话对话框。

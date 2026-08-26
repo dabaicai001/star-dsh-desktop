@@ -10,6 +10,15 @@
     host: 127.0.0.1
     port: 3185
 
+# 关闭上游设置「打开配置文件」按钮:StarHub 由 client-nav 的壳内按钮
+# (settings.action → starhubFileViewer)接替,行为对齐 AI 对话里的 Read/Edit
+# 弹框。nativeOpen:false 让 api-proxy 的 hasDocument 为 false,上游
+# ui-settings-general 的 SettingsDocumentAction(原生打开器)不再渲染,避免
+# 与壳内按钮重复出现两个「打开配置文件」。
+- id: api-gateway
+  config:
+    nativeOpen: false
+
 # StarHub 壳导航由 client-nav 注册 DSH React 原生工作台入口。
 # starhub-host-static 将 React 资产工作台托管在 /starhub-react/，dist 路径由
 # STARHUB_WINDOW_DIST 或仓库布局解析。

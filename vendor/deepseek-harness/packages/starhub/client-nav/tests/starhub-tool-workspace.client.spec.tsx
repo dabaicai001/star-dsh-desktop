@@ -50,7 +50,6 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
     toolsPanel,
     refreshAssets: vi.fn(),
     openConnectionManager: vi.fn(),
-    openAiAssistant: vi.fn(),
     closeFileTree: vi.fn(),
     closeTools: vi.fn(),
     selectSubcategory: vi.fn(),
@@ -350,12 +349,4 @@ describe('StarHubToolWorkspace', () => {
     expect(screen.queryByText('文件树')).toBeNull()
   })
 
-  it('opens the shell AI chat from the column header button', () => {
-    const props = workspaceProps()
-    props.bridge.selectSubcategory('terminal')
-    props.assets.update((d) => { d.assets = [sshAsset] })
-    render(<StarHubToolWorkspace {...props} />)
-    fireEvent.click(screen.getByLabelText('AI 助手'))
-    expect(props.openAiAssistant).toHaveBeenCalledTimes(1)
-  })
 })
