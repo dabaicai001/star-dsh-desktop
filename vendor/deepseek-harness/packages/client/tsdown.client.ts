@@ -10,7 +10,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import { existsSync, globSync, readFileSync } from 'node:fs'
-import { isBuiltin } from 'node:module'
+import { createRequire, isBuiltin } from 'node:module'
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
@@ -580,6 +580,19 @@ const SOURCEMAP_COMMENT = /\n\/\/# sourceMappingURL=.*\s*$/
 
 /** Resolve an emitted JS asset import against its source-tree counterpart. */
 function sourceAssetPath(source: string, importer: string): string {
+  // 裸包 CSS 导入(如 `@xterm/xterm/css/xterm.css`):走 Node 模块解析定位到
+  // node_modules 里的真实文件,不能当相对路径拼到 importer 目录(上游补丁:
+  // dsh-css-*-inline 插件原先对裸包 specifier 会拼出
+  // `<pkg>/lib/types/.../@scope/pkg/...css` 的假路径,读文件时报 ENOENT;
+  // 首次由 StarHub 堡垒机浮层在 client 半依赖图引入 xterm.css 时触发)。
+  const isBare = !source.startsWith('.') && !source.startsWith('/') && !isAbsolute(source)
+  if (isBare) {
+    try {
+      return createRequire(importer).resolve(source)
+    } catch {
+      // 解析失败(包内文件缺失等)回退原相对拼接,由下游 readFile 报清晰错误。
+    }
+  }
   const emitted = resolvePath(dirname(importer), source)
   if (existsSync(emitted)) return emitted
   const boundary = emitted.indexOf(TYPES_MARKER)
