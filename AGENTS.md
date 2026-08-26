@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.98.3(🐛 修复 `connect_session` MFA 信号处的编译错误:`sessions.insert(id, ...)` 先把 `id` move 进会话表,随后 `emit("ssh:mfa-connected:{id}", id.clone())` 再借用 `id` 导致 `E0382 borrow of moved value`,release 打包编译失败;改为 `insert(id.clone(), ...)` 保留原始 `id` 供发射信号使用。) |
+| 当前版本 | v0.98.4(🐛 修复文件查看窗/文件信息弹窗编辑区撑不开、底部大量留白:上游 `Modal.module.css` 的 `.content`/`.body` 缺 `flex:1; min-height:0; overflow:auto`,定高弹窗里编辑区/预览区无法拉伸。该补丁(f5a3a109「文件查看窗撑满高度」)被 rc.2 整树同步覆盖丢失,且未进「补丁重放记录」→ v0.98.2 复发。v0.98.4 重施,并登记进升级清单防下次丢失。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-26 (v0.98.3)*
+*最后更新: 2026-08-26 (v0.98.4)*

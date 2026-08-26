@@ -14,6 +14,12 @@
 
 ---
 
+## [0.98.4] - 2026-08-26
+
+### 已完成
+- 🐛 修复文件查看窗/文件信息弹窗编辑区撑不开、底部大量留白:上游 `Modal.module.css` 的 `.content`/`.body` 缺 `flex:1; min-height:0; overflow:auto`,定高弹窗里编辑区/预览区无法拉伸。该补丁(f5a3a109「文件查看窗撑满高度」)被 rc.2 整树同步覆盖丢失,且未进「补丁重放记录」→ v0.98.2 复发。v0.98.4 重施,并登记进升级清单防下次丢失。
+- 🐛 修复打包时 StarHub client 包 lib 未重建导致的「源码修复不进产物」(文件树状态、AI 按钮移除、Modal 拉伸等看似全部没生效):`build:lib:client` 先 `tsc -b` 产出 lib/types,tsdown 据此打包 lib/client.js;tsc -b 增量判定依据各包 `lib/tsconfig.tsbuildinfo` 的 mtime,一旦它晚于源码则跳过重编译,lib 保持旧代码。`package-dsh-runtime` 打包前现清除所有 client 包(`packages/starhub/*`、`packages/client/*`)的 tsbuildinfo,强制 `build:lib:client` 全量重编译,产物必然反映最新源码;下次升级(整树同步后)也不再出现「修复不进产物」。
+
 ## [0.98.3] - 2026-08-26
 
 ### 已完成

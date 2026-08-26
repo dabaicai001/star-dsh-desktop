@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.98.3-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.98.4-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,39 +148,15 @@
 
 ## 当前版本
 
+### v0.98.4 (2026-08-26)
+- 🔧 🐛 修复文件查看窗/文件信息弹窗编辑区撑不开、底部大量留白:上游 `Modal.module.css` 的 `.content`/`.body` 缺 `flex:1; min-height:0; overflow:auto`,定高弹窗里编辑区/预览区无法拉伸。该补丁(f5a3a109「文件查看窗撑满高度」)被 rc.2 整树同步覆盖丢失,且未进「补丁重放记录」→ v0.98.2 复发。v0.98.4 重施,并登记进升级清单防下次丢失。
+- 🔧 🐛 修复打包时 StarHub client 包 lib 未重建导致的「源码修复不进产物」(文件树状态、AI 按钮移除、Modal 拉伸等看似全部没生效):`build:lib:client` 先 `tsc -b` 产出 lib/types,tsdown 据此打包 lib/client.js;tsc -b 增量判定依据各包 `lib/tsconfig.tsbuildinfo` 的 mtime,一旦它晚于源码则跳过重编译,lib 保持旧代码。`package-dsh-runtime` 打包前现清除所有 client 包(`packages/starhub/*`、`packages/client/*`)的 tsbuildinfo,强制 `build:lib:client` 全量重编译,产物必然反映最新源码;下次升级(整树同步后)也不再出现「修复不进产物」。
+
 ### v0.98.3 (2026-08-26)
 - 🔧 🐛 修复 `connect_session` MFA 信号处的编译错误:`sessions.insert(id, ...)` 先把 `id` move 进会话表,随后 `emit("ssh:mfa-connected:{id}", id.clone())` 再借用 `id` 导致 `E0382 borrow of moved value`,release 打包编译失败;改为 `insert(id.clone(), ...)` 保留原始 `id` 供发射信号使用。
 
 ### v0.98.2 (2026-08-26)
 - 🔧 🔧 MFA 连接精确「目标机已连接」信号:后端把「连接成功」定义为**目标机认证全部完成**(跳板机/堡垒机选机器只是中间态),在 `connect_session` 会话落库后发 `ssh:mfa-connected:<sessionId>`;前端 MFA 卡订阅该信号展示「连接成功,会话可复用」。前端独立弹窗 UI 待后续轮落地。
-
-### v0.98.1 (2026-08-26)
-- 🔧 🐛 壳内文件查看窗/文件信息弹窗被上游 Modal 默认宽 `min(380px, 100%)` 覆盖,缩成窄窗且长内容无法滚动:`.viewer` 与 `.dialog` 宽度加 `!important`,FileInfoDialog 经 `contentClassName` 让内容区撑满固定高度并承接滚动。
-- 🔧 🐛 关闭工具面板(点遮罩/空白/×)未复位文件树视图:下回点会话头部「文件」胶囊走的是 `closeFileTree` 而非 `openFileTree`,看起来没反应;`closeTools` 现同时 `fileTree.close()`。
-- 🔧 🐛 设置里出现两个「打开配置文件」:上游 `ui-settings-general` 的原生打开按钮与 StarHub 壳内按钮并存——starhub-web profile 给 `api-gateway` 设 `nativeOpen: false`,让上游 `hasDocument` 为 false 不再渲染,只留壳内(对齐 Read/Edit 弹框)按钮;并把 `dsh_settings_path` 补进 `commands.toml` ACL,消除「Command … not allowed by ACL」报错。
-- 🔧 🔧 `starhub-tool-context` 改为**会话级作用域**:绑定 `@` 资产时记录触发会话 id(`sessionId`),host 侧 pre-step 只对 `agent.session.id` 一致的会话注入,普通对话/其它会话不再带上下文。
-- 🔧 🔧 移除工具面板头部「AI 助手」图标按钮(用户红框标出,非必要入口);对应注入字段与测试断言一并删除。
-
-### v0.96.5 (2026-08-26)
-- 🐛 🐛 **根治「安装版启动即 Failed to load plugins、换回老版本也启动不了」**:`healProfilesModuleFallback`(dsh-app-boot profile.ts 的 `ensureSymlink`)对 `$DSH_HOME/profiles/node_modules` 下**非符号链接的真实目录**原先 fail-loud 抛错(`exists and is not a symlink`),导致 dsh web 进程启动即退出、GUI 报「failed to import loader entry … client-modules: bundle script … failed to load」。该污染(旧版本复制回退残留 / 杀毒或云同步把 junction 解引用成普通目录 / 中断安装)持久存在于 DSH_HOME,任何版本启动都会在同一处崩溃——**这解释了「换回老版本也启动不了」且清理 AppData 前无法自愈**。修复:`ensureSymlink` 遇到非符号链接条目改为**隔离备份**(改名为 `<name>.dshbak-<timestamp>`,不删除用户数据)后重建 junction,启动继续、下次 heal 保持正确链接;隔离/重建失败仍 fail-loud 兜底。配套:`profile.spec.ts` 原「real directory 抛错」用例改为「隔离 + 重建 + 数据保留 + 不重复备份」自愈断言,app-boot 106 例全绿。
-- 🐛 🐛 修复安装版启动偶发「Failed to load plugins」(点名 `@deepseek-ai/dsh-session-log-export`)回归:v0.83.2 的客户端 bundle 加载退避重试补丁(方案 §11.9 第 5 条)在 2026-08-25 的 DSH rc.2 整树同步中被上游原版覆盖丢失,`defaultLoadBundle` 退回单次抓取,启动时 webview 撞上 dsh web 进程更替窗口即永久拒启动。已在 rc.2 源码上重施同一补丁(`packages/client/modules` 的 `system.ts` 拆出 `fetchBundle` + `BUNDLE_RETRY_DELAYS` 300ms/1200ms 共 3 次尝试,`manifest.ts` 两处 `loadBundle` 契约注释,`loader.client.spec.ts` 重试成功/耗尽两用例,client-modules 52 例全绿);并在 `docs/DSH升级适配清单-v0.1.1-rc2.md` 新增「升级后补丁重放记录」+ 方案 §11.9 第 5 条标注「整树替换后必须重放」,防止下次升级再丢。
-
-### v0.96.4 (2026-08-26)
-- 🐛 AI 助手记忆设置改造:删除「存档 tool 消息与工具调用」「记忆写入需逐条确认」两个已退役开关(它们此前只是 UI 层状态、无真行为),「启用长期记忆」与「自动沉淀记忆」合并为单开关「启用长期记忆与自动沉淀」(host 侧 `enabled` 与 `autoReview` 同值下发)。
-- 🐛 修复长期记忆「自动沉淀」从不生效:memory-sink 的消息计数用错了事件词表(`message/user` / `message/assistant` → dsh 实际的 `user/message` / `assistant/message`),导致 `shouldReview` 恒为 false、自动沉淀从不触发。
-- 🐛 修复工具面板(StarHub 工具抽屉)子类行死胡同:空态分支原先不渲染「终端 / 数据库 / Docker」子类行,导致永远无法选中任何子类;改为子类行始终渲染。
-- 🐛 修复会话头部「文件树」按钮开错面板:原先 `openDetails()` 打开的是 ui-conversation 独占的工具调用详情列,与文件树本体(渲染在工具抽屉内)不接通;改为打开工具抽屉并切到文件树视图。
-- 🐛 文件树根目录 cwd 由注入期快照改为经 `useSessions` 响应式读取,避免切换会话后文件树仍指向旧工作区。
-- 🐛 修复 `client-nav` 客户端包 bundle-purity 违例(此前无法跑通 tsdown 全量构建):`AiChatPanel` 值导入 shell 侧 React 胶水 `bindSnapshotSelector`,改为 React 内置 `useSyncExternalStore`。
-- 🔧 清理死代码 `createStarHubNavStore` 与相关过时注释/README。
-
-### v0.96.3 (2026-08-25)
-- 🔧 GitHub 仓库更名为 `star-dsh-desktop`:`git remote`、README 下载/克隆链接、CHANGELOG 仓库地址、AGENTS.md 仓库信息、关于页 GitHub 链接、Tauri Updater 端点全部切换至新仓库名(旧地址仅剩 GitHub 自动重定向)。
-- 🔧 DSH 内核升级到上游 v0.1.1-rc.2 的适配收尾:补回 `tsconfig.base.json` 缺失的 `dsh-client-web-react` 与 10 个 `dsh-starhub-*` 显式 paths 映射(修复测试把包解析到 node_modules lib 的连锁失败)、补回 `web/tsconfig.json` 丢失的 5 个 project references、恢复 `loader-status.ts` 升级时丢失的 `KernelSignal`/`createSignal`/`createLoaderStatusStore` 实现(修复 client typecheck 6 个错误)、修正 2 个此前从未真正运行的测试断言。回归:host typecheck / client typecheck 双零错误,host 单测 145 过、client-nav 857 过、Rust 164 过。已知限制:tsdown 全量构建需 Node `^22.19||>=24`(本机 22.14 下不可用),lib/ 产物被 .gitignore 忽略,换环境需重跑 tsc + `emit-typert-remotes.mjs`(详见 docs/DSH升级交接说明.md)。
-
-### v0.96.1 (2026-08-25)
-- 🐛 AI `@` 直连堡垒机(如阿里云 BastionHost 公网入口,host 即堡垒机、未配跳板机)在验证码通过后报错:堡垒机 pty 判定 `is_bastion()` 原先强制要求 `jump_host`,直连堡垒机 + kb-interactive MFA 资产被漏判,AI exec 走普通通道被服务端拒绝(Channel send error)。改为只认 kb-interactive 启用,直连与跳板两种形态都走「带 pty 选机器」路径;菜单为空(普通 MFA 服务器无选机器菜单)时跳过选机器直接执行命令。
-- 🔧 移除 `linux-legacy-2204.yml`(Ubuntu 22.04 / glibc 2.35 无截图兼容版构建),后续 Release 不再附 `-ubuntu2204` 包。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

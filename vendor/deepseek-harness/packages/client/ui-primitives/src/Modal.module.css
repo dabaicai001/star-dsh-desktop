@@ -38,6 +38,10 @@
   display: flex;
   flex-direction: column;
   width: 100%;
+  /* 上游补丁(rc.2 整树同步覆盖丢失,f5a3a109 重放):owner className 固定弹窗
+     高度(文件查看窗等)时让 .content 参与拉伸;自动高度弹窗无影响。 */
+  flex: 1;
+  min-height: 0;
 }
 
 /* Header row (figma Title row): pad l24/t22/r14/b12, SPACE_BETWEEN —
@@ -92,6 +96,12 @@
   min-width: 0;
   margin-top: 20px;
   padding: 0 24px;
+  /* 上游补丁(rc.2 整树同步覆盖丢失,f5a3a109 重放):定高弹窗内 body 拉伸并
+     承接滚动,编辑区(如文件查看窗 textarea)才能撑满剩余高度;自动高度弹窗
+     不受影响(卡片随内容自适应)。 */
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .footer {

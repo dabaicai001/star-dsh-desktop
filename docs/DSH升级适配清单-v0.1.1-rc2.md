@@ -222,6 +222,13 @@ StarHub 的定制全部以插件形式存在,升级时只需重放「插件层�
   **隔离备份 + 重建 junction**(`<name>.dshbak-<timestamp>`,不删除数据),隔离/重建失败仍
   抛错兜底。上游 `profile.spec.ts` 的「real directory 抛错」断言同步改为自愈断言。
   v0.96.5 施加,升级后必须重放。
+- ✅ **Modal 定高弹窗 body/content 拉伸(v0.98.4 重放)**。
+  `packages/client/ui-primitives/src/Modal.module.css` 的 `.content` / `.body` 原本只有
+  `display:flex; flex-direction:column`,缺 `flex:1; min-height:0; overflow:auto`,导致
+  定高弹窗(文件查看窗、文件信息弹窗)里编辑区/预览区**撑不开、底部大量留白**。f5a3a109
+  (v0.85.6,「文件查看窗撑满高度」)曾给 `.content`/`.body` 补上 flex 拉伸,但 rc.2 整树
+  同步把它冲回上游原样,且未进「补丁重放记录」→ v0.98.2 文件查看窗留白复发。v0.98.4
+  重施同一补丁。**升级(rc.3 / 0.2.x)整树替换后必须重放本条**,否则定高弹窗布局回归。
 - 核对结论:§11.9 第 1-2 条(Windows 打包补丁、tsconfig.host.json exclude)针对的是
   python-sdk 打包链与 website/ 裁剪,rc.2 打包路径已不走该脚本,无需重放;第 4 条
   (starhub-tools 包)本身是 starhub 本地包,随整树保留,不涉及上游文件。

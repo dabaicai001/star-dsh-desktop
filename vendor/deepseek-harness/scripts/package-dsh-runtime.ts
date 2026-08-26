@@ -203,6 +203,15 @@ class DshRuntimePackage {
       console.log('package-dsh-runtime: 跳过构建 (--skip-build)')
       return
     }
+    // 强制重编译 StarHub client 包,避免打进旧产物(v0.98.4 修复):
+    // build:lib:client 先 `tsc -b` 产出 lib/types,tsdown(client face)再据此
+    // 打包 lib/client.js。tsc -b 的增量判定依据各包 `lib/tsconfig.tsbuildinfo`
+    // 的 mtime:一旦它晚于源码(如整树同步/时间戳漂移),tsc 便"认为"无需重编译,
+    // lib/types 保持旧代码,tsdown 虽重新打包也只是把旧 lib/types 卷进
+    // lib/client.js —— 结果是源码里的 UI 修复(移除 AI 按钮、文件树状态、
+    // 文件查看窗撑满等)全部不进产物,表现成"整个 dsh harness 的修复都没生效"。
+    // 打包前清掉这些 tsbuildinfo,强制 tsc -b 全量重编译,产物必然反映最新源码。
+    await this.clearClientBuildCache()
     // dsh web GUI 运行时需要 client-nav 的 node 半(lib/index.js)与浏览器
     // bundle(lib/client.js),两者都是 client 面产物;仅 build:lib:host 会在全新
     // checkout 上缺 client-nav/lib。这里构建完整 lib(host + client)。
@@ -211,6 +220,25 @@ class DshRuntimePackage {
     // dsh-web-frontend 的 files 只放行 dist;缺 vite 产物时 deploy 闭包里只剩
     // package.json,安装包内 dsh web 必炸(v0.78.0 事故)。
     await this.run('build', pnpmBin(), ['run', 'build'])
+  }
+
+  /** 清除 client 面(含 StarHub 本地与上游静态链接)包的 tsc 增量缓存,强制 build:lib:client 全量重编译。 */
+  private async clearClientBuildCache(): Promise<void> {
+    const roots = [join(root, 'packages', 'starhub'), join(root, 'packages', 'client')]
+    const cleared: string[] = []
+    for (const rootDir of roots) {
+      const entries = await readdir(rootDir, { withFileTypes: true }).catch(() => [] as Dirent[])
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        const buildInfo = join(rootDir, entry.name, 'lib', 'tsconfig.tsbuildinfo')
+        if (!existsSync(buildInfo)) continue
+        await rm(buildInfo, { force: true })
+        cleared.push(`${entry.name}`)
+      }
+    }
+    if (cleared.length > 0) {
+      console.log(`package-dsh-runtime: 已清除 client 包增量缓存,强制全量重编译: ${[...new Set(cleared)].join(', ')}`)
+    }
   }
 
   async deployStaging(): Promise<void> {
