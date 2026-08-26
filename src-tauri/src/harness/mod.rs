@@ -415,6 +415,23 @@ impl HostBridgeState {
         }
     }
 
+    /// 严格按**会话自身**解析资产绑定(不沿 subagent 父链继承)。
+    ///
+    /// `resolve_asset`(沿父链)供**写路径**用——memory 工具写入 asset 级记忆时
+    /// 子代理继承父会话绑定是合理语义;但**读路径**(memory-context 的 pre-step
+    /// 注入)若也沿父链,会把旧会话绑定的资产记忆卡带进一个全新会话(无 `@` 也
+    /// 出现)。为满足「严格按会话隔离」,注入路径改用本方法:只命中当前会话
+    /// **精确**绑定的资产,未绑定则不加 asset 卡。
+    ///
+    /// @returns 仅当 session_id 本身已绑定资产时返回 (asset_type, asset_id)。
+    pub fn resolve_asset_strict(&self, session_id: &str) -> Option<(String, String)> {
+        self.bindings
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .cloned()
+    }
+
     /// resolve 一条审批应答;未知 requestId(已超时/重复应答)记日志并返回 false。
     pub async fn resolve_approval(&self, request_id: &str, approved: bool) -> bool {
         match self.approvals.lock().await.remove(request_id) {
@@ -979,7 +996,10 @@ async fn handle_memory_cards(
         .and_then(serde_json::Value::as_str)
         .filter(|value| !value.trim().is_empty())
     {
-        if let Some((_asset_type, asset_id)) = bridge.resolve_asset(session_id) {
+        // 严格按会话自身解析资产绑定:注入路径不沿 subagent 父链继承,避免
+        // 把旧会话绑定的资产记忆卡带进全新会话(无 `@` 也出现)。memory 工具
+        // 的写入路径沿用 resolve_asset(保留父链继承),两者语义不同。
+        if let Some((_asset_type, asset_id)) = bridge.resolve_asset_strict(session_id) {
             scopes.push(format!("asset:{asset_id}"));
         }
     }
@@ -2147,6 +2167,25 @@ mod tests {
             bridge.resolve_asset("child-1"),
             Some(("ssh".into(), "a2".into()))
         );
+    }
+
+    /// 严格解析(注入路径):只命中当前会话自身的绑定,**不**沿 subagent 父链继承。
+    /// 全新会话(无 @)即使父会话绑定了资产,也不会解析出 asset 卡。
+    #[test]
+    fn resolve_asset_strict_does_not_inherit_parent_binding() {
+        let bridge = HostBridgeState::default();
+        bridge.bind_session("root", "db", "a1");
+        bridge.record_subagent_parent("child-1", "root");
+
+        // 自身已绑定:精确命中。
+        assert_eq!(
+            bridge.resolve_asset_strict("root"),
+            Some(("db".into(), "a1".into()))
+        );
+        // 子会话未绑定:即使父会话(root)有绑定,严格解析也应返回 None。
+        assert_eq!(bridge.resolve_asset_strict("child-1"), None);
+        // 未绑定会话:None。
+        assert_eq!(bridge.resolve_asset_strict("unknown"), None);
     }
 
     // ---------- 联动:live.snapshot / open.asset / focus.tool(契约 §2.2) ----------
