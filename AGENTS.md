@@ -90,8 +90,7 @@ starhub/
 ├── scripts/                  # 构建脚本(build-sidecar.mjs、Linux 打包与校验)
 ├── tests/                    # node --test 单测(utils、AI 上下文/滚动)
 └── vendor/                   # 上游源码引用(git submodule)
-    ├── univer/               # DreamNum Univer v0.25.1
-    └── univer-presets/       # DreamNum Univer Presets v0.25.1
+    └── deepseek-harness/     # DSH 主壳与 StarHub React 工作台(唯一 submodule)
 ```
 
 ---

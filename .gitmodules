@@ -1,6 +1,0 @@
-[submodule "vendor/univer"]
-	path = vendor/univer
-	url = https://github.com/dream-num/univer.git
-[submodule "vendor/univer-presets"]
-	path = vendor/univer-presets
-	url = https://github.com/dream-num/univer-presets.git
