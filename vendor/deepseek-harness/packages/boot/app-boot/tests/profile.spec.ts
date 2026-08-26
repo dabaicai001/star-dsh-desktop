@@ -4,9 +4,9 @@
  * empty-root composition, and the installation module-fallback healing.
  */
 
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   composeEntries,
@@ -239,11 +239,23 @@ describe('healProfilesModuleFallback', () => {
     expect(before).toContain('dep-of-a')
   })
 
-  it('throws when a fallback entry is a real directory', () => {
+  it('quarantines a real directory and rebuilds the link instead of failing', () => {
     const anchor = stageInstallation({})
     const home = tmp()
-    mkdirSync(join(home, 'profiles', 'node_modules', 'dsh-app'), { recursive: true })
-    expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow('is not a symlink')
+    const foreign = join(home, 'profiles', 'node_modules', 'dsh-app')
+    mkdirSync(foreign, { recursive: true })
+    writeFileSync(join(foreign, 'stray.txt'), 'user data that must not be deleted')
+    healProfilesModuleFallback(anchor, home)
+    // The foreign directory is moved aside (preserved), and the managed link is restored.
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    const backups = readdirSync(dirname(foreign)).filter(name => name.startsWith('dsh-app.dshbak-'))
+    expect(backups).toHaveLength(1)
+    expect(readFileSync(join(home, 'profiles', 'node_modules', backups[0]!, 'stray.txt'), 'utf8')).toBe('user data that must not be deleted')
+    // A second heal keeps the correct link and does not accumulate more backups.
+    healProfilesModuleFallback(anchor, home)
+    expect(readdirSync(dirname(foreign)).filter(name => name.startsWith('dsh-app.dshbak-'))).toHaveLength(1)
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
   })
 
   it('replaces a wrong symlink', () => {

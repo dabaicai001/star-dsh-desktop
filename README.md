@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.96.4-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.96.5-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -147,6 +147,10 @@
 ---
 
 ## 当前版本
+
+### v0.96.5 (2026-08-26)
+- 🐛 🐛 **根治「安装版启动即 Failed to load plugins、换回老版本也启动不了」**:`healProfilesModuleFallback`(dsh-app-boot profile.ts 的 `ensureSymlink`)对 `$DSH_HOME/profiles/node_modules` 下**非符号链接的真实目录**原先 fail-loud 抛错(`exists and is not a symlink`),导致 dsh web 进程启动即退出、GUI 报「failed to import loader entry … client-modules: bundle script … failed to load」。该污染(旧版本复制回退残留 / 杀毒或云同步把 junction 解引用成普通目录 / 中断安装)持久存在于 DSH_HOME,任何版本启动都会在同一处崩溃——**这解释了「换回老版本也启动不了」且清理 AppData 前无法自愈**。修复:`ensureSymlink` 遇到非符号链接条目改为**隔离备份**(改名为 `<name>.dshbak-<timestamp>`,不删除用户数据)后重建 junction,启动继续、下次 heal 保持正确链接;隔离/重建失败仍 fail-loud 兜底。配套:`profile.spec.ts` 原「real directory 抛错」用例改为「隔离 + 重建 + 数据保留 + 不重复备份」自愈断言,app-boot 106 例全绿。
+- 🐛 🐛 修复安装版启动偶发「Failed to load plugins」(点名 `@deepseek-ai/dsh-session-log-export`)回归:v0.83.2 的客户端 bundle 加载退避重试补丁(方案 §11.9 第 5 条)在 2026-08-25 的 DSH rc.2 整树同步中被上游原版覆盖丢失,`defaultLoadBundle` 退回单次抓取,启动时 webview 撞上 dsh web 进程更替窗口即永久拒启动。已在 rc.2 源码上重施同一补丁(`packages/client/modules` 的 `system.ts` 拆出 `fetchBundle` + `BUNDLE_RETRY_DELAYS` 300ms/1200ms 共 3 次尝试,`manifest.ts` 两处 `loadBundle` 契约注释,`loader.client.spec.ts` 重试成功/耗尽两用例,client-modules 52 例全绿);并在 `docs/DSH升级适配清单-v0.1.1-rc2.md` 新增「升级后补丁重放记录」+ 方案 §11.9 第 5 条标注「整树替换后必须重放」,防止下次升级再丢。
 
 ### v0.96.4 (2026-08-26)
 - 🐛 AI 助手记忆设置改造:删除「存档 tool 消息与工具调用」「记忆写入需逐条确认」两个已退役开关(它们此前只是 UI 层状态、无真行为),「启用长期记忆」与「自动沉淀记忆」合并为单开关「启用长期记忆与自动沉淀」(host 侧 `enabled` 与 `autoReview` 同值下发)。

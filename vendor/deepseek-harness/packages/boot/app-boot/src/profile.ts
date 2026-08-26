@@ -24,7 +24,7 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -167,7 +167,24 @@ export function initProfile(dir: string, bundles: readonly string[]): void {
   if (!existsSync(workspacePath)) writeFileSync(workspacePath, PROFILE_PNPM_WORKSPACE)
 }
 
-/** Ensure `link` is a symlink to `target`, replacing a wrong or dangling link; a real directory throws. */
+/**
+ * The flat module fallback is a dsh-maintained directory: every entry must be
+ * a symlink dsh can re-point. A real directory or file here is a foreign or
+ * residual artifact (an old version's copy-fallback, an antivirus/cloud-sync
+ * tool dereferencing a junction into a real directory, an interrupted
+ * install). Fail-loud upstream behavior permanently bricks the desktop app:
+ * the user has no way to learn they must delete the entry, so every later
+ * launch (including an older version) dies in the same spot. Instead, move
+ * the foreign entry aside to a timestamped sibling and rebuild the link —
+ * nothing is deleted, the boot proceeds, and the next heal keeps the correct
+ * link.
+ */
+function quarantineForeignEntry(link: string): void {
+  const backup = `${link}.dshbak-${Date.now()}`
+  renameSync(link, backup)
+}
+
+/** Ensure `link` is a symlink to `target`, replacing a wrong or dangling link or a foreign entry; a real directory is quarantined, not fatal. */
 function ensureSymlink(link: string, target: string): void {
   let stat
   try {
@@ -179,12 +196,19 @@ function ensureSymlink(link: string, target: string): void {
   }
   if (stat !== undefined) {
     if (!stat.isSymbolicLink()) {
-      throw new Error(`dsh: ${link} exists and is not a symlink; remove it so dsh can manage the installation fallback`)
+      // A foreign real directory/file: quarantine it and rebuild below. A
+      // failed quarantine (permissions, locked handle) must still fail loud —
+      // silently continuing without the link would strand module resolution.
+      quarantineForeignEntry(link)
+      stat = undefined
+    } else if (readlinkSync(link) === target) {
+      return
+    } else {
+      // unlink deletes the reparse point itself on Windows too; rmSync treats a
+      // junction as a directory and throws EISDIR unless recursive.
+      unlinkSync(link)
+      stat = undefined
     }
-    if (readlinkSync(link) === target) return
-    // unlink deletes the reparse point itself on Windows too; rmSync treats a
-    // junction as a directory and throws EISDIR unless recursive.
-    unlinkSync(link)
   }
   try {
     symlinkSync(target, link, 'junction')

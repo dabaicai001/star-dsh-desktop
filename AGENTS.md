@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.96.4(🐛 AI 助手记忆设置改造:删除「存档 tool 消息与工具调用」「记忆写入需逐条确认」两个已退役开关,「启用长期记忆」与「自动沉淀记忆」合并为单开关;修复长期记忆自动沉淀从不触发(memory-sink 计数用错事件词表 `message/*` → `user/message`/`assistant/message`);修复工具面板子类行死胡同与文件树按钮开错面板;修复 client-nav bundle-purity 违例(web-react 值导入 → 内置 useSyncExternalStore)。回归:starhub 1002 测试全过、host/client typecheck 双零、tsdown 全量构建可跑。) |
+| 当前版本 | v0.96.5(🐛 **根治「安装版启动即 Failed to load plugins、换回老版本也启动不了」**:`healProfilesModuleFallback`(dsh-app-boot profile.ts 的 `ensureSymlink`)对 `$DSH_HOME/profiles/node_modules` 下**非符号链接的真实目录**原先 fail-loud 抛错(`exists and is not a symlink`),导致 dsh web 进程启动即退出、GUI 报「failed to import loader entry … client-modules: bundle script … failed to load」。该污染(旧版本复制回退残留 / 杀毒或云同步把 junction 解引用成普通目录 / 中断安装)持久存在于 DSH_HOME,任何版本启动都会在同一处崩溃——**这解释了「换回老版本也启动不了」且清理 AppData 前无法自愈**。修复:`ensureSymlink` 遇到非符号链接条目改为**隔离备份**(改名为 `<name>.dshbak-<timestamp>`,不删除用户数据)后重建 junction,启动继续、下次 heal 保持正确链接;隔离/重建失败仍 fail-loud 兜底。配套:`profile.spec.ts` 原「real directory 抛错」用例改为「隔离 + 重建 + 数据保留 + 不重复备份」自愈断言,app-boot 106 例全绿。) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-26 (v0.96.4)*
+*最后更新: 2026-08-26 (v0.96.5)*

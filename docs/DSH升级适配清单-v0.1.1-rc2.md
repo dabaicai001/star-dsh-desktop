@@ -214,6 +214,14 @@ StarHub 的定制全部以插件形式存在,升级时只需重放「插件层�
   安装版/开发版启动卡「Failed to load plugins」(点名插件 bundle 只是下游症状)。
   v0.96.5 已在保留 rc.2 新增 `initialize` 门控的前提下重施该补丁。
   本条与第 5 条同为「无上游扩展面、必须 touch 上游文件」的合法例外,升级后必须重放。
+- ✅ **§11.9 第 6 条:profiles/node_modules 真实目录污染自愈(v0.96.5 新增)**。
+  `packages/boot/app-boot/src/profile.ts` 的 `ensureSymlink` 对 `$DSH_HOME/profiles/node_modules`
+  下**非符号链接条目**(真实目录/文件)原先 fail-loud 抛错(`exists and is not a symlink`),
+  dsh web 进程启动即退出 → GUI「Failed to load plugins 点名任意插件」且**换回老版本也启动
+  不了**(污染持久存在于 DSH_HOME,任何版本在同一处崩溃)。该补丁把 fail-loud 改为
+  **隔离备份 + 重建 junction**(`<name>.dshbak-<timestamp>`,不删除数据),隔离/重建失败仍
+  抛错兜底。上游 `profile.spec.ts` 的「real directory 抛错」断言同步改为自愈断言。
+  v0.96.5 施加,升级后必须重放。
 - 核对结论:§11.9 第 1-2 条(Windows 打包补丁、tsconfig.host.json exclude)针对的是
   python-sdk 打包链与 website/ 裁剪,rc.2 打包路径已不走该脚本,无需重放;第 4 条
   (starhub-tools 包)本身是 starhub 本地包,随整树保留,不涉及上游文件。

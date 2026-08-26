@@ -474,3 +474,7 @@ token 源:`packages/client/ui-theme/src/styles/`(三层命名:`--dsw-static-*` �
 **v0.83.2(web 启动鲁棒性,2026-08-18)**:
 
 5. `packages/client/modules/src/client/system.ts`:`defaultLoadBundle` 拆出单次抓取 `fetchBundle` 并按 `BUNDLE_RETRY_DELAYS`(300ms / 1200ms)做有界退避重试——安装版启动时 webview 请求插件 bundle 可能撞上 dsh web 进程更替/文件瞬时不读的窗口,首次 `error` 事件即永久拒启动("Failed to load plugins" 点名某个插件,重启即恢复);重试后瞬态失败自愈,真正缺失的 bundle 仍在 3 次尝试后以原报错 fail loud。`manifest.ts` 的 `loadBundle` seam 契约同步注明默认实现带重试。配套:Agent Note `.agents/notes/implemented/bug-fix/2026-08-18-client-bundle-load-retry.md`(三件套)、`loader.client.spec.ts` 重试成功/耗尽两用例。**2026-08-25 的 rc.2 整树同步曾把本条冲掉,v0.96.5 已在 rc.2 源码上重施(见 `docs/DSH升级适配清单-v0.1.1-rc2.md` 第五节);后续每次整树替换后必须重放本条。**
+
+**v0.96.5(启动永久失败的持久状态自愈,2026-08-26)**:
+
+6. `packages/boot/app-boot/src/profile.ts`:`ensureSymlink` 对 `$DSH_HOME/profiles/node_modules` 下**非符号链接条目**(真实目录/文件)由「fail-loud 抛错」改为「**隔离备份 + 重建 junction**」——真实目录改名为 `<name>.dshbak-<timestamp>`(不删除,数据保留)后重建链接;隔离或重建失败仍抛错兜底。背景:真实目录污染(旧版本复制回退残留 / 杀毒或云同步把 junction 解引用成普通目录 / 中断安装)持久存在于 DSH_HOME,上游 fail-loud 让 dsh web 进程启动即退出,GUI 报「failed to import loader entry … client-modules: bundle script … failed to load」,且**换回任何老版本都在同一处崩溃**(污染不随版本回退消失,清理 AppData 前无法自愈)。配套:`profile.spec.ts` 原「real directory 抛错」用例改为「隔离 + 重建 + 数据保留 + 不重复备份」自愈断言,app-boot 106 例全绿。**后续每次整树替换后必须重放本条(升级适配清单第五节第 6 条)。**
