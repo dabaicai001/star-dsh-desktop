@@ -330,9 +330,17 @@ export interface ApprovalBridgeConfig {
 export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
   const answerer = config.answerer !== false
   const ownsPermissionSettings = config.ownsPermissionSettings !== false
-  const transport = ctx.get('sdk-transport') as JsonRpcTransportPeer | undefined
-  if (!transport) {
-    throw new Error('starhub-approval-bridge requires sdk-jsonrpc-server (sdk-transport service) in the same composition')
+  // sdk-transport 由 sdk-jsonrpc-server 在 apply 时同步 provide;两个插件
+  // fiber 并行加载,启动期同步 ctx.get 可能取不到(服务尚未 provide),导致
+  // 偶发 fail loud(与 starhub-tools 同款问题)。改为懒解析:仅审批应答
+  // 真正需要桥回宿主时才 get,缺失时 fail closed(交回链尾),与 tools 的
+  // getTransport 语义一致。
+  const getTransport = (): JsonRpcTransportPeer => {
+    const transport = ctx.get('sdk-transport') as JsonRpcTransportPeer | undefined
+    if (!transport) {
+      throw new Error('starhub-approval-bridge requires sdk-jsonrpc-server (sdk-transport service) in the same composition')
+    }
+    return transport
   }
 
   // 1. 会话权限固定:读取共享 settings.yaml 的 permission.defaultPreset。
@@ -378,7 +386,7 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
   // 3. 审批应答桥:桥回宿主确认卡;桥异常一律 fail closed(交回链尾 = unavailable)。
   ctx.on('approval/request', async (req, next): Promise<ApprovalOutcome> => {
     try {
-      const result: unknown = await transport.request(BRIDGE_METHOD, {
+      const result: unknown = await getTransport().request(BRIDGE_METHOD, {
         sessionId: String(req.agent.session.id),
         toolName: req.toolName,
         callId: req.callId === undefined ? undefined : String(req.callId),
