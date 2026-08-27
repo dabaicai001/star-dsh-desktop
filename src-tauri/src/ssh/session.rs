@@ -2111,6 +2111,17 @@ async fn collect_bastion_command(
     timeout_sec: u64,
     mut user_input: Option<&mut mpsc::Receiver<Vec<u8>>>,
 ) -> Result<(Vec<u8>, bool, Option<u32>), CollectBastionError> {
+    // 冲刷积压输出:有界窗口内丢弃上次命令的残留输出,避免混进本次结果;
+    // 窗口内无数据即视为清空(尽力而为,清不完由采集循环兜底读取)。
+    // wait 返回 None = 通道已关(服务器端断开/空闲被踢),视为不可用。
+    loop {
+        match timeout(BASTION_FLUSH_WINDOW, read.wait()).await {
+            Ok(Some(_)) => continue,
+            Ok(None) => return Err(CollectBastionError::ChannelClosed),
+            Err(_) => break,
+        }
+    }
+
     let mut writer = write.make_writer();
     writer
         .write_all(format!("{}\n", command).as_bytes())
