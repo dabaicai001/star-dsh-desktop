@@ -1165,11 +1165,25 @@ impl SshSession {
                 Ok(Ok(value)) => value,
                 Ok(Err(())) => {
                     pending_bastion.lock().await.remove(session_id);
+                    {
+                        let mut ch = channels.lock().await;
+                        ch.remove(session_id);
+                    }
+                    if let Some(app) = app_handle {
+                        let _ = app.emit(&format!("ssh:bastion-done:{}", session_id), ());
+                    }
                     let _ = channel.close().await;
                     return Err("[BASTION_CLOSED] 堡垒机通道关闭,未能选择目标机器".to_string());
                 }
                 Err(_) => {
                     pending_bastion.lock().await.remove(session_id);
+                    {
+                        let mut ch = channels.lock().await;
+                        ch.remove(session_id);
+                    }
+                    if let Some(app) = app_handle {
+                        let _ = app.emit(&format!("ssh:bastion-done:{}", session_id), ());
+                    }
                     let _ = channel.close().await;
                     return Err("[BASTION_TIMEOUT] 等待选择堡垒机目标机器超时(360s)".to_string());
                 }
@@ -1179,13 +1193,29 @@ impl SshSession {
 
         // run 值为空串 = 用户取消,不执行 AI 命令。
         if run_received.trim().is_empty() {
+            {
+                let mut ch = channels.lock().await;
+                ch.remove(session_id);
+            }
+            let _ = channel.close().await;
             return Err("[BASTION_CANCELLED] 用户取消堡垒机目标机器选择".to_string());
         }
 
         // —— 阶段2:执行 AI 命令 ——
         // 用户已在终端选好机器,把 AI 命令写入同一 pty,采集输出回传给 AI。
+        //
+        // 注意:这是**交互式 shell**(request_shell 打开的 pty 通道),不是普通
+        // exec 单命令通道。命令执行完 shell 依然活着等待下一条输入,**不会发
+        // Eof/Close**——若只等 Eof,阶段2 必然干等到超时(用户反馈的「执行 AI
+        // 命令卡住 → 堡垒机命令超时」即此)。因此命令后追加一行随机哨兵 echo,
+        // 收集循环检测到「独立行 == 哨兵」即视为命令执行完毕,立即返回结果。
+        let sentinel = format!("__DSH_BASTION_DONE_{}__", uuid::Uuid::new_v4().simple());
         writer
             .write_all(format!("{}\n", command).as_bytes())
+            .await
+            .map_err(|e| format!("[BASTION_FAILED] 写入命令失败: {}", e))?;
+        writer
+            .write_all(format!("echo \"{}\"\n", sentinel).as_bytes())
             .await
             .map_err(|e| format!("[BASTION_FAILED] 写入命令失败: {}", e))?;
         writer.flush().await.ok();
@@ -1193,6 +1223,9 @@ impl SshSession {
         let mut output = Vec::<u8>::new();
         let mut truncated = false;
         let mut exit_status: Option<u32> = None;
+        // 行缓冲:pty 输出按行检测哨兵(跨 chunk 拼接),避免命令回显误触发。
+        let mut line_buf = Vec::<u8>::new();
+        let mut done = false;
         let collect = async {
             loop {
                 tokio::select! {
@@ -1205,6 +1238,28 @@ impl SshSession {
                                         &format!("ssh:bastion-output:{}", session_id),
                                         data.to_vec(),
                                     );
+                                }
+                                // 哨兵检测:完整行(strip_ansi 后)恰等于哨兵即命令结束;
+                                // 命令回显行是 `echo "哨兵"`,不等于哨兵,不会误触发。
+                                line_buf.extend_from_slice(&data);
+                                // 防御:无换行的大输出(二进制/超长行)只保留尾部足够
+                                // 匹配哨兵的长度,避免 line_buf 无限膨胀。
+                                const LINE_BUF_CAP: usize = 4096;
+                                if line_buf.len() > LINE_BUF_CAP {
+                                    let keep = sentinel.len() + 8;
+                                    let drop = line_buf.len() - keep;
+                                    line_buf.drain(..drop);
+                                }
+                                while let Some(pos) = line_buf.iter().position(|&b| b == b'\n') {
+                                    let line: Vec<u8> = line_buf.drain(..=pos).collect();
+                                    let text = strip_ansi(&String::from_utf8_lossy(&line));
+                                    if text.trim().trim_end_matches('\r') == sentinel {
+                                        done = true;
+                                        break;
+                                    }
+                                }
+                                if done {
+                                    break;
                                 }
                             }
                             Some(ChannelMsg::ExitStatus { exit_status: code }) => exit_status = Some(code),
@@ -1226,7 +1281,19 @@ impl SshSession {
             }
         };
         let timeout_sec = timeout_sec.clamp(1, MAX_EXEC_TIMEOUT_SEC);
-        let timed_out = timeout(Duration::from_secs(timeout_sec), collect).await.is_err();
+        let timed_out = timeout(Duration::from_secs(timeout_sec), collect)
+            .await
+            .is_err();
+
+        // 阶段2 收尾(所有出口统一执行):移除写通道,通知前端关闭选机器浮层。
+        {
+            let mut ch = channels.lock().await;
+            ch.remove(session_id);
+        }
+        if let Some(app) = app_handle {
+            let _ = app.emit(&format!("ssh:bastion-done:{}", session_id), ());
+        }
+
         if timed_out {
             let _ = channel.close().await;
             return Err(format!(
@@ -1235,7 +1302,19 @@ impl SshSession {
             ));
         }
 
+        // 返回命令真实输出:剔除命令回显行(提示符 + 命令原文,以命令结尾)与
+        // 哨兵相关行(回显的 `echo "哨兵"` 行、echo 的哨兵输出行)。
         let mut stdout = strip_ansi(&String::from_utf8_lossy(&output)).to_string();
+        let command_trim = command.trim();
+        stdout = stdout
+            .lines()
+            .filter(|line| {
+                let l = line.trim_end_matches('\r');
+                let t = l.trim();
+                !t.contains(&sentinel) && !t.ends_with(command_trim)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         if truncated {
             stdout.push_str(&format!(
                 "\n[OUTPUT_TRUNCATED] output exceeded {} bytes and was truncated",
@@ -1243,12 +1322,14 @@ impl SshSession {
             ));
         }
         if exit_status.is_some_and(|c| c != 0) {
+            let _ = channel.close().await;
             return Err(format!(
                 "[EXEC] 命令退出码 {}: {}",
                 exit_status.unwrap_or(0),
                 stdout.trim()
             ));
         }
+        let _ = channel.close().await;
         Ok(stdout)
     }
 

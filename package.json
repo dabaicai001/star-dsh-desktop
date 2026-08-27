@@ -1,6 +1,6 @@
 {
   "name": "starhub",
-  "version": "0.98.7",
+  "version": "0.98.8",
   "private": true,
   "type": "module",
   "scripts": {

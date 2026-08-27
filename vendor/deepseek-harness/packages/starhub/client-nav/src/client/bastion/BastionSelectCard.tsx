@@ -81,6 +81,7 @@ export function BastionSelectCard() {
 
     let disposed = false
     let unlistenOutput: TauriUnlisten | undefined
+    let unlistenDone: TauriUnlisten | undefined
     let resizeObserver: ResizeObserver | undefined
     const decoder = new TextDecoder()
 
@@ -105,6 +106,17 @@ export function BastionSelectCard() {
       else unlistenOutput = off
     })
 
+    // 阶段2(执行 AI 命令)结束信号(成功/失败/超时都会触发):关闭浮层。
+    // 后端 `exec_via_bastion_pty` 在阶段2 收尾统一 emit `ssh:bastion-done:<sessionId>`。
+    void tauriListen<void>(`ssh:bastion-done:${prompt.sessionId}`, () => {
+      if (disposed) return
+      setPrompt(null)
+      setRunning(false)
+    }).then((off) => {
+      if (disposed) void off()
+      else unlistenDone = off
+    })
+
     resizeObserver = new ResizeObserver(resize)
     if (hostRef.current !== null) resizeObserver.observe(hostRef.current)
 
@@ -113,6 +125,7 @@ export function BastionSelectCard() {
       input.dispose()
       resizeObserver?.disconnect()
       void unlistenOutput?.()
+      void unlistenDone?.()
       const tail = decoder.decode()
       if (tail !== '') term.write(tail)
       term.dispose()

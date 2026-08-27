@@ -3,7 +3,8 @@
  * 堡垒机「选择机器」浮层(v0.98.7 实时终端):只接管 `dsh:` 前缀会话的通用
  * `ssh:bastion-select` 事件,其余会话不弹浮层;浮层内嵌 xterm 终端,订阅
  * `ssh:bastion-output:<sessionId>` 渲染 pty 输出,键盘输入经 `ssh_write` 回传;
- * 「执行 AI 命令」经 `ssh_bastion_response` 传非空哨兵,「取消」传空串。
+ * 「执行 AI 命令」经 `ssh_bastion_response` 传非空哨兵,「取消」传空串;
+ * 后端阶段2 完成(成功/失败/超时)经 `ssh:bastion-done:<sessionId>` 通知关闭浮层。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -85,6 +86,11 @@ describe('BastionSelectCard', () => {
     fireEvent.click(runButton)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_bastion_response', { id: 'dsh:asset-1:ssh', selection: '__run__' }) })
     expect(screen.queryByText('执行中…')).toBeTruthy()
+
+    // 后端阶段2 结束信号 `ssh:bastion-done:<sessionId>` 关闭浮层并复位执行态。
+    const doneCallback = callbacks.find((_, idx) => idx >= 2)
+    doneCallback!({ event: `ssh:bastion-done:dsh:asset-1:ssh`, id: 1, payload: null })
+    await waitFor(() =>{  expect(screen.queryByText('堡垒机选择机器')).toBeNull() })
     unmount()
   })
 
