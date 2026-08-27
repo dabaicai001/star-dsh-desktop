@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.99.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.100.0-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,14 +148,14 @@
 
 ## 当前版本
 
+### v0.100.0 (2026-08-27)
+- ✨ 执行记录抽屉化:会话头部新增「执行」胶囊(「文件」旁),SSH 静默执行记录迁入工具抽屉——按会话连接去重置顶(每连接保留最近一次命令,上限 50 条)、行点击展开完整输出/再点收起、记录多时纵向滚动、一键清空;移除右下角 BastionExecPanel 浮层堆叠及其拖动重排(拖动不可靠的根因:重排移动 DOM 节点导致 pointer capture 被浏览器隐式释放);`ssh:exec-done` 订阅上移为 apply 插件级常驻,不再随浮层/抽屉重挂载丢失。
+- ✨ AI 对话中的 Edit/Write 差异卡改为**双栏修改前后对照**:左列 `-` 修改前(错误色底)、右列 `+` 修改后(成功色底),未变更行成对展示;头尾裁剪 + 有界 LCS 行对齐 + 相邻增删游程折叠,替换型修改逐行左右对照;两列共享一个滚动容器,纵向天然联动、任一列横向溢出整体滚动,列头粘性随动;footer 统计与复制文本与旧格式逐字节一致。
+- 🐛 修复干净检出上 vendor/deepseek-harness 全量构建 TS2307 崩溃(CI 报错 `Cannot find module '@deepseek-ai/dsh-commands/remote'`):七个 owner 包的 `/remote` 类型声明是生成产物,而 tsconfig paths 把大量包名直连 src,首个 tsc 阶段就会消费到;新增 `gen:typert` 源码态自举脚本挂入 `build:lib:host` 前,typecheck/lint 同步受益。
+- 🐛 修复 Modal 在 layer-2 弹面上滚动态未重绑 l2 滚动条配对(scrollbar 样式门禁暴露的存量问题);DiffBlock 高度上限改为滚动折叠。
+
 ### v0.99.0 (2026-08-27)
 - 🎨 整体重构 AI × MFA 堡垒机交互链路:后端 `SshSession` 新增 `bastion_shell` **已选机器 shell 通道复用**——首次弹「选机器」实时终端选好后,后续 AI 命令直接写入同一 pty 静默执行,不再每条命令弹窗(空闲 10 分钟回收、失效自动回退重建);前端 `MfaPromptCard` 与 `BastionSelectCard` 合并为一张统一连接卡 `StarHubConnCard`,请求/结束信号全部组件级监听(通用事件带 sessionId),修复「命令已执行但按钮卡在『执行中…』、浮层不关闭」(此前 done 精确事件监听随浮层重挂载静默丢失);`ssh_bastion_response` 失败不再静默 + 45s 兜底复位,按钮任何情况有出口;工具描述收紧(`open_connection`/`focus_terminal` 仅用户明确要求才开窗),AI 执行命令不再乱弹独立窗口/标签页。
-
-### v0.98.8 (2026-08-27)
-- 🔧 🐛 修复堡垒机「执行 AI 命令」卡住直到超时(AI 域工具路径):`exec_via_bastion_pty` 阶段2 打开的是**交互式 shell** pty 通道,命令执行完 shell 依然存活、不会发 Eof/Close,而采集循环只认 Eof/Close/ExitStatus 作为命令结束信号,导致选好机器、点「执行 AI 命令」后命令其实已执行(终端可见输出),后端却干等超时报 `[EXEC_TIMEOUT] 堡垒机命令超时`。v0.98.8 在命令后追加一行随机哨兵 echo,采集循环按行检测「完整行 == 哨兵」即视为命令执行完毕并立即返回结果(命令回显行是 `echo "哨兵"`,不等于哨兵,不会误触发);阶段2 收尾统一移除写通道、关闭 pty 通道,并新增 `ssh:bastion-done:<sessionId>` 事件通知前端关闭选机器浮层(此前浮层会一直停在「执行中…」),阶段1 关闭/超时/取消路径同样补上通道清理与 done 通知。
-
-### v0.98.7 (2026-08-26)
-- 🔧 🐛 修复堡垒机「选择机器」浮层只显示一行(AI 域工具路径):`exec_via_bastion_pty` 原用固定 1.9s 窗口抓取 pty 菜单并解析,而 GateShell 类堡垒机登录后先打印 `Is getting the instances, please wait` 加载提示,真正的服务器列表要等实例拉取完才刷出,导致抓到的"菜单"只有 loading 一行、前端解析成唯一条目。v0.98.7 改为**原汁原味实时终端**:后端不再抓取/解析/过滤菜单,pty 输出持续流式广播到 `ssh:bastion-output:<sessionId>`,前端 `BastionSelectCard` 内嵌真实 xterm 终端原样显示(颜色/光标/翻页交互全保留),用户在终端里敲序号选机器(键盘经 `ssh_write` 写回);选好后点「执行 AI 命令」(经 `ssh_bastion_response` 传非空哨兵)恢复阶段2,把 AI 命令写入同一 pty 并采集输出回传;「取消」传空串。写通道/窗口尺寸复用 `channels` 与 `ssh_resize`,未新增 Tauri 命令或权限。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 
