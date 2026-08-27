@@ -11,7 +11,7 @@
  * 当前会话的条目——头部角标、抽屉列表、「清空」都随之只作用于本会话,
  * 跨会话不再共用。事件负载不含来源会话 id,故以「事件到达时刻的当前会话」
  * 归属(AI 在会话 A 执行期间用户切到会话 B 属边缘竞态,忽略不计)。
- * 兼容约定:setConversation 从未被调用时(active 为 null)不过滤,独立
+ * 兼容约定:setConversation 从未被调用时(tracking=false)不过滤,独立
  * 渲染/旧测试路径仍看到全量列表;apply 一启动即同步喂入,生产恒为隔离态。
  *
  * 事件订阅挂 apply 的 `ctx.effect`(插件生命周期常驻),不随抽屉/按钮的
@@ -95,11 +95,12 @@ export interface ExecRecordsBridge {
 export function createExecRecordsBridge(): ExecRecordsBridge {
   const source = createSnapshotStore<ExecRecordsState>({ viewOpen: false, records: [] })
   let all: ExecRecord[] = []
-  /** 当前活跃会话;null = 尚未跟踪(兼容模式,不做隔离过滤)。 */
-  let active: string | null = null
+  /** 是否已接入会话跟踪:false=兼容模式(不做隔离过滤);true 时 current 可为 undefined(无打开中的会话)。 */
+  let tracking = false
+  let current: string | undefined
   const publish = (): void => {
     source.update((draft) => {
-      draft.records = active === null ? [...all] : all.filter(r => r.conversationId === active)
+      draft.records = tracking ? all.filter(r => r.conversationId === current) : [...all]
     })
   }
   return {
@@ -109,7 +110,7 @@ export function createExecRecordsBridge(): ExecRecordsBridge {
       const rest = all.filter(r => r.sessionId !== event.sessionId)
       const record: ExecRecord = {
         sessionId: event.sessionId,
-        conversationId: active ?? undefined,
+        conversationId: tracking ? current : undefined,
         command: event.command,
         output: event.output,
         at: Date.now(),
@@ -118,8 +119,9 @@ export function createExecRecordsBridge(): ExecRecordsBridge {
       publish()
     },
     setConversation: (id) => {
-      if (active === id) return
-      active = id
+      if (tracking && current === id) return
+      tracking = true
+      current = id
       publish()
     },
     removeSession: (sessionId) => {
@@ -130,7 +132,7 @@ export function createExecRecordsBridge(): ExecRecordsBridge {
     },
     clear: () => {
       // 兼容模式(未跟踪会话)= 旧语义全清;隔离态只清当前会话的条目。
-      const rest = active === null ? [] : all.filter(r => r.conversationId !== active)
+      const rest = tracking ? all.filter(r => r.conversationId !== current) : []
       if (rest.length === all.length) return
       all = rest
       publish()

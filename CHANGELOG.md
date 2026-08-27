@@ -22,6 +22,9 @@
 ### 新增
 - 执行记录行尾「断开连接」按钮(v0.100.1):点击先移除该连接的记录(UI 即时消失,所有会话视角),再异步调用后端 `ssh_disconnect` 断开 SSH 连接;断开失败仅记日志不回滚(连接可能已自行断开)。之后的静默执行会重新建连并产生新记录
 
+### 修复
+- 构建链:修复本版首个提交引入的 TS2322(exec-records 会话跟踪哨兵 `null` 与 `sessions.list` 的 `undefined` 类型冲突)导致 vendor 全量 `build:lib` 失败、CI Linux 兼容与 v0.100.1 Release 四平台构建全红——改为 tracking 布尔标志 + `string | undefined` 当前会话,modeling 不再用 null 哨兵
+
 ---
 
 ## [0.100.0] - 2026-08-27
