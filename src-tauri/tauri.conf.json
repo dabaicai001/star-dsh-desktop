@@ -6,7 +6,7 @@
     "frontendDist": "../shell-placeholder",
     "devUrl": "http://127.0.0.1:3185",
     "beforeDevCommand": "node scripts/dev-dsh-shell.mjs",
-    "beforeBuildCommand": "npm run sidecar:build:release && npm run build:window && npm run package:dsh-runtime"
+    "beforeBuildCommand": "npm run clean:vendor-starhub && npm run sidecar:build:release && npm run build:window && npm run package:dsh-runtime"
   },
   "app": {
     "security": {

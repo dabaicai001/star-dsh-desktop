@@ -209,7 +209,8 @@ export function StarHubConnCard() {
     }
 
     const runCommand = (): void => {
-      setState({ ...state, running: true, error: undefined })
+      // exactOptionalPropertyTypes:不显式写 error: undefined,清除旧错误用展开覆盖。
+      setState(prev => (prev !== null && prev.kind === 'bastion') ? { ...prev, running: true } : prev)
       // 兜底:后端超时未回 done 时复位按钮并提示,避免「执行中…」永久卡死。
       clearRunTimer()
       runTimerRef.current = window.setTimeout(() => {
