@@ -28,9 +28,11 @@ export const DEFAULT_DIFF_MAX_LINES = 16
 const SPLIT_LINE_HEIGHT_PX = 22
 
 /**
- * Upper bound on the LCS table's cells. Beyond it the sides stop pairing (all
- * removed lines stack over all added lines) rather than allocating a huge
- * table — a pathological full-file rewrite renders coarse but stays responsive.
+ * Upper bound on the LCS table's cells. Above it the differing middle skips
+ * table allocation entirely (stacked sides; the adjacent-run fold below still
+ * pairs them positionally, just without common-subsequence guidance) rather
+ * than allocating a huge table — a pathological full-file rewrite stays
+ * responsive.
  */
 const ALIGN_TABLE_CELL_CAP = 250_000
 
@@ -144,8 +146,9 @@ function zipAdjacentDelAddRuns(rows: readonly SplitRow[]): SplitRow[] {
 /**
  * LCS-align the two sides into paired rows. Shared head/tail lines become
  * context pairs without entering the table; only the differing middle does.
- * When that middle exceeds the allocation cap the fallback stacks every
- * removed line above every added line (no fabricated pairings).
+ * A middle too large for the table cap stacks its sides unaligned (no
+ * common-subsequence guidance); {@link zipAdjacentDelAddRuns} folds either
+ * walk result into side-by-side pairs afterwards.
  */
 function pairSides(oldLines: readonly string[], newLines: readonly string[]): SplitRow[] {
   const rows: SplitRow[] = []

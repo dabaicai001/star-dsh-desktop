@@ -118,6 +118,22 @@ describe('DiffBlock two-column structure', () => {
     expect(container.querySelectorAll('[data-state="add"]').length).toBe(3)
   })
 
+  it('pairs a middle above the LCS table cap without allocating the table', () => {
+    // One replacement hunk larger than the cap: the walk stacks all removed
+    // then all added lines, and the adjacent-run fold pairs them positionally.
+    const bigOld = Array.from({ length: 560 }, (_v, i) => `old ${i}`).join('\n')
+    const bigNew = Array.from({ length: 550 }, (_v, i) => `new ${i}`).join('\n')
+    const { container } = render(<DiffBlock diffs={[{ path: 'big.ts', oldText: bigOld, newText: bigNew }]} />)
+    expect(container.querySelectorAll('[data-state="del"]').length).toBe(560)
+    expect(container.querySelectorAll('[data-state="add"]').length).toBe(550)
+    expect(screen.getByText('└ +550 -560 · 1 file')).toBeTruthy()
+    // First pair aligns old 0 with new 0 despite no table guidance.
+    const left = leftCells(container)
+    const right = rightCells(container)
+    expect(left[0]).toMatchObject({ state: 'del', text: 'old 0' })
+    expect(right[0]).toMatchObject({ state: 'add', text: 'new 0' })
+  })
+
   it('renders nothing for empty diffs', () => {
     const { container } = render(<DiffBlock diffs={[]} />)
     expect(container.firstChild).toBeNull()
