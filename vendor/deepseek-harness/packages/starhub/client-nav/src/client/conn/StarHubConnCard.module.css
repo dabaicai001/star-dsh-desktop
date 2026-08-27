@@ -5,15 +5,13 @@
 .hint { overflow: hidden; color: #9eb6cc; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .body { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
 .terminal { min-height: 300px; overflow: hidden; border: 1px solid #34516f; border-radius: 5px; padding: 8px; background: #0a121b; }
-.menu { max-height: 220px; overflow: auto; margin: 0; border: 1px solid #34516f; border-radius: 5px; padding: 8px 9px; background: #101d2b; color: #cfe3f5; white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.5; font-family: var(--dsw-font-mono); }
-.menuList { max-height: 220px; overflow: auto; margin: 0; border: 1px solid #34516f; border-radius: 5px; padding: 6px 4px; background: #101d2b; color: #cfe3f5; font-size: 13px; line-height: 1.6; font-family: var(--dsw-font-mono); list-style: none; outline: none; }
-.menuItem { padding: 5px 10px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.menuItem:hover { background: #1c3350; }
-.menuItemSelected { padding: 5px 10px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #17627a; color: #effdff; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .label { color: #a9c2d9; font-size: 12px; }
 .input { box-sizing: border-box; width: 100%; border: 1px solid #41698c; border-radius: 5px; padding: 8px 9px; outline: none; background: #101d2b; color: #e4f2ff; font: inherit; font-size: 13px; font-family: var(--dsw-font-mono); }
 .input:focus { border-color: #64cddd; box-shadow: 0 0 0 2px rgba(100, 205, 221, 0.15); }
+.instructions { color: #cfe3f5; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.connected { border: 1px solid #2e7d5b; border-radius: 5px; padding: 10px 12px; background: #123527; color: #8fe3b8; font-size: 13px; }
+.error { border: 1px solid #8a4b4b; border-radius: 5px; padding: 8px 10px; background: #3a1f1f; color: #ffb4b4; font-size: 12px; }
 .timeHint { color: #8ba6bf; font-size: 11px; }
 .footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid #34516f; }
 .submit { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #3490a7; border-radius: 5px; padding: 7px 14px; background: #17627a; color: #effdff; cursor: pointer; font-size: 12px; font-weight: 700; }

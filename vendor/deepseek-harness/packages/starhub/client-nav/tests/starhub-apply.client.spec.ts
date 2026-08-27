@@ -3,8 +3,8 @@
  * client-nav 插件装配(apply,rc.2 适配后):各槽位注册的槽名、组件与注入面
  * (工具面板桥 / 连接对话框桥 / 文件查看窗 / git 分支胶囊 / 截图按钮附件)
  * 与工具树子类选中语义(selectSubcategory 写选择桥,不再联动布局开关)。
- * rc.2 注册面:`sidebar.footer.action`(工具入口)+ `shell.overlay`×5
- * (overlay / 文件查看 / MFA / 堡垒机 / 工具面板)+ `conversation.session.header.actions`×2
+ * rc.2 注册面:`sidebar.footer.action`(工具入口)+ `shell.overlay`×4
+ * (overlay / 文件查看 / AI 连接卡 / 工具面板)+ `conversation.session.header.actions`×2
  * (git / 文件树)+ `conversation.input.left`(截图)+ `settings.section`×5。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,8 +17,7 @@ import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
 import { GitBranchPill } from '../src/client/git/GitBranchPill.tsx'
 import { FileTreeButton } from '../src/client/file-tree/FileTreeButton.tsx'
 import { FileViewerOverlay } from '../src/client/file-viewer/FileViewerOverlay.tsx'
-import { MfaPromptCard } from '../src/client/mfa/MfaPromptCard.tsx'
-import { BastionSelectCard } from '../src/client/bastion/BastionSelectCard.tsx'
+import { StarHubConnCard } from '../src/client/conn/StarHubConnCard.tsx'
 import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
 import { STARHUB_FILE_SOURCE } from '../src/client/file-source.ts'
@@ -100,7 +99,7 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
       'sidebar.footer.action',
-      'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
+      'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
       'conversation.session.header.actions', 'conversation.session.header.actions',
       'conversation.input.left',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
@@ -109,7 +108,7 @@ describe('client-nav apply (rc.2)', () => {
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
       StarHubFooterButton,
-      StarHubOverlay, FileViewerOverlay, MfaPromptCard, BastionSelectCard, StarHubToolWorkspace,
+      StarHubOverlay, FileViewerOverlay, StarHubConnCard, StarHubToolWorkspace,
       GitBranchPill, FileTreeButton,
       ScreenshotButton,
       // AiTab 经 () => createElement(AiTab, { api }) 包装,按函数断言。
@@ -125,7 +124,7 @@ describe('client-nav apply (rc.2)', () => {
     const injected = footerConfig.inject() as { openTools: () => void }
     expect(injected.openTools).toBeTypeOf('function')
     // toolsPanel 快照桥挂在工具面板(workspace)槽的 inject hooks 舱位,footer 只负责打开。
-    const panelConfig = register.mock.calls[5]![0]
+    const panelConfig = register.mock.calls[4]![0]
     const panelInjected = panelConfig.inject() as {
       openTools?: never
       hooks: { toolsPanel: { getSnapshot: () => { open: boolean } } }
@@ -138,7 +137,7 @@ describe('client-nav apply (rc.2)', () => {
   it('tools panel inject selects a subcategory through the selection bridge', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const panelConfig = register.mock.calls[5]![0]
+    const panelConfig = register.mock.calls[4]![0]
     const injected = panelConfig.inject() as {
       selectSubcategory: (key: string) => void
       hooks: { selection: { getSnapshot: () => { subcategory: string | null } } }
@@ -169,7 +168,7 @@ describe('client-nav apply (rc.2)', () => {
   it('tools panel inject closes the panel through the bridge', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const panelConfig = register.mock.calls[5]![0]
+    const panelConfig = register.mock.calls[4]![0]
     const injected = panelConfig.inject() as { closeTools: () => void; hooks: { toolsPanel: { getSnapshot: () => { open: boolean } } } }
     injected.closeTools()
     expect(injected.hooks.toolsPanel.getSnapshot()).toEqual({ open: false })
@@ -180,7 +179,7 @@ describe('client-nav apply (rc.2)', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const panel = register.mock.calls[5]![0].inject() as { openAsset: (asset: unknown) => void }
+      const panel = register.mock.calls[4]![0].inject() as { openAsset: (asset: unknown) => void }
       const esAsset = {
         id: 'es1', type: 'db', name: 'es-1', group_id: null,
         config: { dbType: 'elasticsearch', host: 'h' },

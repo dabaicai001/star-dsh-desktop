@@ -1,7 +1,7 @@
 use super::sftp_transport::{SftpChannelDiagnostics, SftpChannelStream};
 use super::{auth::RemoteForwards, SftpLaunchMode, SshAuth, SshConfig};
 use russh::client::{self, Handle};
-use russh::{ChannelMsg, MethodKind, MethodSet};
+use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, MethodKind, MethodSet};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,6 +27,12 @@ const SSH_WRITE_CHANNEL_CAPACITY: usize = 256;
 /// 定时器。间隔取 15s:小于绝大多数 NAT / LB 的空闲超时(≥30s),流量开销
 /// 可忽略(单包几十字节,每天约 300KB)。
 const SSH_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
+/// 已选机器的堡垒机 shell 通道空闲超时(方案 A v0.99.0):超过后丢弃重建,
+/// 避免长期占用堡垒机会话资源;GateShell 类堡垒机通常也有服务端空闲限制。
+const BASTION_SHELL_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
+/// 复用通道前冲刷积压输出的时间窗口:有界等待把上次命令的残留输出丢弃,
+/// 避免混进本次结果;窗口内清不完的由采集循环兜底读取(尽力而为)。
+const BASTION_FLUSH_WINDOW: Duration = Duration::from_millis(200);
 const SFTP_PROBE_MARKER: &str = "__STARHUB_SFTP_PATH__";
 const SFTP_PROBE_NONE_MARKER: &str = "__STARHUB_SFTP_NONE__";
 const SFTP_SERVER_CANDIDATES: &[&str] = &[
@@ -40,6 +46,26 @@ const SFTP_SERVER_CANDIDATES: &[&str] = &[
     "/usr/local/libexec/sftp-server",
     "/opt/local/libexec/sftp-server",
 ];
+
+/// 已选好目标机器的堡垒机 pty shell(方案 A v0.99.0:跨命令复用)。
+///
+/// GateShell 类堡垒机的「选择机器」是**每次登录 shell** 都要做的交互,新开
+/// exec 通道不会继承前面选中的机器。保留 split 后的读写半部,后续 AI 命令
+/// 直接写入同一 pty 执行,不再重新弹「选机器」浮层。读写半部独立持有:
+/// 写用 [`ChannelWriteHalf::make_writer`](仅 &self),读用
+/// [`ChannelReadHalf::wait`](需 &mut)。
+struct BastionShell {
+    read: ChannelReadHalf,
+    write: ChannelWriteHalf<client::Msg>,
+    /// 最近一次命令执行完成时间,用于空闲超时回收。
+    last_used: std::time::Instant,
+}
+
+/// 复用路径失败分类:Stale = 通道已死(上层丢弃后重建),Failed = 业务失败。
+enum BastionReuseError {
+    Stale,
+    Failed(String),
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SftpLaunchInfo {
@@ -148,6 +174,9 @@ pub struct SshSession {
     /// 浏览类 SFTP 操作(list/stat/remove/mkdir/rename/read/write)复用的通道,
     /// 避免每个操作都重新 channel open + subsystem 协商。断线或操作失败时失效重建。
     browse_sftp: Option<russh_sftp::client::SftpSession>,
+    /// 已选机器的堡垒机 pty shell(方案 A v0.99.0):AI 域工具路径跨命令复用,
+    /// 避免每条命令重新弹「选机器」浮层。失效/空闲超时由 exec 入口检测重建。
+    bastion_shell: Option<BastionShell>,
 }
 
 impl SshSession {
@@ -162,6 +191,7 @@ impl SshSession {
             mfa_used: false,
             web_gateway: None,
             browse_sftp: None,
+            bastion_shell: None,
         }
     }
 
@@ -1063,6 +1093,61 @@ impl SshSession {
         command: &str,
         timeout_sec: u64,
     ) -> Result<String, String> {
+        // ── 方案 A(v0.99.0):优先复用已选机器的 shell 通道 ──
+        // GateShell 类堡垒机的「选择机器」是每次登录 shell 都要做的交互;
+        // 首次选好机器后通道保留在 self.bastion_shell,后续命令直接写入同一
+        // pty,不再重新弹「选机器」浮层。空闲超时或通道失效才重建。
+        if self
+            .bastion_shell
+            .as_ref()
+            .is_some_and(|s| s.last_used.elapsed() > BASTION_SHELL_IDLE_TIMEOUT)
+        {
+            // 空闲超时:丢弃重建,避免长期占用堡垒机会话资源
+            self.bastion_shell = None;
+        }
+        // 复用结果:Ok 直接返回;Stale/Failed 都丢弃通道(避免复用半死通道),
+        // 错误原样返回给模型——不自动重试同一条命令(命令可能已在远端执行)。
+        enum ReuseOutcome {
+            Success(String),
+            Stale,
+            Failed(String),
+        }
+        let reuse = {
+            match self.bastion_shell.as_mut() {
+                None => None,
+                Some(shell) => Some(
+                    match Self::exec_on_reused_bastion_shell(
+                        shell,
+                        app_handle,
+                        session_id,
+                        command,
+                        timeout_sec,
+                    )
+                    .await
+                    {
+                        Ok(out) => ReuseOutcome::Success(out),
+                        Err(BastionReuseError::Stale) => ReuseOutcome::Stale,
+                        Err(BastionReuseError::Failed(message)) => ReuseOutcome::Failed(message),
+                    },
+                ),
+            }
+        };
+        if let Some(outcome) = reuse {
+            match outcome {
+                ReuseOutcome::Success(out) => return Ok(out),
+                ReuseOutcome::Stale => {
+                    tracing::info!(session_id, "堡垒机 shell 通道失效,重建");
+                    self.bastion_shell = None;
+                }
+                ReuseOutcome::Failed(message) => {
+                    tracing::warn!(session_id, "堡垒机复用命令失败,丢弃通道: {message}");
+                    self.bastion_shell = None;
+                    return Err(message);
+                }
+            }
+        }
+
+        // ── 完整流程:开 pty → 弹「选机器」终端 → 执行 → 保留通道 ──
         let handle = self
             .handle
             .as_mut()
@@ -1171,6 +1256,9 @@ impl SshSession {
                     }
                     if let Some(app) = app_handle {
                         let _ = app.emit(&format!("ssh:bastion-done:{}", session_id), ());
+                        // 通用事件:统一连接卡组件级监听(不随浮层重挂载丢失),
+                        // 避免「命令已执行但按钮卡住/浮层不关」(与 kb-interactive 同模式)。
+                        let _ = app.emit("ssh:bastion-done", serde_json::json!({ "sessionId": session_id }));
                     }
                     let _ = channel.close().await;
                     return Err("[BASTION_CLOSED] 堡垒机通道关闭,未能选择目标机器".to_string());
@@ -1183,6 +1271,9 @@ impl SshSession {
                     }
                     if let Some(app) = app_handle {
                         let _ = app.emit(&format!("ssh:bastion-done:{}", session_id), ());
+                        // 通用事件:统一连接卡组件级监听(不随浮层重挂载丢失),
+                        // 避免「命令已执行但按钮卡住/浮层不关」(与 kb-interactive 同模式)。
+                        let _ = app.emit("ssh:bastion-done", serde_json::json!({ "sessionId": session_id }));
                     }
                     let _ = channel.close().await;
                     return Err("[BASTION_TIMEOUT] 等待选择堡垒机目标机器超时(360s)".to_string());
@@ -1201,7 +1292,7 @@ impl SshSession {
             return Err("[BASTION_CANCELLED] 用户取消堡垒机目标机器选择".to_string());
         }
 
-        // —— 阶段2:执行 AI 命令 ——
+        // —— 阶段2:执行 AI 命令(复用公共采集) ——
         // 用户已在终端选好机器,把 AI 命令写入同一 pty,采集输出回传给 AI。
         //
         // 注意:这是**交互式 shell**(request_shell 打开的 pty 通道),不是普通
@@ -1209,81 +1300,22 @@ impl SshSession {
         // Eof/Close**——若只等 Eof,阶段2 必然干等到超时(用户反馈的「执行 AI
         // 命令卡住 → 堡垒机命令超时」即此)。因此命令后追加一行随机哨兵 echo,
         // 收集循环检测到「独立行 == 哨兵」即视为命令执行完毕,立即返回结果。
+        // 通道拆成读写半部:采集结束后读写半部保留到 self.bastion_shell 复用
+        // (方案 A),不再 close。
+        drop(writer);
+        let (mut read_half, write_half) = channel.split();
         let sentinel = format!("__DSH_BASTION_DONE_{}__", uuid::Uuid::new_v4().simple());
-        writer
-            .write_all(format!("{}\n", command).as_bytes())
-            .await
-            .map_err(|e| format!("[BASTION_FAILED] 写入命令失败: {}", e))?;
-        writer
-            .write_all(format!("echo \"{}\"\n", sentinel).as_bytes())
-            .await
-            .map_err(|e| format!("[BASTION_FAILED] 写入命令失败: {}", e))?;
-        writer.flush().await.ok();
-
-        let mut output = Vec::<u8>::new();
-        let mut truncated = false;
-        let mut exit_status: Option<u32> = None;
-        // 行缓冲:pty 输出按行检测哨兵(跨 chunk 拼接),避免命令回显误触发。
-        let mut line_buf = Vec::<u8>::new();
-        let mut done = false;
-        let collect = async {
-            loop {
-                tokio::select! {
-                    msg = channel.wait() => {
-                        match msg {
-                            Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
-                                truncated |= append_capped(&mut output, &data, MAX_EXEC_OUTPUT_BYTES);
-                                if let Some(app) = app_handle {
-                                    let _ = app.emit(
-                                        &format!("ssh:bastion-output:{}", session_id),
-                                        data.to_vec(),
-                                    );
-                                }
-                                // 哨兵检测:完整行(strip_ansi 后)恰等于哨兵即命令结束;
-                                // 命令回显行是 `echo "哨兵"`,不等于哨兵,不会误触发。
-                                line_buf.extend_from_slice(&data);
-                                // 防御:无换行的大输出(二进制/超长行)只保留尾部足够
-                                // 匹配哨兵的长度,避免 line_buf 无限膨胀。
-                                const LINE_BUF_CAP: usize = 4096;
-                                if line_buf.len() > LINE_BUF_CAP {
-                                    let keep = sentinel.len() + 8;
-                                    let drop = line_buf.len() - keep;
-                                    line_buf.drain(..drop);
-                                }
-                                while let Some(pos) = line_buf.iter().position(|&b| b == b'\n') {
-                                    let line: Vec<u8> = line_buf.drain(..=pos).collect();
-                                    let text = strip_ansi(&String::from_utf8_lossy(&line));
-                                    if text.trim().trim_end_matches('\r') == sentinel {
-                                        done = true;
-                                        break;
-                                    }
-                                }
-                                if done {
-                                    break;
-                                }
-                            }
-                            Some(ChannelMsg::ExitStatus { exit_status: code }) => exit_status = Some(code),
-                            Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
-                            _ => {}
-                        }
-                    }
-                    data = write_rx.recv() => {
-                        let bytes = match data {
-                            Some(b) => b,
-                            None => break,
-                        };
-                        if writer.write_all(&bytes).await.is_err() {
-                            break;
-                        }
-                        writer.flush().await.ok();
-                    }
-                }
-            }
-        };
-        let timeout_sec = timeout_sec.clamp(1, MAX_EXEC_TIMEOUT_SEC);
-        let timed_out = timeout(Duration::from_secs(timeout_sec), collect)
-            .await
-            .is_err();
+        let collected = collect_bastion_command(
+            &mut read_half,
+            &write_half,
+            app_handle,
+            session_id,
+            command,
+            &sentinel,
+            timeout_sec,
+            Some(&mut write_rx),
+        )
+        .await;
 
         // 阶段2 收尾(所有出口统一执行):移除写通道,通知前端关闭选机器浮层。
         {
@@ -1294,43 +1326,86 @@ impl SshSession {
             let _ = app.emit(&format!("ssh:bastion-done:{}", session_id), ());
         }
 
-        if timed_out {
-            let _ = channel.close().await;
-            return Err(format!(
-                "[EXEC_TIMEOUT] 堡垒机命令超时({}s): {}",
-                timeout_sec, command
-            ));
+        match collected {
+            Err(CollectBastionError::ChannelClosed) => {
+                // 通道在执行期间关闭:丢弃(不保留),报错返回
+                Err("[BASTION_CLOSED] 堡垒机通道在执行命令期间关闭".to_string())
+            }
+            Err(CollectBastionError::TimedOut { timeout_sec, command }) => {
+                // 哨兵超时:保守丢弃通道(可能半死),避免复用半死通道
+                Err(format!(
+                    "[EXEC_TIMEOUT] 堡垒机命令超时({}s): {}",
+                    timeout_sec, command
+                ))
+            }
+            Ok((output, truncated, exit_status)) => {
+                let stdout = clean_bastion_stdout(&output, command, &sentinel, truncated);
+                // 成功与命令失败(退出码非 0)都保留通道:shell 仍在,下次命令
+                // 可继续复用,不再重新弹「选机器」浮层(方案 A)。
+                self.bastion_shell = Some(BastionShell {
+                    read: read_half,
+                    write: write_half,
+                    last_used: std::time::Instant::now(),
+                });
+                if exit_status.is_some_and(|c| c != 0) {
+                    Err(format!(
+                        "[EXEC] 命令退出码 {}: {}",
+                        exit_status.unwrap_or(0),
+                        stdout.trim()
+                    ))
+                } else {
+                    Ok(stdout)
+                }
+            }
         }
+    }
 
-        // 返回命令真实输出:剔除命令回显行(提示符 + 命令原文,以命令结尾)与
-        // 哨兵相关行(回显的 `echo "哨兵"` 行、echo 的哨兵输出行)。
-        let mut stdout = strip_ansi(&String::from_utf8_lossy(&output)).to_string();
-        let command_trim = command.trim();
-        stdout = stdout
-            .lines()
-            .filter(|line| {
-                let l = line.trim_end_matches('\r');
-                let t = l.trim();
-                !t.contains(&sentinel) && !t.ends_with(command_trim)
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        if truncated {
-            stdout.push_str(&format!(
-                "\n[OUTPUT_TRUNCATED] output exceeded {} bytes and was truncated",
-                MAX_EXEC_OUTPUT_BYTES
-            ));
+    /// 在已选机器的堡垒机 shell 通道上执行一条命令(方案 A v0.99.0 复用路径,
+    /// 不弹「选机器」浮层)。命令写入同一 pty,行缓冲检测哨兵收集输出。
+    ///
+    /// 返回 Ok(stdout);通道已死 → Stale(上层丢弃后重建),业务失败 → Failed。
+    async fn exec_on_reused_bastion_shell(
+        shell: &mut BastionShell,
+        app_handle: Option<&tauri::AppHandle>,
+        session_id: &str,
+        command: &str,
+        timeout_sec: u64,
+    ) -> Result<String, BastionReuseError> {
+        let sentinel = format!("__DSH_BASTION_DONE_{}__", uuid::Uuid::new_v4().simple());
+        match collect_bastion_command(
+            &mut shell.read,
+            &shell.write,
+            app_handle,
+            session_id,
+            command,
+            &sentinel,
+            timeout_sec,
+            None,
+        )
+        .await
+        {
+            Err(CollectBastionError::ChannelClosed) => Err(BastionReuseError::Stale),
+            Err(CollectBastionError::TimedOut { timeout_sec, command }) => {
+                // 哨兵超时:通道可能半死,保守丢弃(Stale 语义由上层重建);
+                // 对外按业务失败返回,让模型感知命令未完成。
+                Err(BastionReuseError::Failed(format!(
+                    "[EXEC_TIMEOUT] 堡垒机命令超时({}s): {}",
+                    timeout_sec, command
+                )))
+            }
+            Ok((output, truncated, exit_status)) => {
+                shell.last_used = std::time::Instant::now();
+                let stdout = clean_bastion_stdout(&output, command, &sentinel, truncated);
+                if exit_status.is_some_and(|c| c != 0) {
+                    return Err(BastionReuseError::Failed(format!(
+                        "[EXEC] 命令退出码 {}: {}",
+                        exit_status.unwrap_or(0),
+                        stdout.trim()
+                    )));
+                }
+                Ok(stdout)
+            }
         }
-        if exit_status.is_some_and(|c| c != 0) {
-            let _ = channel.close().await;
-            return Err(format!(
-                "[EXEC] 命令退出码 {}: {}",
-                exit_status.unwrap_or(0),
-                stdout.trim()
-            ));
-        }
-        let _ = channel.close().await;
-        Ok(stdout)
     }
 
     pub async fn open_sftp_with_info(
@@ -1473,6 +1548,9 @@ impl SshSession {
     pub fn disconnect(&mut self) {
         self.resize_tx = None;
         self.browse_sftp = None;
+        // 关闭已复用的堡垒机 shell 通道(drop 读写半部即关闭),会话断开后
+        // 不再保留任何机器选择状态。
+        self.bastion_shell = None;
         // 停止固定节拍心跳
         if let Some(abort) = self.heartbeat_abort.take() {
             abort.abort();
@@ -1983,6 +2061,145 @@ fn rewrite_host_header(head: &[u8], host: &str) -> Vec<u8> {
         }
     }
     out
+}
+
+/// 堡垒机 pty 命令采集失败分类(方案 A v0.99.0 公共采集)。
+enum CollectBastionError {
+    /// 通道在采集期间关闭/EOF(不可复用,需重建)。
+    ChannelClosed,
+    /// 哨兵超时(命令可能仍在运行或通道半死)。
+    TimedOut { timeout_sec: u64, command: String },
+}
+
+/// 写命令 + 随机哨兵到堡垒机 pty 通道,行缓冲检测「独立行 == 哨兵」收集输出。
+///
+/// 注意:这是**交互式 shell**(request_shell 打开的 pty 通道),命令执行完
+/// shell 依然活着,**不会发 Eof/Close**——若只等 Eof 必然干等到超时(用户
+/// 反馈的「执行 AI 命令卡住 → 堡垒机命令超时」即此)。因此命令后追加一行
+/// 随机哨兵 echo,检测到完整行(strip_ansi 后)恰等于哨兵即视为命令完毕;
+/// 命令回显行是 `echo "哨兵"`,不等于哨兵,不会误触发。
+///
+/// `user_input` 为可选的前端终端键盘输入源(完整流程有前端 xterm 浮层;
+/// 复用路径传 None,该分支永不触发)。
+///
+/// @returns Ok((原始输出, 是否截断, 退出码));通道关闭 → ChannelClosed;
+/// 哨兵超时 → TimedOut。
+async fn collect_bastion_command(
+    read: &mut ChannelReadHalf,
+    write: &ChannelWriteHalf<client::Msg>,
+    app_handle: Option<&tauri::AppHandle>,
+    session_id: &str,
+    command: &str,
+    sentinel: &str,
+    timeout_sec: u64,
+    mut user_input: Option<&mut mpsc::Receiver<Vec<u8>>>,
+) -> Result<(Vec<u8>, bool, Option<u32>), CollectBastionError> {
+    let mut writer = write.make_writer();
+    writer
+        .write_all(format!("{}\n", command).as_bytes())
+        .await
+        .map_err(|_| CollectBastionError::ChannelClosed)?;
+    writer
+        .write_all(format!("echo \"{}\"\n", sentinel).as_bytes())
+        .await
+        .map_err(|_| CollectBastionError::ChannelClosed)?;
+    writer.flush().await.map_err(|_| CollectBastionError::ChannelClosed)?;
+
+    let mut output = Vec::<u8>::new();
+    let mut truncated = false;
+    let mut exit_status: Option<u32> = None;
+    // 行缓冲:pty 输出按行检测哨兵(跨 chunk 拼接),避免命令回显误触发。
+    let mut line_buf = Vec::<u8>::new();
+    let mut done = false;
+    let collect = async {
+        loop {
+            tokio::select! {
+                msg = read.wait() => {
+                    match msg {
+                        Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                            truncated |= append_capped(&mut output, &data, MAX_EXEC_OUTPUT_BYTES);
+                            if let Some(app) = app_handle {
+                                let _ = app.emit(
+                                    &format!("ssh:bastion-output:{}", session_id),
+                                    data.to_vec(),
+                                );
+                            }
+                            line_buf.extend_from_slice(&data);
+                            // 防御:无换行的大输出(二进制/超长行)只保留尾部足够
+                            // 匹配哨兵的长度,避免 line_buf 无限膨胀。
+                            const LINE_BUF_CAP: usize = 4096;
+                            if line_buf.len() > LINE_BUF_CAP {
+                                let keep = sentinel.len() + 8;
+                                let drop = line_buf.len() - keep;
+                                line_buf.drain(..drop);
+                            }
+                            while let Some(pos) = line_buf.iter().position(|&b| b == b'\n') {
+                                let line: Vec<u8> = line_buf.drain(..=pos).collect();
+                                let text = strip_ansi(&String::from_utf8_lossy(&line));
+                                if text.trim().trim_end_matches('\r') == sentinel {
+                                    done = true;
+                                    break;
+                                }
+                            }
+                            if done {
+                                return Ok(());
+                            }
+                        }
+                        Some(ChannelMsg::ExitStatus { exit_status: code }) => exit_status = Some(code),
+                        Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => return Err(()),
+                        _ => {}
+                    }
+                }
+                data = async {
+                    match user_input.as_mut() {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    let bytes = match data {
+                        Some(b) => b,
+                        None => return Err(()),
+                    };
+                    if writer.write_all(&bytes).await.is_err() {
+                        return Err(());
+                    }
+                    writer.flush().await.ok();
+                }
+            }
+        }
+    };
+    let timeout_sec = timeout_sec.clamp(1, MAX_EXEC_TIMEOUT_SEC);
+    match timeout(Duration::from_secs(timeout_sec), collect).await {
+        Ok(Ok(())) => Ok((output, truncated, exit_status)),
+        Ok(Err(())) => Err(CollectBastionError::ChannelClosed),
+        Err(_) => Err(CollectBastionError::TimedOut {
+            timeout_sec,
+            command: command.to_string(),
+        }),
+    }
+}
+
+/// 清洗堡垒机命令输出:剔除命令回显行(提示符 + 命令原文,以命令结尾)与
+/// 哨兵相关行(回显的 `echo "哨兵"` 行、echo 的哨兵输出行)。
+fn clean_bastion_stdout(output: &[u8], command: &str, sentinel: &str, truncated: bool) -> String {
+    let mut stdout = strip_ansi(&String::from_utf8_lossy(output)).to_string();
+    let command_trim = command.trim();
+    stdout = stdout
+        .lines()
+        .filter(|line| {
+            let l = line.trim_end_matches('\r');
+            let t = l.trim();
+            !t.contains(sentinel) && !t.ends_with(command_trim)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if truncated {
+        stdout.push_str(&format!(
+            "\n[OUTPUT_TRUNCATED] output exceeded {} bytes and was truncated",
+            MAX_EXEC_OUTPUT_BYTES
+        ));
+    }
+    stdout
 }
 
 /// 向 buffer 追加数据,总量达到 cap 后丢弃多余部分;返回是否发生了截断。

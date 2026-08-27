@@ -40,8 +40,7 @@ import {
 } from './store.ts'
 import { createFileViewerBridge } from './file-viewer/state.ts'
 import { FileViewerOverlay } from './file-viewer/FileViewerOverlay.tsx'
-import { MfaPromptCard } from './mfa/MfaPromptCard.tsx'
-import { BastionSelectCard } from './bastion/BastionSelectCard.tsx'
+import { StarHubConnCard } from './conn/StarHubConnCard.tsx'
 import type { FileViewTarget } from './file-viewer/state.ts'
 import { assetWindowUrl, type StarHubAsset } from './sections.ts'
 import { focusWindowByKey, openNewPage, tauriInvoke } from './tauri.ts'
@@ -169,22 +168,16 @@ export function apply(ctx: Context): void {
       hooks: { fileViewer: fileViewer.source },
     }),
   }, FileViewerOverlay))
-  // 主壳 MFA 验证卡(2026-08-24):AI 域工具建连遇到 keyboard-interactive 时
-  // 弹出 TOTP 输入;只接管 dsh: 前缀会话,与交互终端精确事件互补。
+  // 主壳 AI 连接卡(v0.99.0 整体重构):合并 MFA 验证卡与堡垒机选机器浮层为
+  // 一张统一连接卡。组件级监听请求/结束信号(ssh:kb-interactive /
+  // ssh:bastion-select / ssh:bastion-done),不随浮层重挂载丢失,修复「命令
+  // 已执行但按钮卡住/浮层不关」;同一时刻至多一张卡(互斥)。
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
-    id: 'starhub-mfa-card',
+    id: 'starhub-conn-card',
     order: 115,
-    label: 'StarHub MFA',
-  }, MfaPromptCard))
-  // 堡垒机「选择机器」浮层(2026-08-25,方案A/v0.95.6):AI 域工具经 pty 连堡垒机
-  // 后需先选机器再执行命令;只接管 dsh: 前缀会话。
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'starhub-bastion-select',
-    order: 120,
-    label: 'StarHub BastionSelect',
-  }, BastionSelectCard))
+    label: 'StarHub ConnCard',
+  }, StarHubConnCard))
   const workspaceInject = (): StarHubToolWorkspaceInjected => ({
     openAsset: openAssetPage,
     refreshAssets: assets.refresh,

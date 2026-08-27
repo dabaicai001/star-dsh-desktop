@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.98.8-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.99.0-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,14 +148,14 @@
 
 ## 当前版本
 
+### v0.99.0 (2026-08-27)
+- 🎨 整体重构 AI × MFA 堡垒机交互链路:后端 `SshSession` 新增 `bastion_shell` **已选机器 shell 通道复用**——首次弹「选机器」实时终端选好后,后续 AI 命令直接写入同一 pty 静默执行,不再每条命令弹窗(空闲 10 分钟回收、失效自动回退重建);前端 `MfaPromptCard` 与 `BastionSelectCard` 合并为一张统一连接卡 `StarHubConnCard`,请求/结束信号全部组件级监听(通用事件带 sessionId),修复「命令已执行但按钮卡在『执行中…』、浮层不关闭」(此前 done 精确事件监听随浮层重挂载静默丢失);`ssh_bastion_response` 失败不再静默 + 45s 兜底复位,按钮任何情况有出口;工具描述收紧(`open_connection`/`focus_terminal` 仅用户明确要求才开窗),AI 执行命令不再乱弹独立窗口/标签页。
+
 ### v0.98.8 (2026-08-27)
 - 🔧 🐛 修复堡垒机「执行 AI 命令」卡住直到超时(AI 域工具路径):`exec_via_bastion_pty` 阶段2 打开的是**交互式 shell** pty 通道,命令执行完 shell 依然存活、不会发 Eof/Close,而采集循环只认 Eof/Close/ExitStatus 作为命令结束信号,导致选好机器、点「执行 AI 命令」后命令其实已执行(终端可见输出),后端却干等超时报 `[EXEC_TIMEOUT] 堡垒机命令超时`。v0.98.8 在命令后追加一行随机哨兵 echo,采集循环按行检测「完整行 == 哨兵」即视为命令执行完毕并立即返回结果(命令回显行是 `echo "哨兵"`,不等于哨兵,不会误触发);阶段2 收尾统一移除写通道、关闭 pty 通道,并新增 `ssh:bastion-done:<sessionId>` 事件通知前端关闭选机器浮层(此前浮层会一直停在「执行中…」),阶段1 关闭/超时/取消路径同样补上通道清理与 done 通知。
 
 ### v0.98.7 (2026-08-26)
 - 🔧 🐛 修复堡垒机「选择机器」浮层只显示一行(AI 域工具路径):`exec_via_bastion_pty` 原用固定 1.9s 窗口抓取 pty 菜单并解析,而 GateShell 类堡垒机登录后先打印 `Is getting the instances, please wait` 加载提示,真正的服务器列表要等实例拉取完才刷出,导致抓到的"菜单"只有 loading 一行、前端解析成唯一条目。v0.98.7 改为**原汁原味实时终端**:后端不再抓取/解析/过滤菜单,pty 输出持续流式广播到 `ssh:bastion-output:<sessionId>`,前端 `BastionSelectCard` 内嵌真实 xterm 终端原样显示(颜色/光标/翻页交互全保留),用户在终端里敲序号选机器(键盘经 `ssh_write` 写回);选好后点「执行 AI 命令」(经 `ssh_bastion_response` 传非空哨兵)恢复阶段2,把 AI 命令写入同一 pty 并采集输出回传;「取消」传空串。写通道/窗口尺寸复用 `channels` 与 `ssh_resize`,未新增 Tauri 命令或权限。
-
-### v0.98.6 (2026-08-26)
-- 🔧 🐛 修复全新会话泄漏旧会话绑定的资产记忆卡:长期记忆注入(`starhub-memory-context` / `handle_memory_cards`)原先用 `resolve_asset` 沿 subagent 父链解析会话资产绑定,导致一个全新会话(无 `@`)也会继承旧会话绑定的资产并注入 `asset:` 记忆卡。注入(读)路径改为 `resolve_asset_strict` —— 严格只命中当前会话自身绑定的资产,不沿父链继承;memory 工具的写入路径仍用 `resolve_asset`(保留子代理继承父会话绑定的合理语义)。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

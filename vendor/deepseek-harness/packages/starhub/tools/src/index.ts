@@ -165,7 +165,7 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
   // ── SSH(会话绑定 SSH 资产)──
   {
     toolName: 'ssh_exec',
-    description: '在当前 SSH 会话中执行一条可自行结束的非交互命令并返回输出。只读命令自动放行,写/风险命令会请求用户确认。',
+    description: '在当前 SSH 会话中执行一条可自行结束的非交互命令并返回输出。只读命令自动放行,写/风险命令会请求用户确认。MFA 堡垒机资产首次连接会自动弹出验证/选机器卡片,用户完成一次后会话复用,后续命令静默执行;不要为此调用 open_connection 打开窗口。',
     parameters: {
       command: { type: 'string', required: true, description: '要执行的完整命令,例如 "ls -la /var/log"' },
     },
@@ -658,8 +658,9 @@ export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'open_connection',
     description:
-      '打开(或聚焦)指定 StarHub 资产的连接窗口(SSH 终端/SFTP/数据库),让后续操作有对应的工具界面。'
-      + '适合「帮我看一下 xxx 的日志/状态/数据」这类需要打开对应资产界面的请求;非破坏性 UI 动作,不执行任何命令。',
+      '打开(或聚焦)指定 StarHub 资产的连接窗口(SSH 终端/SFTP/数据库)。仅当用户明确要求「打开/查看窗口」时才调用;'
+      + '执行命令/查询不需要开窗——AI 域工具会由后端静默建立连接,不再弹额外窗口。'
+      + 'MFA 堡垒机资产首次连接会自动弹出验证/选机器卡片,不要因此调用本工具。非破坏性 UI 动作,不执行任何命令。',
     parameters: {
       assetId: { type: 'string', required: true, description: '要打开的资产 id(可用 starhub_list_assets 查询)' },
     },
@@ -672,8 +673,9 @@ export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'focus_terminal',
     description:
-      '打开(或聚焦)指定 StarHub 资产的 SSH 终端窗口。适合需要用户配合观察终端输出、'
-      + '或要在终端里执行交互式命令的场景;非破坏性 UI 动作,不执行任何命令。',
+      '打开(或聚焦)指定 StarHub 资产的 SSH 终端窗口。仅当用户明确要求打开终端观察时才调用;'
+      + 'AI 执行命令不需要开终端窗口,连接由后端静默建立。'
+      + '适合需要用户配合观察终端输出、或要在终端里执行交互式命令的场景;非破坏性 UI 动作,不执行任何命令。',
     parameters: {
       assetId: { type: 'string', required: true, description: '要聚焦的资产 id(可用 starhub_list_assets 查询)' },
     },

@@ -334,7 +334,10 @@ pub(crate) async fn asset_ssh_config(asset_id: &str) -> Result<(String, SshConfi
     use sqlx::Row;
     let asset_type: String = row.try_get("type").map_err(|e| e.to_string())?;
     if asset_type != "ssh" {
-        return Err(format!("资产 {asset_id} 类型不是 ssh: {asset_type}"));
+        return Err(format!(
+            "资产 {asset_id} 类型不是 ssh(实际是 {asset_type}):SSH 域工具(ssh_exec 等)需要绑定 SSH 资产。\
+             当前会话绑定的不是 SSH 资产,请重新 @ 绑定 SSH 资产,或调用 bind_asset_context 切换后重试"
+        ));
     }
     let name: String = row.try_get("name").map_err(|e| e.to_string())?;
     let config_json: String = row.try_get("config_json").map_err(|e| e.to_string())?;
