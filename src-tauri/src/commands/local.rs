@@ -348,9 +348,16 @@ pub async fn local_read_text_file(
     max_bytes: Option<usize>,
 ) -> Result<LocalTextRead, String> {
     let target = PathBuf::from(path);
+    // A deleted/unmounted target surfaces as a plain OS string otherwise; name
+    // the path so a stale tool-card link reads as what actually went wrong.
     let metadata = tokio::fs::metadata(&target)
         .await
-        .map_err(|error| format!("read metadata failed: {error}"))?;
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => {
+                format!("file not found: {}", display_path(&target))
+            }
+            _ => format!("read metadata failed: {error}"),
+        })?;
     if !metadata.is_file() {
         return Err("path is not a file".to_string());
     }
