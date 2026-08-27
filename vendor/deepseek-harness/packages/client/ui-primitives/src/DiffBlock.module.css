@@ -1,8 +1,8 @@
-/* Geometry mirrors CodeBlock/TerminalBlock (12px radius, code-block surface +
-   banner row, markdown code-block font) so a diff card reads as one family with
-   a fenced block and a terminal card. The deliberate divergence, shared with
-   TerminalBlock: the body keeps `white-space: pre` and scrolls horizontally,
-   because folding a source line destroys the indentation a diff is read by. */
+/* Geometry mirrors CodeBlock/TerminalBlock (12px radius, code-block surface)
+   so a diff card reads as one family with a fenced block and a terminal card.
+   The body is a two-column comparison sheet: one shared scroller keeps the
+   before/after columns in lockstep vertically and scrolls horizontal overflow
+   of EITHER column as a whole; no per-column scroller exists by design. */
 
 .block {
   --dsl-diff-radius: 12px;
@@ -15,10 +15,8 @@
   border-radius: var(--dsl-diff-radius);
 }
 
-/* The copy control floats in the top-right corner over the body, so the card
-   has no empty banner row above its first diff line (the TUI diff card has no
-   banner either — only the footer). The block is position: relative, so this
-   anchors to the card. */
+/* The copy control floats in the top-right corner over the body (anchored to
+   the position: relative block), clearing the sticky column-head row. */
 .copyButton {
   position: absolute;
   top: 8px;
@@ -36,50 +34,83 @@
 .body {
   padding: 12px 14px;
   font: var(--dsw-font-markdown-code-block);
-  overflow-x: auto;
-  overflow-y: hidden;
 }
 
-/* No wrapping, no word-break: a diff is read by its indentation. */
-.line {
+/* The single scroll owner for both columns. */
+.scroller {
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+/* Two equal columns; chrome rows span both. */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.cell {
   min-height: var(--dsl-diff-line-height);
+  padding: 0 10px;
   white-space: pre;
 }
 
-/* A file header: the path in the primary tone, set apart by weight. The copy
-   button floats over this first row's top-right corner, so reserve space at the
-   line's end for it — a long path scrolls under the button otherwise, and the
-   button's hit area would eat clicks on the path's tail. */
+/* No wrapping: a diff is read by its indentation. Wide lines widen their
+   column and the sheet scrolls instead of folding. */
+.cell,
+.spanRow {
+  white-space: pre;
+}
+
+/* Column heads: marker-carrying (- before / + after), pinned while the
+   collapsed sheet scrolls; right-head clears the floating copy control. */
+.colHead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-weight: 600;
+}
+
+.headDel {
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, var(--dsw-alias-markdown-code-block));
+}
+
+.headAdd {
+  color: var(--dsw-alias-state-success-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 9%, var(--dsw-alias-markdown-code-block));
+  padding-right: 64px;
+}
+
+/* File headers and same-file hunk gaps span both columns. The path row's
+   trailing padding reserves room for the floating copy control above it. */
+.spanRow {
+  grid-column: 1 / -1;
+  min-height: var(--dsl-diff-line-height);
+}
+
 .path {
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
   padding-right: 56px;
 }
 
-/* A same-file second hunk's separator (a scattered edit), in the dim tone. */
 .gap {
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* The diff's own meaning-carrying colors: removed on the error token, added on
-   the success token. A `- `/`+ ` prefix is drawn here so a copied line and the
-   shown line agree, and so the sign reads without relying on color alone. */
-.del::before {
-  content: '- ';
-  color: var(--dsw-alias-state-error-primary);
-}
-
+/* Row backgrounds carry the +/- meaning; the marker characters are content
+   of the head labels only, so copied text keeps the legacy prefixes from
+   copyText() and data-state exposes the role to tests without parsing text.
+   tints blend onto the code-block surface (kept behind bg via color-mix). */
 .del {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.add::before {
-  content: '+ ';
-  color: var(--dsw-alias-state-success-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 13%, transparent);
+  color: var(--dsw-alias-label-primary);
 }
 
 .add {
-  color: var(--dsw-alias-state-success-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 13%, transparent);
+  color: var(--dsw-alias-label-primary);
 }
 
 .expand {
@@ -98,8 +129,8 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* The change summary, dim under the body: `└ +A -R · N file(s)`, the same
-   footer the TUI transcript's diff card draws. */
+/* The change summary, dim under the body: `└ +A -R · N file(s)` — the same
+   footer text and totals as the TUI transcript's diff card. */
 .footer {
   padding: 0 14px 12px;
   font: var(--dsw-font-markdown-code-block);

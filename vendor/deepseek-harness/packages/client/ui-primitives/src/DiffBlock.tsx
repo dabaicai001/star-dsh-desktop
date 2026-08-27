@@ -1,24 +1,38 @@
-// DiffBlock: the inline-diff surface for a file mutation (write/edit) — a copy
-// control over one or more per-file hunks, each a bold path header followed by
-// the removed block (`-`, error color) and the added block (`+`, success
-// color), with a dim `└ +A -R · N file(s)` footer. Unlike the TUI's exact
-// changed-row comparison, this block renders the old and new sides in full.
-// Both front ends share the line-terminator rule and distinct-path file count.
-// Output never soft-wraps — an aligned source line keeps its indentation and
-// scrolls horizontally instead of folding. Colors resolve through --dsw-*
-// tokens; geometry mirrors CodeBlock.
+// DiffBlock: the inline-diff surface for a file mutation (write/edit). The
+// change draws as a TWO-COLUMN comparison: the left column shows the before
+// (`-`, error tint), the right column shows the after (`+`, success tint),
+// aligned row-by-row through a longest-common-subsequence pass so an edited
+// region reads as removed/added cells in the same visual row. One scroller
+// owns both columns: vertical scrolling moves them together by construction,
+// and horizontal overflow of either column scrolls the whole sheet. File
+// headers and same-file hunk gaps span both columns; the `└ +A -R · N
+// file(s)` footer keeps counting every line each SIDE contributes (unchanged
+// totals from the stacked layout, still distinct-path based), and the copy
+// control emits the legacy prefixed diff text regardless of pairing — pairing
+// is presentation only. Colors resolve through --dsw-* tokens (tints via
+// color-mix); geometry mirrors CodeBlock/TerminalBlock.
 
-import { useCallback, useMemo, useState } from 'react'
+import { Fragment, useCallback, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { writeClipboard } from './clipboard.ts'
 import css from './DiffBlock.module.css'
 
 /**
- * Output lines shown before the height cap collapses the middle. Matches
- * {@link DEFAULT_TERMINAL_MAX_LINES} so a diff card and a terminal card cut a
- * long body at the same place.
+ * Visible paired rows before the collapsed sheet caps its height behind the
+ * expand control (the split layout scrolls instead of slicing rows away), so a
+ * diff card and a terminal card fold at the same place.
  */
 export const DEFAULT_DIFF_MAX_LINES = 16
+
+/** Row height in px backing --dsl-diff-line-height (kept in step with the CSS). */
+const SPLIT_LINE_HEIGHT_PX = 22
+
+/**
+ * Upper bound on the LCS table's cells. Beyond it the sides stop pairing (all
+ * removed lines stack over all added lines) rather than allocating a huge
+ * table — a pathological full-file rewrite renders coarse but stays responsive.
+ */
+const ALIGN_TABLE_CELL_CAP = 250_000
 
 /**
  * One file's change, in the shape {@link DiffBlock} draws. Structurally the
@@ -37,44 +51,202 @@ export interface DiffHunk {
 export interface DiffBlockProps {
   /** One entry per applied hunk, in file order; empty renders nothing. */
   diffs: DiffHunk[]
-  /** Height cap in body lines before the middle collapses (default {@link DEFAULT_DIFF_MAX_LINES}). */
+  /**
+   * Height cap in paired rows before the collapsed sheet scrolls behind the
+   * expand control (default {@link DEFAULT_DIFF_MAX_LINES}); expanding lifts
+   * the cap instead of revealing sliced-away rows.
+   */
   maxLines?: number | undefined
   /** Extra class merged onto the wrapper (callers position; this component draws). */
   className?: string | undefined
 }
 
-/** A single rendered body line and its role, so the height cap slices a flat list. */
-interface DiffRow {
+/** Legacy stacked row (path/del/add/gap) used ONLY for the footer counts and the copied text. */
+interface StackRow {
   kind: 'path' | 'del' | 'add' | 'gap'
   text: string
 }
 
-/** Local exhaustiveness helper — this package does not depend on `dsh-llm`. */
+/** A displayed column cell; `null` draws the empty placeholder opposite a real cell. */
+type SideCell = { kind: 'del' | 'add' | 'context'; text: string } | null
+
+/** One rendered split row: spanning chrome, or one aligned left/right pair. */
+type SplitRow =
+  | { span: { kind: 'path' | 'gap'; text: string } }
+  | { left: SideCell; right: SideCell }
+
 /* v8 ignore next 3 -- closed-union backstop; only reached if a row kind is forged */
 function assertNever(value: never): never {
   throw new Error(`unreachable diff row kind: ${String(value)}`)
 }
 
-/** The dim class per row kind (path/gap chrome vs the diff's own +/- colors). */
-const ROW_CLASS: Record<DiffRow['kind'], string | undefined> = {
-  path: css.path,
-  del: css.del,
-  add: css.add,
-  gap: css.gap,
+/**
+ * Split a side's text into its content lines. Empty text is zero lines (a full
+ * deletion's `newText` or a create's absent `oldText` side draws nothing), and a
+ * single trailing newline is a line terminator rather than an extra empty line —
+ * the same terminator rule TerminalBlock applies to command output. An interior
+ * blank line (a genuine `\n\n`) survives.
+ */
+function contentLines(text: string): string[] {
+  if (text === '') return []
+  const body = text.endsWith('\n') ? text.slice(0, -1) : text
+  return body.split('\n')
+}
+
+/** Context cell helpers keeping the pair constructors terse. */
+const ctx = (text: string): NonNullable<SideCell> => ({ kind: 'context', text })
+
+/**
+ * Fold each ADJACENT pure-removed run followed by a pure-added run into
+ * positionally paired rows (min length; leftovers keep their stack order).
+ * The LCS walk alone emits classic diffs — every removed line above every
+ * added line — which reads a one-line replacement as two disjoint blocks; the
+ * fold puts the edited lines side by side so the comparison sheet reads like
+ * before | after. Purely presentational: footer totals and copied text come
+ * from {@link buildStackRows} and are unaffected.
+ */
+function zipAdjacentDelAddRuns(rows: readonly SplitRow[]): SplitRow[] {
+  const out: SplitRow[] = []
+  let index = 0
+  while (index < rows.length) {
+    const row = rows[index]!
+    if ('span' in row || row.left === null || row.right !== null) {
+      out.push(row)
+      index++
+      continue
+    }
+    const dels: Array<{ left: SideCell; right: SideCell }> = []
+    while (index < rows.length) {
+      const candidate = rows[index]
+      if (candidate === undefined || 'span' in candidate || candidate.left === null || candidate.right !== null) break
+      dels.push(candidate)
+      index++
+    }
+    const adds: Array<{ left: SideCell; right: SideCell }> = []
+    while (index < rows.length) {
+      const candidate = rows[index]
+      if (candidate === undefined || 'span' in candidate || candidate.right === null || candidate.left !== null) break
+      adds.push(candidate)
+      index++
+    }
+    if (adds.length === 0) {
+      out.push(...dels)
+      continue
+    }
+    const paired = Math.min(dels.length, adds.length)
+    for (let k = 0; k < paired; k++) out.push({ left: dels[k]!.left, right: adds[k]!.right })
+    out.push(...dels.slice(paired))
+    out.push(...adds.slice(paired))
+  }
+  return out
 }
 
 /**
- * Flatten the hunks into the body's rows plus the footer counts. A path header
- * opens each new file; a same-file second hunk (a scattered edit) opens with a
- * `⋯` gap instead of repeating the path. Every old-side line counts toward
- * `removed` and every new-side line toward `added`. The file count is of
- * DISTINCT paths, matching the TUI diff card's footer, so two hunks in one file
- * read as `1 file` on both front ends.
- * @param diffs - the hunks to render.
- * @returns the body rows, the +/- totals, and the distinct-file count.
+ * LCS-align the two sides into paired rows. Shared head/tail lines become
+ * context pairs without entering the table; only the differing middle does.
+ * When that middle exceeds the allocation cap the fallback stacks every
+ * removed line above every added line (no fabricated pairings).
  */
-function buildRows(diffs: DiffHunk[]): { rows: DiffRow[]; added: number; removed: number; files: number } {
-  const rows: DiffRow[] = []
+function pairSides(oldLines: readonly string[], newLines: readonly string[]): SplitRow[] {
+  const rows: SplitRow[] = []
+  let start = 0
+  const minSide = Math.min(oldLines.length, newLines.length)
+  while (start < minSide && oldLines[start] === newLines[start]) start++
+  let endOld = oldLines.length
+  let endNew = newLines.length
+  while (endOld > start && endNew > start && oldLines[endOld - 1] === newLines[endNew - 1]) {
+    endOld--
+    endNew--
+  }
+  const emitContextPairs = (from: number, until: number, side: 'head' | 'tail'): void => {
+    for (let index = from; index < until; index++) {
+      // Head indexes both sides from the top; tail walks back symmetrically.
+      const oldIndex = side === 'head' ? index : endOld + (index - start)
+      const newIndex = side === 'head' ? index : endNew + (index - start)
+      rows.push({ left: ctx(oldLines[oldIndex]!), right: ctx(newLines[newIndex]!) })
+    }
+  }
+  emitContextPairs(0, start, 'head')
+
+  const midOld = oldLines.slice(start, endOld)
+  const midNew = newLines.slice(start, endNew)
+  const delRow = (text: string): SplitRow => ({ left: { kind: 'del', text }, right: null })
+  const addRow = (text: string): SplitRow => ({ left: null, right: { kind: 'add', text } })
+  const midRows: SplitRow[] = []
+  if (midOld.length === 0) {
+    for (const text of midNew) midRows.push(addRow(text))
+  } else if (midNew.length === 0 || midOld.length * midNew.length > ALIGN_TABLE_CELL_CAP) {
+    for (const text of midOld) midRows.push(delRow(text))
+    for (const text of midNew) midRows.push(addRow(text))
+  } else {
+    const width = midNew.length
+    // Lengths of common subsequences of midOld[i..] × midNew[j..]; row-major.
+    // Reads assert non-null: every looked-up cell was written earlier this pass.
+    const table = new Int32Array((midOld.length + 1) * (width + 1))
+    for (let i = midOld.length - 1; i >= 0; i--) {
+      for (let j = width - 1; j >= 0; j--) {
+        const diagonal = table[(i + 1) * (width + 1) + j + 1]!
+        table[i * (width + 1) + j] = midOld[i] === midNew[j]
+          ? diagonal + 1
+          : Math.max(table[(i + 1) * (width + 1) + j]!, table[i * (width + 1) + j + 1]!)
+      }
+    }
+    let i = 0
+    let j = 0
+    while (i < midOld.length && j < width) {
+      if (midOld[i] === midNew[j]) {
+        midRows.push({ left: ctx(midOld[i]!), right: ctx(midNew[j]!) })
+        i++
+        j++
+      } else if (table[(i + 1) * (width + 1) + j]! >= table[i * (width + 1) + j + 1]!) {
+        midRows.push(delRow(midOld[i]!))
+        i++
+      } else {
+        midRows.push(addRow(midNew[j]!))
+        j++
+      }
+    }
+    while (i < midOld.length) { midRows.push(delRow(midOld[i]!)); i++ }
+    while (j < width) { midRows.push(addRow(midNew[j]!)); j++ }
+  }
+  // Fold replacement-style edits into side-by-side pairs.
+  rows.push(...zipAdjacentDelAddRuns(midRows))
+
+  // The trimmed tails have equal length by construction; pair them in order.
+  for (let offset = 0; offset < oldLines.length - endOld; offset++) {
+    rows.push({ left: ctx(oldLines[endOld + offset]!), right: ctx(newLines[endNew + offset]!) })
+  }
+  return rows
+}
+
+/**
+ * Flatten the hunks into split display rows: a spanning path header opens each
+ * new file; a same-file second hunk (a scattered edit) opens with a `⋯` gap
+ * instead of repeating the path.
+ */
+function buildSplitRows(diffs: readonly DiffHunk[]): SplitRow[] {
+  const rows: SplitRow[] = []
+  let prevPath: string | undefined
+  for (const diff of diffs) {
+    rows.push(prevPath === diff.path
+      ? { span: { kind: 'gap', text: '⋯' } }
+      : { span: { kind: 'path', text: diff.path } })
+    prevPath = diff.path
+    const oldSide = diff.oldText === null ? [] : contentLines(diff.oldText)
+    rows.push(...pairSides(oldSide, contentLines(diff.newText)))
+  }
+  return rows
+}
+
+/**
+ * Flatten the hunks into the LEGACY stacked rows plus the footer counts — kept
+ * verbatim from the stacked layout so the copied text and the `+A -R · N
+ * files` summary stay byte-identical across front ends (TUI parity). Every
+ * old-side line counts toward `removed` and every new-side line toward
+ * `added`; the file count is of DISTINCT paths.
+ */
+function buildStackRows(diffs: readonly DiffHunk[]): { rows: StackRow[]; added: number; removed: number; files: number } {
+  const rows: StackRow[] = []
   const paths = new Set<string>()
   let added = 0
   let removed = 0
@@ -99,28 +271,10 @@ function buildRows(diffs: DiffHunk[]): { rows: DiffRow[]; added: number; removed
 }
 
 /**
- * Split a side's text into its content lines. Empty text is zero lines (a full
- * deletion's `newText` or a create's absent `oldText` side draws nothing), and a
- * single trailing newline is a line terminator rather than an extra empty line —
- * the same terminator rule TerminalBlock applies to command output. An interior
- * blank line (a genuine `\n\n`) survives.
- * @param text - the removed or added side's text.
- * @returns the content lines, without the terminating newline.
- */
-function contentLines(text: string): string[] {
-  if (text === '') return []
-  const body = text.endsWith('\n') ? text.slice(0, -1) : text
-  return body.split('\n')
-}
-
-/**
  * The diff text a reader copies: each row's `-`/`+`/path/gap prefix and its
- * content, exactly what the card shows. The removed and added blocks are the
- * change; the path headers keep a multi-file copy attributable.
- * @param rows - the flattened body rows.
- * @returns the diff as plain text.
+ * content, exactly what the card shows (legacy format, pairing-independent).
  */
-function copyText(rows: DiffRow[]): string {
+function copyText(rows: readonly StackRow[]): string {
   return rows.map((row) => {
     switch (row.kind) {
       case 'del': return `- ${row.text}`
@@ -133,13 +287,20 @@ function copyText(rows: DiffRow[]): string {
   }).join('\n')
 }
 
+/** Class for one column cell (tint + marker derive from the state). */
+function cellClass(cell: SideCell): string | undefined {
+  if (cell === null || cell.kind === 'context') return undefined
+  return cell.kind === 'del' ? css.del : css.add
+}
+
 /**
- * Render a file mutation as an inline diff surface.
+ * Render a file mutation as a two-column before/after comparison.
  * @param props - see {@link DiffBlockProps}.
  * @returns the diff block element.
  */
 export function DiffBlock({ diffs, maxLines = DEFAULT_DIFF_MAX_LINES, className }: DiffBlockProps) {
-  const { rows, added, removed, files } = useMemo(() => buildRows(diffs), [diffs])
+  const splitRows = useMemo(() => buildSplitRows(diffs), [diffs])
+  const { rows, added, removed, files } = useMemo(() => buildStackRows(diffs), [diffs])
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -154,16 +315,13 @@ export function DiffBlock({ diffs, maxLines = DEFAULT_DIFF_MAX_LINES, className 
 
   const onToggle = useCallback(() => { setExpanded(value => !value) }, [])
 
-  if (rows.length === 0) return null
+  if (splitRows.length === 0) return null
 
-  const hidden = rows.length - maxLines
+  // The sticky column-head row occupies one visual slot inside the capped
+  // sheet; expanding lifts the cap instead of slicing rows away.
+  const dataRowSlots = Math.max(1, maxLines - 1)
+  const hidden = Math.max(0, splitRows.length - dataRowSlots)
   const capped = hidden > 0 && !expanded
-  // Same split arithmetic as TerminalBlock and the TUI transcript's collapsed
-  // card, so a body's head and tail slices agree across the front ends.
-  const headLines = Math.ceil(maxLines / 2)
-  const tailLines = maxLines - headLines
-  const head = capped ? rows.slice(0, headLines) : rows
-  const tail = capped ? rows.slice(rows.length - tailLines) : []
 
   return (
     <div className={clsx(css.block, className)} data-diff="">
@@ -171,9 +329,33 @@ export function DiffBlock({ diffs, maxLines = DEFAULT_DIFF_MAX_LINES, className 
         {copied ? '复制成功' : '复制'}
       </button>
       <div className={css.body}>
-        {head.map((row, index) => (
-          <div key={index} className={clsx(css.line, ROW_CLASS[row.kind])}>{row.text}</div>
-        ))}
+        <div
+          className={css.scroller}
+          style={capped ? { maxHeight: `${maxLines * SPLIT_LINE_HEIGHT_PX}px` } : undefined}
+        >
+          <div className={css.grid}>
+            <div className={clsx(css.cell, css.colHead, css.headDel)}>− 修改前</div>
+            <div className={clsx(css.cell, css.colHead, css.headAdd)}>+ 修改后</div>
+            {splitRows.map((row, index) => ('span' in row ? (
+              <div
+                key={index}
+                className={clsx(css.spanRow, row.span.kind === 'path' ? css.path : css.gap)}
+                data-span={row.span.kind}
+              >
+                {row.span.text}
+              </div>
+            ) : (
+              <Fragment key={index}>
+                <div data-col="left" data-state={row.left === null ? 'empty' : row.left.kind} className={clsx(css.cell, cellClass(row.left))}>
+                  {row.left === null ? '' : row.left.text}
+                </div>
+                <div data-col="right" data-state={row.right === null ? 'empty' : row.right.kind} className={clsx(css.cell, cellClass(row.right))}>
+                  {row.right === null ? '' : row.right.text}
+                </div>
+              </Fragment>
+            )))}
+          </div>
+        </div>
         {hidden > 0 && (
           <button
             type="button"
@@ -185,9 +367,6 @@ export function DiffBlock({ diffs, maxLines = DEFAULT_DIFF_MAX_LINES, className 
             {expanded ? '收起' : `… 其余 ${hidden} 行`}
           </button>
         )}
-        {tail.map((row, index) => (
-          <div key={index} className={clsx(css.line, ROW_CLASS[row.kind])}>{row.text}</div>
-        ))}
       </div>
       <div className={css.footer}>└ +{added} -{removed} · {files} file{files === 1 ? '' : 's'}</div>
     </div>
