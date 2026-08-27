@@ -92,11 +92,18 @@
   overflow: hidden;
 }
 
+/* 行容器:展开钮(flex 占满)+ 断开钮并列,button 不能嵌套故包一层。 */
+.rowLine {
+  display: flex;
+  align-items: center;
+}
+
 .rowHead {
   display: flex;
   align-items: center;
   gap: 7px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: 30px;
   padding: 5px 9px;
   border: none;
@@ -110,6 +117,28 @@
 
 .rowHead:hover,
 .rowHeadOpen {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 行尾「断开连接」按钮:关闭该条对应的 SSH 连接并移除记录。 */
+.disconnect {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  flex: none;
+}
+
+.disconnect:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }

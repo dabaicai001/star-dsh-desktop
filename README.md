@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.100.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.100.1-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -147,6 +147,10 @@
 ---
 
 ## 当前版本
+
+### v0.100.1 (2026-08-27)
+- 🐛 SSH 执行记录改为**按当前会话隔离**:记录写入时打上「当时活跃会话」标记,头部「执行」角标、抽屉列表与「清空」都只作用于本会话,跨会话不再共用。
+- ✨ 执行记录行尾新增**「断开连接」按钮**:移除该连接的记录(所有会话视角)并异步调用后端 `ssh_disconnect` 断开 SSH 连接;之后的静默执行会重新建连并出现新记录。
 
 ### v0.100.0 (2026-08-27)
 - ✨ 执行记录抽屉化:会话头部新增「执行」胶囊(「文件」旁),SSH 静默执行记录迁入工具抽屉——按会话连接去重置顶(每连接保留最近一次命令,上限 50 条)、行点击展开完整输出/再点收起、记录多时纵向滚动、一键清空;移除右下角 BastionExecPanel 浮层堆叠及其拖动重排(拖动不可靠的根因:重排移动 DOM 节点导致 pointer capture 被浏览器隐式释放);`ssh:exec-done` 订阅上移为 apply 插件级常驻,不再随浮层/抽屉重挂载丢失。

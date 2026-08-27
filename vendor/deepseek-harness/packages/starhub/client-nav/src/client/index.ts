@@ -93,9 +93,9 @@ export function apply(ctx: Context): void {
   // 会话文件树视图开关(2026-08-24):头部按钮(header.actions)写,
   // 右侧工作区列(details.workspace)读——同一裸 source 桥范式。
   const fileTree = createFileTreeBridge()
-  // SSH 执行记录桥(v0.100.0,重构自右下角 BastionExecPanel 浮层):ssh:exec-done
-  // 事件在 apply 层订阅(下方 ctx.effect),头部「执行」按钮与工具抽屉的
-  // 执行记录视图跨 scope 共享同一份记录。
+  // SSH 执行记录桥(v0.100.0,v0.100.1 会话隔离):ssh:exec-done 事件在
+  // apply 层订阅(下方 ctx.effect),记录打上「当时活跃会话」标记;头部
+  // 「执行」按钮与工具抽屉的执行记录视图只展示当前会话的条目。
   const execRecords = createExecRecordsBridge()
   // ssh:exec-done 通用事件订阅:插件生命周期常驻(ctx.effect 卸载时反注册),
   // 不随头部按钮/工具抽屉的开合与重挂载丢失;dsh: 以外的会话由 note 忽略。
@@ -116,6 +116,14 @@ export function apply(ctx: Context): void {
   const workspaces = ctx.get('workspaces') as IWorkspaces
   // inject 声明了 required 'conversation',加载后必然存在(cordis ctx.get 返回可空)。
   const conversation = ctx.get('conversation') as unknown as ConversationController
+  // 执行记录按会话隔离(2026-08-27):把「当前活跃会话」喂给 execRecords 桥,
+  // 「执行」角标、抽屉列表与「清空」都只作用于本会话,跨会话不再共用;
+  // 首次同步立即写一次(不依赖切换事件才初始化)。
+  ctx.effect(() => {
+    const sync = () => { execRecords.setConversation(sessions.list.getSnapshot().current) }
+    sync()
+    return sessions.list.subscribe(sync)
+  }, 'starhub: exec records follow current session')
   // StarHub 工作台的历史令牌(--dsw-accent / --dsw-font-mono / --dsw-shadow-popover
   // 等)不在 dsh 令牌表内:经主题覆盖层注入,深浅色各一值,presenter 写到 body
   // 内联样式;独立 React 窗口无插件树,同值声明在 window-shell.css。
@@ -199,6 +207,14 @@ export function apply(ctx: Context): void {
     // 执行记录视图(v0.100.0):头部「执行」按钮的开关与清空(关闭回到资产列表)。
     closeExecView: execRecords.closeView,
     clearExecRecords: execRecords.clear,
+    // 行内「断开连接」(v0.100.1):先移除记录(UI 即时消失),再异步断开
+    // 后端 SSH 连接;断开失败仅记日志——连接可能已自行断开,记录照样不显示。
+    disconnectExecSession: (sessionId: string) => {
+      execRecords.removeSession(sessionId)
+      tauriInvoke('ssh_disconnect', { id: sessionId }).catch((e: unknown) => {
+        console.error('关闭 SSH 连接失败:', sessionId, e)
+      })
+    },
     // 关闭工具面板(footer 入口再点或面板右上角 ×,或点遮罩空白)。
     // 一并复位文件树视图:面板已关,若 fileTree.open 仍为 true,下回点会话
     // 头部「文件」胶囊会走到 closeFileTree 而非 openFileTree,看起来没反应。

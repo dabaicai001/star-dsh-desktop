@@ -57,6 +57,7 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
     closeFileTree: vi.fn(),
     closeExecView: vi.fn(),
     clearExecRecords: vi.fn(),
+    disconnectExecSession: vi.fn(),
     closeTools: vi.fn(),
     selectSubcategory: vi.fn(),
     insertFileReference: vi.fn(),
@@ -361,7 +362,7 @@ describe('StarHubToolWorkspace', () => {
     props.bridge.selectSubcategory('terminal')
     props.execRecords.update((d) => {
       d.viewOpen = true
-      d.records = [{ sessionId: 'dsh:asset-1:ssh', command: 'ls -la /var/log', output: 'total 48\nrc.service', at: 0 }]
+      d.records = [{ sessionId: 'dsh:asset-1:ssh', conversationId: 'conv-A', command: 'ls -la /var/log', output: 'total 48\nrc.service', at: 0 }]
     })
     render(<StarHubToolWorkspace {...props} />)
     expect(screen.getByText('SSH 执行记录')).toBeTruthy()
@@ -376,10 +377,10 @@ describe('StarHubToolWorkspace', () => {
     const props = workspaceProps()
     props.execRecords.update((d) => {
       d.viewOpen = true
-      d.records = [{ sessionId: 'dsh:asset-1:ssh', command: 'df -h', output: '/dev/sda1 40G 20G', at: 0 }]
+      d.records = [{ sessionId: 'dsh:asset-1:ssh', conversationId: 'conv-A', command: 'df -h', output: '/dev/sda1 40G 20G', at: 0 }]
     })
     render(<StarHubToolWorkspace {...props} />)
-    const head = screen.getByRole('button', { name: /asset-1/ })
+    const head = screen.getByTitle(/^asset-1\(点击/)
     expect(head.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(head)
     expect(screen.getByText('/dev/sda1 40G 20G')).toBeTruthy()
@@ -388,11 +389,22 @@ describe('StarHubToolWorkspace', () => {
     expect(screen.queryByText('/dev/sda1 40G 20G')).toBeNull()
   })
 
+  it('passes the row close button through to disconnectExecSession with the connection id', () => {
+    const props = workspaceProps()
+    props.execRecords.update((d) => {
+      d.viewOpen = true
+      d.records = [{ sessionId: 'dsh:a1:ssh', conversationId: 'conv-A', command: 'ls', output: '', at: 0 }]
+    })
+    render(<StarHubToolWorkspace {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: '断开 a1 的连接并移除记录' }))
+    expect(props.disconnectExecSession).toHaveBeenCalledWith('dsh:a1:ssh')
+  })
+
   it('clears all records through the injected callback and closes via 返回资产列表', () => {
     const props = workspaceProps()
     props.execRecords.update((d) => {
       d.viewOpen = true
-      d.records = [{ sessionId: 'dsh:a1:ssh', command: 'ls', output: '', at: 0 }]
+      d.records = [{ sessionId: 'dsh:a1:ssh', conversationId: 'conv-A', command: 'ls', output: '', at: 0 }]
     })
     render(<StarHubToolWorkspace {...props} />)
     fireEvent.click(screen.getByText('清空'))

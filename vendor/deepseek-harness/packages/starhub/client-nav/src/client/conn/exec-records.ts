@@ -1,10 +1,18 @@
 /**
- * SSH 执行记录状态桥(v0.100.0 重构,替代右下角浮层 BastionExecPanel):
+ * SSH 执行记录状态桥(v0.100.0 重构,v0.100.1 按会话隔离):
  * 后端 `ssh_exec_core` 每次成功执行都广播通用 `ssh:exec-done`
  * (payload sessionId/command/output,输出已截断 4000 字符);头部「执行」
  * 按钮(conversation.session.header.actions)与工具抽屉的执行记录视图
- * (StarHubToolWorkspace 内)跨 scope 共享同一份记录——裸 source 桥范式
- * (one-handle-one-scope,同 fileTree / toolsPanel)。
+ * (StarHubToolWorkspace 内)读同一份桥——裸 source 桥范式(one-handle-
+ * one-scope,同 fileTree / toolsPanel)。
+ *
+ * 会话隔离(2026-08-27):记录写入时打上「当时活跃会话」的标记(apply 层
+ * 订阅 sessions.list 切换经 setConversation 喂入),状态里的 records 只暴露
+ * 当前会话的条目——头部角标、抽屉列表、「清空」都随之只作用于本会话,
+ * 跨会话不再共用。事件负载不含来源会话 id,故以「事件到达时刻的当前会话」
+ * 归属(AI 在会话 A 执行期间用户切到会话 B 属边缘竞态,忽略不计)。
+ * 兼容约定:setConversation 从未被调用时(active 为 null)不过滤,独立
+ * 渲染/旧测试路径仍看到全量列表;apply 一启动即同步喂入,生产恒为隔离态。
  *
  * 事件订阅挂 apply 的 `ctx.effect`(插件生命周期常驻),不随抽屉/按钮的
  * 开关与重挂载丢失——与 StarHubConnCard 的组件级监听同因,但订阅点升到
@@ -17,16 +25,22 @@ import { tauriListen } from '../tauri.ts'
 export interface ExecRecord {
   /** 会话连接 id(`dsh:{assetId}:ssh`)。 */
   readonly sessionId: string
+  /**
+   * 产生该记录时的活跃会话 id(apply 层在事件到达时刻喂入的当前会话);
+   * 未开启会话跟踪前的历史条目为 undefined(隔离态下永不可见,待上限淘汰)。
+   */
+  readonly conversationId: string | undefined
   readonly command: string
   readonly output: string
   /** 记录写入时间(Date.now()),仅用于行内展示。 */
   readonly at: number
 }
 
-/** 执行记录桥状态:工具抽屉视图开合 + 记录列表(最新在上)。 */
+/** 执行记录桥状态:工具抽屉视图开合 + 记录列表(仅当前会话,最新在上)。 */
 export interface ExecRecordsState {
   /** 工具抽屉是否切到「SSH 执行记录」视图。 */
   viewOpen: boolean
+  /** 当前会话可见的记录(隔离过滤后的投影,最新在上)。 */
   records: ExecRecord[]
 }
 
@@ -34,7 +48,8 @@ export interface ExecRecordsState {
 const AI_CONN_PREFIX = 'dsh:'
 
 /**
- * 记录条数上限:超出淘汰最旧,避免长会话下列表与内存无限增长。
+ * 记录条数上限(全量含隐藏条目一并计数):超出淘汰最旧,避免长会话下列表
+ * 与内存无限增长。
  */
 const MAX_RECORDS = 50
 
@@ -51,10 +66,21 @@ export interface ExecRecordsBridge {
   readonly source: SnapshotStore<ExecRecordsState>
   /**
    * 写入一条执行完成事件:`dsh:` 以外的会话忽略;同连接替换旧条目并置顶;
-   * 超出上限淘汰最旧。
+   * 记录打上当前会话标记;超出上限淘汰最旧。
    */
   readonly note: (event: SshExecDoneEvent) => void
-  /** 清空全部记录(执行记录视图头部「清空」)。 */
+  /**
+   * 同步「当前活跃会话」(undefined = 无打开中的会话):records 随之切换为
+   * 该会话的记录。从未调用时为兼容模式(不隔离,见模块头注)。
+   */
+  readonly setConversation: (id: string | undefined) => void
+  /**
+   * 关闭一条连接后移除它的全部记录(所有会话视角):行内「断开连接」的
+   * 状态收口——连接已死,旧记录在任何会话里都不应再出现;之后的静默执行
+   * 会重新建连并产生新记录。
+   */
+  readonly removeSession: (sessionId: string) => void
+  /** 清空**当前会话**的记录(执行记录视图头部「清空」只作用于可见范围)。 */
   readonly clear: () => void
   /** 切到执行记录视图(头部「执行」按钮;视图互斥复位在注入回调层组合)。 */
   readonly openView: () => void
@@ -64,25 +90,51 @@ export interface ExecRecordsBridge {
 
 /**
  * Create the apply-owned exec-records bridge.
- * @returns the bridge (bare source + note/clear/open/close callbacks).
+ * @returns the bridge (bare source + note/set/remove/clear/open/close callbacks).
  */
 export function createExecRecordsBridge(): ExecRecordsBridge {
   const source = createSnapshotStore<ExecRecordsState>({ viewOpen: false, records: [] })
+  let all: ExecRecord[] = []
+  /** 当前活跃会话;null = 尚未跟踪(兼容模式,不做隔离过滤)。 */
+  let active: string | null = null
+  const publish = (): void => {
+    source.update((draft) => {
+      draft.records = active === null ? [...all] : all.filter(r => r.conversationId === active)
+    })
+  }
   return {
     source,
     note: (event) => {
       if (!event.sessionId.startsWith(AI_CONN_PREFIX)) return
-      const rest = source.getSnapshot().records.filter(r => r.sessionId !== event.sessionId)
+      const rest = all.filter(r => r.sessionId !== event.sessionId)
       const record: ExecRecord = {
         sessionId: event.sessionId,
+        conversationId: active ?? undefined,
         command: event.command,
         output: event.output,
         at: Date.now(),
       }
-      const records = [record, ...rest].slice(0, MAX_RECORDS)
-      source.update((draft) => { draft.records = records })
+      all = [record, ...rest].slice(0, MAX_RECORDS)
+      publish()
     },
-    clear: () => { source.update((draft) => { draft.records = [] }) },
+    setConversation: (id) => {
+      if (active === id) return
+      active = id
+      publish()
+    },
+    removeSession: (sessionId) => {
+      const rest = all.filter(r => r.sessionId !== sessionId)
+      if (rest.length === all.length) return
+      all = rest
+      publish()
+    },
+    clear: () => {
+      // 兼容模式(未跟踪会话)= 旧语义全清;隔离态只清当前会话的条目。
+      const rest = active === null ? [] : all.filter(r => r.conversationId !== active)
+      if (rest.length === all.length) return
+      all = rest
+      publish()
+    },
     openView: () => { source.update((draft) => { draft.viewOpen = true }) },
     closeView: () => { source.update((draft) => { draft.viewOpen = false }) },
   }

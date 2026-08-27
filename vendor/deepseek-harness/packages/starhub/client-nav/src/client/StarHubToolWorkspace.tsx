@@ -47,8 +47,10 @@ export interface StarHubToolWorkspaceInjected {
   closeFileTree: () => void
   /** 切回资产列表视图(执行记录视图头部「返回」;v0.100.0 执行记录入抽屉)。 */
   closeExecView: () => void
-  /** 清空全部执行记录(执行记录视图头部「清空」)。 */
+  /** 清空当前会话的执行记录(执行记录视图头部「清空」,随会话隔离)。 */
   clearExecRecords: () => void
+  /** 断开一条执行记录对应的 SSH 连接并移除其记录(v0.100.1 行尾关闭按钮)。 */
+  disconnectExecSession: (sessionId: string) => void
   /** 关闭工具面板(footer 入口再点或面板右上角 ×)。 */
   closeTools: () => void
   /** 选中一个子类(展开/聚焦该子类的资产列表)。 */
@@ -150,16 +152,17 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onEdit, onDelete }: {
  * 树区切换为项目文件目录树(以当前会话 cwd 为根)(overlay root scope 无框架
  * 注入 sessionId,当前会话经 useSessions 全局快照取 current → binding cwd)。
  *
- * SSH 执行记录视图(v0.100.0):会话头部「执行」按钮把 execRecords 桥置
- * viewOpen 后,抽屉切换为 ExecRecordList(全部静默执行记录,行点击展开/
- * 收起,容器纵向滚动);执行中收到的 ssh:exec-done 由 apply 层订阅入桥,
- * 本组件只是读端。
+ * SSH 执行记录视图(v0.100.0,v0.100.1 会话隔离 + 行内断开):会话头部
+ * 「执行」按钮把 execRecords 桥置 viewOpen 后,抽屉切换为 ExecRecordList
+ * (仅本会话的静默执行记录,行点击展开/收起,行尾按钮断开连接并移除,
+ * 容器纵向滚动);ssh:exec-done 由 apply 层订阅入桥,本组件只是读端。
  * @param props - composed slot props (overlay runtime share + injected face).
  * @returns null when closed; otherwise the drawer layer.
  */
 export function StarHubToolWorkspace({
   openAsset, refreshAssets, openConnectionManager,
-  closeFileTree, closeExecView, clearExecRecords, closeTools, selectSubcategory, insertFileReference,
+  closeFileTree, closeExecView, clearExecRecords, disconnectExecSession,
+  closeTools, selectSubcategory, insertFileReference,
   useSelection, useAssets, useFileTree, useToolsPanel, useSessions, useExecRecords,
 }: StarHubToolWorkspaceProps) {
   // toolsPanel 开关:未提供该 hook(组件在旧测试桩/独立渲染下)时默认视为打开。
@@ -193,6 +196,7 @@ export function StarHubToolWorkspace({
             records={execRecords}
             onClose={closeExecView}
             onClear={clearExecRecords}
+            onDisconnect={disconnectExecSession}
           />
         ) : fileTreeOpen && sessionCwd !== undefined ? (
           <FileTreePanel
