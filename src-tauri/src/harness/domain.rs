@@ -335,7 +335,6 @@ async fn execute_ssh(
         return Err("缺少 assetId,无法执行 SSH 工具".to_string());
     }
     let conn_id = ensure_ssh_session(bridge, asset_id).await?;
-
     if name == "ssh_wait_task" {
         let task_id = as_str(args.get("task_id").unwrap_or(&Value::Null)).trim().to_string();
         if !is_valid_task_id(&task_id) {
@@ -373,6 +372,44 @@ async fn execute_ssh(
         ))
     } else {
         Ok(if output.is_empty() { "(无输出)".to_string() } else { output })
+    }
+}
+
+/// 查询当前绑定资产 SSH 会话状态(功能①:给模型透出「已选中机器」等状态)。
+///
+/// **不触发连接**:只读 `SshManager.sessions`,让模型在发命令前判断是否会
+/// 弹「选机器」浮层 / 命令是否静默执行。
+async fn execute_ssh_status(
+    bridge: &HostBridgeState,
+    asset_id: &str,
+) -> Result<String, String> {
+    let app = bridge
+        .app()
+        .ok_or_else(|| "无 AppHandle,无法查询 SSH 会话状态".to_string())?;
+    let conn_id = ai_ssh_conn_id(asset_id);
+    let manager = app.state::<SshManager>();
+    let session_arc = {
+        let sessions = manager.sessions.lock().await;
+        sessions.get(&conn_id).cloned()
+    };
+    let Some(session_arc) = session_arc else {
+        return Ok(format!(
+            "SSH 会话未建立(资产 {asset_id}):首次命令会自动连接,堡垒机会依次弹出 MFA 验证卡与「选机器」终端,需要一次人工配合;之后会话复用,命令静默执行。"
+        ));
+    };
+    let session = session_arc.lock().await;
+    if session.bastion_shell_ready() {
+        Ok(format!(
+            "SSH 会话已就绪(资产 {asset_id}):堡垒机已选中目标机器,后续命令直接静默执行,不会弹窗。"
+        ))
+    } else if session.is_bastion() {
+        Ok(format!(
+            "SSH 会话已连接(资产 {asset_id},堡垒机):尚未选择目标机器,下一条命令会弹出「选机器」实时终端,请准备在终端里输入序号选择。"
+        ))
+    } else {
+        Ok(format!(
+            "SSH 会话已连接(资产 {asset_id}),命令将直接执行,不会弹窗。"
+        ))
     }
 }
 
@@ -982,6 +1019,10 @@ pub(crate) async fn execute_domain_tool(
     }
 
     // 域名判定与执行
+    if name == "ssh_session_status" {
+        // 状态查询不触发连接,单独处理(不调 execute_ssh 的 ensure_ssh_session)。
+        return execute_ssh_status(bridge, &asset_id).await;
+    }
     if name.starts_with("ssh_") {
         return execute_ssh(bridge, name, &merged_args).await;
     }

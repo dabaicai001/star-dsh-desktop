@@ -25,6 +25,8 @@
   - **前端兜底出口**:点「执行 AI 命令」后 `ssh_bastion_response` 失败不再静默吞掉(复位按钮 + 提示);45s 未收到 done 自动复位按钮并提示,任何情况按钮都有出口。
   - **工具描述收紧(禁乱开窗)**:`open_connection` / `focus_terminal` 明确「仅当用户明确要求打开窗口时才调用」,AI 执行命令/查询由后端静默建连,不再随意弹出独立窗口/新标签页;`ssh_exec` 描述补充「MFA 堡垒机首次连接自动弹验证/选机器卡片,不要调用 open_connection」。
   - **SSH 域工具绑定错误提示优化**:绑定非 SSH 资产时,报错明确引导「重新 @ 绑定 SSH 资产或调用 bind_asset_context 切换」,替代原先干巴巴的「资产类型不是 ssh」。
+  - **新增 `ssh_session_status` 工具(功能①:给模型透出会话状态)**:查询当前绑定资产 SSH 会话状态——未连接(首次命令会弹 MFA/选机器卡)/ 已连接 / 堡垒机已选中目标机器(命令将静默执行不弹窗)。**不触发连接**,只读 `SshManager.sessions`;`SshSession` 新增 `bastion_shell_ready()` 访问器。模型可在发命令前调用,判断是否会弹窗。
+  - **堡垒机静默执行迷你面板(功能②:复用路径可观察)**:复用路径命令不弹「选机器」浮层、用户看不到输出;后端在复用命令完成时广播通用事件 `ssh:bastion-exec`(payload sessionId/command/output,输出截断 4000 字符),前端新增 `BastionExecPanel`(shell.overlay,右下角常驻,组件级监听)展示**最近一次**堡垒机命令输出,可折叠/展开/关闭。
   - 🔧 **修复 3 个 harness dsh runtime 测试失败**(`dsh_stdio_roundtrip_with_mock_llm` / `dsh_tool_call_bridges_to_host` / `dsh_boots_with_generated_wrapper_config`,表现为 initialize 报 `cannot create effect on inactive context`):根因是 `examples/package.json` 未声明 `examples/starhub-agent/cordis.yml` 引用的 6 个 `@deepseek-ai/dsh-starhub-*` 插件(违反 examples/AGENTS.md「package.json 声明组合引用的包」约定)→ pnpm 不建立链接 → node 原生 ESM 解析失败 → 插件树加载失败,清理阶段 cordis 级联报 INACTIVE_EFFECT。修复:(1) `examples/package.json` 补全 6 个 starhub 插件 `workspace:*` 依赖;(2) `approval-bridge/package.json` 补 `@deepseek-ai/schemastery` 声明(tsc 产物 import 了但依赖未声明);(3) `approval-bridge/src/index.ts` 的 `sdk-transport` 改为**懒解析**(与 starhub-tools 同模式,消除与 sdk-jsonrpc-server 并行加载的启动时序竞争);(4) 重新 `pnpm install` 建立链接并重建 approval-bridge lib。验证:node 原生(不带 tsx,即真实应用 Rust spawn 路径)手动 initialize 通过,Rust 全量测试 168 全过。
 
 ---

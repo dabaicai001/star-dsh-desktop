@@ -98,6 +98,7 @@ const IN_PROCESS_TOOLS: &[&str] = &[
     "ssh_exec",
     "ssh_exec_background",
     "ssh_wait_task",
+    "ssh_session_status",
     // SFTP(复用会话绑定的 SSH 资产)
     "sftp_list",
     "sftp_stat",

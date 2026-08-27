@@ -41,6 +41,7 @@ import {
 import { createFileViewerBridge } from './file-viewer/state.ts'
 import { FileViewerOverlay } from './file-viewer/FileViewerOverlay.tsx'
 import { StarHubConnCard } from './conn/StarHubConnCard.tsx'
+import { BastionExecPanel } from './conn/BastionExecPanel.tsx'
 import type { FileViewTarget } from './file-viewer/state.ts'
 import { assetWindowUrl, type StarHubAsset } from './sections.ts'
 import { focusWindowByKey, openNewPage, tauriInvoke } from './tauri.ts'
@@ -219,6 +220,14 @@ export function apply(ctx: Context): void {
     label: 'StarHub 工具面板',
     inject: workspaceInject,
   }, StarHubToolWorkspace))
+  // 堡垒机静默执行迷你面板(功能② v0.99.0):复用路径命令不弹「选机器」浮层,
+  // 本面板常驻右下角展示最近一次命令输出,可折叠/关闭;与连接卡互不干扰。
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'starhub-bastion-exec-panel',
+    order: 130,
+    label: 'StarHub BastionExec',
+  }, BastionExecPanel))
   // 契约 §6.1:`@` 资产 source(ui-input-trigger 流水线);pick 轻绑定上下文,
   // 不切窗口。ctx.effect 保证 HMR 卸载时反注册 source。
   ctx.effect(

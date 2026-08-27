@@ -18,6 +18,7 @@ import { GitBranchPill } from '../src/client/git/GitBranchPill.tsx'
 import { FileTreeButton } from '../src/client/file-tree/FileTreeButton.tsx'
 import { FileViewerOverlay } from '../src/client/file-viewer/FileViewerOverlay.tsx'
 import { StarHubConnCard } from '../src/client/conn/StarHubConnCard.tsx'
+import { BastionExecPanel } from '../src/client/conn/BastionExecPanel.tsx'
 import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
 import { STARHUB_FILE_SOURCE } from '../src/client/file-source.ts'
@@ -99,7 +100,7 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
       'sidebar.footer.action',
-      'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
+      'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
       'conversation.session.header.actions', 'conversation.session.header.actions',
       'conversation.input.left',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
@@ -108,7 +109,7 @@ describe('client-nav apply (rc.2)', () => {
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
       StarHubFooterButton,
-      StarHubOverlay, FileViewerOverlay, StarHubConnCard, StarHubToolWorkspace,
+      StarHubOverlay, FileViewerOverlay, StarHubConnCard, StarHubToolWorkspace, BastionExecPanel,
       GitBranchPill, FileTreeButton,
       ScreenshotButton,
       // AiTab 经 () => createElement(AiTab, { api }) 包装,按函数断言。

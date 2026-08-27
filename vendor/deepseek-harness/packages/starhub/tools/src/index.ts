@@ -185,6 +185,11 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
       wait_seconds: { type: 'number', description: '本次最多等待的秒数,1-55,默认 30' },
     },
   },
+  {
+    toolName: 'ssh_session_status',
+    description: '查询当前绑定资产 SSH 会话的状态(不触发连接):未连接 / 已连接 / 堡垒机已选中目标机器。用于在执行命令前判断是否会弹「选机器」卡片、命令是否静默执行;MFA 堡垒机资产首次连接会自动弹验证与选机器卡片,选中后会话复用,后续命令静默执行不弹窗。',
+    parameters: {},
+  },
   // ── SFTP(复用会话绑定的 SSH 资产)──
   {
     toolName: 'sftp_list',

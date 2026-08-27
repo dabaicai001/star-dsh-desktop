@@ -231,6 +231,13 @@ impl SshSession {
         self.mfa_used
     }
 
+    /// 已选机器的堡垒机 shell 是否就绪(方案 A 复用路径可用):为 true 时
+    /// 后续 `ssh_exec` 直接写入同一 pty 静默执行,不会弹「选机器」浮层。
+    /// 供 `ssh_session_status` 工具向模型透出会话状态。
+    pub fn bastion_shell_ready(&self) -> bool {
+        self.bastion_shell.is_some()
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn connect_and_auth(
         host: &str,
@@ -1396,6 +1403,16 @@ impl SshSession {
             Ok((output, truncated, exit_status)) => {
                 shell.last_used = std::time::Instant::now();
                 let stdout = clean_bastion_stdout(&output, command, &sentinel, truncated);
+                // 功能②:复用路径静默执行(无「选机器」浮层),向主壳广播一次
+                // 「命令已执行」事件,前端迷你面板展示可折叠的最近命令输出
+                // (通用事件带 sessionId,与 bastion-done 同模式)。
+                if let Some(app) = app_handle {
+                    let _ = app.emit("ssh:bastion-exec", serde_json::json!({
+                        "sessionId": session_id,
+                        "command": command,
+                        "output": stdout.chars().take(4000).collect::<String>(),
+                    }));
+                }
                 if exit_status.is_some_and(|c| c != 0) {
                     return Err(BastionReuseError::Failed(format!(
                         "[EXEC] 命令退出码 {}: {}",
