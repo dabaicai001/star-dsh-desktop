@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.100.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.100.2-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,6 +148,10 @@
 
 ## 当前版本
 
+### v0.100.2 (2026-08-27)
+- 🐛 Edit/Write 差异卡部分场景回落通用 IN/OUT 卡的问题修复:wire 视图因 presenter 解析或跨分页 call/result 配对失败而缺失时,前端改从事件持久 `meta.diffs` 兜底重建双栏差异卡(载荷畸形仍走通用路径)。
+- 🐛 工具卡文件链接指向已删除文件时,报错从裸 OS 文案改为带路径的「file not found: <path>」。
+
 ### v0.100.1 (2026-08-27)
 - 🐛 SSH 执行记录改为**按当前会话隔离**:记录写入时打上「当时活跃会话」标记,头部「执行」角标、抽屉列表与「清空」都只作用于本会话,跨会话不再共用。
 - ✨ 执行记录行尾新增**「断开连接」按钮**:移除该连接的记录(所有会话视角)并异步调用后端 `ssh_disconnect` 断开 SSH 连接;之后的静默执行会重新建连并出现新记录。
@@ -157,9 +161,6 @@
 - ✨ AI 对话中的 Edit/Write 差异卡改为**双栏修改前后对照**:左列 `-` 修改前(错误色底)、右列 `+` 修改后(成功色底),未变更行成对展示;头尾裁剪 + 有界 LCS 行对齐 + 相邻增删游程折叠,替换型修改逐行左右对照;两列共享一个滚动容器,纵向天然联动、任一列横向溢出整体滚动,列头粘性随动;footer 统计与复制文本与旧格式逐字节一致。
 - 🐛 修复干净检出上 vendor/deepseek-harness 全量构建 TS2307 崩溃(CI 报错 `Cannot find module '@deepseek-ai/dsh-commands/remote'`):七个 owner 包的 `/remote` 类型声明是生成产物,而 tsconfig paths 把大量包名直连 src,首个 tsc 阶段就会消费到;新增 `gen:typert` 源码态自举脚本挂入 `build:lib:host` 前,typecheck/lint 同步受益。
 - 🐛 修复 Modal 在 layer-2 弹面上滚动态未重绑 l2 滚动条配对(scrollbar 样式门禁暴露的存量问题);DiffBlock 高度上限改为滚动折叠。
-
-### v0.99.0 (2026-08-27)
-- 🎨 整体重构 AI × MFA 堡垒机交互链路:后端 `SshSession` 新增 `bastion_shell` **已选机器 shell 通道复用**——首次弹「选机器」实时终端选好后,后续 AI 命令直接写入同一 pty 静默执行,不再每条命令弹窗(空闲 10 分钟回收、失效自动回退重建);前端 `MfaPromptCard` 与 `BastionSelectCard` 合并为一张统一连接卡 `StarHubConnCard`,请求/结束信号全部组件级监听(通用事件带 sessionId),修复「命令已执行但按钮卡在『执行中…』、浮层不关闭」(此前 done 精确事件监听随浮层重挂载静默丢失);`ssh_bastion_response` 失败不再静默 + 45s 兜底复位,按钮任何情况有出口;工具描述收紧(`open_connection`/`focus_terminal` 仅用户明确要求才开窗),AI 执行命令不再乱弹独立窗口/标签页。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

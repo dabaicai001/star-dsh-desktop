@@ -60,6 +60,21 @@ function narrowDiffs(diffs: unknown): DiffHunk[] | null {
 }
 
 /**
+ * Narrow the durable event's applied-hunk metadata to well-formed hunks.
+ * The write/edit tools repeat their presenters' `diffs` on the settled event's
+ * `meta` (the durable copy), so a wire view lost to presenter-resolution or
+ * cross-page pairing soft-fall can still rebuild the same card client-side.
+ * @param meta - the settled event's unverified `meta` field.
+ * @returns the validated hunks, or null when absent or malformed.
+ */
+function diffsFromMeta(meta: unknown): DiffHunk[] | null {
+  const diffs = typeof meta === 'object' && meta !== null
+    ? (meta as Record<string, unknown>).diffs
+    : undefined
+  return diffs === undefined ? null : narrowDiffs(diffs)
+}
+
+/**
  * Derive the diff-card props for a tool call, or null when this call is not a
  * diff card and belongs on the generic path.
  *
@@ -73,6 +88,11 @@ function narrowDiffs(diffs: unknown): DiffHunk[] | null {
  * be trusted to be one of the compiled variants — and a settled call whose
  * result view is generic (how write/edit keep their execution errors on the
  * generic path).
+ *
+ * When the wire view is absent (presenter resolution or cross-page pairing
+ * soft-falls ship the event without a view) the settled event's own `meta`
+ * carries the same applied hunks durably, so the fallback derives the card
+ * from there rather than demoting a real file mutation to the generic path.
  *
  * This derivation consumes only `diffs`; the render intent's `title` field is
  * deliberately dropped. The row supplies its own title (`Edit`/`Write · path`
@@ -90,8 +110,11 @@ export function diffCardModel(block: ToolCallBlock): DiffCardModel | null {
   }
   // Settled: the result view's applied hunks replace the call-time diff. A
   // window that dropped the call head leaves only the result, which still
-  // renders — the result view carries the whole change.
-  const result = block.resultView?.card === 'diff' ? block.resultView : null
-  const diffs = result === null ? null : narrowDiffs(result.diffs)
+  // renders — the result view carries the whole change. Wire-view misses fall
+  // back to the settled event's durable `meta.diffs`.
+  const fromWire = block.resultView?.card === 'diff'
+    ? narrowDiffs(block.resultView.diffs)
+    : null
+  const diffs = fromWire ?? diffsFromMeta(block.meta)
   return diffs === null ? null : { card: { diffs } }
 }

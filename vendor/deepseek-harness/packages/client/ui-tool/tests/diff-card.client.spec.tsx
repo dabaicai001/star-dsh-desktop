@@ -98,6 +98,35 @@ describe('diffCardModel', () => {
     }))).toBeNull()
   })
 
+  it('rebuilds a lost wire view from the durable meta.diffs', () => {
+    // A presenter-resolution or cross-page-pairing soft-fall ships the settled
+    // event WITHOUT a view; the applied hunks ride the event's durable meta,
+    // so the derivation rebuilds the same card from there.
+    expect(diffCardModel(settled({
+      callView: null, resultView: null,
+      meta: { diffs: [{ path: 'notes/demo.txt', oldText: 'a', newText: 'b' }] },
+    }))).toEqual({
+      card: { diffs: [{ path: 'notes/demo.txt', oldText: 'a', newText: 'b' }] },
+    })
+  })
+
+  it('prefers the wire view over the meta fallback and validates both', () => {
+    const appliedMeta = { diffs: [{ path: 'notes/meta.txt', oldText: 'm', newText: 'n' }] }
+    // The wire view wins when present.
+    expect(diffCardModel(settled({
+      resultView: resultDiff({ diffs: [{ path: 'notes/wire.txt', oldText: '1', newText: '2' }] }),
+      meta: appliedMeta,
+    }))).toEqual({ card: { diffs: [{ path: 'notes/wire.txt', oldText: '1', newText: '2' }] } })
+    // A malformed meta payload degrades to the generic path like a bad view.
+    expect(diffCardModel(settled({
+      callView: null, resultView: null, meta: { diffs: 'nope' },
+    }))).toBeNull()
+    // An unrelated meta shape is not a diff source.
+    expect(diffCardModel(settled({
+      callView: null, resultView: null, meta: { shape: 'matches' },
+    }))).toBeNull()
+  })
+
   it('falls back to null for a malformed diff payload off the wire', () => {
     // toolEventViewSchema validates only the `card` string, so a version
     // mismatch can deliver a diff card with an unusable diffs field. Each shape

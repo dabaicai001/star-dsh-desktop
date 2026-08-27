@@ -14,6 +14,14 @@
 
 ---
 
+## [0.100.2] - 2026-08-27
+
+### 修复
+- Edit/Write 差异卡在部分场景回落通用卡:当 wire 视图因 presenter 解析或跨分页 call/result 配对失败而缺失时(presentResult 明明已把应用后 hunks 写进事件 `meta.diffs`),前端 `diffCardModel` 只认 `resultView` 导致真实文件改动被降级成 IN/OUT 卡——现在 wire 视图缺失时改从事件的持久 `meta.diffs` 兜底重建同一张双栏差异卡,载荷畸形仍按既有约定走通用路径(补 3 个回归用例)
+- 工具卡文件链接指向已删除文件时,点击预览的报错从裸 OS 文案改为带路径的人话:`file not found: <path>`(此前为 `read metadata failed: 系统找不到指定的文件。 (os error 2)`,本地 `local_read_text_file`)
+
+---
+
 ## [0.100.1] - 2026-08-27
 
 ### 变更
