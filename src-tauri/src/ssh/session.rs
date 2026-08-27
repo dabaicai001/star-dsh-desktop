@@ -1330,7 +1330,10 @@ impl SshSession {
             ch.remove(session_id);
         }
         if let Some(app) = app_handle {
+            // 精确事件(旧前端/其它订阅)+ 通用事件(统一连接卡组件级监听)。
+            // 通用事件缺失会导致「命令已执行但浮层不关闭」——前端只监听通用。
             let _ = app.emit(&format!("ssh:bastion-done:{}", session_id), ());
+            let _ = app.emit("ssh:bastion-done", serde_json::json!({ "sessionId": session_id }));
         }
 
         match collected {
@@ -1403,16 +1406,6 @@ impl SshSession {
             Ok((output, truncated, exit_status)) => {
                 shell.last_used = std::time::Instant::now();
                 let stdout = clean_bastion_stdout(&output, command, &sentinel, truncated);
-                // 功能②:复用路径静默执行(无「选机器」浮层),向主壳广播一次
-                // 「命令已执行」事件,前端迷你面板展示可折叠的最近命令输出
-                // (通用事件带 sessionId,与 bastion-done 同模式)。
-                if let Some(app) = app_handle {
-                    let _ = app.emit("ssh:bastion-exec", serde_json::json!({
-                        "sessionId": session_id,
-                        "command": command,
-                        "output": stdout.chars().take(4000).collect::<String>(),
-                    }));
-                }
                 if exit_status.is_some_and(|c| c != 0) {
                     return Err(BastionReuseError::Failed(format!(
                         "[EXEC] 命令退出码 {}: {}",

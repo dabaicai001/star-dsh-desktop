@@ -89,8 +89,9 @@ const RISKY_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bpkill\s+-9\s+-f\s+(bash|init|sshd)/i, reason: '杀死关键系统进程' },
   { pattern: /\bdrop\s+(database|schema|table)\b/i, reason: 'DROP 数据库对象' },
   { pattern: /\btruncate\s+(table|only)\b/i, reason: 'TRUNCATE 清空表' },
-  { pattern: /\bdelete\s+from\b.*\bwhere\s+1\s*=\s*1\b/i, reason: '无条件 DELETE' },
-  { pattern: /\bdelete\s+from\b(?!\s+\S+\s*;?\s*$)/i, reason: 'DELETE 无 WHERE 子句' },
+  // 维护要求:任何形态的 DELETE FROM 都必须人工确认(不再区分有无 WHERE),
+  // 命中即 hard——即使会话审批策略为 never(全访问)也仍弹确认卡,不确认不执行。
+  { pattern: /\bdelete\s+from\b/i, reason: 'DELETE 删除数据(所有 DELETE 均须人工确认)' },
   { pattern: /\bupdate\s+\S+\s+set\b(?![^;]*\bwhere\b)/i, reason: 'UPDATE 无 WHERE 子句' },
   { pattern: /\bgrant\s+all\b/i, reason: 'GRANT ALL 授权' },
   { pattern: /\brevoke\s+all\b/i, reason: 'REVOKE ALL 撤销授权' },

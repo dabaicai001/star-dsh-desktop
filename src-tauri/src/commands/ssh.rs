@@ -764,50 +764,65 @@ pub(crate) async fn ssh_exec_core(
     exec_id: Option<&str>,
     bastion_interactive: bool,
 ) -> Result<String, String> {
-    // 先从 sessions map 中取出 Arc(只持有主锁一瞬间),然后释放主锁,
-    // 再对单个 session 加锁执行命令。这样不同 session 的 exec 和 connect
-    // 不会互相阻塞。
-    let session_arc = {
-        let sessions = manager.sessions.lock().await;
-        sessions
-            .get(id)
-            .cloned()
-            .ok_or_else(|| format!("SSH session {} not found", id))?
-    };
+    // 执行主体包一层:成功后统一广播执行结果(主壳迷你面板展示最近一次
+    // 命令输出,普通 SSH 资产与堡垒机首次/复用路径全覆盖)。
+    let result = async {
+        // 先从 sessions map 中取出 Arc(只持有主锁一瞬间),然后释放主锁,
+        // 再对单个 session 加锁执行命令。这样不同 session 的 exec 和 connect
+        // 不会互相阻塞。
+        let session_arc = {
+            let sessions = manager.sessions.lock().await;
+            sessions
+                .get(id)
+                .cloned()
+                .ok_or_else(|| format!("SSH session {} not found", id))?
+        };
 
-    let mut session = session_arc.lock().await;
-    // 堡垒机 pty 路径:启用 kb_interactive MFA(直连堡垒机或跳板机)时,普通
-    // exec 通道被服务端拒绝(Channel send error),需先经 pty 让用户选机器。
-    // 仅 AI 域工具路径启用。
-    if bastion_interactive && session.is_bastion() {
-        return session
-            .exec_via_bastion_pty(
-                id,
-                Some(app_handle),
-                &manager.pending_bastion,
-                manager.channels.clone(),
-                command,
-                timeout_sec.unwrap_or(10),
-            )
-            .await;
-    }
-    match exec_id {
-        Some(eid) => {
-            let (abort_tx, abort_rx) = tokio::sync::oneshot::channel();
-            manager
-                .exec_aborts
-                .lock()
-                .await
-                .insert(eid.to_string(), abort_tx);
-            let result = session
-                .exec_abortable(command, timeout_sec.unwrap_or(10), abort_rx)
+        let mut session = session_arc.lock().await;
+        // 堡垒机 pty 路径:启用 kb_interactive MFA(直连堡垒机或跳板机)时,普通
+        // exec 通道被服务端拒绝(Channel send error),需先经 pty 让用户选机器。
+        // 仅 AI 域工具路径启用。
+        if bastion_interactive && session.is_bastion() {
+            return session
+                .exec_via_bastion_pty(
+                    id,
+                    Some(app_handle),
+                    &manager.pending_bastion,
+                    manager.channels.clone(),
+                    command,
+                    timeout_sec.unwrap_or(10),
+                )
                 .await;
-            // 无论结果如何都清理注册,避免 map 泄漏
-            manager.exec_aborts.lock().await.remove(eid);
-            result
         }
-        None => session.exec(command, timeout_sec.unwrap_or(10)).await,
+        match exec_id {
+            Some(eid) => {
+                let (abort_tx, abort_rx) = tokio::sync::oneshot::channel();
+                manager
+                    .exec_aborts
+                    .lock()
+                    .await
+                    .insert(eid.to_string(), abort_tx);
+                let result = session
+                    .exec_abortable(command, timeout_sec.unwrap_or(10), abort_rx)
+                    .await;
+                // 无论结果如何都清理注册,避免 map 泄漏
+                manager.exec_aborts.lock().await.remove(eid);
+                result
+            }
+            None => session.exec(command, timeout_sec.unwrap_or(10)).await,
+        }
     }
+    .await;
+
+    if let Ok(output) = &result {
+        use tauri::Emitter;
+        let _ = app_handle.emit("ssh:exec-done", serde_json::json!({
+            "sessionId": id,
+            "command": command,
+            "output": output.chars().take(4000).collect::<String>(),
+        }));
+    }
+    result
 }
 
 /// 中断一个仍在执行的 exec 命令(通过 `ssh_exec` 传入的 `exec_id` 定位)。

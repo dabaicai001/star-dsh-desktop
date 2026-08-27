@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * 堡垒机静默执行迷你面板(BastionExecPanel,v0.99.0 功能②):复用路径命令不弹
- * 「选机器」浮层,本面板订阅通用 `ssh:bastion-exec`(带 sessionId),右下角
- * 展示最近一次命令输出;只接管 `dsh:` 前缀会话;可折叠/展开/关闭。
+ * SSH 命令执行迷你面板组(BastionExecPanel,v0.99.0):所有 ssh_exec 完成后后端
+ * 广播通用 `ssh:exec-done`(带 sessionId),右下角为**每个会话连接**展示一块
+ * 面板(可同时多块);只接管 `dsh:` 前缀会话;每块可折叠/展开/关闭。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -27,18 +27,14 @@ function stubInternals(callbacks: Array<(event: unknown) => void>, invoke: Retur
   }
 }
 
-const execEvent = {
-  event: 'ssh:bastion-exec',
-  id: 1,
-  payload: {
-    sessionId: 'dsh:asset-1:ssh',
-    command: 'ls -la /var/log',
-    output: 'total 48\ndrwxr-xr-x 2 root root 4096 Aug 27 11:00 .\ndmesg',
-  },
+function makeEvent(sessionId: string, command: string, output: string) {
+  return { event: 'ssh:exec-done', id: 1, payload: { sessionId, command, output } }
 }
 
+const execEvent = makeEvent('dsh:asset-1:ssh', 'ls -la /var/log', 'total 48\ndmesg')
+
 describe('BastionExecPanel', () => {
-  it('shows the latest bastion command output for dsh sessions', async () => {
+  it('shows the latest ssh command output for dsh sessions', async () => {
     const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
       if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
@@ -47,13 +43,39 @@ describe('BastionExecPanel', () => {
     stubInternals(callbacks, invoke)
 
     const { unmount } = render(<BastionExecPanel />)
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('plugin:event|listen', expect.objectContaining({ event: 'ssh:bastion-exec', target: { kind: 'Any' } })) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('plugin:event|listen', expect.objectContaining({ event: 'ssh:exec-done', target: { kind: 'Any' } })) })
 
     callbacks[0]!(execEvent)
-    await waitFor(() =>{  expect(screen.getByText('堡垒机静默执行')).toBeTruthy() })
+    await waitFor(() =>{  expect(screen.getByText('SSH 命令执行')).toBeTruthy() })
     expect(screen.getByText('asset-1')).toBeTruthy()
     expect(screen.getByText('$ ls -la /var/log')).toBeTruthy()
     expect(screen.getByText(/total 48/)).toBeTruthy()
+    unmount()
+  })
+
+  it('shows multiple panels, one per session connection', async () => {
+    const callbacks: Array<(event: unknown) => void> = []
+    const invoke = vi.fn((command: string) => {
+      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
+      return Promise.resolve(null)
+    })
+    stubInternals(callbacks, invoke)
+
+    const { unmount } = render(<BastionExecPanel />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
+    callbacks[0]!(makeEvent('dsh:asset-1:ssh', 'ls /a', 'aaa'))
+    callbacks[0]!(makeEvent('dsh:asset-2:ssh', 'df -h', 'bbb'))
+
+    await waitFor(() =>{  expect(screen.getByRole('region', { name: 'SSH 命令输出 asset-1' })).toBeTruthy() })
+    expect(screen.getByRole('region', { name: 'SSH 命令输出 asset-2' })).toBeTruthy()
+    // 各自命令独立展示
+    expect(screen.getByText('$ ls /a')).toBeTruthy()
+    expect(screen.getByText('$ df -h')).toBeTruthy()
+
+    // 关闭一块,另一块保留
+    fireEvent.click(screen.getByLabelText('关闭 asset-1 输出面板'))
+    expect(screen.queryByRole('region', { name: 'SSH 命令输出 asset-1' })).toBeNull()
+    expect(screen.getByRole('region', { name: 'SSH 命令输出 asset-2' })).toBeTruthy()
     unmount()
   })
 
@@ -67,12 +89,12 @@ describe('BastionExecPanel', () => {
     const { queryByText, unmount } = render(<BastionExecPanel />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
 
-    callbacks[0]!({ ...execEvent, payload: { ...execEvent.payload, sessionId: 'asset-1' } })
-    expect(queryByText('堡垒机静默执行')).toBeNull()
+    callbacks[0]!(makeEvent('asset-1', 'ls', 'x'))
+    expect(queryByText('SSH 命令执行')).toBeNull()
     unmount()
   })
 
-  it('collapses and re-expands the body, and closes the panel', async () => {
+  it('collapses and re-expands a panel, and closes it', async () => {
     const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
       if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
@@ -83,17 +105,14 @@ describe('BastionExecPanel', () => {
     const { unmount } = render(<BastionExecPanel />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
     callbacks[0]!(execEvent)
-    await waitFor(() =>{  expect(screen.getByText('堡垒机静默执行')).toBeTruthy() })
+    await waitFor(() =>{  expect(screen.getByText('SSH 命令执行')).toBeTruthy() })
 
-    // 折叠:命令输出隐藏
     fireEvent.click(screen.getByText('▾'))
     expect(screen.queryByText('$ ls -la /var/log')).toBeNull()
-    // 展开:输出恢复
     fireEvent.click(screen.getByText('▸'))
     expect(screen.getByText('$ ls -la /var/log')).toBeTruthy()
-    // 关闭:面板消失
-    fireEvent.click(screen.getByLabelText('关闭输出面板'))
-    expect(screen.queryByText('堡垒机静默执行')).toBeNull()
+    fireEvent.click(screen.getByLabelText('关闭 asset-1 输出面板'))
+    expect(screen.queryByText('SSH 命令执行')).toBeNull()
     unmount()
   })
 

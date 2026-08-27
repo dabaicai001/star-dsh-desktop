@@ -23,6 +23,8 @@
     "sidecar:build": "node scripts/build-sidecar.mjs",
     "sidecar:build:release": "node scripts/build-sidecar.mjs --release",
     "clean:vendor-starhub": "node scripts/clean-vendor-starhub.mjs",
+    "build:lib": "pnpm --dir vendor/deepseek-harness run build:lib",
+    "build:lib:client": "pnpm --dir vendor/deepseek-harness run build:lib:client",
     "package:dsh-runtime": "pnpm --dir vendor/deepseek-harness exec tsx scripts/package-dsh-runtime.ts",
     "tauri:dev": "npm run tauri dev",
     "tauri:build": "npm run tauri build"
