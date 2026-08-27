@@ -13,6 +13,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   createToolSelectionBridge, type StarHubAssetListState, type ToolSelection,
 } from '../src/client/store.ts'
+import type { ExecRecordsState } from '../src/client/conn/exec-records.ts'
 import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
 
 afterEach(cleanup)
@@ -29,10 +30,12 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
   const bridge = createToolSelectionBridge()
   const fileTree = createSnapshotStore<{ open: boolean }>({ open: false })
   const toolsPanel = createSnapshotStore<{ open: boolean }>({ open: opts.panelOpen ?? true })
+  const execRecords = createSnapshotStore<ExecRecordsState>({ viewOpen: false, records: [] })
   const useAssets = <S,>(sel: (s: StarHubAssetListState) => S) => sel(assets.getSnapshot())
   const useSelection = <S,>(sel: (s: ToolSelection) => S) => sel(bridge.source.getSnapshot())
   const useFileTree = <S,>(sel: (s: { open: boolean }) => S) => sel(fileTree.getSnapshot())
   const useToolsPanel = <S,>(sel: (s: { open: boolean }) => S) => sel(toolsPanel.getSnapshot())
+  const useExecRecords = <S,>(sel: (s: ExecRecordsState) => S) => sel(execRecords.getSnapshot())
   const sessionId = opts.sessionId === undefined ? undefined : opts.sessionId as never
   const useSessions = ((sel: (s: { current: string | undefined; byId: Record<string, { cwd?: string } | undefined> }) => unknown) => {
     const state = {
@@ -48,9 +51,12 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
     bridge,
     fileTree,
     toolsPanel,
+    execRecords,
     refreshAssets: vi.fn(),
     openConnectionManager: vi.fn(),
     closeFileTree: vi.fn(),
+    closeExecView: vi.fn(),
+    clearExecRecords: vi.fn(),
     closeTools: vi.fn(),
     selectSubcategory: vi.fn(),
     insertFileReference: vi.fn(),
@@ -59,6 +65,7 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
     useFileTree,
     useToolsPanel,
     useSessions,
+    useExecRecords,
     // settings.update stub: the tool-context sync effect calls it and must
     // not throw in jsdom (no real wire).
     api: { settings: { update: () => Promise.resolve({ result: { ok: true } }) } } as never,
@@ -347,6 +354,60 @@ describe('StarHubToolWorkspace', () => {
     // 无 cwd:文件树不可用,资产列表照常
     expect(screen.getByText('prod-server')).toBeTruthy()
     expect(screen.queryByText('文件树')).toBeNull()
+  })
+
+  it('switches to the exec-records view when the bridge is open and hides the asset list', () => {
+    const props = workspaceProps()
+    props.bridge.selectSubcategory('terminal')
+    props.execRecords.update((d) => {
+      d.viewOpen = true
+      d.records = [{ sessionId: 'dsh:asset-1:ssh', command: 'ls -la /var/log', output: 'total 48\nrc.service', at: 0 }]
+    })
+    render(<StarHubToolWorkspace {...props} />)
+    expect(screen.getByText('SSH 执行记录')).toBeTruthy()
+    expect(screen.getByText('asset-1')).toBeTruthy()
+    expect(screen.getByText('$ ls -la /var/log')).toBeTruthy()
+    // 默认收起:输出不出现在 DOM
+    expect(screen.queryByText(/total 48/)).toBeNull()
+    expect(screen.queryByText('新建连接')).toBeNull()
+  })
+
+  it('expands a record on click to show the command output, collapses on second click', () => {
+    const props = workspaceProps()
+    props.execRecords.update((d) => {
+      d.viewOpen = true
+      d.records = [{ sessionId: 'dsh:asset-1:ssh', command: 'df -h', output: '/dev/sda1 40G 20G', at: 0 }]
+    })
+    render(<StarHubToolWorkspace {...props} />)
+    const head = screen.getByRole('button', { name: /asset-1/ })
+    expect(head.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(head)
+    expect(screen.getByText('/dev/sda1 40G 20G')).toBeTruthy()
+    expect(head.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(head)
+    expect(screen.queryByText('/dev/sda1 40G 20G')).toBeNull()
+  })
+
+  it('clears all records through the injected callback and closes via 返回资产列表', () => {
+    const props = workspaceProps()
+    props.execRecords.update((d) => {
+      d.viewOpen = true
+      d.records = [{ sessionId: 'dsh:a1:ssh', command: 'ls', output: '', at: 0 }]
+    })
+    render(<StarHubToolWorkspace {...props} />)
+    fireEvent.click(screen.getByText('清空'))
+    expect(props.clearExecRecords).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByLabelText('返回资产列表'))
+    expect(props.closeExecView).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders the exec view empty state with 清空 disabled when no records exist', () => {
+    const props = workspaceProps()
+    props.execRecords.update((d) => { d.viewOpen = true })
+    render(<StarHubToolWorkspace {...props} />)
+    expect(screen.getByText(/暂无记录/)).toBeTruthy()
+    const clear = screen.getByText('清空') as HTMLButtonElement
+    expect(clear.disabled).toBe(true)
   })
 
 })

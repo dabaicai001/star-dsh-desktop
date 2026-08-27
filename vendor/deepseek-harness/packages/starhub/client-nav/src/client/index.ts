@@ -41,7 +41,8 @@ import {
 import { createFileViewerBridge } from './file-viewer/state.ts'
 import { FileViewerOverlay } from './file-viewer/FileViewerOverlay.tsx'
 import { StarHubConnCard } from './conn/StarHubConnCard.tsx'
-import { BastionExecPanel } from './conn/BastionExecPanel.tsx'
+import { ExecDrawerButton } from './conn/ExecDrawerButton.tsx'
+import { createExecRecordsBridge, subscribeSshExecEvents } from './conn/exec-records.ts'
 import type { FileViewTarget } from './file-viewer/state.ts'
 import { assetWindowUrl, type StarHubAsset } from './sections.ts'
 import { focusWindowByKey, openNewPage, tauriInvoke } from './tauri.ts'
@@ -92,6 +93,16 @@ export function apply(ctx: Context): void {
   // 会话文件树视图开关(2026-08-24):头部按钮(header.actions)写,
   // 右侧工作区列(details.workspace)读——同一裸 source 桥范式。
   const fileTree = createFileTreeBridge()
+  // SSH 执行记录桥(v0.100.0,重构自右下角 BastionExecPanel 浮层):ssh:exec-done
+  // 事件在 apply 层订阅(下方 ctx.effect),头部「执行」按钮与工具抽屉的
+  // 执行记录视图跨 scope 共享同一份记录。
+  const execRecords = createExecRecordsBridge()
+  // ssh:exec-done 通用事件订阅:插件生命周期常驻(ctx.effect 卸载时反注册),
+  // 不随头部按钮/工具抽屉的开合与重挂载丢失;dsh: 以外的会话由 note 忽略。
+  ctx.effect(
+    () => subscribeSshExecEvents(execRecords.note),
+    'starhub: ssh exec-done events',
+  )
   ctx.provide('starhubFileViewer', {
     open: (target) => { fileViewer.open(target) },
   } satisfies { open: (target: FileViewTarget) => void })
@@ -185,11 +196,17 @@ export function apply(ctx: Context): void {
     openConnectionManager: connectionManager.open,
     // 文件树视图:面板内「文件树」开关(关闭回到资产列表)。
     closeFileTree: fileTree.close,
+    // 执行记录视图(v0.100.0):头部「执行」按钮的开关与清空(关闭回到资产列表)。
+    closeExecView: execRecords.closeView,
+    clearExecRecords: execRecords.clear,
     // 关闭工具面板(footer 入口再点或面板右上角 ×,或点遮罩空白)。
     // 一并复位文件树视图:面板已关,若 fileTree.open 仍为 true,下回点会话
     // 头部「文件」胶囊会走到 closeFileTree 而非 openFileTree,看起来没反应。
     closeTools: () => {
+      // 一并复位两个视图开关:面板已关,若残留 true,下回点「文件/执行」
+      // 胶囊会走到 close 分支而非打开,看起来没反应。
       fileTree.close()
+      execRecords.closeView()
       toolsPanel.close()
     },
     // 选中一个子类:写入选择桥,面板展开该子类的资产列表。
@@ -208,6 +225,7 @@ export function apply(ctx: Context): void {
       assets: assets.source,
       fileTree: fileTree.source,
       toolsPanel: toolsPanel.source,
+      execRecords: execRecords.source,
     },
   })
   // 工具面板(rc.2 适配):`workspace`/`details.workspace` 槽在 rc.2 已不存在,
@@ -220,14 +238,9 @@ export function apply(ctx: Context): void {
     label: 'StarHub 工具面板',
     inject: workspaceInject,
   }, StarHubToolWorkspace))
-  // 堡垒机静默执行迷你面板(功能② v0.99.0):复用路径命令不弹「选机器」浮层,
-  // 本面板常驻右下角展示最近一次命令输出,可折叠/关闭;与连接卡互不干扰。
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'starhub-bastion-exec-panel',
-    order: 130,
-    label: 'StarHub BastionExec',
-  }, BastionExecPanel))
+  // 右下角 BastionExecPanel 浮层席位已在 v0.100.0 移除:静默执行记录改由
+  // 头部「执行」按钮 + 工具抽屉的执行记录视图承载(见 header.actions 的
+  // starhub-exec-drawer 席位与 StarHubToolWorkspace 的 exec 分支)。
   // 契约 §6.1:`@` 资产 source(ui-input-trigger 流水线);pick 轻绑定上下文,
   // 不切窗口。ctx.effect 保证 HMR 卸载时反注册 source。
   ctx.effect(
@@ -253,6 +266,8 @@ export function apply(ctx: Context): void {
   // (shell.overlay 承载的 StarHubToolWorkspace)并切到项目文件目录树视图;
   // 再次点击切回资产列表。文件树本体渲染在工具抽屉内,故打开的是 toolsPanel
   // 而非 rc.2 的 details 列(details 列由 ui-conversation 独占展示工具调用)。
+  // v0.100.0:打开文件树时顺带退出执行记录视图(两个视图互斥,避免双 open
+  // 状态下抽屉展示分支与按钮开合态不一致)。
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
     name: 'conversation.session.header.actions',
     id: 'starhub-file-tree',
@@ -261,12 +276,32 @@ export function apply(ctx: Context): void {
     inject: () => ({
       openFileTree: () => {
         fileTree.open()
+        execRecords.closeView()
         toolsPanel.open()
       },
       closeFileTree: fileTree.close,
       hooks: { fileTree: fileTree.source },
     }),
   }, FileTreeButton))
+  // 会话头部「执行」按钮(v0.100.0):「文件」胶囊旁,点击打开工具抽屉并切到
+  // 「SSH 执行记录」视图(ai 静默执行的 ssh_exec 完成记录,行点击展开/收起,
+  // 多条纵向滚动);再次点击返回资产列表。数据由 apply 层的 execRecords 桥
+  // 常驻订阅 ssh:exec-done 累积,按钮只是开关。
+  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
+    name: 'conversation.session.header.actions',
+    id: 'starhub-exec-drawer',
+    order: 45,
+    label: 'StarHub 执行',
+    inject: () => ({
+      openExecView: () => {
+        execRecords.openView()
+        fileTree.close()
+        toolsPanel.open()
+      },
+      closeExecView: execRecords.closeView,
+      hooks: { execRecords: execRecords.source },
+    }),
+  }, ExecDrawerButton))
   // AI 对话输入框截图(2026-08-23):工具行「剪刀」按钮 → 区域截图(遮罩框选),
   // 确认后结果作为图片附件进当前会话输入(与粘贴/拖拽同一管线)。
   // 浏览器预览(无 Tauri IPC)下 invoke 拒绝,按钮点击打日志不弹窗。

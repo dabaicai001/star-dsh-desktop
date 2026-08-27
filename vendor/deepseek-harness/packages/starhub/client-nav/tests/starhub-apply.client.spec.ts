@@ -3,9 +3,11 @@
  * client-nav 插件装配(apply,rc.2 适配后):各槽位注册的槽名、组件与注入面
  * (工具面板桥 / 连接对话框桥 / 文件查看窗 / git 分支胶囊 / 截图按钮附件)
  * 与工具树子类选中语义(selectSubcategory 写选择桥,不再联动布局开关)。
- * rc.2 注册面:`sidebar.footer.action`(工具入口)+ `shell.overlay`×4
- * (overlay / 文件查看 / AI 连接卡 / 工具面板)+ `conversation.session.header.actions`×2
- * (git / 文件树)+ `conversation.input.left`(截图)+ `settings.section`×5。
+ * rc.2 注册面(v0.100.0 起右下角 BastionExecPanel 浮层席位移除):
+ * `sidebar.footer.action`(工具入口)+ `shell.overlay`×3(overlay / 文件查看 /
+ * AI 连接卡 / 工具面板→共 4 席之一无独立浮层)+ `conversation.session.
+ * header.actions`×3(git / 文件树 / 执行)+ `conversation.input.left`(截图)
+ * + `settings.section`×5。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
@@ -16,9 +18,9 @@ import { StarHubOverlay } from '../src/client/StarHubOverlay.tsx'
 import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
 import { GitBranchPill } from '../src/client/git/GitBranchPill.tsx'
 import { FileTreeButton } from '../src/client/file-tree/FileTreeButton.tsx'
+import { ExecDrawerButton } from '../src/client/conn/ExecDrawerButton.tsx'
 import { FileViewerOverlay } from '../src/client/file-viewer/FileViewerOverlay.tsx'
 import { StarHubConnCard } from '../src/client/conn/StarHubConnCard.tsx'
-import { BastionExecPanel } from '../src/client/conn/BastionExecPanel.tsx'
 import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
 import { STARHUB_FILE_SOURCE } from '../src/client/file-source.ts'
@@ -100,8 +102,9 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
       'sidebar.footer.action',
-      'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
+      'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
       'conversation.session.header.actions', 'conversation.session.header.actions',
+      'conversation.session.header.actions',
       'conversation.input.left',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
       'settings.action',
@@ -109,8 +112,8 @@ describe('client-nav apply (rc.2)', () => {
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
       StarHubFooterButton,
-      StarHubOverlay, FileViewerOverlay, StarHubConnCard, StarHubToolWorkspace, BastionExecPanel,
-      GitBranchPill, FileTreeButton,
+      StarHubOverlay, FileViewerOverlay, StarHubConnCard, StarHubToolWorkspace,
+      GitBranchPill, FileTreeButton, ExecDrawerButton,
       ScreenshotButton,
       // AiTab 经 () => createElement(AiTab, { api }) 包装,按函数断言。
       expect.any(Function), PluginsTab, AuditTab, AlertTab, AboutTab,
@@ -133,6 +136,33 @@ describe('client-nav apply (rc.2)', () => {
     expect(panelInjected.hooks.toolsPanel.getSnapshot()).toEqual({ open: false })
     injected.openTools()
     expect(panelInjected.hooks.toolsPanel.getSnapshot()).toEqual({ open: true })
+  })
+
+  it('exec drawer and file-tree pills switch views exclusively', () => {
+    const { ctx, register } = fakeContext()
+    applyPlugin(ctx)
+    const execConfig = register.mock.calls.find(c => (c[0] as RegisterOptions).id === 'starhub-exec-drawer')![0] as RegisterOptions
+    const execInjected = execConfig.inject() as unknown as {
+      openExecView: () => void
+      closeExecView: () => void
+      hooks: { execRecords: { getSnapshot: () => { viewOpen: boolean; records: unknown[] } } }
+    }
+    const fileConfig = register.mock.calls.find(c => (c[0] as RegisterOptions).id === 'starhub-file-tree')![0] as RegisterOptions
+    const fileInjected = fileConfig.inject() as unknown as {
+      openFileTree: () => void
+      hooks: { fileTree: { getSnapshot: () => { open: boolean } } }
+    }
+    expect(execInjected.hooks.execRecords.getSnapshot().viewOpen).toBe(false)
+    execInjected.openExecView()
+    expect(execInjected.hooks.execRecords.getSnapshot().viewOpen).toBe(true)
+    // 打开文件树 → 执行视图被复位(双 open 状态不允许)
+    fileInjected.openFileTree()
+    expect(fileInjected.hooks.fileTree.getSnapshot().open).toBe(true)
+    expect(execInjected.hooks.execRecords.getSnapshot().viewOpen).toBe(false)
+    // 关闭执行视图回到资产列表
+    execInjected.openExecView()
+    execInjected.closeExecView()
+    expect(execInjected.hooks.execRecords.getSnapshot().viewOpen).toBe(false)
   })
 
   it('tools panel inject selects a subcategory through the selection bridge', () => {

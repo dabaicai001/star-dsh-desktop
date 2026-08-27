@@ -1,0 +1,167 @@
+/* SSH 执行记录视图(v0.100.0):工具抽屉内的记录列表。样式对齐
+   StarHubToolWorkspace.module.css 的抽屉内视觉(头部 / 计数胶囊 / 状态文案),
+   输出区用 --dsw-font-mono,记录多时 .list 纵向滚动。 */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--dsw-border, rgba(127, 127, 127, 0.12));
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dsw-alias-label-primary);
+}
+
+.count {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--dsw-accent-weak, rgba(93, 214, 214, 0.15));
+  color: var(--dsw-accent, #5dd6d6);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.textButton {
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.textButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.textButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.closeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.closeButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 记录列表本体:占满抽屉剩余高度,条目超出纵向滚动。 */
+.list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+}
+
+.status {
+  padding: 8px 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.item {
+  border: 1px solid var(--dsw-border, rgba(127, 127, 127, 0.16));
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.rowHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.rowHead:hover,
+.rowHeadOpen {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.chevron {
+  display: inline-flex;
+  width: 14px;
+  justify-content: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.badge {
+  max-width: 88px;
+  overflow: hidden;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--dsw-accent-weak, rgba(93, 214, 214, 0.15));
+  color: var(--dsw-accent, #5dd6d6);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+
+.command {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--dsw-font-mono);
+  font-size: 11px;
+}
+
+.time {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.body {
+  border-top: 1px solid var(--dsw-border, rgba(127, 127, 127, 0.12));
+  padding: 8px 9px;
+}
+
+.output {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+}
