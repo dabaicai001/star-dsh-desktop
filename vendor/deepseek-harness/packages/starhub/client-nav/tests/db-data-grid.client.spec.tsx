@@ -5,7 +5,9 @@
  * (页大小 / 上页下页)、NULL 高亮、行号/值渲染;批次 5:CSV 导出(rowsToCsv /
  * downloadTextFile)、行复制为 INSERT(rowToInsert / sqlLiteral / 右键菜单)、
  * 列筛选(columnFilters 服务端参数 + 弹层应用/清除)、单元格编辑(dirty 集 →
- * db_mysql_update_rows 按行批量保存,Ctrl/Cmd+S)。纯函数与组件 UI 全覆盖。
+ * db_mysql_update_rows 按行批量保存,Ctrl/Cmd+S)。HubHex 风格 WHERE 条件栏:
+ * Enter 应用(服务端 raw filter)、Shift+Enter 换行、Esc/× 清除、切表重置。
+ * 纯函数与组件 UI 全覆盖。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -198,38 +200,61 @@ describe('DbDataGrid', () => {
     expect(screen.getByText('1 个筛选')).toBeTruthy()
   })
 
-  it('applies a quick filter via Enter and passes quickFilter server-side', async () => {
+  it('applies a WHERE filter via Enter and passes filter server-side', async () => {
     const { calls } = stubInvoke()
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
-    const input = screen.getByLabelText('快捷筛选')
-    fireEvent.change(input, { target: { value: 'ali' } })
+    const input = screen.getByLabelText('WHERE 条件筛选')
+    fireEvent.change(input, { target: { value: "name = 'alice'" } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() =>{  expect(calls.some(([, a]) => a.quickFilter === 'ali')).toBe(true) })
+    await waitFor(() =>{  expect(calls.some(([, a]) => a.filter === "name = 'alice'")).toBe(true) })
+    // 已应用的筛选计入 badge。
+    await waitFor(() =>{  expect(screen.getByText('1 个筛选')).toBeTruthy() })
   })
 
-  it('clears the quick filter via the × button and stops passing it', async () => {
+  it('keeps Shift+Enter as a newline without applying the WHERE filter', async () => {
     const { calls } = stubInvoke()
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
-    const input = screen.getByLabelText('快捷筛选')
-    fireEvent.change(input, { target: { value: 'ali' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() =>{  expect(calls.some(([, a]) => a.quickFilter === 'ali')).toBe(true) })
-    fireEvent.click(screen.getByLabelText('清除快捷筛选'))
-    await waitFor(() =>{  expect((calls[calls.length - 1]?.[1].quickFilter ?? '')).toBe('') })
+    const input = screen.getByLabelText('WHERE 条件筛选')
+    fireEvent.change(input, { target: { value: 'id > 1' } })
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+    // Shift+Enter 不触发应用:没有任何一次调用带 filter。
+    expect(calls.some(([, a]) => typeof a.filter === 'string' && a.filter !== '')).toBe(false)
+    expect((input as HTMLTextAreaElement).value).toBe('id > 1')
   })
 
-  it('resets the quick filter when the table changes', async () => {
+  it('clears the WHERE filter via Escape and the × button and stops passing it', async () => {
+    const { calls } = stubInvoke()
+    render(<DbDataGrid connId="c1" table="users" />)
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    const input = screen.getByLabelText('WHERE 条件筛选')
+    fireEvent.change(input, { target: { value: 'id > 1' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() =>{  expect(calls.some(([, a]) => a.filter === 'id > 1')).toBe(true) })
+    // Esc:草稿与已应用值一起清除。
+    fireEvent.keyDown(screen.getByLabelText('WHERE 条件筛选'), { key: 'Escape' })
+    await waitFor(() =>{  expect((calls[calls.length - 1]?.[1].filter ?? '')).toBe('') })
+    // 再应用一次后用 × 按钮清除。
+    fireEvent.change(screen.getByLabelText('WHERE 条件筛选'), { target: { value: 'id > 1' } })
+    fireEvent.keyDown(screen.getByLabelText('WHERE 条件筛选'), { key: 'Enter' })
+    await waitFor(() =>{  expect(calls.some(([, a]) => a.filter === 'id > 1')).toBe(true) })
+    fireEvent.click(screen.getByLabelText('清除 WHERE 筛选'))
+    await waitFor(() =>{  expect((calls[calls.length - 1]?.[1].filter ?? '')).toBe('') })
+    expect(screen.queryByLabelText('清除 WHERE 筛选')).toBeNull()
+  })
+
+  it('resets the WHERE filter when the table changes', async () => {
     const { calls } = stubInvoke()
     const { rerender } = render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
-    const input = screen.getByLabelText('快捷筛选')
-    fireEvent.change(input, { target: { value: 'ali' } })
+    const input = screen.getByLabelText('WHERE 条件筛选')
+    fireEvent.change(input, { target: { value: 'id > 1' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() =>{  expect(calls.some(([, a]) => a.quickFilter === 'ali')).toBe(true) })
+    await waitFor(() =>{  expect(calls.some(([, a]) => a.filter === 'id > 1')).toBe(true) })
     rerender(<DbDataGrid connId="c1" table="orders" />)
-    await waitFor(() =>{  expect((screen.getByLabelText('快捷筛选') as HTMLInputElement).value).toBe('') })
+    await waitFor(() =>{  expect((screen.getByLabelText('WHERE 条件筛选') as HTMLTextAreaElement).value).toBe('') })
+    expect((calls[calls.length - 1]?.[1].filter ?? '')).toBe('')
   })
 
   it('clears a column filter and removes the badge', async () => {
@@ -387,7 +412,8 @@ describe('DbDataGrid', () => {
     fireEvent.click(screen.getByText('name'))
     await waitFor(() =>{  expect(calls.some(([, a]) => a.orderBy === 'name')).toBe(true) })
     fireEvent.click(screen.getByText('导出 Excel'))
-    expect(onExport).toHaveBeenCalledWith('name', 'asc')
+    // onExport 第三个参数携带当前 WHERE 条件(无筛选时传 null)。
+    expect(onExport).toHaveBeenCalledWith('name', 'asc', null)
   })
 
   it('handles a column without a type hint', async () => {

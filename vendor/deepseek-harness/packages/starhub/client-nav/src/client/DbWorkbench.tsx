@@ -40,6 +40,25 @@ import css from './DbWorkbench.module.css'
 /** db_mysql_execute 的返回(与 QueryResult 同构;SQL 执行结果复用)。 */
 interface SqlQueryResult { columns?: unknown; rows?: unknown; error?: string }
 
+/** 一个查询标签页:独立 SQL 草稿与最近一次执行结果(仿 HubHex 新建查询)。 */
+interface QueryTab {
+  /** 稳定 id(递增,不作数组下标)。 */
+  id: number
+  /** 展示名(查询 N)。 */
+  name: string
+  /** 编辑器草稿。 */
+  sql: string
+  /** 该标签最近一次执行的结果(null = 未执行过)。 */
+  result: SqlQueryResult | null
+  /** 该标签最近一次执行的错误(null = 无错误)。 */
+  error: string | null
+}
+
+/** 新建一个空白查询标签(名称按全局序号递增)。 */
+function makeQueryTab(id: number): QueryTab {
+  return { id, name: `查询 ${id}`, sql: '', result: null, error: null }
+}
+
 /** 从 db_mysql_list_columns 结果提取列名(返回元素为 {name} 对象行)。 */
 function extractColumnNames(rows: unknown): string[] {
   if (!Array.isArray(rows)) return []
@@ -245,11 +264,11 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
   const [dbsLoading, setDbsLoading] = useState(false)
   const [treeSearch, setTreeSearch] = useState('')
   const [selected, setSelected] = useState<SelectedTable | null>(null)
-  // SQL 查询区状态(批次 2):编辑器文本 / 执行结果 / 加载 / 错误。
-  const [sql, setSql] = useState('')
-  const [sqlResult, setSqlResult] = useState<SqlQueryResult | null>(null)
+  // SQL 查询区状态:多查询标签(新建查询按钮追加),每个标签独立草稿与结果。
+  const [queryTabs, setQueryTabs] = useState<QueryTab[]>(() => [makeQueryTab(1)])
+  const [activeQueryId, setActiveQueryId] = useState(1)
+  const nextQueryIdRef = useRef(2)
   const [sqlLoading, setSqlLoading] = useState(false)
-  const [sqlError, setSqlError] = useState<string | null>(null)
   // 查询历史(批次 5):弹层开关 + 当前加载的条目。
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyEntries, setHistoryEntries] = useState<SqlHistoryEntry[]>([])
@@ -415,17 +434,50 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     } catch { /* 存储不可用(隐私模式等)时静默降级 */ }
   }, [dbs, selected, currentDb, showMonitor, treeStoreKey])
 
+  // ─── 查询标签页操作(新建 / 关闭 / 修改) ───
+  // 不变式:queryTabs 恒非空(单标签时关闭钮隐藏),activeTab 恒存在(兜底空标签)。
+  const activeTab = queryTabs.find(t => t.id === activeQueryId) ?? queryTabs[0] ?? makeQueryTab(0)
+
+  /** 就地修改某个查询标签(state 驱动重渲染)。 */
+  const patchTab = useCallback((id: number, patch: Partial<QueryTab>) => {
+    setQueryTabs(prev => prev.map(t => (t.id === id ? { ...t, ...patch } : t)))
+  }, [])
+
+  /** 新建查询:追加空白标签并激活(编辑器聚焦交给 autofocus 的 SqlEditor)。 */
+  const newQuery = useCallback(() => {
+    const id = nextQueryIdRef.current
+    nextQueryIdRef.current += 1
+    setQueryTabs(prev => [...prev, makeQueryTab(id)])
+    setActiveQueryId(id)
+  }, [])
+
+  /** 关闭查询标签:至少保留一个;关闭当前标签时激活相邻标签。 */
+  const closeQuery = useCallback((id: number) => {
+    setQueryTabs(prev => {
+      if (prev.length <= 1) return prev
+      return prev.filter(t => t.id !== id)
+    })
+    if (id === activeQueryId) {
+      const idx = queryTabs.findIndex(t => t.id === id)
+      const remaining = queryTabs.filter(t => t.id !== id)
+      const neighbor = remaining[Math.min(Math.max(idx, 0), remaining.length - 1)]
+      if (neighbor !== undefined) setActiveQueryId(neighbor.id)
+    }
+  }, [activeQueryId, queryTabs])
+
   // SQL 执行(Mod-Enter 执行 / Shift-Mod-e EXPLAIN):调 db_mysql_execute / explain。
-  // 批次 5:多语句拆分——非 EXPLAIN 时按分号拆多条逐条执行,记录查询历史。
+  // 多语句拆分——非 EXPLAIN 时按分号拆多条逐条执行,记录查询历史;结果/错误写回
+  // 执行发起时的活动标签。
   const executeSql = useCallback(async (statement: string, explain: boolean) => {
+    const tabId = activeQueryId
     const id = connRef.current
     if (id === null) {
-      setSqlError('未连接数据库')
+      patchTab(tabId, { error: '未连接数据库' })
       return
     }
     if (statement.trim() === '') return
     setSqlLoading(true)
-    setSqlError(null)
+    patchTab(tabId, { error: null })
     try {
       const cmd = explain ? `${cmdPrefix}_explain` : `${cmdPrefix}_execute`
       const statements = explain ? [statement] : splitStatements(statement)
@@ -436,19 +488,19 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
         const res = await tauriInvoke<SqlQueryResult>(cmd, { connId: id, sql: stmt, ...dbArg })
         last = res
         if (res.error !== undefined && res.error !== '') {
-          setSqlError(res.error)
+          patchTab(tabId, { error: res.error })
           break
         }
       }
-      if (last !== null) setSqlResult(last)
+      if (last !== null) patchTab(tabId, { result: last })
       // 执行过的原文记入历史(与 Vue 一致:即使出错也记录尝试)。
       addHistory(statement, currentDb)
     } catch (e) {
-      setSqlError(e instanceof Error ? e.message : String(e))
+      patchTab(tabId, { error: e instanceof Error ? e.message : String(e) })
     } finally {
       setSqlLoading(false)
     }
-  }, [currentDb, cmdPrefix])
+  }, [activeQueryId, currentDb, cmdPrefix, patchTab])
 
   /** 查询历史弹层:打开时刷新条目;再次点击关闭。 */
   const toggleHistory = (): void => {
@@ -456,9 +508,9 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     setHistoryOpen(open => !open)
   }
 
-  /** 点历史条目 → 回填到 SQL 编辑器并收起弹层。 */
+  /** 点历史条目 → 回填到当前活动查询标签并收起弹层。 */
   const useHistoryEntry = (entry: SqlHistoryEntry): void => {
-    setSql(entry.sql)
+    patchTab(activeQueryId, { sql: entry.sql })
     setHistoryOpen(false)
   }
 
@@ -468,9 +520,9 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     setHistoryEntries([])
   }
 
-  /** 格式化当前 SQL(纯函数;按钮触发)。 */
+  /** 格式化当前活动标签的 SQL(纯函数;按钮触发)。 */
   const formatCurrentSql = (): void => {
-    setSql(formatSql(sql))
+    patchTab(activeQueryId, { sql: formatSql(activeTab.sql) })
   }
 
   /** 查看表 DDL(get_table_ddl → 弹层)。 */
@@ -549,8 +601,8 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     )))
   }, [])
 
-  /** 全量导出当前表到 Excel(后端执行,服务端直写 xlsx)。 */
-  const exportTableExcel = useCallback(async (table: string, database: string | undefined, orderBy: string | null, orderDir: 'asc' | 'desc') => {
+  /** 全量导出当前表到 Excel(后端执行,服务端直写 xlsx;whereFilter 透传 raw WHERE)。 */
+  const exportTableExcel = useCallback(async (table: string, database: string | undefined, orderBy: string | null, orderDir: 'asc' | 'desc', whereFilter: string | null) => {
     const id = connRef.current
     if (id === null) return
     if (!isTauriRuntime()) {
@@ -576,6 +628,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
         args.orderBy = orderBy
         args.orderDir = orderDir
       }
+      if (whereFilter !== null && whereFilter !== '') args.filter = whereFilter
       const res = await tauriInvoke<{ filePath: string; totalRows?: number; durationMs?: number }>(cmd, args)
       const rows = res.totalRows ?? 0
       setConnectError(null)
@@ -727,10 +780,37 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                   <span className={css.hint}>Mod-Enter 执行 · Shift-Mod-e EXPLAIN · Tab 缩进</span>
                   {sqlLoading && <span className={css.hint}>执行中…</span>}
                   <span className={css.spacer} />
-                  <button type="button" className={css.sqlRunBtn} onClick={() => void executeSql(sql, false)} disabled={sqlLoading || sql.trim() === ''} title="执行 SQL (Mod-Enter)" aria-label="执行 SQL"><IconPlayOutline16 size={13} /></button>
-                  <button type="button" className={css.sqlBarBtn} onClick={() => void executeSql(sql, true)} disabled={sqlLoading || sql.trim() === ''} title="执行 EXPLAIN (Shift-Mod-e)" aria-label="执行 EXPLAIN"><IconInspectOutline12 size={13} /></button>
+                  <button type="button" className={css.sqlRunBtn} onClick={() => void executeSql(activeTab.sql, false)} disabled={sqlLoading || activeTab.sql.trim() === ''} title="执行 SQL (Mod-Enter)" aria-label="执行 SQL"><IconPlayOutline16 size={13} /></button>
+                  <button type="button" className={css.sqlBarBtn} onClick={() => void executeSql(activeTab.sql, true)} disabled={sqlLoading || activeTab.sql.trim() === ''} title="执行 EXPLAIN (Shift-Mod-e)" aria-label="执行 EXPLAIN"><IconInspectOutline12 size={13} /></button>
                   <button type="button" className={css.sqlBarBtn} onClick={formatCurrentSql} title="格式化 SQL" aria-label="格式化 SQL"><IconCodeOutline16 size={13} /></button>
                   <button type="button" className={`${css.sqlBarBtn} ${historyOpen ? css.sqlBarBtnActive : ''}`} onClick={toggleHistory} title="查询历史" aria-label="查询历史"><MetricIcon name="clock" size={13} /></button>
+                </div>
+                {/* 查询标签条:仿 HubHex 多查询标签,「新建查询」追加空白标签。 */}
+                <div className={css.queryTabsRow} role="tablist" aria-label="查询标签">
+                  {queryTabs.map(tab => (
+                    <div key={tab.id} className={`${css.queryTab} ${tab.id === activeQueryId ? css.queryTabActive : ''}`}>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={tab.id === activeQueryId}
+                        className={css.queryTabName}
+                        onClick={() =>{  setActiveQueryId(tab.id) }}
+                        title={tab.sql !== '' ? tab.sql : tab.name}
+                      >
+                        {tab.name}{tab.result !== null ? ' ●' : ''}
+                      </button>
+                      {queryTabs.length > 1 && (
+                        <button
+                          type="button"
+                          className={css.queryTabClose}
+                          onClick={() =>{  closeQuery(tab.id) }}
+                          title={`关闭 ${tab.name}`}
+                          aria-label={`关闭 ${tab.name}`}
+                        >×</button>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button" className={css.queryTabNew} onClick={newQuery} title="新建查询标签" aria-label="新建查询">＋ 新建查询</button>
                 </div>
                 {historyOpen && (
                   <div className={css.historyPanel}>
@@ -760,31 +840,31 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                   </div>
                 )}
                 <SqlEditor
-                  value={sql}
-                  onChange={setSql}
+                  value={activeTab.sql}
+                  onChange={(next) =>{  patchTab(activeQueryId, { sql: next }) }}
                   dialect={dialect === 'postgresql' ? 'postgresql' : 'mysql'}
                   onExecute={(statement, explain) => void executeSql(statement, explain)}
                   schema={sqlSchema}
                   placeholder="SELECT * FROM users WHERE …"
                 />
-                {sqlError !== null && <div className={css.error}>{sqlError}</div>}
+                {activeTab.error !== null && <div className={css.error}>{activeTab.error}</div>}
               </div>
             ) : (
               <div className={css.placeholder}>连接数据库后将在此显示 SQL 编辑器</div>
             )}
-            {/* 数据栏:执行过 SQL 时展示查询结果(可关闭回到表数据),否则展示选中表。 */}
-            {sqlResult !== null && sqlError === null ? (
-              <SqlQueryResultView result={sqlResult} onClose={() =>{  setSqlResult(null) }} />
+            {/* 数据栏:活动查询标签执行过 SQL 时展示其结果(可关闭回到表数据),否则展示选中表。 */}
+            {activeTab.result !== null && activeTab.error === null ? (
+              <SqlQueryResultView result={activeTab.result} onClose={() =>{  patchTab(activeQueryId, { result: null }) }} />
             ) : selected === null ? (
-              <div className={css.placeholder}>选择左侧一个表查看数据(排序 / 分页 / NULL 高亮已就位)</div>
+              <div className={css.placeholder}>选择左侧一个表查看数据(排序 / 分页 / WHERE 筛选 / NULL 高亮已就位)</div>
             ) : (
               <DbDataGrid
                 connId={connId}
                 table={selected.table}
                 cmdPrefix={cmdPrefix}
                 {...(selected.database !== undefined ? { database: selected.database } : {})}
-                onExport={(orderBy, orderDir) =>
-                  void exportTableExcel(selected.table, selected.database, orderBy, orderDir)}
+                onExport={(orderBy, orderDir, whereFilter) =>
+                  void exportTableExcel(selected.table, selected.database, orderBy, orderDir, whereFilter)}
               />
             )}
             {exporting && <div className={css.exportMsg}>正在导出 Excel…</div>}

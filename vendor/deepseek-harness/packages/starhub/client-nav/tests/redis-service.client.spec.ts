@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 /**
- * Redis 服务层(redis-service.ts):命令转发参数、预览模式拒绝,以及 redisQuote 纯函数边界。
+ * Redis 服务层(redis-service.ts):命令转发参数、预览模式拒绝、redisQuote 纯函数
+ * 边界,以及 redisScanAccumulate 连续分页(游标归零/单批上限/续传去重/页数熔断)。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   redisConnect, redisDBSize, redisDel, redisDisconnect, redisExecute, redisFlushDB,
-  redisGetValue, redisInfo, redisQuote, redisRename, redisScan, redisSelect, redisSet,
+  redisGetValue, redisInfo, redisQuote, redisRename, redisScan, redisScanAccumulate,
+  redisSelect, redisSet, type RedisScanResult,
 } from '../src/client/redis/redis-service.ts'
 
 /** 安装 Tauri IPC stub,记录 invoke 调用并返回预设结果;返回还原原状态的回调。 */
@@ -124,6 +126,86 @@ describe('redis service commands', () => {
 
   it('rejects in browser preview when no Tauri internals are present', async () => {
     await expect(redisConnect({ host: 'h', port: 6379 })).rejects.toThrow('Tauri IPC unavailable')
+  })
+})
+
+describe('redisScanAccumulate', () => {
+  /** 造一个按页返回的假 SCAN:每页返回 [cursor, cursor+count),下一游标前移 count-overlap。 */
+  function fakeScanPages(totalKeys: number, perPage: number, overlap = 0) {
+    let pages = 0
+    const scan = async (cursor: number, _match?: string, count = 100): Promise<RedisScanResult> => {
+      pages += 1
+      const next = Math.min(totalKeys, cursor + count)
+      const keys = []
+      for (let i = cursor; i < next; i++) keys.push({ key: `k${i}`, type: 'string', ttl: -1 })
+      const advance = count - overlap
+      return { keys, cursor: next >= totalKeys ? 0 : cursor + advance, total: totalKeys }
+    }
+    return { scan, pages: () => pages }
+  }
+
+  it('loops until the cursor returns to 0, accumulating every key', async () => {
+    const { scan, pages } = fakeScanPages(1250, 500)
+    const result = await redisScanAccumulate(scan, 0, undefined, [], 10_000, 500)
+    expect(result.keys).toHaveLength(1250)
+    expect(result.keys[0]?.key).toBe('k0')
+    expect(result.keys[1249]?.key).toBe('k1249')
+    expect(result.cursor).toBe(0)
+    expect(result.complete).toBe(true)
+    expect(pages()).toBe(3)
+  })
+
+  it('stops at the batch limit and reports an incomplete state for 加载更多', async () => {
+    const { scan, pages } = fakeScanPages(2500, 500)
+    const result = await redisScanAccumulate(scan, 0, undefined, [], 1000, 500)
+    expect(result.keys).toHaveLength(1000)
+    expect(result.complete).toBe(false)
+    expect(result.cursor).toBe(1000)
+    expect(pages()).toBe(2)
+  })
+
+  it('continues from a stored cursor, keeping existing keys', async () => {
+    const { scan, pages } = fakeScanPages(1500, 500)
+    const first = await redisScanAccumulate(scan, 0, undefined, [], 500, 500)
+    expect(first.keys).toHaveLength(500)
+    expect(first.complete).toBe(false)
+    expect(first.cursor).toBe(500)
+    // 续传:existing 传入首段结果,累计到 1500 且游标归零。
+    const second = await redisScanAccumulate(scan, first.cursor, undefined, first.keys, 1500, 500)
+    expect(second.keys).toHaveLength(1500)
+    expect(second.complete).toBe(true)
+    expect(pages()).toBe(3)
+  })
+
+  it('deduplicates overlapping pages when SCAN revisits keys', async () => {
+    // 每页与上一页重叠 100 个 key(模拟 SCAN 偶发重复)。
+    const { scan } = fakeScanPages(1000, 500, 100)
+    const result = await redisScanAccumulate(scan, 0, undefined, [], 10_000, 500)
+    expect(result.keys).toHaveLength(1000)
+    expect(new Set(result.keys.map(k => k.key)).size).toBe(1000)
+    expect(result.complete).toBe(true)
+  })
+
+  it('passes the MATCH pattern and page hint through to every page', async () => {
+    const seen: Array<[number, string | undefined, number]> = []
+    const scan = async (cursor: number, match?: string, count?: number): Promise<RedisScanResult> => {
+      seen.push([cursor, match, count ?? 0])
+      return { keys: cursor === 0 ? [{ key: 'user:1', type: 'string', ttl: -1 }] : [], cursor: 0 }
+    }
+    await redisScanAccumulate(scan, 0, 'user:*', [], 10_000, 800)
+    expect(seen[0]).toEqual([0, 'user:*', 800])
+  })
+
+  it('stops after the page cap to avoid cursor loops', async () => {
+    // 游标永不归零(每次返回 cursor=1):页数熔断,结果保持 incomplete。
+    const scan = async (cursor: number): Promise<RedisScanResult> => ({
+      keys: cursor === 0 ? [{ key: 'k', type: 'string', ttl: -1 }] : [],
+      cursor: 1,
+    })
+    const result = await redisScanAccumulate(scan, 0, undefined, [], 10_000, 500, 3)
+    expect(result.keys).toHaveLength(1)
+    expect(result.complete).toBe(false)
+    expect(result.cursor).toBe(1)
   })
 })
 

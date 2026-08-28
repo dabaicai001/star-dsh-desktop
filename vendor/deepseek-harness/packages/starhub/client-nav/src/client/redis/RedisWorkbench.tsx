@@ -5,15 +5,18 @@
  *
  * 左侧为 **DB 树**:db0–db15 全部默认收起,点击某个 db 才展开并懒加载
  * (db_redis_select 把客户端切换到该库,再 db_redis_db_size + db_redis_scan
- * 取该 db 的键;键按 ':' 二次分组为文件夹树,文件夹同样默认收起,点击该行
- * 才展开叶子)。同一时刻只展开一个 db——sidecar 的 Redis 客户端是单库语义
- * (Select 即重建连接),展开态 db 恒等于客户端当前 db,键操作(打开/重命名/
- * 删除/清空/新建)与 CLI(db_redis_execute)都作用在展开的库上。已加载的键
- * 按 db 缓存,收起再展开不重复请求。
+ * 取该 db 的键)。键加载经 redisScanAccumulate 连续分页直到游标归零(单批
+ * 上限 SCAN_BATCH_LIMIT,超过后展示「加载更多」按游标续传),解决大 db 只展示
+ * 首页 SCAN(~百条)的问题;加载中展示「已加载 / 总数」进度。键按 ':' 二次分组
+ * 为文件夹树,文件夹同样默认收起,点击该行才展开叶子。同一时刻只展开一个
+ * db——sidecar 的 Redis 客户端是单库语义(Select 即重建连接),展开态 db 恒等于
+ * 客户端当前 db,键操作(打开/重命名/删除/清空/新建)与 CLI(db_redis_execute)
+ * 都作用在展开的库上。已加载的键按 db 缓存,收起再展开不重复请求(部分加载的
+ * 缓存命中时自动续传一批)。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RustAsset } from '../store.ts'
-import { redisConnect, redisDBSize, redisDel, redisDisconnect, redisExecute, redisFlushDB, redisRename, redisScan, redisSelect, type RedisKeyInfo } from './redis-service.ts'
+import { redisConnect, redisDBSize, redisDel, redisDisconnect, redisExecute, redisFlushDB, redisRename, redisScan, redisScanAccumulate, redisSelect, type RedisKeyInfo } from './redis-service.ts'
 import { allFolderPaths, buildKeyTree, countLeaves, type KeyTreeNode } from './key-tree.ts'
 import { RedisValueEditor } from './RedisValueEditor.tsx'
 import css from './RedisWorkbench.module.css'
@@ -21,10 +24,15 @@ import css from './RedisWorkbench.module.css'
 /** Redis 固定 DB 编号(单机 0-15)。 */
 const DB_INDEXES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 
+/** 单批连续 SCAN 的 key 总量上限:超过则停在 batch 末尾,由「加载更多」续传。 */
+const SCAN_BATCH_LIMIT = 10_000
+
 /** 单个 db 的懒加载缓存:展开时取一次,收起保留。 */
 interface DbLoadable {
   keys: RedisKeyInfo[]
   cursor: number
+  /** SCAN 游标是否已归零(false = 还有未加载的键,可「加载更多」续传)。 */
+  complete: boolean
   loading: boolean
   error: string | null
   /** DBSIZE 键总数(展开时与 SCAN 一起刷新)。 */
@@ -34,7 +42,7 @@ interface DbLoadable {
 }
 
 /** 未加载 db 的占位记录(patchDbList 的合并基底)。 */
-const EMPTY_DB_LOADABLE: DbLoadable = { keys: [], cursor: 0, loading: false, error: null, size: 0, match: '' }
+const EMPTY_DB_LOADABLE: DbLoadable = { keys: [], cursor: 0, complete: true, loading: false, error: null, size: 0, match: '' }
 
 /** 无展开文件夹的占位集(toggleKeyFolder 从不原地改动,可安全共享)。 */
 const EMPTY_FOLDER_PATHS: ReadonlySet<string> = new Set()
@@ -163,17 +171,40 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     }
   }, [notify, patchDbList])
 
-  /** 懒加载某个 db 的键(SCAN 一页;带当前搜索过滤),写入该 db 缓存。 */
+  /** 连续加载某个 db 的键(从 0 游标 SCAN 到归零/单批上限;带当前搜索过滤),写入该 db 缓存。 */
   const loadKeysForDb = useCallback(async (connId: string, db: number) => {
     const match = search.trim()
     patchDbList(db, { loading: true, error: null })
     try {
-      const result = await redisScan(connId, 0, match === '' ? undefined : match)
-      patchDbList(db, { keys: result.keys, cursor: result.cursor, loading: false, error: null, match })
+      const { keys, cursor, complete } = await redisScanAccumulate(
+        (cur, m, count) => redisScan(connId, cur, m, count),
+        0, match === '' ? undefined : match, [], SCAN_BATCH_LIMIT,
+      )
+      patchDbList(db, { keys, cursor, complete, loading: false, error: null, match })
     } catch (e: unknown) {
       patchDbList(db, { loading: false, error: e instanceof Error ? e.message : String(e) })
     }
   }, [search, patchDbList])
+
+  /**
+   * 从缓存游标续传某个 db 的剩余键(「加载更多」/ 部分缓存展开时自动续传一批):
+   * 保留已加载键,redisScanAccumulate 按其 key 去重,再加载至多一批。
+   */
+  const loadMoreKeysForDb = useCallback(async (connId: string, db: number) => {
+    const cached = dbLists.get(db)
+    /* v8 ignore next -- 防御:续传仅在已有缓存记录时触发(按钮随展开渲染) */
+    if (cached === undefined || cached.complete || cached.loading) return
+    patchDbList(db, { loading: true, error: null })
+    try {
+      const { keys, cursor, complete } = await redisScanAccumulate(
+        (cur, m, count) => redisScan(connId, cur, m, count),
+        cached.cursor, cached.match === '' ? undefined : cached.match, cached.keys, cached.keys.length + SCAN_BATCH_LIMIT,
+      )
+      patchDbList(db, { keys, cursor, complete, loading: false, error: null })
+    } catch (e: unknown) {
+      patchDbList(db, { loading: false, error: e instanceof Error ? e.message : String(e) })
+    }
+  }, [dbLists, patchDbList])
 
   // 挂载建连一次,卸载断连;不自动取键(DB 树全部收起,点击才懒加载)。
   useEffect(() => {
@@ -233,9 +264,13 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     }
     const cached = dbLists.get(db)
     const match = search.trim()
-    // 缓存命中(键 + 搜索匹配一致):不重复请求;若该 db 恰有在途刷新,其落盘
-    // 更新同样会刷新本条记录,跳过是安全的。
-    if (cached !== undefined && cached.match === match) return
+    // 缓存命中:键 + 搜索匹配一致时不再从头请求。完整缓存直接复用;部分缓存
+    // (上次停在单批上限)自动从游标续传一批,避免大 db 每次展开都重扫。
+    if (cached !== undefined && cached.match === match) {
+      if (cached.complete) return
+      void loadMoreKeysForDb(connId, db)
+      return
+    }
     await Promise.all([refreshSizeForDb(connId, db), loadKeysForDb(connId, db)])
   }
 
@@ -423,7 +458,12 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                       </div>
                       {open && (
                         <div className={css.dbChildren}>
-                          {(entry === undefined || entry.loading) && <div className={css.dbStatus}>加载键…</div>}
+                          {entry === undefined && <div className={css.dbStatus}>加载键…</div>}
+                          {entry !== undefined && entry.loading && (
+                            <div className={css.dbStatus} data-testid="redis-scan-progress">
+                              <span>正在加载键… {entry.keys.length.toLocaleString()}{entry.size > 0 ? ` / ${entry.size.toLocaleString()}` : ''}</span>
+                            </div>
+                          )}
                           {entry !== undefined && !entry.loading && entry.error !== null && (
                             <div className={css.dbStatus}>
                               <span>加载失败:{entry.error}</span>
@@ -435,15 +475,26 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                           {entry !== undefined && !entry.loading && entry.error === null && entry.keys.length === 0 && (
                             <div className={css.dbStatus}>暂无 key。</div>
                           )}
-                          {entry !== undefined && !entry.loading && entry.error === null && entry.keys.length > 0 && (
-                            <div className={css.keyList}>
-                              {keyTree.map(node => (
-                                <KeyTreeRow key={node.path} node={node} depth={0} expanded={expandedFolders}
-                                  onToggle={(path) => toggleKeyFolder(db, path)} onOpen={openKey}
-                                  onRename={(key) => { setRenaming(key); setRenameTo(key) }}
-                                  onDelete={key => void deleteKey(key)} />
-                              ))}
-                            </div>
+                          {entry !== undefined && entry.error === null && entry.keys.length > 0 && (
+                            <>
+                              <div className={css.keyList}>
+                                {keyTree.map(node => (
+                                  <KeyTreeRow key={node.path} node={node} depth={0} expanded={expandedFolders}
+                                    onToggle={(path) => toggleKeyFolder(db, path)} onOpen={openKey}
+                                    onRename={(key) => { setRenaming(key); setRenameTo(key) }}
+                                    onDelete={key => void deleteKey(key)} />
+                                ))}
+                              </div>
+                              {/* 部分加载(停在单批上限):展示剩余量 + 按游标续传。 */}
+                              {entry.complete === false && (
+                                <div className={css.dbStatus}>
+                                  <span>已加载 {entry.keys.length.toLocaleString()} / {entry.size.toLocaleString()} keys</span>
+                                  <button type="button" className={css.retryButton} data-testid="redis-load-more"
+                                    disabled={entry.loading}
+                                    onClick={() => { const c = connRef.current; if (c !== null) void loadMoreKeysForDb(c, db) }}>加载更多</button>
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       )}

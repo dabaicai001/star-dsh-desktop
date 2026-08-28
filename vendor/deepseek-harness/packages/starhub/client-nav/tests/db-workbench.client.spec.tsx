@@ -376,4 +376,27 @@ describe('DbWorkbench', () => {
     unmount()
   })
 
+  it('新建查询 appends a query tab, switches, closes back to the last one', async () => {
+    stubInvoke({})
+    const { unmount } = render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
+    // 初始一个标签「查询 1」;新建后出现「查询 2」并激活。
+    expect(screen.getByRole('tab', { name: '查询 1' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: '新建查询' }))
+    await waitFor(() =>{  expect(screen.getByRole('tab', { name: '查询 2' })).toBeTruthy() })
+    expect(screen.getByRole('tab', { name: '查询 2' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: '查询 1' }).getAttribute('aria-selected')).toBe('false')
+    // 点击「查询 1」切回;再关闭当前(查询 1)→ 邻居「查询 2」激活。
+    fireEvent.click(screen.getByRole('tab', { name: '查询 1' }))
+    expect(screen.getByRole('tab', { name: '查询 1' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: '关闭 查询 1' }))
+    await waitFor(() =>{  expect(screen.queryByRole('tab', { name: '查询 1' })).toBeNull() })
+    expect(screen.getByRole('tab', { name: '查询 2' }).getAttribute('aria-selected')).toBe('true')
+    // 最后一个标签无关闭钮;新建按钮仍可再次追加。
+    expect(screen.queryByRole('button', { name: '关闭 查询 2' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '新建查询' }))
+    await waitFor(() =>{  expect(screen.getByRole('tab', { name: '查询 3' })).toBeTruthy() })
+    unmount()
+  })
+
 })

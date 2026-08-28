@@ -82,6 +82,17 @@
 .historySql { font-family: 'JetBrains Mono', Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sqlLabel { font-weight: 600; color: var(--dsw-alias-label-primary); font-size: 12px; }
 
+/* 查询标签条(仿 HubHex 新建查询):横向标签 + 追加按钮,超宽横向滚动。 */
+.queryTabsRow { display: flex; align-items: center; gap: 4px; padding: 0 2px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: #557997 transparent; }
+.queryTab { display: inline-flex; flex: none; align-items: center; gap: 2px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 2px 4px 2px 8px; background: transparent; }
+.queryTabActive { border-color: var(--dsw-accent); background: var(--dsw-accent-soft); }
+.queryTabName { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 11px; cursor: pointer; padding: 2px 0; white-space: nowrap; }
+.queryTabActive .queryTabName { color: var(--dsw-accent); font-weight: 650; }
+.queryTabClose { display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1; cursor: pointer; padding: 0; }
+.queryTabClose:hover { color: var(--dsw-alias-state-error-primary); background: var(--dsw-alias-interactive-bg-hover); }
+.queryTabNew { flex: none; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 6px; padding: 3px 10px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 11px; cursor: pointer; white-space: nowrap; }
+.queryTabNew:hover { border-color: var(--dsw-accent); color: var(--dsw-accent); }
+
 /* SQL 执行结果填充底部数据栏(flex:1);内部表格区双向滚动,深色滚动条。 */
 .sqlResult { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }
 .sqlResultBar { display: flex; align-items: center; gap: 8px; padding: 4px 10px; color: var(--dsw-alias-label-secondary); font-size: 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); }

@@ -68,6 +68,55 @@ export interface RedisDbSize {
   size: number
 }
 
+/** 连续 SCAN 的累计结果:keys 为去重后累计,cursor 为最后返回的下一游标。 */
+export interface RedisScanAccumulated {
+  keys: RedisKeyInfo[]
+  cursor: number
+  /** 游标是否已归零(全量遍历完成)。 */
+  complete: boolean
+}
+
+/** 单页 SCAN 的最小形态(redisScan 本体;抽成入参便于纯函数单测注入)。 */
+export type RedisScanPage = (cursor: number, match?: string, count?: number) => Promise<RedisScanResult>
+
+/**
+ * 从 startCursor 起连续 SCAN,直到游标归零、累计 key 达 batchLimit 或页数达
+ * maxPages;existing 中已有的 key 去重保留(续传时 SCAN 重复项不累积)。
+ * @param scan - 单页 SCAN 实现。
+ * @param startCursor - 起始游标(0 = 从头遍历)。
+ * @param match - 可选 MATCH 模式。
+ * @param existing - 已累计的 key(续传基底)。
+ * @param batchLimit - 累计 key 总量上限(达到即停在 batch 末尾,由调用方决定续传)。
+ * @param pageHint - 每页 COUNT 提示值(服务端默认 100,调大减少往返)。
+ * @param maxPages - 单次连续 SCAN 页数安全上限(防游标不归零的病态循环)。
+ * @returns 累计结果(keys + 下一游标 + 是否遍历完成)。
+ */
+export async function redisScanAccumulate(
+  scan: RedisScanPage,
+  startCursor: number,
+  match: string | undefined,
+  existing: readonly RedisKeyInfo[],
+  batchLimit: number,
+  pageHint = 500,
+  maxPages = 400,
+): Promise<RedisScanAccumulated> {
+  const seen = new Set(existing.map(info => info.key))
+  const keys = [...existing]
+  let cursor = startCursor
+  let pages = 0
+  do {
+    const page = await scan(cursor, match, pageHint)
+    cursor = page.cursor
+    for (const info of page.keys) {
+      if (seen.has(info.key)) continue
+      seen.add(info.key)
+      keys.push(info)
+    }
+    pages += 1
+  } while (cursor !== 0 && keys.length < batchLimit && pages < maxPages)
+  return { keys, cursor, complete: cursor === 0 }
+}
+
 /** 连接 Redis。
  * @param params - 连接参数。
  * @returns 连接建立后的连接信息。

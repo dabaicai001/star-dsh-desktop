@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.100.3-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.101.0-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,22 +148,18 @@
 
 ## 当前版本
 
+### v0.101.0 (2026-08-28)
+- ✨ MySQL 数据库工作台新增「新建查询」按钮:SQL 区改为多查询标签(「查询 1…N」),「＋ 新建查询」追加空白标签并激活,每个标签独立 SQL 草稿与执行结果,标签可关闭(至少保留一个)。
+- ✨ MySQL 表数据网格新增 HubHex 风格 WHERE 条件栏:回车应用(服务端 raw filter)、Shift+回车换行、Esc/× 清除、切表重置;导出 Excel 透传当前 WHERE 条件。
+- ✨ Redis 键树改为连续 SCAN 分页加载:展开 db 时从 0 游标连续遍历直到归零(单批上限 10k keys),解决大 db 只展示首页约百条键的问题;加载中展示「已加载 X / 总数 Y」进度,超单批上限出「加载更多」按钮按游标续传;沿用 MATCH 搜索过滤,SCAN 重复键去重。
+- 🐛 移除表数据网格「快捷筛选」输入(其 `quickFilter` 参数未被 Tauri command 声明,属被静默丢弃的死路径)。
+
 ### v0.100.3 (2026-08-28)
 - 🐛 Edit 卡「查看」打开壳内窗口仍显示单栏:点击 Edit/Write 卡的文件名链接时,外壳 `openFile` 对所有文件链接一律以 `kind:'read'`(单栏 textarea)打开壳内文件查看窗,导致文件变更对比的 `kind:'edit'` 左右双栏分支在真实 UI 里从未被触发——现在 `openFile` 契约允许变更行携带其应用后 hunks 作为可选第二参数,`FileMutationRow` 在点击时附上,dsh 壳以 `kind:'edit'`(表头「变更前 / 变更后」红绿对比)打开;无 diff(如报错/普通打开)仍走原 `read` 打开路径
 
 ### v0.100.2 (2026-08-27)
 - 🐛 Edit/Write 差异卡部分场景回落通用 IN/OUT 卡的问题修复:wire 视图因 presenter 解析或跨分页 call/result 配对失败而缺失时,前端改从事件持久 `meta.diffs` 兜底重建双栏差异卡(载荷畸形仍走通用路径)。
 - 🐛 工具卡文件链接指向已删除文件时,报错从裸 OS 文案改为带路径的「file not found: <path>」。
-
-### v0.100.1 (2026-08-27)
-- 🐛 SSH 执行记录改为**按当前会话隔离**:记录写入时打上「当时活跃会话」标记,头部「执行」角标、抽屉列表与「清空」都只作用于本会话,跨会话不再共用。
-- ✨ 执行记录行尾新增**「断开连接」按钮**:移除该连接的记录(所有会话视角)并异步调用后端 `ssh_disconnect` 断开 SSH 连接;之后的静默执行会重新建连并出现新记录。
-
-### v0.100.0 (2026-08-27)
-- ✨ 执行记录抽屉化:会话头部新增「执行」胶囊(「文件」旁),SSH 静默执行记录迁入工具抽屉——按会话连接去重置顶(每连接保留最近一次命令,上限 50 条)、行点击展开完整输出/再点收起、记录多时纵向滚动、一键清空;移除右下角 BastionExecPanel 浮层堆叠及其拖动重排(拖动不可靠的根因:重排移动 DOM 节点导致 pointer capture 被浏览器隐式释放);`ssh:exec-done` 订阅上移为 apply 插件级常驻,不再随浮层/抽屉重挂载丢失。
-- ✨ AI 对话中的 Edit/Write 差异卡改为**双栏修改前后对照**:左列 `-` 修改前(错误色底)、右列 `+` 修改后(成功色底),未变更行成对展示;头尾裁剪 + 有界 LCS 行对齐 + 相邻增删游程折叠,替换型修改逐行左右对照;两列共享一个滚动容器,纵向天然联动、任一列横向溢出整体滚动,列头粘性随动;footer 统计与复制文本与旧格式逐字节一致。
-- 🐛 修复干净检出上 vendor/deepseek-harness 全量构建 TS2307 崩溃(CI 报错 `Cannot find module '@deepseek-ai/dsh-commands/remote'`):七个 owner 包的 `/remote` 类型声明是生成产物,而 tsconfig paths 把大量包名直连 src,首个 tsc 阶段就会消费到;新增 `gen:typert` 源码态自举脚本挂入 `build:lib:host` 前,typecheck/lint 同步受益。
-- 🐛 修复 Modal 在 layer-2 弹面上滚动态未重绑 l2 滚动条配对(scrollbar 样式门禁暴露的存量问题);DiffBlock 高度上限改为滚动折叠。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

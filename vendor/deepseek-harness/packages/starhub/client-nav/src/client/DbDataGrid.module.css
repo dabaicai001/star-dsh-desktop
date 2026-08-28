@@ -7,11 +7,15 @@
 .exportBtn:hover { background: var(--dsw-accent-soft); }
 .exportBtn:disabled { opacity: 0.5; cursor: default; }
 .filterBadge { color: var(--dsw-accent); font-size: 11px; }
-.quickFilterWrap { position: relative; display: flex; align-items: center; }
-.quickFilterInput { width: 140px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 12px; padding: 3px 22px 3px 8px; outline: none; }
-.quickFilterInput:focus { border-color: var(--dsw-accent); }
-.quickFilterClear { position: absolute; right: 4px; width: 16px; height: 16px; border: 0; border-radius: 50%; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 1; cursor: pointer; padding: 0; }
-.quickFilterClear:hover { color: var(--dsw-accent); background: var(--dsw-alias-interactive-bg-hover); }
+/* HubHex 风格 WHERE 条件栏:网格表头上方整行条件输入,Enter 应用 / Shift+Enter 换行。 */
+.whereBar { display: flex; align-items: flex-start; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); }
+.whereIcon { flex: none; line-height: 24px; color: var(--dsw-alias-label-tertiary); font-family: var(--dsw-font-mono); font-size: 10px; font-weight: 650; letter-spacing: 0.5px; }
+.whereActive .whereIcon { color: var(--dsw-accent); }
+.whereInput { flex: 1; min-width: 0; height: 24px; resize: none; overflow: hidden; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; outline: none; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-mono); font-size: 12px; line-height: 22px; padding: 0 24px 0 8px; box-sizing: border-box; }
+.whereInput::placeholder { color: var(--dsw-alias-label-tertiary); }
+.whereInput:focus { border-color: var(--dsw-accent); }
+.whereClear { flex: none; width: 18px; height: 18px; margin-top: 3px; border: 0; border-radius: 50%; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 1; cursor: pointer; padding: 0; }
+.whereClear:hover { color: var(--dsw-accent); background: var(--dsw-alias-interactive-bg-hover); }
 .saveBtn { border: 1px solid var(--dsw-accent); border-radius: 6px; padding: 3px 10px; background: var(--dsw-accent-soft); color: var(--dsw-accent); font-size: 11px; cursor: pointer; }
 .saveBtn:disabled { opacity: 0.5; cursor: default; }
 .error { padding: 6px 10px; color: var(--dsw-alias-state-error-primary); font-size: 12px; }

@@ -13,10 +13,17 @@
  *   的 columnFilters 参数),可清除。
  * - CSV 导出:客户端生成当前页 CSV 并下载。
  *
+ * HubHex 风格 WHERE 条件栏(仿其表数据筛选输入):网格上方的条件输入框,占位
+ * `id = xxx AND name LIKE '%xxx%'`,回车应用(服务端 raw filter 参数,后端包一层
+ * `(…) WHERE`)、Shift+回车换行、Esc 清除;取代旧快捷筛选(其 quickFilter 参数
+ * 未被 db_mysql_get_table_data 的 Tauri command 声明,原实现是被静默丢弃的死路)。
+ *
  * 命令面复用:db_mysql_get_table_data(PG 同样走它,RPC 按 connId 分派 pgx)、
  * db_mysql_list_columns(取主键列)、db_mysql_update_rows。返回 QueryResult:
  * `{ columns:[{name,type,nullable}], rows:unknown[][], totalRows?:number,
- * durationMs?:number, isSelect?:boolean, error?:string }`。
+ * durationMs?:number, isSelect?:boolean, error?:string }`;`filter`(raw WHERE)/
+ * `columnFilters` 由 db_mysql_get_table_data / db_clickhouse_get_table_data /
+ * db_mysql_export_excel 的 Tauri command 显式声明透传。
  *
  * @module StarHub DB data grid (client)
  */
@@ -107,7 +114,7 @@ export function downloadTextFile(filename: string, content: string, mime = 'text
  */
 export function DbDataGrid({
   connId, table, database, cmdPrefix = 'db_mysql', onExport,
-}: { connId: string; table: string; database?: string; cmdPrefix?: 'db_mysql' | 'db_clickhouse'; onExport?: (orderBy: string | null, orderDir: 'asc' | 'desc') => void }) {
+}: { connId: string; table: string; database?: string; cmdPrefix?: 'db_mysql' | 'db_clickhouse'; onExport?: (orderBy: string | null, orderDir: 'asc' | 'desc', whereFilter: string | null) => void }) {
   const [result, setResult] = useState<QueryResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -121,10 +128,11 @@ export function DbDataGrid({
   const theadRef = useRef<HTMLDivElement | null>(null)
   // 列筛选(服务端):列名 → 筛选文本;空串/缺省表示不过滤。
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
-  // 快捷筛选(服务端):关键字 → 对所有列做 LIKE '%kw%';quickFilter 为已应用值,
-  // quickFilterText 为输入框草稿(Enter 应用 / Esc 清除)。
-  const [quickFilter, setQuickFilter] = useState('')
-  const [quickFilterText, setQuickFilterText] = useState('')
+  // HubHex 风格 WHERE 条件筛选(服务端 raw filter):whereFilter 为已应用值
+  // (Enter 应用),whereDraft 为 textarea 输入草稿(Shift+Enter 换行,Esc 清除)。
+  const [whereFilter, setWhereFilter] = useState('')
+  const [whereDraft, setWhereDraft] = useState('')
+  const whereRef = useRef<HTMLTextAreaElement | null>(null)
   // 列筛选弹层:当前列名 / 输入 / 锚点行底坐标(相对视口,弹层 fixed)。
   const [filterCol, setFilterCol] = useState<string | null>(null)
   const [filterText, setFilterText] = useState('')
@@ -144,8 +152,8 @@ export function DbDataGrid({
   const [saving, setSaving] = useState(false)
   const menu = useContextMenu()
 
-  // 有任一筛选(快捷筛选 / 列筛选)时以结果自带 totalRows 为分页基数,否则用全表 COUNT。
-  const filtering = quickFilter !== '' || Object.values(columnFilters).some(v => v !== '')
+  // 有任一筛选(WHERE 条件 / 列筛选)时以结果自带 totalRows 为分页基数,否则用全表 COUNT。
+  const filtering = whereFilter !== '' || Object.values(columnFilters).some(v => v !== '')
   const totalRows = filtering
     ? (result?.totalRows ?? 0)
     : (baseCount ?? result?.totalRows ?? 0)
@@ -158,13 +166,13 @@ export function DbDataGrid({
     if (page > pageCount - 1) setPage(pageCount - 1)
   }, [page, pageCount])
 
-  // 切换表时重置快捷筛选(列筛选保持原行为,不在此处置)。
+  // 切换表时重置 WHERE 筛选(列筛选保持原行为,不在此处置)。
   useEffect(() => {
-    setQuickFilter('')
-    setQuickFilterText('')
+    setWhereFilter('')
+    setWhereDraft('')
   }, [table])
 
-  const load = useCallback(async (offset: number, size: number, sortCol: string | null, dir: 'asc' | 'desc', filters: Record<string, string>, quick: string) => {
+  const load = useCallback(async (offset: number, size: number, sortCol: string | null, dir: 'asc' | 'desc', filters: Record<string, string>, where: string) => {
     setLoading(true)
     setError(null)
     try {
@@ -176,7 +184,7 @@ export function DbDataGrid({
       }
       const activeFilters = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ''))
       if (Object.keys(activeFilters).length > 0) args.columnFilters = activeFilters
-      if (quick !== '') args.quickFilter = quick
+      if (where !== '') args.filter = where
       const res = await tauriInvoke<QueryResult>(`${cmdPrefix}_get_table_data`, args)
       if (res.error !== undefined && res.error !== '') {
         setError(res.error)
@@ -191,10 +199,10 @@ export function DbDataGrid({
     }
   }, [connId, table, database, cmdPrefix])
 
-  // 表 / 页大小 / 页 / 排序 / 列筛选 / 快捷筛选变化 → 重新拉服务端数据。
+  // 表 / 页大小 / 页 / 排序 / 列筛选 / WHERE 条件变化 → 重新拉服务端数据。
   useEffect(() => {
-    void load(page * pageSize, pageSize, orderBy, orderDir, columnFilters, quickFilter)
-  }, [page, pageSize, orderBy, orderDir, columnFilters, quickFilter, load])
+    void load(page * pageSize, pageSize, orderBy, orderDir, columnFilters, whereFilter)
+  }, [page, pageSize, orderBy, orderDir, columnFilters, whereFilter, load])
 
   // 主键列:每次表切换后经 list_columns 取 key==='PRI' 的列。
   useEffect(() => {
@@ -394,14 +402,14 @@ export function DbDataGrid({
       if (!failed) {
         // 全部成功 → 清 dirty 并重载当前页。
         setDirty(new Map())
-        void load(page * pageSize, pageSize, orderBy, orderDir, columnFilters, quickFilter)
+        void load(page * pageSize, pageSize, orderBy, orderDir, columnFilters, whereFilter)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setSaving(false)
     }
-  }, [dirty, rows, pkCols, columns, connId, table, database, cmdPrefix, page, pageSize, orderBy, orderDir, columnFilters, quickFilter, load])
+  }, [dirty, rows, pkCols, columns, connId, table, database, cmdPrefix, page, pageSize, orderBy, orderDir, columnFilters, whereFilter, load])
 
   // Ctrl/Cmd+S 全局保存(与 Vue 对齐);编辑输入中先提交再保存。
   useEffect(() => {
@@ -425,20 +433,33 @@ export function DbDataGrid({
 
   const filteredCount = useMemo(() => Object.values(columnFilters).filter(v => v !== '').length, [columnFilters])
 
-  // ─── 快捷筛选:Enter 应用 / Esc 清除 / × 按钮清除 ───
-  const applyQuickFilter = (): void => {
-    setQuickFilter(quickFilterText.trim())
+  // ─── WHERE 条件筛选:Enter 应用(服务端 raw filter)/ Esc 清除 / × 按钮清除 ───
+  const applyWhereFilter = (): void => {
+    setWhereFilter(whereDraft.trim())
     setPage(0)
   }
-  const clearQuickFilter = (): void => {
-    setQuickFilter('')
-    setQuickFilterText('')
+  const clearWhereFilter = (): void => {
+    setWhereFilter('')
+    setWhereDraft('')
     setPage(0)
   }
-  const onQuickFilterKeydown = (e: React.KeyboardEvent): void => {
-    if (e.key === 'Enter') applyQuickFilter()
-    if (e.key === 'Escape') clearQuickFilter()
+  const onWhereKeydown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      applyWhereFilter()
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      clearWhereFilter()
+    }
   }
+  // textarea 随内容行数自动增高(单行起,封顶 120px)。
+  useEffect(() => {
+    const el = whereRef.current
+    if (el === null) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+  }, [whereDraft])
 
   const onRowSelect = (id: string): void => {
     // 菜单项选择分发:目前只有「复制为 INSERT」一项;menuRow 在右键时写入,
@@ -451,31 +472,12 @@ export function DbDataGrid({
     <div className={css.root}>
       <div className={css.meta}>
         <span>表 {table}{totalRows > 0 ? ` · ${totalRows.toLocaleString()} 行` : ''}</span>
-        {filteredCount > 0 && <span className={css.filterBadge}>{filteredCount} 个筛选</span>}
-        <div className={css.quickFilterWrap}>
-          <input
-            type="search"
-            className={css.quickFilterInput}
-            value={quickFilterText}
-            onChange={(e) =>{  setQuickFilterText(e.target.value) }}
-            onKeyDown={onQuickFilterKeydown}
-            placeholder="快捷筛选…"
-            aria-label="快捷筛选"
-            title="Enter 应用(全列模糊匹配),Esc 清除"
-          />
-          {quickFilter !== '' && (
-            <button
-              type="button"
-              className={css.quickFilterClear}
-              onClick={clearQuickFilter}
-              title="清除快捷筛选"
-              aria-label="清除快捷筛选"
-            >×</button>
-          )}
-        </div>
+        {(filteredCount > 0 || whereFilter !== '') && (
+          <span className={css.filterBadge}>{filteredCount + (whereFilter !== '' ? 1 : 0)} 个筛选</span>
+        )}
         <span className={css.spacer} />
         {onExport !== undefined && (
-          <button type="button" className={css.exportBtn} onClick={() =>{  onExport(orderBy, orderDir) }} title="全量导出该表到 Excel(后端执行)">
+          <button type="button" className={css.exportBtn} onClick={() =>{  onExport(orderBy, orderDir, whereFilter !== '' ? whereFilter : null) }} title="全量导出该表到 Excel(后端执行,含当前筛选)">
             导出 Excel
           </button>
         )}
@@ -490,6 +492,30 @@ export function DbDataGrid({
         {loading && <span className={css.hint}>加载…</span>}
       </div>
       {error !== null && <div className={css.error}>{error}</div>}
+      <div className={`${css.whereBar} ${whereFilter !== '' ? css.whereActive : ''}`}>
+        <span className={css.whereIcon} aria-hidden="true">WHERE</span>
+        <textarea
+          ref={whereRef}
+          className={css.whereInput}
+          rows={1}
+          value={whereDraft}
+          onChange={(e) =>{  setWhereDraft(e.target.value) }}
+          onKeyDown={onWhereKeydown}
+          placeholder="id = xxx AND name LIKE '%xxx%'  (回车键刷新,Shift+回车换行)"
+          aria-label="WHERE 条件筛选"
+          spellCheck={false}
+          title="输入 WHERE 条件后回车刷新(Shift+回车换行),Esc 清除"
+        />
+        {whereDraft !== '' && (
+          <button
+            type="button"
+            className={css.whereClear}
+            onClick={clearWhereFilter}
+            title="清除 WHERE 筛选"
+            aria-label="清除 WHERE 筛选"
+          >×</button>
+        )}
+      </div>
       <div className={css.grid} role="grid" aria-label={`表 ${table} 数据`}>
         <div className={css.thead} ref={theadRef} role="row">
           <div className={css.theadRow}>
