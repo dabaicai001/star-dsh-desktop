@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.102.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.102.1-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,6 +148,9 @@
 
 ## 当前版本
 
+### v0.102.1 (2026-08-28)
+- 🐛 修复 v0.102.0 Release 构建失败(`build:lib` 的 `tsc -b` 聚合程序会把 tests 一起编译):memory-sink 测试对无参 `vi.fn()` 的 `mock.calls[0][0]` 取参报 TS2352/TS2493——给 mock 显式标注 `vi.fn<LlmExtractor>`;redis-workbench 测试同理,installTauri 的 invoke 桩补第二参 `_args?: Record<string, unknown>`(对齐 Tauri invoke(cmd, args) 真实形态)。host / client 两个聚合 tsconfig 本地 `tsc -b` 均 EXIT=0,测试行为不变(89 例仍通过)
+
 ### v0.102.0 (2026-08-28)
 - ✨ MySQL / ClickHouse 表数据网格 WHERE 栏新增**字段自动提示**:光标处输入标识符词时弹出列名建议(前缀匹配优先、子串次之,带列类型)与 SQL 关键字(AND/OR/NOT/LIKE/IN/IS/NULL/BETWEEN 等)建议;表达式开头或 AND/OR/NOT/左括号后的空白位直接提示全部列。↑/↓ 导航、Tab/Enter 接受、鼠标点击接受、Esc 先关弹层(再按才清空筛选)、失焦自动关闭;词输全后自动剔除完全匹配项,Enter 应用筛选的原语义不变。列清单复用切表时已有的 list_columns 调用,不增加额外请求
 - ✨ 数据网格整体视觉优化:表名等宽高亮、操作按钮统一圆角描边风格、WHERE 输入框聚焦高亮、行 hover、错误条与筛选 badge 重排,全部沿用 DSW 设计 token
@@ -160,10 +163,6 @@
 
 ### v0.101.2 (2026-08-28)
 - 🐛 修复 v0.101.1 Release 构建失败:`build:lib:client` 的 `tsc -b tsconfig.client.json`(包含 tests 的 client 程序)报 `TS6133: 'perPage' 未使用`,来自 redis-service 测试新增的 `fakeScanPages` 辅助——移除未使用的 `perPage` 形参,client 全量类型检查恢复 EXIT=0,测试行为不变(11 例仍通过)。
-
-### v0.101.1 (2026-08-28)
-- 🐛 修复 v0.101.0 遗留的前端测试桩缺口:starhub-apply 测试对 `sessions.list` 缺 `subscribe` 桩,与 v0.100.1 执行记录会话跟踪脱节,10 例报 `sessions.list.subscribe is not a function`;补 `subscribe` 桩后全量 client-nav 测试通过(880/880)。
-- ✅ 同步 Redis 工作台 SCAN 加载指示器断言为新进度文本,并新增「跨 SCAN 游标页续传直到归零」回归用例。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

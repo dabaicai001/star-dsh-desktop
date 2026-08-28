@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.102.0(MySQL / ClickHouse 表数据网格 WHERE 栏新增**字段自动提示**:光标处输入标识符词时弹出列名建议(前缀匹配优先、子串次之,带列类型)与 SQL 关键字(AND/OR/NOT/LIKE/IN/IS/NULL/BETWEEN 等)建议;表达式开头或 AND/OR/NOT/左括号后的空白位直接提示全部列。↑/↓ 导航、Tab/Enter 接受、鼠标点击接受、Esc 先关弹层(再按才清空筛选)、失焦自动关闭;词输全后自动剔除完全匹配项,Enter 应用筛选的原语义不变。列清单复用切表时已有的 list_columns 调用,不增加额外请求) |
+| 当前版本 | v0.102.1(修复 v0.102.0 Release 构建失败(`build:lib` 的 `tsc -b` 聚合程序会把 tests 一起编译):memory-sink 测试对无参 `vi.fn()` 的 `mock.calls[0][0]` 取参报 TS2352/TS2493——给 mock 显式标注 `vi.fn<LlmExtractor>`;redis-workbench 测试同理,installTauri 的 invoke 桩补第二参 `_args?: Record<string, unknown>`(对齐 Tauri invoke(cmd, args) 真实形态)。host / client 两个聚合 tsconfig 本地 `tsc -b` 均 EXIT=0,测试行为不变(89 例仍通过)) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-28 (v0.102.0)*
+*最后更新: 2026-08-28 (v0.102.1)*

@@ -14,6 +14,11 @@
 
 ---
 
+## [0.102.1] - 2026-08-28
+
+### 修复
+- 修复 v0.102.0 Release 构建失败(`build:lib` 的 `tsc -b` 聚合程序会把 tests 一起编译):memory-sink 测试对无参 `vi.fn()` 的 `mock.calls[0][0]` 取参报 TS2352/TS2493——给 mock 显式标注 `vi.fn<LlmExtractor>`;redis-workbench 测试同理,installTauri 的 invoke 桩补第二参 `_args?: Record<string, unknown>`(对齐 Tauri invoke(cmd, args) 真实形态)。host / client 两个聚合 tsconfig 本地 `tsc -b` 均 EXIT=0,测试行为不变(89 例仍通过)
+
 ## [0.102.0] - 2026-08-28
 
 ### 新增
