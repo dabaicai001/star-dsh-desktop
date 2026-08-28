@@ -10,7 +10,7 @@ import type {
   ObservableSnapshot, PendingInteraction, PendingWait, SessionId, ToolCallBlock,
   TurnLocation, WorkspaceId,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { DiffHunk, MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MessageId } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ComposerBlock } from '../input/blocks.ts'
@@ -385,9 +385,11 @@ export interface TurnTailOwnerProps {
   seq: number
   /**
    * Open a filesystem path through the Host (tool-row semantics; the chat
-   * view resolves relative paths against the session cwd).
+   * view resolves relative paths against the session cwd). A file-mutation
+   * row passes its applied hunks as an optional second argument to request an
+   * in-shell before/after comparison instead of the open-path default.
    */
-  openFile: (path: string) => void
+  openFile: (path: string, diffs?: readonly DiffHunk[]) => void
 }
 
 /**
@@ -418,7 +420,7 @@ export interface ChatNodeOwnerProps {
   selectedCallId?: CallId | undefined
   /** Session workspace root; Tool summaries display paths relative to it. */
   cwd?: string | undefined
-  openFile: (path: string) => void
+  openFile: (path: string, diffs?: readonly DiffHunk[]) => void
   inspectCall: (callId: CallId) => void
   forkAt: (seq: number) => void
   /** Render a historical image group through the attachment slot. */
@@ -752,11 +754,15 @@ export interface ChatViewInjected {
   openDetails: (target: SelectionTarget) => void
   /**
    * Open a tool-arg filesystem path with the host OS default application
-   * (relative paths resolve against the session cwd). Always returns a
-   * promise: fulfills when the Host opens the path, rejects when it cannot
-   * hand the path off (the chat view shows that reason and a retry).
+   * (relative paths resolve against the session cwd). A file-mutation row
+   * passes its applied hunks as an optional second argument so the host can
+   * open an in-shell before/after comparison (`edit`) instead of the
+   * open-path (`read`) default; without it the Host opens the path as usual.
+   * Always returns a promise: fulfills when the Host opens the path, rejects
+   * when it cannot hand the path off (the chat view shows that reason and a
+   * retry).
    */
-  openFile: (path: string) => Promise<void>
+  openFile: (path: string, diffs?: readonly DiffHunk[]) => Promise<void>
   loadOlder: () => void
   /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>

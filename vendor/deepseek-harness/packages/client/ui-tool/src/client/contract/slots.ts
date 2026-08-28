@@ -1,5 +1,6 @@
 /** Tool UI slot declarations and their composed component props. */
 import type { HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
+import type { DiffHunk } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -37,8 +38,13 @@ export interface ToolCallOwnerProps {
   cwd?: string | undefined
   /** Host account home; POSIX home-rooted summaries display as `~`. */
   home?: string | undefined
-  /** Open a Tool argument path through the Host. */
-  openFile: (path: string) => void
+  /**
+   * Open a Tool argument path through the Host. A file-mutation row passes its
+   * applied hunks as an optional second argument so the host can open an
+   * in-shell before/after comparison (`edit`) instead of the open-path
+   * (`read`) default. Absent = a plain open-path row, behaviour unchanged.
+   */
+  openFile: (path: string, diffs?: readonly DiffHunk[]) => void
   /** Inspect this call in the trajectory view when available. */
   inspect?: (() => void) | undefined
 }

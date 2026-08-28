@@ -397,18 +397,36 @@ export function apply(ctx: Context): void {
           layout.openDetails()
         },
         fileMentions: owner => ctx.get('chatFileMentions')?.forClosing(owner),
-        openFile: (path) => {
+        openFile: (path, diffs) => {
           const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
           const resolved = resolveWorkspacePath(cwd, path)
           // StarHub 壳内文件查看窗(可选服务,由 StarHub 插件 ctx.provide 注入):
-          // 提供时先在壳内打开(read 模式,可编辑保存),失败/未提供回退到
-          // 宿主原生打开器(workspaces.openPath)。跨插件走 ctx.get 服务路由,
-          // 不改上游工具视图渲染器。
+          // 提供时先在壳内打开;一个文件变更行(Edit/Write 工具)携带应用后 hunks,
+          // 以 edit(kind:'edit',before/after 双栏)打开——否则退回 read(单栏,可编辑
+          // 保存);服务未提供则回退宿主原生打开器。跨插件走 ctx.get 服务路由,不改
+          // 上游工具视图渲染器。
           const viewer = ctx.get('starhubFileViewer') as
-            | { open: (target: { kind: 'read'; path: string; sessionId: string }) => void }
+            | {
+              open: (target: (
+                | { kind: 'read'; path: string; sessionId: string }
+                | { kind: 'edit'; path: string; sessionId: string; diffs: readonly { oldText: string; newText: string }[] }
+              )) => void
+            }
             | undefined
           if (viewer !== undefined) {
-            viewer.open({ kind: 'read', path: resolved, sessionId })
+            if (diffs !== undefined && diffs.length > 0) {
+              // 变更 hunk 以 DiffHunk 形状跨入;壳内 edit 模式只要 before/after 文本,
+              // 且 oldText(null=新建/纯新增)归一化为 '' 以匹配其 string 契约——查看
+              // 对比左栏留空、右栏显示新增。
+              viewer.open({
+                kind: 'edit',
+                path: resolved,
+                sessionId,
+                diffs: diffs.map(diff => ({ oldText: diff.oldText ?? '', newText: diff.newText })),
+              })
+            } else {
+              viewer.open({ kind: 'read', path: resolved, sessionId })
+            }
             return Promise.resolve()
           }
           return workspaces.openPath(resolved)

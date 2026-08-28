@@ -22,7 +22,7 @@ import clsx from 'clsx'
 import {
   CodeBlock, DiffBlock, DisclosureRow, IconInspectOutline12, ReadBlock, SearchBlock, StateDot, TerminalBlock, WebBlock,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { WebBlockProps } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { DiffHunk, WebBlockProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { CHAT_DIFF_MAX_LINES, type DiffCardModel } from '../models/diff-card-model.ts'
 import { CHAT_READ_MAX_LINES, type ReadCardModel } from '../models/read-card-model.ts'
@@ -92,8 +92,10 @@ export interface ToolRowProps {
    * renders as a hover-underline link that opens the host default app.
    */
   filePath?: string | undefined
-  /** Open the path with the host OS default application (already cwd-resolved). */
-  onOpenFile?: ((path: string) => void) | undefined
+  /** Open the path with the host OS default application (already cwd-resolved).
+   *  A file-mutation row forwards its applied hunks so the host can open an
+   *  in-shell before/after comparison instead. */
+  onOpenFile?: ((path: string, diffs?: readonly DiffHunk[]) => void) | undefined
   /**
    * Jump to this call in the trajectory view: a hover-revealed Inspect pill
    * over the expanded body. Absent = no affordance.

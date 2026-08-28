@@ -32,6 +32,13 @@ type FileMutationRowProps = ToolCallViewProps & PropsLocale<'conversation'>
 export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect, t }: FileMutationRowProps) {
   const model = toolRowModel(toolName, block, cwd, home)
   const diff = diffCardModel(block)
+  // 变更行的文件名链接:把应用后 hunks 随 openFile 一并传上,宿主据此打开
+  // 壳内「变更前 / 变更后」双栏对比(edit 模式);无 diff(如报错)退回默认
+  // 打开路径(read)语义。
+  const openMutation = (path: string) => {
+    const diffs = diff?.card.diffs
+    openFile(path, diffs)
+  }
   return (
     <ToolRow
       t={t}
@@ -46,7 +53,7 @@ export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect,
       diff={diff}
       state={model.state}
       filePath={model.filePath}
-      onOpenFile={openFile}
+      onOpenFile={openMutation}
       inspect={inspect}
     />
   )

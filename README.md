@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.100.2-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.100.3-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -147,6 +147,9 @@
 ---
 
 ## 当前版本
+
+### v0.100.3 (2026-08-28)
+- 🐛 Edit 卡「查看」打开壳内窗口仍显示单栏:点击 Edit/Write 卡的文件名链接时,外壳 `openFile` 对所有文件链接一律以 `kind:'read'`(单栏 textarea)打开壳内文件查看窗,导致文件变更对比的 `kind:'edit'` 左右双栏分支在真实 UI 里从未被触发——现在 `openFile` 契约允许变更行携带其应用后 hunks 作为可选第二参数,`FileMutationRow` 在点击时附上,dsh 壳以 `kind:'edit'`(表头「变更前 / 变更后」红绿对比)打开;无 diff(如报错/普通打开)仍走原 `read` 打开路径
 
 ### v0.100.2 (2026-08-27)
 - 🐛 Edit/Write 差异卡部分场景回落通用 IN/OUT 卡的问题修复:wire 视图因 presenter 解析或跨分页 call/result 配对失败而缺失时,前端改从事件持久 `meta.diffs` 兜底重建双栏差异卡(载荷畸形仍走通用路径)。
