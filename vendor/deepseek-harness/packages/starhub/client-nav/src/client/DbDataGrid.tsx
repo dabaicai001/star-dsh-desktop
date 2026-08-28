@@ -18,6 +18,11 @@
  * `(…) WHERE`)、Shift+回车换行、Esc 清除;取代旧快捷筛选(其 quickFilter 参数
  * 未被 db_mysql_get_table_data 的 Tauri command 声明,原实现是被静默丢弃的死路)。
  *
+ * v0.102.0:WHERE 栏加**字段提示**(whereSuggestions 纯函数):光标处有标识符词
+ * 时提示列名(前缀优先、子串次之,带类型)与 SQL 关键字;表达式开头 / AND / OR /
+ * NOT / 左括号后的空白位提示全部列。↑/↓ 选择,Tab/Enter 接受,Esc 先关弹层。
+ * 列清单复用 list_columns(与主键列同一次调用,不再单独请求)。
+ *
  * 命令面复用:db_mysql_get_table_data(PG 同样走它,RPC 按 connId 分派 pgx)、
  * db_mysql_list_columns(取主键列)、db_mysql_update_rows。返回 QueryResult:
  * `{ columns:[{name,type,nullable}], rows:unknown[][], totalRows?:number,
@@ -104,6 +109,58 @@ export function downloadTextFile(filename: string, content: string, mime = 'text
   URL.revokeObjectURL(url)
 }
 
+/** WHERE 自动补全的 SQL 关键字候选(单词级,前缀匹配)。 */
+export const WHERE_KEYWORDS = ['AND', 'OR', 'NOT', 'LIKE', 'IN', 'IS', 'NULL', 'BETWEEN', 'TRUE', 'FALSE'] as const
+
+/** 一条 WHERE 补全建议:列(带类型 detail)或关键字。 */
+export interface WhereSuggestion { kind: 'column' | 'keyword'; text: string; detail?: string }
+
+/**
+ * WHERE 输入的字段提示(纯函数,供组件与单测共用):
+ * - 光标前有标识符词(≥1 字符):列名前缀匹配优先、子串匹配次之(带类型 detail),
+ *   再补 SQL 关键字前缀匹配;与当前词完全相同的项剔除(词已输完,Enter 应直接
+ *   应用筛选而非接受补全)。
+ * - 光标前是表达式开头 / AND / OR / NOT / 左括号后的空白:提示全部列。
+ * @param text - 当前 WHERE 草稿全文。
+ * @param cursor - 光标位置(selectionStart)。
+ * @param columns - 表列清单(list_columns 的 name/type)。
+ * @param limit - 建议条数上限(默认 8)。
+ * @returns 建议集(start 为当前词替换起点);无可提示返回 null。
+ */
+/** 列 → 建议项(无类型时省略 detail,满足 exactOptionalPropertyTypes)。 */
+const colSuggestion = (c: QueryColumn): WhereSuggestion => ({
+  kind: 'column',
+  text: c.name,
+  ...(c.type !== undefined ? { detail: c.type } : {}),
+})
+
+export function whereSuggestions(text: string, cursor: number, columns: readonly QueryColumn[], limit = 8): { start: number; items: WhereSuggestion[] } | null {
+  const before = text.slice(0, cursor)
+  const m = /[A-Za-z_][A-Za-z0-9_]*$/.exec(before)
+  if (m !== null) {
+    const word = m[0]
+    const lower = word.toLowerCase()
+    const cols: WhereSuggestion[] = columns
+      .filter(c => c.name.toLowerCase().includes(lower))
+      .sort((a, b) => {
+        const ap = a.name.toLowerCase().startsWith(lower) ? 0 : 1
+        const bp = b.name.toLowerCase().startsWith(lower) ? 0 : 1
+        return ap !== bp ? ap - bp : a.name.localeCompare(b.name)
+      })
+      .map(colSuggestion)
+    const kws: WhereSuggestion[] = WHERE_KEYWORDS
+      .filter(k => k.startsWith(word.toUpperCase()))
+      .map(k => ({ kind: 'keyword', text: k }))
+    const items = [...cols, ...kws].filter(s => s.text.toLowerCase() !== lower).slice(0, limit)
+    return items.length > 0 ? { start: cursor - word.length, items } : null
+  }
+  // 空词触发位:输入开头 / AND / OR / NOT / 左括号之后(等值运算符后是该填值,不提示列)。
+  if (columns.length > 0 && /(^|\bAND|\bOR|\bNOT|\()\s*$/i.test(before)) {
+    return { start: cursor, items: columns.slice(0, limit).map(colSuggestion) }
+  }
+  return null
+}
+
 /**
  * Render a virtualized, server-paginated DB result grid with editing, filters,
  * CSV export, and a copy-as-INSERT row context menu.
@@ -139,6 +196,8 @@ export function DbDataGrid({
   const [filterPos, setFilterPos] = useState({ top: 0, left: 0 })
   // 主键列(list_columns 的 key==='PRI'),用于构造 UPDATE WHERE。
   const [pkCols, setPkCols] = useState<string[]>([])
+  // 全量列清单(list_columns 的 name/type),喂 WHERE 自动补全(v0.102.0)。
+  const [tableCols, setTableCols] = useState<QueryColumn[]>([])
   // 表总行数(get_row_count,仅在无列筛选时作为分页基数;有筛选时用结果里的
   // 过滤后 totalRows)。sidecar 各适配器只在带 WHERE 时才回传 totalRows,
   // 否则恒 0 → 分页恒 1/1,所以无筛选时单独取一次 COUNT。
@@ -204,23 +263,31 @@ export function DbDataGrid({
     void load(page * pageSize, pageSize, orderBy, orderDir, columnFilters, whereFilter)
   }, [page, pageSize, orderBy, orderDir, columnFilters, whereFilter, load])
 
-  // 主键列:每次表切换后经 list_columns 取 key==='PRI' 的列。
+  // 列清单:每次表切换后经 list_columns 取一次——主键列(key==='PRI')构造 UPDATE
+  // WHERE;全量列名+类型喂 WHERE 自动补全。
   useEffect(() => {
     let cancelled = false
     setPkCols([])
+    setTableCols([])
     void tauriInvoke<Array<Record<string, unknown>>>(`${cmdPrefix}_list_columns`, {
       connId, table, ...(database !== undefined && database !== '' ? { database } : {}),
     })
       .then((cols) => {
         /* v8 ignore next -- 防御:表切换卸载竞态,取消后丢弃过期响应 */
         if (cancelled) return
-        const pks = cols
+        const list = Array.isArray(cols) ? cols : []
+        const pks = list
           .filter(c => c.key === 'PRI' || c.key === 'PRI,')
           .map(c => String(c.name))
           .filter(n => n !== '')
         setPkCols(pks)
+        setTableCols(
+          list
+            .map(c => ({ name: String(c.name ?? ''), ...(typeof c.type === 'string' ? { type: c.type } : {}) }))
+            .filter(c => c.name !== ''),
+        )
       })
-      .catch(() => { /* 主键获取失败不阻塞浏览 */ })
+      .catch(() => { /* 列清单获取失败不阻塞浏览(编辑禁用 + 无补全) */ })
     return () => { cancelled = true }
   }, [connId, table, database, cmdPrefix])
 
@@ -433,6 +500,33 @@ export function DbDataGrid({
 
   const filteredCount = useMemo(() => Object.values(columnFilters).filter(v => v !== '').length, [columnFilters])
 
+  // ─── WHERE 自动补全(v0.102.0):焦点门(未聚焦不弹)+ 光标位置跟踪 +
+  // Esc/失焦关弹层抑制 + 高亮下标 ───
+  const [whereFocused, setWhereFocused] = useState(false)
+  const [whereCursor, setWhereCursor] = useState(0)
+  const [sugDismissed, setSugDismissed] = useState(false)
+  const [sugActive, setSugActive] = useState(0)
+  const sug = useMemo(
+    () => (whereFocused && !sugDismissed ? whereSuggestions(whereDraft, whereCursor, tableCols) : null),
+    [whereDraft, whereCursor, tableCols, whereFocused, sugDismissed],
+  )
+  /** 接受一条建议:替换当前词(或插入到空词位),光标落到插入文本之后。 */
+  const acceptSuggestion = (text: string): void => {
+    /* v8 ignore next -- 调用方(键盘/点击)均在弹层非空分支,防御未就绪 */
+    if (sug === null) return
+    const next = whereDraft.slice(0, sug.start) + text + whereDraft.slice(whereCursor)
+    const pos = sug.start + text.length
+    setWhereDraft(next)
+    setWhereCursor(pos)
+    setSugActive(0)
+    // 接受一次后关闭,继续输入(onChange)再重新弹。
+    setSugDismissed(true)
+    requestAnimationFrame(() => {
+      whereRef.current?.setSelectionRange(pos, pos)
+      whereRef.current?.focus()
+    })
+  }
+
   // ─── WHERE 条件筛选:Enter 应用(服务端 raw filter)/ Esc 清除 / × 按钮清除 ───
   const applyWhereFilter = (): void => {
     setWhereFilter(whereDraft.trim())
@@ -444,6 +538,31 @@ export function DbDataGrid({
     setPage(0)
   }
   const onWhereKeydown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    // 补全弹层打开时优先接管:↑/↓ 导航,Tab/Enter 接受,Esc 仅关弹层(不清空)。
+    if (sug !== null && sug.items.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSugActive(a => (a + 1) % sug.items.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSugActive(a => (a - 1 + sug.items.length) % sug.items.length)
+        return
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault()
+        const item = sug.items[Math.min(sugActive, sug.items.length - 1)]
+        /* v8 ignore next -- 弹层分支已保证 items 非空,active 下标经取模收束 */
+        if (item !== undefined) acceptSuggestion(item.text)
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setSugDismissed(true)
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       applyWhereFilter()
@@ -452,6 +571,16 @@ export function DbDataGrid({
       e.preventDefault()
       clearWhereFilter()
     }
+  }
+  const onWhereChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
+    setWhereDraft(e.target.value)
+    setWhereCursor(e.target.selectionStart ?? e.target.value.length)
+    setSugDismissed(false)
+    setSugActive(0)
+  }
+  const onWhereSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
+    setWhereCursor(e.currentTarget.selectionStart)
+    setSugActive(0)
   }
   // textarea 随内容行数自动增高(单行起,封顶 120px)。
   useEffect(() => {
@@ -471,7 +600,7 @@ export function DbDataGrid({
   return (
     <div className={css.root}>
       <div className={css.meta}>
-        <span>表 {table}{totalRows > 0 ? ` · ${totalRows.toLocaleString()} 行` : ''}</span>
+        <span>表 <span className={css.metaTable}>{table}</span>{totalRows > 0 ? ` · ${totalRows.toLocaleString()} 行` : ''}</span>
         {(filteredCount > 0 || whereFilter !== '') && (
           <span className={css.filterBadge}>{filteredCount + (whereFilter !== '' ? 1 : 0)} 个筛选</span>
         )}
@@ -494,18 +623,44 @@ export function DbDataGrid({
       {error !== null && <div className={css.error}>{error}</div>}
       <div className={`${css.whereBar} ${whereFilter !== '' ? css.whereActive : ''}`}>
         <span className={css.whereIcon} aria-hidden="true">WHERE</span>
-        <textarea
-          ref={whereRef}
-          className={css.whereInput}
-          rows={1}
-          value={whereDraft}
-          onChange={(e) =>{  setWhereDraft(e.target.value) }}
-          onKeyDown={onWhereKeydown}
-          placeholder="id = xxx AND name LIKE '%xxx%'  (回车键刷新,Shift+回车换行)"
-          aria-label="WHERE 条件筛选"
-          spellCheck={false}
-          title="输入 WHERE 条件后回车刷新(Shift+回车换行),Esc 清除"
-        />
+        <div className={css.whereField}>
+          <textarea
+            ref={whereRef}
+            className={css.whereInput}
+            rows={1}
+            value={whereDraft}
+            onChange={onWhereChange}
+            onSelect={onWhereSelect}
+            onFocus={() =>{  setWhereFocused(true) }}
+            onBlur={() =>{  setWhereFocused(false); setSugDismissed(true) }}
+            onKeyDown={onWhereKeydown}
+            placeholder="id = xxx AND name LIKE '%xxx%'  (回车键刷新,Shift+回车换行,Tab 接受提示)"
+            aria-label="WHERE 条件筛选"
+            spellCheck={false}
+            title="输入 WHERE 条件后回车刷新(Shift+回车换行),Tab/Enter 接受字段提示,Esc 清除"
+          />
+          {sug !== null && (
+            <div className={css.sugList} role="listbox" aria-label="字段提示">
+              {sug.items.map((s, i) => (
+                <button
+                  key={`${s.kind}:${s.text}`}
+                  type="button"
+                  role="option"
+                  aria-selected={i === sugActive}
+                  className={`${css.sugItem} ${i === sugActive ? css.sugActive : ''}`}
+                  onMouseDown={(e) =>{  e.preventDefault(); acceptSuggestion(s.text) }}
+                  onMouseEnter={() =>{  setSugActive(i) }}
+                >
+                  <span className={s.kind === 'column' ? css.sugKindCol : css.sugKindKw}>
+                    {s.kind === 'column' ? '列' : '词'}
+                  </span>
+                  <span className={css.sugText}>{s.text}</span>
+                  {s.detail !== undefined && s.detail !== '' && <span className={css.sugDetail}>{s.detail}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         {whereDraft !== '' && (
           <button
             type="button"

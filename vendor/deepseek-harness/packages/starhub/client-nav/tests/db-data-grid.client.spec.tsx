@@ -11,7 +11,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { DbDataGrid, cellText, downloadTextFile, rowsToCsv, rowToInsert, sqlLiteral } from '../src/client/DbDataGrid.tsx'
+import { DbDataGrid, cellText, downloadTextFile, rowsToCsv, rowToInsert, sqlLiteral, whereSuggestions } from '../src/client/DbDataGrid.tsx'
 
 const RESULT = {
   columns: [{ name: 'id', type: 'BIGINT' }, { name: 'name', type: 'VARCHAR' }, { name: 'note', type: 'TEXT', nullable: true }],
@@ -734,5 +734,138 @@ describe('DbDataGrid', () => {
     ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('9')).toBeTruthy() })
+  })
+})
+
+describe('whereSuggestions (v0.102.0 字段提示纯函数)', () => {
+  const COLS = [
+    { name: 'id', type: 'BIGINT' },
+    { name: 'name', type: 'VARCHAR' },
+    { name: 'note', type: 'TEXT' },
+    { name: 'created_at', type: 'DATETIME' },
+  ]
+
+  it('suggests columns by prefix first, then substring, with type detail', () => {
+    const sug = whereSuggestions('na', 2, COLS)
+    expect(sug).not.toBeNull()
+    expect(sug!.start).toBe(0)
+    // name 前缀命中排前
+    expect(sug!.items[0]).toEqual({ kind: 'column', text: 'name', detail: 'VARCHAR' })
+  })
+
+  it('suggests SQL keywords by uppercase prefix after columns', () => {
+    const sug = whereSuggestions('n', 1, COLS)
+    expect(sug).not.toBeNull()
+    const texts = sug!.items.map(i => i.text)
+    expect(texts).toContain('name')
+    expect(texts).toContain('note')
+    expect(texts).toContain('NOT')
+    expect(texts).toContain('NULL')
+  })
+
+  it('drops items identical to the current word so Enter applies the filter', () => {
+    // 词已完整输入('name' == 列名)→ 该项剔除;其余子串项保留
+    const sug = whereSuggestions('name', 4, COLS)
+    expect(sug === null || !sug.items.some(i => i.text === 'name')).toBe(true)
+  })
+
+  it('suggests all columns at the expression start and after AND/OR/NOT/(', () => {
+    for (const [text, cursor] of [['', 0], ['id = 1 AND ', 11], ['id = 1 OR ', 10], ['NOT ', 4], ['(id=1) OR (', 11]] as Array<[string, number]>) {
+      const sug = whereSuggestions(text, cursor, COLS)
+      expect(sug, `trigger: ${JSON.stringify(text)}`).not.toBeNull()
+      expect(sug!.items.every(i => i.kind === 'column')).toBe(true)
+    }
+  })
+
+  it('returns null after comparison operators (value position) and without columns', () => {
+    expect(whereSuggestions('id = ', 5, COLS)).toBeNull()
+    expect(whereSuggestions('', 0, [])).toBeNull()
+    expect(whereSuggestions('id = 1', 6, COLS)).toBeNull()
+  })
+
+  it('caps the suggestion count at the limit', () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ name: `col${i}` }))
+    const sug = whereSuggestions('col', 3, many)
+    expect(sug).not.toBeNull()
+    expect(sug!.items.length).toBe(8)
+  })
+})
+
+describe('DbDataGrid WHERE autocomplete UI', () => {
+  it('shows column suggestions while typing and accepts via Tab', async () => {
+    stubInvoke()
+    render(<DbDataGrid connId="c1" table="users" />)
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    const input = screen.getByLabelText('WHERE 条件筛选')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'na' } })
+    // 弹层出现,首项为 name 列(带类型 detail;list_columns stub 无类型 → 无 detail)
+    const listbox = await waitFor(() => screen.getByRole('listbox'))
+    expect(listbox.textContent).toContain('name')
+    fireEvent.keyDown(input, { key: 'Tab' })
+    await waitFor(() =>{  expect((input as HTMLTextAreaElement).value).toBe('name') })
+    // 接受后弹层关闭(词与列名全同,候选剔除)
+    await waitFor(() =>{  expect(screen.queryByRole('listbox')).toBeNull() })
+  })
+
+  it('navigates suggestions with arrows and accepts the highlighted one via Enter', async () => {
+    stubInvoke()
+    render(<DbDataGrid connId="c1" table="users" />)
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    const input = screen.getByLabelText('WHERE 条件筛选')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'n' } })
+    await waitFor(() =>{  expect(screen.getByRole('listbox')).toBeTruthy() })
+    // ↓ 移到第二项(候选为 name / NOT / NULL),Enter 接受
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() =>{  expect((input as HTMLTextAreaElement).value).toBe('NOT') })
+  })
+
+  it('accepts a suggestion by mouse click', async () => {
+    stubInvoke()
+    render(<DbDataGrid connId="c1" table="users" />)
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    const input = screen.getByLabelText('WHERE 条件筛选')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'i' } })
+    const listbox = await waitFor(() => screen.getByRole('listbox'))
+    const idItem = Array.from(listbox.querySelectorAll('[role="option"]')).find(el => el.textContent?.includes('id'))
+    expect(idItem).toBeTruthy()
+    fireEvent.mouseDown(idItem!)
+    await waitFor(() =>{  expect((input as HTMLTextAreaElement).value).toBe('id') })
+  })
+
+  it('Escape closes the suggestion popup first, then clears the filter on a second Escape', async () => {
+    stubInvoke()
+    render(<DbDataGrid connId="c1" table="users" />)
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    const input = screen.getByLabelText('WHERE 条件筛选')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'na' } })
+    await waitFor(() =>{  expect(screen.getByRole('listbox')).toBeTruthy() })
+    // 第一次 Esc:只关弹层,草稿保留
+    fireEvent.keyDown(input, { key: 'Escape' })
+    await waitFor(() =>{  expect(screen.queryByRole('listbox')).toBeNull() })
+    expect((input as HTMLTextAreaElement).value).toBe('na')
+    // 第二次 Esc:清空草稿(原有语义)
+    fireEvent.keyDown(input, { key: 'Escape' })
+    await waitFor(() =>{  expect((input as HTMLTextAreaElement).value).toBe('') })
+  })
+
+  it('blur dismisses the popup and typing reopens it', async () => {
+    stubInvoke()
+    render(<DbDataGrid connId="c1" table="users" />)
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    const input = screen.getByLabelText('WHERE 条件筛选')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'na' } })
+    await waitFor(() =>{  expect(screen.getByRole('listbox')).toBeTruthy() })
+    fireEvent.blur(input)
+    await waitFor(() =>{  expect(screen.queryByRole('listbox')).toBeNull() })
+    // 重新聚焦 + 继续输入(onChange 解除抑制)→ 重新弹
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'nam' } })
+    await waitFor(() =>{  expect(screen.getByRole('listbox')).toBeTruthy() })
   })
 })
