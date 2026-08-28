@@ -224,12 +224,15 @@ const ALWAYS_ASK_TOOLS: ReadonlySet<string> = new Set([
   'memory',
   'skill_save',
   'mcp_call',
+  // AI 浏览器:任意 JS 注入页面上下文,能力等同在 DevTools 里执行代码
+  'browser_eval',
 ])
 
-/** 即使 never 策略也必须确认的 ALWAYS_ASK 工具(删除类)。 */
+/** 即使 never 策略也必须确认的 ALWAYS_ASK 工具(删除类/任意代码执行)。 */
 const ALWAYS_ASK_HARD_TOOLS: ReadonlySet<string> = new Set([
   'es_delete_document',
   'es_delete_index',
+  'browser_eval',
 ])
 
 /** Redis 只读命令首词。 */
@@ -292,6 +295,16 @@ export function classifyStarHubCall(toolName: string, args: unknown): GateVerdic
         ? { ask: true, reason: '删除 Redis 数据,必须人工确认', hard: true }
         : { ask: true, reason: '写 Redis 命令,需要确认' }
     }
+    // AI 浏览器:对网页产生真实副作用的动作(导航/点击/输入/按键/选项变更)恒 ask
+    // (软档,never 全访问策略可放行);browser_eval 在 ALWAYS_ASK + hard 档。
+    // 只读观察类(state/extract/screenshot/scroll/back/forward/reload)走 default 放行。
+    case 'browser_open':
+    case 'browser_navigate':
+    case 'browser_click':
+    case 'browser_type':
+    case 'browser_press_key':
+    case 'browser_select_option':
+      return { ask: true, reason: '浏览器动作会对外部站点产生真实操作,需要确认' }
     default:
       // 只读域工具(列表/查询/搜索/上传下载以外的 sftp、excel 工作簿操作等)放行。
       return ALLOW
@@ -307,6 +320,11 @@ const STARHUB_DOMAIN_TOOLS: ReadonlySet<string> = new Set([
   'es_get_document', 'es_count',
   'docker_list_containers', 'docker_logs', 'docker_inspect', 'docker_exec',
   'mcp_list',
+  // AI 浏览器(无痕独立窗口)
+  'browser_open', 'browser_navigate', 'browser_back', 'browser_forward',
+  'browser_reload', 'browser_state', 'browser_extract', 'browser_click',
+  'browser_type', 'browser_press_key', 'browser_select_option',
+  'browser_scroll', 'browser_screenshot', 'browser_eval',
 ])
 
 /** 会话的有效审批策略:会话覆盖优先,缺省组合配置(ask)。 */

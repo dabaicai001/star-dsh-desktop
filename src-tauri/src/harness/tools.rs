@@ -129,6 +129,10 @@ use tokio::sync::oneshot;
 
 /// 入站桥请求入口(read_loop spawn):校验方法与参数形状后分发执行。
 /// 全局工具在 Rust 内执行;域工具转发前端面板并等待应答。
+///
+/// AI 工具调用审计(v0.103.0):每次执行无论成败都在收口处落一条
+/// audit_log(category="ai",action=工具名,含白名单命令文本与耗时),
+/// 数据库不可用(测试/未初始化)时静默跳过,绝不影响工具结果。
 pub async fn execute_bridge_request(
     method: &str,
     params: Value,
@@ -147,14 +151,39 @@ pub async fn execute_bridge_request(
         .ok_or_else(|| "starhub/tool.execute 缺少 name".to_string())?;
     let args = params.get("args").cloned().unwrap_or(Value::Null);
 
+    let started = std::time::Instant::now();
+    let result = dispatch_tool(&bridge, session_id, name, &args).await;
+    if let Ok(pool) = db::get_pool() {
+        audit_ai_tool(
+            pool,
+            &bridge,
+            session_id,
+            name,
+            &args,
+            started.elapsed(),
+            &result,
+        )
+        .await;
+    }
+    result.map(Value::String)
+}
+
+/// 工具分发:域工具(前端转发 / 进程内执行)与全局工具,返回模型可读文本。
+/// `Ok` 为工具结果文本(含软错误),`Err` 为硬错误(回 JSON-RPC error)。
+async fn dispatch_tool(
+    bridge: &Arc<HostBridgeState>,
+    session_id: &str,
+    name: &str,
+    args: &Value,
+) -> Result<String, String> {
     // 域工具不在 Rust 内执行:emit dsh://tool-exec 转发前端面板,await 应答
     if FORWARDED_TOOLS.contains(&name) {
-        let text = forward_to_frontend(&bridge, session_id, name, &args).await?;
+        let text = forward_to_frontend(bridge, session_id, name, args).await?;
         // 联动 M4(契约 §1/§4):域工具成功后自动生成 origin=ai 领域事件,
         // notify dsh + 广播 starhub://domain-event + 写 recentExecs 缓存。
         // 失败路径不产生事件(用户拒绝/超时不代表 AI 动作完成)。
-        on_ai_tool_success(&bridge, session_id, name, &args, &text).await;
-        return Ok(Value::String(text));
+        on_ai_tool_success(bridge, session_id, name, args, &text).await;
+        return Ok(text);
     }
 
     // 方案1:可在 Rust 主进程内直接执行的域工具(ssh_*/sftp_*/db_query/
@@ -162,20 +191,99 @@ pub async fn execute_bridge_request(
     // 停止生成经 bridge.drain() 真正中断在途命令。excel_*/mcp_*/skill_save
     // 因工作簿状态 / MCP 配置 / Skill 落库在前端,仍走 FORWARDED_TOOLS。
     if IN_PROCESS_TOOLS.contains(&name) {
-        let text = domain::execute_domain_tool(&bridge, session_id, name, &args).await?;
-        on_ai_tool_success(&bridge, session_id, name, &args, &text).await;
-        return Ok(Value::String(text));
+        let text = domain::execute_domain_tool(bridge, session_id, name, args).await?;
+        on_ai_tool_success(bridge, session_id, name, args, &text).await;
+        return Ok(text);
+    }
+
+    // AI 浏览器(browser_*):Rust 主进程持有无痕窗口与 eval 通道,进程内执行;
+    // 窗口被用户关闭时在途 eval 立即失败收口(BrowserManager.fail_all_pending)。
+    if crate::browser::BROWSER_TOOLS.contains(&name) {
+        let text = crate::browser::execute_from_bridge(bridge, name, args).await?;
+        on_ai_tool_success(bridge, session_id, name, args, &text).await;
+        return Ok(text);
     }
 
     // 全局工具在 Rust 内执行;list_capabilities 是静态内容,不需要数据库
     // (测试环境可能没有初始化全局 pool)
-    let text = if name == "starhub_list_capabilities" {
-        list_capabilities()
-    } else {
-        let pool = db::get_pool()?;
-        execute_tool(pool, name, &args, session_id, &bridge).await?
+    if name == "starhub_list_capabilities" {
+        return Ok(list_capabilities());
+    }
+    let pool = db::get_pool()?;
+    execute_tool(pool, name, args, session_id, bridge).await
+}
+
+/// AI 工具审计 detail 里允许携带的参数白名单(与 events::tool_summary 同口径:
+/// 只取命令文本 / SQL / 索引 / 容器 / 路径等定位信息,绝不取凭据字段)。
+const AUDIT_ARG_WHITELIST: &[&str] = &[
+    "command",
+    "sql",
+    "index",
+    "container",
+    "target",
+    "path",
+    "query",
+    "server",
+    "tool",
+    "task_id",
+    "url",
+    "id",
+    "key",
+];
+
+/// AI 工具调用审计(v0.103.0,设置 → 审计「AI」类别):
+/// - action = 工具名;target = 会话绑定资产的名称(资产已删回退 id,无绑定为空);
+/// - detail 携带 tool、白名单参数文本(单项 ≤500 字符)、durationMs,失败追加 error;
+/// - asset_id / session_id 落列,便于按资产 / 会话过滤;subagent 会话沿父链继承绑定。
+/// 写入失败只记日志,不影响工具结果。
+async fn audit_ai_tool(
+    pool: &SqlitePool,
+    bridge: &HostBridgeState,
+    session_id: &str,
+    name: &str,
+    args: &Value,
+    elapsed: Duration,
+    result: &Result<String, String>,
+) {
+    let asset_id = bridge.resolve_asset(session_id).map(|(_asset_type, id)| id);
+    let target = match &asset_id {
+        Some(id) => sqlx::query_scalar::<_, String>("SELECT name FROM assets WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .or_else(|| Some(id.clone())),
+        None => None,
     };
-    Ok(Value::String(text))
+    let mut detail = serde_json::Map::new();
+    detail.insert("tool".to_string(), Value::String(name.to_string()));
+    for key in AUDIT_ARG_WHITELIST {
+        if let Some(value) = args.get(key).and_then(Value::as_str).filter(|v| !v.is_empty()) {
+            detail.insert((*key).to_string(), Value::String(truncate_chars(value, 500)));
+        }
+    }
+    detail.insert(
+        "durationMs".to_string(),
+        Value::from(elapsed.as_millis() as u64),
+    );
+    if let Err(error) = result {
+        detail.insert("error".to_string(), Value::String(truncate_chars(error, 500)));
+    }
+    if let Err(error) = crate::commands::audit::insert_audit_log(
+        pool,
+        "ai",
+        name,
+        target.as_deref(),
+        Some(Value::Object(detail)),
+        Some(session_id),
+        asset_id.as_deref(),
+        result.is_ok(),
+    )
+    .await
+    {
+        tracing::warn!("AI 工具审计写入失败({name}): {error}");
+    }
 }
 
 /// 域工具转发:emit `dsh://tool-exec` `{requestId, sessionId, name, args}`,
@@ -1644,5 +1752,89 @@ mod tests {
             recents[0].tail.len()
         );
         assert!(long_output.ends_with(&recents[0].tail), "tail 应为输出尾部");
+    }
+
+    // ---------- AI 工具调用审计(v0.103.0,设置 → 审计「AI」类别) ----------
+
+    /// 审计写入:成功/失败都落 category=ai 行;绑定资产时 target 解析为资产名,
+    /// detail 只含白名单参数(command/sql/index …)+ durationMs,失败追加 error。
+    #[tokio::test]
+    async fn audit_ai_tool_writes_success_and_failure_rows() {
+        let pool = setup_pool().await;
+        sqlx::query(
+            "INSERT INTO assets (id, type, name, config_json, tags, created_at, updated_at)
+             VALUES ('a1', 'ssh', '生产机', '{}', '[]', 1, 1)",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert asset");
+        let bridge = empty_bridge();
+        bridge.bind_session("sess-1", "ssh", "a1");
+
+        audit_ai_tool(
+            &pool,
+            &bridge,
+            "sess-1",
+            "ssh_exec",
+            &serde_json::json!({ "command": "systemctl restart nginx", "password": "不应入审计" }),
+            Duration::from_millis(12),
+            &Ok("ok".to_string()),
+        )
+        .await;
+        audit_ai_tool(
+            &pool,
+            &bridge,
+            "sess-1",
+            "db_query",
+            &serde_json::json!({ "sql": "select 1" }),
+            Duration::from_millis(3),
+            &Err("用户拒绝:高风险 SQL".to_string()),
+        )
+        .await;
+        // 无绑定会话:target / asset_id 为空
+        audit_ai_tool(
+            &pool,
+            &bridge,
+            "sess-nobody",
+            "es_search",
+            &serde_json::json!({ "index": "logs-*" }),
+            Duration::ZERO,
+            &Ok("[]".to_string()),
+        )
+        .await;
+
+        let rows = sqlx::query(
+            "SELECT category, action, target, detail, session_id, asset_id, success FROM audit_log ORDER BY id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("query audit_log");
+        assert_eq!(rows.len(), 3);
+
+        let first = &rows[0];
+        assert_eq!(first.get::<String, _>("category"), "ai");
+        assert_eq!(first.get::<String, _>("action"), "ssh_exec");
+        assert_eq!(first.get::<String, _>("target"), "生产机");
+        assert_eq!(first.get::<String, _>("session_id"), "sess-1");
+        assert_eq!(first.get::<String, _>("asset_id"), "a1");
+        assert_eq!(first.get::<i32, _>("success"), 1);
+        let detail: Value = serde_json::from_str(&first.get::<String, _>("detail")).expect("detail JSON");
+        assert_eq!(detail["command"], "systemctl restart nginx");
+        assert_eq!(detail["tool"], "ssh_exec");
+        assert!(detail["durationMs"].as_u64().is_some(), "应带 durationMs");
+        assert!(detail.get("password").is_none(), "非白名单字段不应入审计");
+        assert!(detail.get("error").is_none(), "成功行不应带 error");
+
+        let second = &rows[1];
+        assert_eq!(second.get::<i32, _>("success"), 0);
+        let detail: Value = serde_json::from_str(&second.get::<String, _>("detail")).expect("detail JSON");
+        assert_eq!(detail["sql"], "select 1");
+        assert_eq!(detail["error"], "用户拒绝:高风险 SQL");
+
+        let third = &rows[2];
+        assert!(third.get::<Option<String>, _>("target").is_none());
+        assert!(third.get::<Option<String>, _>("asset_id").is_none());
+        let detail: Value = serde_json::from_str(&third.get::<String, _>("detail")).expect("detail JSON");
+        assert_eq!(detail["index"], "logs-*");
     }
 }

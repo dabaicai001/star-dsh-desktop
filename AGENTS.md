@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.102.1(修复 v0.102.0 Release 构建失败(`build:lib` 的 `tsc -b` 聚合程序会把 tests 一起编译):memory-sink 测试对无参 `vi.fn()` 的 `mock.calls[0][0]` 取参报 TS2352/TS2493——给 mock 显式标注 `vi.fn<LlmExtractor>`;redis-workbench 测试同理,installTauri 的 invoke 桩补第二参 `_args?: Record<string, unknown>`(对齐 Tauri invoke(cmd, args) 真实形态)。host / client 两个聚合 tsconfig 本地 `tsc -b` 均 EXIT=0,测试行为不变(89 例仍通过)) |
+| 当前版本 | v0.103.0(工具面板资产行右键菜单新增**「引用到当前对话框」**:与 `@` 资产 pick 同语义——先轻绑定资产上下文(`starhub-tool-context` settings,会话级),再把引用 chip(`@名称 (user@host)`,Docker 资产带 `[Docker]` 删除保护标注)插入当前会话草稿末尾,提交时由 `starhub-asset` codec 序列化为模型可读文本;输入机忙碌时退化为纯文本追加,无当前会话时静默不动作) |
 
 ---
 
@@ -57,9 +57,10 @@ starhub/
 │
 ├── src-tauri/                # 桌面壳与主进程 - Rust
 │   ├── src/
-│   │   ├── main.rs            # 入口
+│   │   ├── main.rs            # 入口(含主窗口关闭联动销毁其余窗口)
+│   │   ├── browser/           # AI 浏览器(无痕独立窗口):mod(窗口/工具分发)/ script(注入)/ cdp(Win CDP)/ snapshot_*(macOS/Linux 截图)
 │   │   ├── mcp.rs             # MCP Server 管理
-│   │   ├── commands/          # 全部 Tauri Command(ssh/sftp/db/docker/ai/mcp/asset/audit/alert/local/secret/sidecar/broker/file)
+│   │   ├── commands/          # 全部 Tauri Command(ssh/sftp/db/docker/ai/mcp/asset/audit/alert/local/secret/sidecar/broker/file/browser)
 │   │   ├── ssh/               # SSH 会话(russh):auth / session / known_hosts / sftp_transport
 │   │   ├── sftp/              # SFTP 会话与传输(russh-sftp)
 │   │   ├── db/                # 本地 SQLite 持久化(sqlx)
@@ -126,6 +127,7 @@ starhub/
 | 加密 | `aes-gcm` / `argon2` | 敏感数据 |
 | 系统监控 | `sysinfo` | CPU/内存/进程 |
 | 密钥 | `keyring-rs` | 系统 Keyring |
+| AI 浏览器 | `wry` incognito + `webview2-com`(Win CDP)/ `objc2-web-kit`(macOS 截图)/ `webkit2gtk` =2.0.2(Linux 截图) | `src/browser/`;平台 crate 版本必须与 wry 0.55 锁定一致 |
 | 日志 | `tracing` | |
 | 错误 | `thiserror` + `anyhow` | |
 
@@ -463,4 +465,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-28 (v0.102.1)*
+*最后更新: 2026-08-28 (v0.103.0)*

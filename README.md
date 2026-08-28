@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.102.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.103.0-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,6 +148,12 @@
 
 ## 当前版本
 
+### v0.103.0 (2026-08-28)
+- ✨ 工具面板资产行右键菜单新增**「引用到当前对话框」**:与 `@` 资产 pick 同语义——先轻绑定资产上下文(`starhub-tool-context` settings,会话级),再把引用 chip(`@名称 (user@host)`,Docker 资产带 `[Docker]` 删除保护标注)插入当前会话草稿末尾,提交时由 `starhub-asset` codec 序列化为模型可读文本;输入机忙碌时退化为纯文本追加,无当前会话时静默不动作
+- ✨ **AI 运行的命令纳入审计**(设置 → 审计「AI」类别):`starhub/tool.execute` 桥收口处统一埋点,域工具(SSH/SFTP/DB/Redis/ES/Docker,含前端转发的 Excel/MCP/Skill)与全局工具无论成败都落一条 `audit_log`——action 为工具名,target 解析为绑定资产名,detail 携带白名单命令文本(command/sql/index 等,与领域事件摘要同口径,绝不取凭据字段)、durationMs 与失败原因;subagent 会话沿父链继承资产绑定,数据库不可用时静默跳过不影响工具结果
+- ✨ **AI 浏览器(无痕独立窗口,M1+M2+M3 一次交付)**:AI 经 14 个 `browser_*` 工具(open/navigate/back/forward/reload/state/extract/click/type/press_key/select_option/scroll/screenshot/eval)全权操作一个独立 Tauri 窗口,用户全程可见;窗口恒无痕(Windows WebView2 InPrivate / macOS WKWebView nonPersistent / Linux WebKitGTK ephemeral)。控制通道双层自动降级:Windows 走 WebView2 CDP(`Runtime.evaluate` awaitPromise+returnByValue、`Page.captureScreenshot`、`Input.*` 可信输入事件,可过反爬),其余平台/失败回退 `webview.eval` 注入 + `browser_internal_result` IPC oneshot 桥;感知层为编号元素 DOM 序列化(Shadow DOM/同源 iframe 递归,跨域降级标记),截图三平台齐备(macOS WKWebView takeSnapshot / Linux WebKitGTK get_snapshot 薄封装,PNG 落盘返回路径)。安全:`ai-browser` 窗口仅放行 `browser_internal_result` 一条命令(capabilities 按窗口 + 任意 http/https origin 收窄),导航协议白名单 http/https/about:blank;审批分级观察类放行、动作类软确认、`browser_eval` 恒确认(hard 档,never 策略也不放行);窗口被用户关闭时在途 eval 立即失败收口
+- 🐛 修复**主窗口关闭时其余窗口不跟随关闭**(如 MySQL 窗口悬挂成孤儿、进程不退):主窗口 CloseRequested 阶段先销毁全部其余 webview 窗口(detach-* / ai-browser / screenshot-overlay),再进入既有 Destroyed 阶段的 dsh web 子进程回收
+
 ### v0.102.1 (2026-08-28)
 - 🐛 修复 v0.102.0 Release 构建失败(`build:lib` 的 `tsc -b` 聚合程序会把 tests 一起编译):memory-sink 测试对无参 `vi.fn()` 的 `mock.calls[0][0]` 取参报 TS2352/TS2493——给 mock 显式标注 `vi.fn<LlmExtractor>`;redis-workbench 测试同理,installTauri 的 invoke 桩补第二参 `_args?: Record<string, unknown>`(对齐 Tauri invoke(cmd, args) 真实形态)。host / client 两个聚合 tsconfig 本地 `tsc -b` 均 EXIT=0,测试行为不变(89 例仍通过)
 
@@ -160,9 +166,6 @@
 - 🐛 修复 AI 助手记忆 `starhub-memory-context` **注入频率过高**:原实现在每一次模型请求(含工具调用的每步续传)都重复注入同一份记忆文本;改为按会话记录注入日志,仅首轮 / 记忆内容变化 / compaction 把注入挤出上下文后才重新注入
 - 🐛 修复 AI 助手记忆 `starhub-memory-sink` **自动摘要不触发/总结不对**:抽取 prompt 里根本没有携带对话内容(LLM 无料可蒸馏,产出空或臆造事实),且会把插件注入的记忆当用户输入形成回声室——新增 extractTurnTranscript 提取最近 8 条真实用户/助手消息(仅认 source.kind='user' 的用户消息,单条 800 / 总量 3000 字符截断),空转录直接跳过 LLM 调用,抽取系统提示禁止编造转录之外的事实
 - 🐛 修复 dsh 用户插件 peer 依赖 junction 仅支持 dev 布局:ensure_peer_links 原来只认 `<runtime>/vendor/<pkg>`,prod 闭包(pnpm deploy 物化到 node_modules/@deepseek-ai/<pkg>)下三个 peer 全部定位失败导致插件加载报错——改为按布局探测两种候选目录,均缺失才报错
-
-### v0.101.2 (2026-08-28)
-- 🐛 修复 v0.101.1 Release 构建失败:`build:lib:client` 的 `tsc -b tsconfig.client.json`(包含 tests 的 client 程序)报 `TS6133: 'perPage' 未使用`,来自 redis-service 测试新增的 `fakeScanPages` 辅助——移除未使用的 `perPage` 形参,client 全量类型检查恢复 EXIT=0,测试行为不变(11 例仍通过)。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

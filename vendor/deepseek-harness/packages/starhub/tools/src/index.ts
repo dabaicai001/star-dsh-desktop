@@ -338,6 +338,99 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
       command: { type: 'string', required: true, description: '要执行的命令,例如 "ls /"' },
     },
   },
+  // ── AI 浏览器(无痕独立窗口,Rust 主进程执行;用户全程可见 AI 操作)──
+  {
+    toolName: 'browser_open',
+    description: '打开(或聚焦)无痕 AI 浏览器窗口:独立 Tauri 窗口,不共用主界面登录态,用户可全程观看 AI 操作。可选初始 URL(裸域名自动补 https://;只允许 http/https)。首次操作浏览器前必须先调用本工具。',
+    parameters: {
+      url: { type: 'string', description: '可选初始 URL,例如 "example.com" 或 "https://a.internal:8080"' },
+    },
+  },
+  {
+    toolName: 'browser_navigate',
+    description: '在 AI 浏览器中导航到指定 URL(只允许 http/https;javascript:/file: 等伪协议会被拒绝)。导航后自动等待文档就绪并返回页面标题。',
+    parameters: {
+      url: { type: 'string', required: true, description: '目标 URL,例如 "https://example.com/login"' },
+    },
+  },
+  {
+    toolName: 'browser_back',
+    description: 'AI 浏览器后退一页(history.back),自动等待文档就绪。',
+    parameters: {},
+  },
+  {
+    toolName: 'browser_forward',
+    description: 'AI 浏览器前进一页(history.forward),自动等待文档就绪。',
+    parameters: {},
+  },
+  {
+    toolName: 'browser_reload',
+    description: '刷新 AI 浏览器当前页面,自动等待文档就绪。',
+    parameters: {},
+  },
+  {
+    toolName: 'browser_state',
+    description: '获取 AI 浏览器当前页面状态:url、标题、readyState、滚动位置。',
+    parameters: {},
+  },
+  {
+    toolName: 'browser_extract',
+    description: '提取当前页面的结构化内容:所有可见可交互元素按 1..N 编号([id] <标签> "文本" 属性…,含 open Shadow DOM 与同源 iframe 递归),附正文文本。browser_click/browser_type 等按编号定位元素;页面任何变化(导航/点击/局部刷新)后必须重新 extract,旧编号会失效。',
+    parameters: {
+      max_chars: { type: 'number', description: '正文文本最大字符数,默认 6000,上限 20000' },
+    },
+  },
+  {
+    toolName: 'browser_click',
+    description: '点击 browser_extract 输出的编号元素(链接/按钮/复选框等)。Windows 上优先走可信输入事件;元素失效会返回错误并要求重新 extract。',
+    parameters: {
+      id: { type: 'string', required: true, description: 'browser_extract 输出的元素编号(纯数字)' },
+    },
+  },
+  {
+    toolName: 'browser_type',
+    description: '向编号输入框(input/textarea/contenteditable)输入文本,触发完整 input/change 事件链(兼容 React/Vue 受控组件)。Windows 上走可信输入管线。',
+    parameters: {
+      id: { type: 'string', required: true, description: 'browser_extract 输出的元素编号(纯数字)' },
+      text: { type: 'string', required: true, description: '要输入的文本' },
+      clear: { type: 'boolean', description: '输入前先清空现有内容,默认 false(追加)' },
+    },
+  },
+  {
+    toolName: 'browser_press_key',
+    description: '向当前焦点元素按键:Enter/Tab/Escape/Backspace/Delete/方向键/Home/End/PageUp/PageDown/空格。常用于提交表单(聚焦输入框后按 Enter)。',
+    parameters: {
+      key: { type: 'string', required: true, description: '按键名,例如 "Enter"、"Tab"、"ArrowDown"' },
+    },
+  },
+  {
+    toolName: 'browser_select_option',
+    description: '为编号 <select> 元素选择选项(按 option 的 value 或显示文本精确匹配);不匹配时返回可选值列表。',
+    parameters: {
+      id: { type: 'string', required: true, description: 'browser_extract 输出的元素编号(纯数字)' },
+      value: { type: 'string', required: true, description: '目标选项的 value 或显示文本' },
+    },
+  },
+  {
+    toolName: 'browser_scroll',
+    description: '滚动 AI 浏览器页面:up/down(按像素,默认 600)/top/bottom。返回滚动后位置与页面总高度。',
+    parameters: {
+      direction: { type: 'string', description: 'up / down / top / bottom,默认 down' },
+      amount: { type: 'number', description: 'up/down 时的像素数,默认 600' },
+    },
+  },
+  {
+    toolName: 'browser_screenshot',
+    description: '截取 AI 浏览器当前可视区域(PNG),保存到应用缓存目录并返回文件路径与大小。截图内容暂不回灌模型上下文(文本通道),用于留档与用户核对。',
+    parameters: {},
+  },
+  {
+    toolName: 'browser_eval',
+    description: '在 AI 浏览器当前页面执行任意 JavaScript(函数体形态,末尾用 return 返回结果;支持 await,结果需可 JSON 序列化,输出截断至 8000 字符)。高危工具,每次调用都会请求用户确认。优先使用 browser_extract/click/type 等结构化工具,只在它们不够用时才用本工具。',
+    parameters: {
+      expression: { type: 'string', required: true, description: 'JS 函数体,例如 "return document.querySelectorAll(\'img\').length;"' },
+    },
+  },
   // ── Excel(当前工作簿,前端执行)──
   {
     toolName: 'excel_get_context',

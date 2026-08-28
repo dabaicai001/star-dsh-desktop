@@ -4162,6 +4162,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-javascript-core"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a1e6550c4caed348956ce3370c9ffeca70bb1dbed4fa96112e7c6170e074586"
+dependencies = [
+ "objc2",
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "objc2-media-toolbox"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4209,6 +4219,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-security"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "709fe137109bd1e8b5a99390f77a7d8b2961dafc1a1c5db8f2e60329ad6d895a"
+dependencies = [
+ "bitflags 2.13.0",
+ "objc2",
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "objc2-ui-kit"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4251,6 +4272,8 @@ dependencies = [
  "objc2-app-kit",
  "objc2-core-foundation",
  "objc2-foundation",
+ "objc2-javascript-core",
+ "objc2-security",
 ]
 
 [[package]]
@@ -6604,18 +6627,25 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "starhub"
-version = "0.102.1"
+version = "0.103.0"
 dependencies = [
  "anyhow",
  "apple-native-keyring-store",
  "base64 0.23.1",
+ "block2",
  "bytes",
+ "cairo-rs",
  "chrono",
  "futures",
  "glob-match",
+ "gtk",
  "image",
  "keyring-core",
  "linux-keyutils-keyring-store",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-web-kit",
  "once_cell",
  "reqwest 0.12.28",
  "russh",
@@ -6636,7 +6666,10 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "webkit2gtk",
  "webpki-roots 1.0.8",
+ "webview2-com",
+ "windows 0.61.3",
  "windows-native-keyring-store",
  "xcap",
  "zbus-secret-service-keyring-store",

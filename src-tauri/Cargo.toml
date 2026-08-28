@@ -1,6 +1,6 @@
 [package]
 name = "starhub"
-version = "0.102.1"
+version = "0.103.0"
 edition = "2021"
 
 [dependencies]
@@ -43,17 +43,35 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 xcap = { version = "0.9.8", features = ["image", "wgc"], optional = true }
 # 截图编码(PNG/JPEG)与多显示器拼接(仅截图特性)
 image = { version = "0.25.10", optional = true }
-base64 = { version = "0.23.1", optional = true }
+# base64 此前仅截图特性使用;AI 浏览器 CDP 截图(Windows)与 WKWebView/WebKitGTK
+# 截图也要用,提升为常驻依赖(纯 Rust 小 crate,不影响 glibc 2.35 兼容版基线)。
+base64 = "0.23"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = "1.1.0"
+# AI 浏览器 M2:WebView2 CDP(CallDevToolsProtocolMethod)。版本必须与 tauri → wry
+# 传递依赖锁定一致(0.38.x),否则 PlatformWebview.controller() 的类型对不上。
+webview2-com = "0.38"
+windows = "0.61"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1.0.0", features = ["keychain"] }
+# AI 浏览器 M3:WKWebView takeSnapshot 截图。版本与 wry 0.55 的 apple 依赖对齐;
+# feature 按类名开启(cargo 与 wry 已开的部分取并集)。
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSDictionary", "NSData", "NSError"] }
+objc2-app-kit = { version = "0.3", features = ["NSImage", "NSBitmapImageRep"] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKSnapshotConfiguration", "objc2-app-kit", "block2"] }
+block2 = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linux-keyutils-keyring-store = "1.0.0"
 zbus-secret-service-keyring-store = { version = "1.0.0", default-features = false, features = ["rt-tokio-crypto-rust"] }
+# AI 浏览器 M3:WebKitGTK get_snapshot 截图。webkit2gtk 版本必须与 wry 0.55 锁死
+# 一致(=2.0.2),否则 PlatformWebview.inner() 返回的 webkit2gtk::WebView 类型不同源。
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
+gtk = "0.18"
+cairo-rs = { version = "0.18", features = ["png"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -64,7 +82,7 @@ custom-protocol = ["tauri/custom-protocol"]
 # AI 对话截图(区域)。默认开启;面向旧系统(Ubuntu 22.04 / glibc 2.35,系统
 # PipeWire < 1.0)的兼容版用 `--no-default-features` 关闭截图,从而避免引入
 # xcap → pipewire/libspa 0.10.1(需 spa 头 ≥ 1.0)把 glibc 下限抬到 2.39。
-screenshot = ["dep:xcap", "dep:image", "dep:base64"]
+screenshot = ["dep:xcap", "dep:image"]
 
 # 测试二进制编译内存兜底:本后端(8W+ 行 + russh/sqlx/reqwest/rustls 全家桶)
 # 的 debug 测试构建(-C debuginfo=2)峰值内存极高,27GB 本地机都曾在 LLVM 阶段

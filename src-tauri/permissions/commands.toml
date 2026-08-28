@@ -33,6 +33,7 @@ commands.allow = [
   "audit_stats",
   "broker_overview",
   "broker_test",
+  "browser_internal_result",
   "create_asset",
   "db_backup",
   "db_clickhouse_connect",
@@ -250,4 +251,13 @@ commands.allow = [
   "test_ssh_connection",
   "toggle_asset_favorite",
   "update_asset",
+]
+
+# AI 浏览器窗口专用窄权限:ai-browser 加载任意外部网页(不可信 origin),
+# 只放行 eval 结果回传这一条命令,其它 app command 一律拒绝。
+[[permission]]
+identifier = "browser-eval-result"
+description = "Allows only the page-bridge eval-result command for the incognito AI browser window."
+commands.allow = [
+  "browser_internal_result",
 ]

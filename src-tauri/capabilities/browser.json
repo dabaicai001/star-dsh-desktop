@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "ai-browser",
+  "description": "AI 浏览器窗口(无痕):加载任意外部网页,只允许页面把 eval 结果经 browser_internal_result 回传 Rust,不开放任何其它 app command。remote.urls 覆盖任意 http/https 站点(浏览器导航目标不可预知)。",
+  "windows": [
+    "ai-browser"
+  ],
+  "remote": {
+    "urls": [
+      "http://*/*",
+      "https://*/*"
+    ]
+  },
+  "permissions": [
+    "browser-eval-result"
+  ]
+}

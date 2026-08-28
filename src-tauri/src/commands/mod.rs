@@ -3,6 +3,7 @@ pub mod alert;
 pub mod asset;
 pub mod audit;
 pub mod broker;
+pub mod browser;
 pub mod db;
 pub mod docker;
 pub mod dsh_plugins;

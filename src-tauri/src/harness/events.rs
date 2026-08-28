@@ -100,6 +100,8 @@ pub fn kind_for_tool(tool: &str) -> &'static str {
         // db 查询类(db_query / redis_exec / es_* 查询)
         "db_query" | "redis_exec" => "db.query_executed",
         other if other.starts_with("es_") => "db.query_executed",
+        // AI 浏览器(无痕独立窗口)动作类
+        other if other.starts_with("browser_") => "browser.action",
         _ => "tool.executed",
     }
 }
@@ -147,6 +149,14 @@ fn tool_summary(tool: &str, args: &serde_json::Value) -> String {
                 format!("{other} 执行成功")
             } else {
                 format!("{other}: {index}")
+            }
+        }
+        other if other.starts_with("browser_") => {
+            let url = get("url");
+            if url.is_empty() {
+                format!("{other} 执行成功")
+            } else {
+                format!("{other}: {url}")
             }
         }
         other => format!("{other} 执行成功"),

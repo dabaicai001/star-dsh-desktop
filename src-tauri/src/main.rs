@@ -4,6 +4,7 @@
 )]
 
 mod commands;
+mod browser;
 mod db;
 mod harness;
 mod keyring;
@@ -111,18 +112,45 @@ fn main() {
         .manage(sidecar_manager)
         .manage(harness::HarnessManager::new())
         .manage(harness::web::DshWebManager::new())
+        .manage(browser::BrowserManager::new())
         // 联动 M1:会话附着注册表(ssh_attach/ssh_detach + live.snapshot 快照源)
         .manage(registry::SessionRegistry::new())
-        // 主窗口销毁 = 应用退出:主动回收 dsh web 子进程(kill_on_drop 之外的确定性路径)
+        // 主窗口关闭 = 应用退出:CloseRequested 阶段先销毁其余全部窗口
+        // (detach-* 资产窗口 / ai-browser / screenshot-overlay),否则孤儿窗口
+        // 悬挂、进程不退;Destroyed 阶段再回收 dsh web 子进程(kill_on_drop
+        // 之外的确定性路径)。ai-browser 被(用户或主窗口联动)销毁时,其在途
+        // eval 请求经 BrowserManager 立即失败收口,不再挂到 30s 超时。
         .on_window_event(|window, event| {
-            if matches!(event, tauri::WindowEvent::Destroyed) && window.label() == "main" {
-                let app_handle = window.app_handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    app_handle
-                        .state::<harness::web::DshWebManager>()
-                        .shutdown()
-                        .await;
-                });
+            let app_handle = window.app_handle().clone();
+            match event {
+                tauri::WindowEvent::CloseRequested { .. } if window.label() == "main" => {
+                    for (label, other) in app_handle.webview_windows() {
+                        if label != "main" {
+                            if let Err(e) = other.destroy() {
+                                tracing::warn!("主窗口关闭联动销毁 {label} 失败:{e}");
+                            }
+                        }
+                    }
+                }
+                tauri::WindowEvent::Destroyed if window.label() == "main" => {
+                    tauri::async_runtime::spawn(async move {
+                        app_handle
+                            .state::<harness::web::DshWebManager>()
+                            .shutdown()
+                            .await;
+                    });
+                }
+                tauri::WindowEvent::Destroyed
+                    if window.label() == browser::BROWSER_WINDOW_LABEL =>
+                {
+                    let cleaned = app_handle
+                        .state::<browser::BrowserManager>()
+                        .fail_all_pending("AI 浏览器窗口已关闭");
+                    if cleaned > 0 {
+                        tracing::info!("AI 浏览器窗口关闭,{cleaned} 个在途 eval 已收口");
+                    }
+                }
+                _ => {}
             }
         })
         .setup(|app| {
@@ -375,6 +403,9 @@ fn main() {
             commands::docker::docker_compose_list,
             commands::broker::broker_test,
             commands::broker::broker_overview,
+            // AI 浏览器(无痕独立窗口):页面 eval 结果回传,仅此一条命令对
+            // ai-browser 窗口开放(capabilities/browser.json 收窄)
+            commands::browser::browser_internal_result,
             // File
             commands::file::open_file_external,
             // Local machine (AI #LOCAL workspace)

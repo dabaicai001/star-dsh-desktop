@@ -14,6 +14,16 @@
 
 ---
 
+## [0.103.0] - 2026-08-28
+
+### 新增
+- 工具面板资产行右键菜单新增**「引用到当前对话框」**:与 `@` 资产 pick 同语义——先轻绑定资产上下文(`starhub-tool-context` settings,会话级),再把引用 chip(`@名称 (user@host)`,Docker 资产带 `[Docker]` 删除保护标注)插入当前会话草稿末尾,提交时由 `starhub-asset` codec 序列化为模型可读文本;输入机忙碌时退化为纯文本追加,无当前会话时静默不动作
+- **AI 运行的命令纳入审计**(设置 → 审计「AI」类别):`starhub/tool.execute` 桥收口处统一埋点,域工具(SSH/SFTP/DB/Redis/ES/Docker,含前端转发的 Excel/MCP/Skill)与全局工具无论成败都落一条 `audit_log`——action 为工具名,target 解析为绑定资产名,detail 携带白名单命令文本(command/sql/index 等,与领域事件摘要同口径,绝不取凭据字段)、durationMs 与失败原因;subagent 会话沿父链继承资产绑定,数据库不可用时静默跳过不影响工具结果
+- **AI 浏览器(无痕独立窗口,M1+M2+M3 一次交付)**:AI 经 14 个 `browser_*` 工具(open/navigate/back/forward/reload/state/extract/click/type/press_key/select_option/scroll/screenshot/eval)全权操作一个独立 Tauri 窗口,用户全程可见;窗口恒无痕(Windows WebView2 InPrivate / macOS WKWebView nonPersistent / Linux WebKitGTK ephemeral)。控制通道双层自动降级:Windows 走 WebView2 CDP(`Runtime.evaluate` awaitPromise+returnByValue、`Page.captureScreenshot`、`Input.*` 可信输入事件,可过反爬),其余平台/失败回退 `webview.eval` 注入 + `browser_internal_result` IPC oneshot 桥;感知层为编号元素 DOM 序列化(Shadow DOM/同源 iframe 递归,跨域降级标记),截图三平台齐备(macOS WKWebView takeSnapshot / Linux WebKitGTK get_snapshot 薄封装,PNG 落盘返回路径)。安全:`ai-browser` 窗口仅放行 `browser_internal_result` 一条命令(capabilities 按窗口 + 任意 http/https origin 收窄),导航协议白名单 http/https/about:blank;审批分级观察类放行、动作类软确认、`browser_eval` 恒确认(hard 档,never 策略也不放行);窗口被用户关闭时在途 eval 立即失败收口
+
+### 修复
+- 修复**主窗口关闭时其余窗口不跟随关闭**(如 MySQL 窗口悬挂成孤儿、进程不退):主窗口 CloseRequested 阶段先销毁全部其余 webview 窗口(detach-* / ai-browser / screenshot-overlay),再进入既有 Destroyed 阶段的 dsh web 子进程回收
+
 ## [0.102.1] - 2026-08-28
 
 ### 修复

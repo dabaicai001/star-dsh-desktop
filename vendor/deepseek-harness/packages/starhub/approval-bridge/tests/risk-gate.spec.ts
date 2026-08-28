@@ -148,3 +148,45 @@ describe('redis_exec gate', () => {
     expect(set?.hard).toBeUndefined()
   })
 })
+
+describe('browser_* gate(AI 浏览器,无痕独立窗口)', () => {
+  it('allows read-only observation tools', () => {
+    for (const tool of [
+      'browser_state', 'browser_extract', 'browser_screenshot',
+      'browser_scroll', 'browser_back', 'browser_forward', 'browser_reload',
+    ]) {
+      expect(classifyStarHubCall(tool, {})).toEqual({ ask: false })
+    }
+  })
+
+  it('asks (soft) for actions with real effects on external sites', () => {
+    for (const tool of [
+      'browser_open', 'browser_navigate', 'browser_click',
+      'browser_type', 'browser_press_key', 'browser_select_option',
+    ]) {
+      const verdict = classifyStarHubCall(tool, { url: 'https://a.b', id: '1' })
+      expect(verdict?.ask).toBe(true)
+      expect(verdict?.hard).toBeUndefined()
+      if (verdict?.reason !== undefined) expect(verdict.reason).toContain('浏览器动作')
+      else throw new Error(`expected a reason for ${tool}`)
+    }
+  })
+
+  it('hard-flags browser_eval (arbitrary JS, even under never policy)', () => {
+    const verdict = classifyStarHubCall('browser_eval', { expression: 'return 1;' })
+    expect(verdict?.ask).toBe(true)
+    expect(verdict?.hard).toBe(true)
+  })
+
+  it('recognizes every registered browser tool as a starhub domain tool', () => {
+    for (const tool of [
+      'browser_open', 'browser_navigate', 'browser_back', 'browser_forward',
+      'browser_reload', 'browser_state', 'browser_extract', 'browser_click',
+      'browser_type', 'browser_press_key', 'browser_select_option',
+      'browser_scroll', 'browser_screenshot', 'browser_eval',
+    ]) {
+      expect(classifyStarHubCall(tool, {}), tool).not.toBeNull()
+    }
+    expect(classifyStarHubCall('browser_nope', {})).toBeNull()
+  })
+})
