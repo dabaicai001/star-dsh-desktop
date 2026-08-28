@@ -15,6 +15,7 @@ import {
   wireLlmExtractor,
   writeFact,
 } from '../src/index.ts'
+import type { LlmExtractor } from '../src/index.ts'
 import { apply as applyInvariant } from '../src/invariant.ts'
 import { normalizeFacts, pickTargetScope, shouldReview } from '../src/gates.ts'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
@@ -320,7 +321,7 @@ describe('runTurnReview', () => {
   })
   it('runs the full pipeline when enabled and gated', async () => {
     const request = vi.fn(async () => ({}))
-    const llm = vi.fn(async () => ({ facts: [{ content: 'persisted' }] }))
+    const llm = vi.fn<LlmExtractor>(async () => ({ facts: [{ content: 'persisted' }] }))
     await runTurnReview({
       agent: transcriptAgent(),
       signal: new AbortController().signal,
@@ -332,7 +333,7 @@ describe('runTurnReview', () => {
     expect(llm).toHaveBeenCalledOnce()
     expect(llm).toHaveBeenCalledWith(expect.objectContaining({ route: ROUTE }))
     // 抽取 prompt 必须包含转录块。
-    const call = llm.mock.calls[0]![0] as { prompt: string }
+    const call = llm.mock.calls[0]![0]
     expect(call.prompt).toContain('<transcript>')
     expect(call.prompt).toContain('general kenobi')
     expect(request).toHaveBeenCalledWith(MEMORY_WRITE_METHOD, {

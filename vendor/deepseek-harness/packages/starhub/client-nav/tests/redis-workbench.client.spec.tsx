@@ -47,7 +47,7 @@ function installTauri(opts?: {
   executeError?: Error | string
   connectNoId?: boolean
 }) {
-  const invoke = vi.fn((cmd: string) => {
+  const invoke = vi.fn((cmd: string, _args?: Record<string, unknown>) => {
     switch (cmd) {
       case 'db_redis_connect': return opts?.connectError ? rejectAsError(opts.connectError) : Promise.resolve(opts?.connectNoId ? {} : { connId: 'c1', host: 'h', port: 6379 })
       case 'db_redis_db_size': return opts?.sizeError ? rejectAsError(opts.sizeError) : Promise.resolve({ size: 2 })
