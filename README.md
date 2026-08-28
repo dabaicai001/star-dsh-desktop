@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.103.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.103.1-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,6 +148,9 @@
 
 ## 当前版本
 
+### v0.103.1 (2026-08-28)
+- 🐛 修复 v0.103.0 Release 全平台构建失败:①`harness/tools.rs` 的 AI 审计集成引用的 `commands/audit.rs`(含 `insert_audit_log`)当时被留在工作区未随 v0.103.0 提交,CI 检出后报 E0425——本版补齐 audit.rs 与 client-nav(「引用到当前对话框」)主体;②`snapshot_linux.rs` 误用 `webkit2gtk::prelude`(webkit2gtk 2.0.2 无 prelude 模块,WebViewExt 经根级 re-export 导出,E0432/E0599)——改为根级导入并移除未使用的 gtk 直接依赖。Linux 模块本机无 GTK 栈无法编译验证,此坑已靠 CI 暴露并修复
+
 ### v0.103.0 (2026-08-28)
 - ✨ 工具面板资产行右键菜单新增**「引用到当前对话框」**:与 `@` 资产 pick 同语义——先轻绑定资产上下文(`starhub-tool-context` settings,会话级),再把引用 chip(`@名称 (user@host)`,Docker 资产带 `[Docker]` 删除保护标注)插入当前会话草稿末尾,提交时由 `starhub-asset` codec 序列化为模型可读文本;输入机忙碌时退化为纯文本追加,无当前会话时静默不动作
 - ✨ **AI 运行的命令纳入审计**(设置 → 审计「AI」类别):`starhub/tool.execute` 桥收口处统一埋点,域工具(SSH/SFTP/DB/Redis/ES/Docker,含前端转发的 Excel/MCP/Skill)与全局工具无论成败都落一条 `audit_log`——action 为工具名,target 解析为绑定资产名,detail 携带白名单命令文本(command/sql/index 等,与领域事件摘要同口径,绝不取凭据字段)、durationMs 与失败原因;subagent 会话沿父链继承资产绑定,数据库不可用时静默跳过不影响工具结果
@@ -156,16 +159,6 @@
 
 ### v0.102.1 (2026-08-28)
 - 🐛 修复 v0.102.0 Release 构建失败(`build:lib` 的 `tsc -b` 聚合程序会把 tests 一起编译):memory-sink 测试对无参 `vi.fn()` 的 `mock.calls[0][0]` 取参报 TS2352/TS2493——给 mock 显式标注 `vi.fn<LlmExtractor>`;redis-workbench 测试同理,installTauri 的 invoke 桩补第二参 `_args?: Record<string, unknown>`(对齐 Tauri invoke(cmd, args) 真实形态)。host / client 两个聚合 tsconfig 本地 `tsc -b` 均 EXIT=0,测试行为不变(89 例仍通过)
-
-### v0.102.0 (2026-08-28)
-- ✨ MySQL / ClickHouse 表数据网格 WHERE 栏新增**字段自动提示**:光标处输入标识符词时弹出列名建议(前缀匹配优先、子串次之,带列类型)与 SQL 关键字(AND/OR/NOT/LIKE/IN/IS/NULL/BETWEEN 等)建议;表达式开头或 AND/OR/NOT/左括号后的空白位直接提示全部列。↑/↓ 导航、Tab/Enter 接受、鼠标点击接受、Esc 先关弹层(再按才清空筛选)、失焦自动关闭;词输全后自动剔除完全匹配项,Enter 应用筛选的原语义不变。列清单复用切表时已有的 list_columns 调用,不增加额外请求
-- ✨ 数据网格整体视觉优化:表名等宽高亮、操作按钮统一圆角描边风格、WHERE 输入框聚焦高亮、行 hover、错误条与筛选 badge 重排,全部沿用 DSW 设计 token
-- ✨ Redis 工作台重构:**key 搜索移到每个 db 节点下**(替代原全局失效搜索框),每个展开的 db 有独立搜索框(350ms 防抖,`*?[]` glob 字符透传,普通词自动包 `*term*` 模糊匹配),各 db 搜索词独立保存、切 db 互不干扰;侧栏加宽,key 行操作按钮 hover 显示,类型徽章按 string/hash/list/set/zset 着色
-- ✨ Redis 值编辑器重构:SET / ZSET / LIST / HASH 成员**可直接编辑保存**(改名先删旧成员再写新:SREM/ZREM/HDEL;list 新增行走 RPUSH,修复原空索引 LSET 死路);成员框新增**客户端筛选**输入(子串过滤,编辑仍映射原始行号);ZSET 分数列、LIST 索引列等按类型自适应占位
-- 🐛 修复 Redis **切换 key 不生效**:值编辑器经 openRef 在挂载时只捕获一次的死代码驱动,点击其他 key 不重新加载——改为受控 props(connId/redisKey/keyType)+ React key 重挂载,点哪个 key 加载哪个;顺带修复「重试」按钮点击后永不重新拉取(effect 不随重试重跑)的潜伏 bug
-- 🐛 修复 AI 助手记忆 `starhub-memory-context` **注入频率过高**:原实现在每一次模型请求(含工具调用的每步续传)都重复注入同一份记忆文本;改为按会话记录注入日志,仅首轮 / 记忆内容变化 / compaction 把注入挤出上下文后才重新注入
-- 🐛 修复 AI 助手记忆 `starhub-memory-sink` **自动摘要不触发/总结不对**:抽取 prompt 里根本没有携带对话内容(LLM 无料可蒸馏,产出空或臆造事实),且会把插件注入的记忆当用户输入形成回声室——新增 extractTurnTranscript 提取最近 8 条真实用户/助手消息(仅认 source.kind='user' 的用户消息,单条 800 / 总量 3000 字符截断),空转录直接跳过 LLM 调用,抽取系统提示禁止编造转录之外的事实
-- 🐛 修复 dsh 用户插件 peer 依赖 junction 仅支持 dev 布局:ensure_peer_links 原来只认 `<runtime>/vendor/<pkg>`,prod 闭包(pnpm deploy 物化到 node_modules/@deepseek-ai/<pkg>)下三个 peer 全部定位失败导致插件加载报错——改为按布局探测两种候选目录,均缺失才报错
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

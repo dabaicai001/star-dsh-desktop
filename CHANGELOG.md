@@ -14,6 +14,11 @@
 
 ---
 
+## [0.103.1] - 2026-08-28
+
+### 修复
+- 修复 v0.103.0 Release 全平台构建失败:①`harness/tools.rs` 的 AI 审计集成引用的 `commands/audit.rs`(含 `insert_audit_log`)当时被留在工作区未随 v0.103.0 提交,CI 检出后报 E0425——本版补齐 audit.rs 与 client-nav(「引用到当前对话框」)主体;②`snapshot_linux.rs` 误用 `webkit2gtk::prelude`(webkit2gtk 2.0.2 无 prelude 模块,WebViewExt 经根级 re-export 导出,E0432/E0599)——改为根级导入并移除未使用的 gtk 直接依赖。Linux 模块本机无 GTK 栈无法编译验证,此坑已靠 CI 暴露并修复
+
 ## [0.103.0] - 2026-08-28
 
 ### 新增

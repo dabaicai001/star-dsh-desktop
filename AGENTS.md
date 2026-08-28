@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.103.0(工具面板资产行右键菜单新增**「引用到当前对话框」**:与 `@` 资产 pick 同语义——先轻绑定资产上下文(`starhub-tool-context` settings,会话级),再把引用 chip(`@名称 (user@host)`,Docker 资产带 `[Docker]` 删除保护标注)插入当前会话草稿末尾,提交时由 `starhub-asset` codec 序列化为模型可读文本;输入机忙碌时退化为纯文本追加,无当前会话时静默不动作) |
+| 当前版本 | v0.103.1(修复 v0.103.0 Release 全平台构建失败:①`harness/tools.rs` 的 AI 审计集成引用的 `commands/audit.rs`(含 `insert_audit_log`)当时被留在工作区未随 v0.103.0 提交,CI 检出后报 E0425——本版补齐 audit.rs 与 client-nav(「引用到当前对话框」)主体;②`snapshot_linux.rs` 误用 `webkit2gtk::prelude`(webkit2gtk 2.0.2 无 prelude 模块,WebViewExt 经根级 re-export 导出,E0432/E0599)——改为根级导入并移除未使用的 gtk 直接依赖。Linux 模块本机无 GTK 栈无法编译验证,此坑已靠 CI 暴露并修复) |
 
 ---
 
@@ -465,4 +465,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-28 (v0.103.0)*
+*最后更新: 2026-08-28 (v0.103.1)*
