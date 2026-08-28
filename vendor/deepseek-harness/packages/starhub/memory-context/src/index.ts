@@ -16,6 +16,12 @@
  *    Rust 侧顺带按 sessionId 解析资产绑定追加 `asset:<id>` 卡;
  * 5. 各卡非空段拼成一条 plugin 来源 user message 注入(形式对齐
  *    tool-context / live-context 的 `form: 'snapshot'`)。
+ * 6. **v0.102.0 去重**:`pre-step` 在每个 step(包括工具调用后的每个续步)都会
+ *    触发,但只在「注入文本相对上次有变」时才重复注入;纯函数 `shouldInject`
+ *    同时校验内容变化与会话事件流(`user/message` + `source.kind==='plugin'`
+ *    + `source.plugin==='starhub-memory-context'`)中是否仍存在本次注入消息,
+ *    compaction 把旧注入裁剪掉时也能正确重新注入。per-session Map 容量
+ *    兜底 64,超出按 FIFO 删除最旧条目。
  *
  * pull 失败/超时(2s)降级为不注入,不得阻断 agent turn;无工作区路径的
  * 会话(blank session)只注入 user/global/资产卡。
@@ -42,6 +48,15 @@ export const MEMORY_CONTEXT_NAMESPACE = 'starhub-memory-context'
 
 /** memory 工具名(宿主侧 tools 包注册);本插件在 tools/pre-execute 上锁死未配置时的调用。 */
 export const MEMORY_TOOL_NAME = 'memory'
+
+/** per-session 去重 Map 的容量兜底;超出按 FIFO 删除最旧条目。 */
+const INJECTION_DEDUP_LIMIT = 64
+
+/**
+ * 注入去重 Map 中每条记录的形状:把本 session 的最近一次注入文本记下来,
+ * 下次 pre-step 命中相同文本 + 事件流中仍存在该注入消息时跳过注入。
+ */
+type InjectionRecord = { readonly text: string }
 
 /**
  * 记忆模型路由:自动沉淀抽取与 memory 工具锁死门禁共用的 provider/model 对。
@@ -156,6 +171,105 @@ export function renderMemoryContext(cards: readonly MemoryCard[]): string | null
 }
 
 /**
+ * 会话事件流元素的窄化形状,只要找到「上次注入文本仍在事件流里」所需字段。
+ * 注入消息的特征:`type==='user/message'` + `data.source.kind==='plugin'` +
+ * `data.source.plugin==='starhub-memory-context'`(本插件名),DSH 不变量保证
+ * 模型可见的输入一定进入会话日志。
+ *
+ * `data` 用 `unknown` 是因为 DSH 严格联合里 `user/message` 的 data 是
+ * `UserMessage` 接口(无索引签名),内部按 Record 形态安全探测。
+ */
+export interface InjectionEvent {
+  readonly type: string
+  readonly data?: unknown
+}
+
+/**
+ * 在事件流中查找本次注入文本是否仍存在(且属于本插件注入)。
+ * 防御性读 events:非数组 / 元素缺 data / content 非数组 / 块缺 text 都视为
+ * 不可命中,返回 false(v0.102.0 dedup 设计:不可命中 ⇒ 重新注入)。
+ * @param events - agent.session.events(可能为 undefined)。
+ * @param text - 本次即将注入的文本。
+ * @param pluginId - 注入方 plugin id;默认本插件名,允许测试覆写。
+ * @returns true 当且仅当事件流中存在 `user/message` + `plugin==pluginId`
+ *   的消息,且其文本内容完全等于 `text`。
+ */
+export function hasLiveInjection(
+  events: ReadonlyArray<InjectionEvent> | undefined,
+  text: string,
+  pluginId: string = name,
+): boolean {
+  if (!Array.isArray(events)) return false
+  for (const event of events) {
+    if (event === null || event === undefined) continue
+    if (event.type !== 'user/message') continue
+    const data = event.data
+    if (data === undefined || data === null || typeof data !== 'object') continue
+    const dataRecord = data as Readonly<Record<string, unknown>>
+    const source = dataRecord['source']
+    if (source === undefined || source === null || typeof source !== 'object') continue
+    const sourceRecord = source as Readonly<Record<string, unknown>>
+    if (sourceRecord['kind'] !== 'plugin' || sourceRecord['plugin'] !== pluginId) continue
+    const content = dataRecord['content']
+    if (!Array.isArray(content)) continue
+    for (const block of content) {
+      if (block === null || block === undefined) continue
+      if (typeof block !== 'object') continue
+      const blockRecord = block as Readonly<Record<string, unknown>>
+      if (blockRecord['type'] === 'text' && blockRecord['text'] === text) return true
+    }
+  }
+  return false
+}
+
+/**
+ * 判定本 step 是否应该注入记忆文本(v0.102.0 去重核心):
+ * - `lastText === undefined`:本 session 首次 pre-step,直接注入。
+ * - `lastText === text`:文本未变;events 缺失/为空数组时退化按 Map 去重(任意
+ *   环境都能抑制重复);events 非空数组时还要校验事件流里仍存在本次注入,
+ *   否则(compaction 等可能裁掉旧注入)仍要重新注入。
+ * - `lastText !== text`:记忆内容变了,无论 events 怎样都重新注入并刷新 Map。
+ * @param lastText - 本 session 上次注入的文本;undefined 表示无记录。
+ * @param text - 本次即将注入的文本。
+ * @param events - agent.session.events;用于事件流活体校验。
+ * @param pluginId - 注入方 plugin id;默认本插件名,允许测试覆写。
+ * @returns true 表示应当注入,false 表示跳过。
+ */
+export function shouldInject(
+  lastText: string | undefined,
+  text: string,
+  events: ReadonlyArray<InjectionEvent> | undefined,
+  pluginId: string = name,
+): boolean {
+  if (lastText === undefined) return true
+  if (lastText !== text) return true
+  // 文本相同:只有当 events 明确非空数组且其中存在本次注入时才跳过;
+  // events 缺失/为空数组 → 退化按 Map 去重,保证任何环境下频率都降下来。
+  if (!Array.isArray(events) || events.length === 0) return false
+  return !hasLiveInjection(events, text, pluginId)
+}
+
+/**
+ * 记录本 session 的最近一次注入文本;Map 容量超过 `INJECTION_DEDUP_LIMIT`
+ * 时按 FIFO 删除最旧条目。**会** mutate 入参 map(由 caller 决定生命周期)。
+ * @param map - per-session 注入记录 Map。
+ * @param sessionId - 会话 id。
+ * @param text - 本次注入文本。
+ */
+export function recordInjection(
+  map: Map<string, InjectionRecord>,
+  sessionId: string,
+  text: string,
+): void {
+  if (map.size >= INJECTION_DEDUP_LIMIT) {
+    // Map 遍历顺序 = 插入顺序(FIFO);第一个 key 即最旧条目。
+    const oldest = map.keys().next()
+    if (!oldest.done) map.delete(oldest.value)
+  }
+  map.set(sessionId, { text })
+}
+
+/**
  * 组装一次注入文本:经 sdk-transport 反向 pull 记忆卡,失败/超时降级为 null。
  * @param transport - sdk-transport;缺失时直接返回 null。
  * @param scopes - 要拉取的 scope 列表(user / global / folder:<path>)。
@@ -193,12 +307,18 @@ export async function composeMemoryContext(
  * 注册插件:声明 settings 命名空间一次,并在每次 agent pre-step 按开关 + 记忆模型
  * 配置注入长期记忆(user + global + 当前工作区文件夹 + 绑定资产);同时挂
  * tools/pre-execute 锁死门,未配置记忆模型时拒绝 memory 工具调用。
+ * v0.102.0 起:per-session Map 去重,「内容变化才重复」,compaction 裁掉旧注入
+ * 时由事件流活体校验补回重新注入。
  * @param ctx - plugin context;监听器随插件 fiber 卸载。
  */
 export function apply(ctx: Context): void {
   const ns: SettingsNamespace = settingsNamespace(MEMORY_CONTEXT_NAMESPACE)
   // Declare the namespace once; the pre-step listener reads it per request.
   const scope = ctx.settings.register(ns, MemoryContextSchema)
+
+  // per-session 最近一次注入文本;Fiber 内闭包,apply 卸载即丢;Map 容量
+  // 兜底由 recordInjection(INJECTION_DEDUP_LIMIT)负责 FIFO。
+  const injectionLog: Map<string, InjectionRecord> = new Map()
 
   ctx.effect(() => {
     // sdk-transport 是宿主私有服务名,不走 Context 接口声明合并,读取后窄化;
@@ -227,6 +347,13 @@ export function apply(ctx: Context): void {
       const scopes = ['user', 'global', ...(cwd === undefined ? [] : [`folder:${cwd}`])]
       const text = await composeMemoryContext(transport, scopes, String(agent.session.id))
       if (text === null) return decision
+      // v0.102.0 dedup:per-session Map 记录上次注入文本,内容未变且事件流中
+      // 仍存在本次注入时直接返回原 decision,跳过重复注入。
+      const sessionId = String(agent.session.id)
+      const events = (agent.session as { readonly events?: ReadonlyArray<InjectionEvent> }).events
+      const lastText = injectionLog.get(sessionId)?.text
+      if (!shouldInject(lastText, text, events)) return decision
+      recordInjection(injectionLog, sessionId, text)
       return {
         kind: 'enter',
         messages: [

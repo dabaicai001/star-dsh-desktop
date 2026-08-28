@@ -10,7 +10,8 @@ StarHub 本地 host 包(2026-08-22,v0.92.0):agent/turn-stopping 钩子把当轮�
   - `autoReview === true` 才整段执行;关闭则整段跳过
 - **记忆模型硬前置(v0.94.0)**:`memoryProvider` + `memoryModel` 必须成对非空,否则整段跳过(开关打开也没用,与设置「只有配置了才能勾选」对齐)。
 - 消息数门禁 `shouldReview({user, assistant})`(消息数 ≥ 4):**仅当 `agent.session.events` 能提供 user/assistant 计数时生效**。DSH web 会话(DSH GUI 内核)的消息事件并不总是进入 `session.events`(实证 `session.jsonl.zstd` 只有 session 头、无消息事件),此时计数为 0/0,若强依赖计数会让自动沉淀永远不触发;已触发 `turn-stopping` 本身就代表本轮回合确有对话,因此计数缺失时不再拦截,交由记忆模型 LLM 转取自行判断(空轮次返回 `{"facts":[]}` 不落库)。
-- 抽取走**专属记忆模型路由**(`ctx.llm.stream`,provider/model 取自上面两个字段);调用 LLM 抽取(6 秒超时),返回 `{"facts":[{"content":"..."}]}`;抽取提示里带工作区/项目名(目录末段)。
+- **v0.102.0 转录感知抽取**:抽取提示 `buildExtractPrompt` 现在附带真实转录——`extractTurnTranscript` 从 `agent.session.events` 尾部收集 `user/message`(必须 `source.kind==='user'`,排除 memory-context 注入的 plugin 消息,根除「记忆复读回音」)与 `assistant/message` 事件,按 `user: ...\nassistant: ...` 形式拼出文本(默认 ≤ 8 条消息、≤ 3000 字符、≤ 800 字符/条)。转录为空时 `buildExtractPrompt` 返回 `null`,`runTurnReview` 直接跳过 LLM 调用,杜绝「无米下锅凭空编造」。
+- 抽取走**专属记忆模型路由**(`ctx.llm.stream`,provider/model 取自上面两个字段);调用 LLM 抽取(6 秒超时),返回 `{"facts":[{"content":"..."}]}`;抽取提示里带工作区/项目名(目录末段)+ 转录块 `<transcript>...</transcript>`;系统提示约束「只能从给定 transcript 提炼,禁止编造 transcript 之外的事实,无持久价值返回 `{"facts": []}`」。
 - `normalizeFacts` 收敛 scope → `folder:<cwd>` 或 `global`(根据 cwd 决定);去空、限 280 字符/条、限 8 条/批。
 - 逐条经 sdk-transport 反向 RPC `starhub/memory.write` 调 Rust `ai_memory_add`(2 秒超时);失败/超时/[FULL]/[DUPLICATE] 全部吞掉,不污染 turn 链。
 - 无 sdk-transport / 无 LLM 服务时整段无操作(开发态友好)。

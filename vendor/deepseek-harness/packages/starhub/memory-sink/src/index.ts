@@ -10,10 +10,15 @@
  *    未成对配置时整段跳过(开关打开也没用,与设置「只有配置了才能勾选」对齐)。
  * 4. 通过门禁 `shouldReview({user, assistant})` 决定要不要调用 LLM 抽取;
  *    太短的会话不调用(零成本)。
- * 5. 调用 `extractFacts(agent, signal, route)` 用**专属记忆模型**做一次独立
+ * 5. **v0.102.0 转录感知抽取**:`buildExtractPrompt` 现在附带真实转录
+ *    (`extractTurnTranscript` 从 `agent.session.events` 尾部收集
+ *    `user/message` + `assistant/message` 事件,排除 memory-context 注入的
+ *    plugin 来源 user 消息,避免「记忆复读回音」);空转录返回 null,
+ *    `runTurnReview` 直接跳过 LLM 调用,根除「无米下锅凭空编造」。
+ * 6. 调用 `extractFacts(agent, signal, route)` 用**专属记忆模型**做一次独立
  *    LLM chat completion(`ctx.llm.stream`,provider/model 取自 namespace 路由),
  *    返回 JSON 数组;`normalizeFacts` 收敛 scope + 去空 + 限长 + 限条数。
- * 6. `pickTargetScope(cwd)` 决定 folder/global;逐条经 sdk-transport 反向
+ * 7. `pickTargetScope(cwd)` 决定 folder/global;逐条经 sdk-transport 反向
  *    RPC `starhub/memory.write` 调 Rust `ai_memory_add`。
  *
  * 失败/超时均吞掉(不污染主 agent turn 的 dispose 链),日志走 console.warn。
@@ -61,13 +66,26 @@ const EXTRACT_TIMEOUT_MS = 6_000
 /** 一次 RPC 写入最多等待 2 秒;超时降级为不写入。 */
 const WRITE_TIMEOUT_MS = 2_000
 
-/** 抽取 LLM 调用的系统提示(模型侧契约;改动请同步 README)。 */
+/** `extractTurnTranscript` 默认最多收集的转录消息条数。 */
+const TRANSCRIPT_DEFAULT_MAX_MESSAGES = 8
+
+/** `extractTurnTranscript` 默认总字符上限。 */
+const TRANSCRIPT_DEFAULT_MAX_CHARS = 3_000
+
+/** `extractTurnTranscript` 单条消息字符上限(超出尾部加 `…`)。 */
+const TRANSCRIPT_PER_MESSAGE_MAX_CHARS = 800
+
+/** 抽取 LLM 调用的系统提示(模型侧契约;改动请同步 README)。
+ * v0.102.0 起增补:只能从给定 transcript 提炼事实,禁止编造 transcript 之外的
+ * 内容;无持久价值事实必须返回 `{"facts": []}`,避免空转录时编造记忆。 */
 const EXTRACT_SYSTEM_PROMPT = [
   'You are a long-term memory distiller for a StarHub AI coding assistant.',
   'Review the just-completed conversation turn and decide whether it contains',
   'durable facts worth persisting into long-term memory (preferences, project',
   'conventions, completed work, environment topology, corrections).',
-  'If there is nothing durable, return {"facts": []}.',
+  'Only distill facts that are stated in the transcript provided; do not invent',
+  'or infer facts that go beyond what the transcript actually contains.',
+  'If the transcript is empty or carries nothing durable, return {"facts": []}.',
   'Otherwise return JSON {"facts": [{"content": "<concise fact, ≤280 chars>"}]}.',
   'Reject ephemeral debugging, raw logs, secrets, or anything queryable from',
   'source code. Each fact must be information-dense (one line).',
@@ -82,15 +100,36 @@ export const ExtractedFactsSchema: z<{ facts: Array<{ content: string }> }> = z.
 })
 
 /**
+ * 会话事件流元素的窄化形状,用于抽取转录。DSH 真实事件形状:
+ * - `user/message` ⇒ `data.content` 是 message content block 数组
+ * - `assistant/message` ⇒ `data.message.content` 是 message content block 数组
+ *
+ * `extractTurnTranscript` 在两种形态间通用地走「找 `content` 数组 → 找
+ * `text` 块」路径。plugin 来源(`source.kind === 'plugin'`)的 user 消息视为
+ * 「上下文注入」,不进入转录。
+ *
+ * `data` 用 `unknown` 是因为 DSH 严格联合里 `user/message` 的 data 是
+ * `UserMessage` 接口(无索引签名)、`assistant/message` 的 data 是另一形态;
+ * 入口一律用 `unknown`,内部按 Record 形态安全探测。
+ */
+export interface MemorySinkEvent {
+  readonly type: string
+  readonly data?: unknown
+}
+
+/**
  * Type for the dsh Agent surface used by the turn-stopping hook.
  * Kept narrow to avoid pulling in the full agent type and to keep the
  * dependency surface minimal for tests.
+ *
+ * `events` 的形状在 v0.102.0 起放宽为 `{ type; data? }[]`(只读),由
+ * `extractTurnTranscript` 负责按 type / source.kind 收敛真实可读文本。
  */
 export interface MemorySinkAgent {
   readonly session: {
     readonly id: string
     readonly header: { readonly cwd?: string }
-    readonly events?: ReadonlyArray<{ readonly type: string }>
+    readonly events?: ReadonlyArray<MemorySinkEvent>
   }
 }
 
@@ -159,16 +198,161 @@ export function countMessages(agent: MemorySinkAgent): { user: number; assistant
 }
 
 /**
- * Build the user-prompt payload handed to the LLM extractor. The exact turn
- * transcript is intentionally NOT included — the hook sees only the final
- * signal that the turn is over, so the extractor relies on the agent-loop
- * injecting the most recent assistant turn via the `prompt` slot, which the
- * host wires to the assistant's last message. This keeps the dependency
- * surface minimal and the call deterministic.
- * @param agent - the stopping agent;its session cwd shapes the prompt.
- * @returns the extractor user-prompt text.
+ * 把单条事件的内容数组拼成纯文本。只取 `type === 'text'` 且 `text` 是
+ * 字符串的块;空内容、非数组、缺 text 的块都安全跳过(不抛错)。
+ * @param blocks - message content 数组(可能为 undefined 或非数组)。
+ * @returns 拼接好的纯文本;无内容返回空串。
  */
-export function buildExtractPrompt(agent: MemorySinkAgent): string {
+function extractTextFromContent(
+  blocks: ReadonlyArray<{ readonly type?: string; readonly text?: string }> | undefined,
+): string {
+  if (!Array.isArray(blocks)) return ''
+  const parts: string[] = []
+  for (const block of blocks) {
+    if (block === undefined || block === null) continue
+    if (block.type !== 'text') continue
+    if (typeof block.text !== 'string') continue
+    parts.push(block.text)
+  }
+  return parts.join('\n')
+}
+
+/**
+ * 从事件 `data` 信封里取出 message content 数组。DSH 会话日志里两种
+ * 形态都会出现:
+ * - `user/message` 直接挂 `data.content`(UserMessage 顶层就是 content)。
+ * - `assistant/message` 把 AssistantMessage 嵌套在 `data.message.content`
+ *   里(外层 data 还包了 turn/step/usage 等元数据)。
+ * memory-context 注入的 plugin 消息采用 user/message 形态。
+ * 防御性读:中间任何一层不是对象都视为无可用内容。
+ * @param data - 事件 data 信封;可能为 undefined。
+ * @returns content 数组;无可用内容返回 undefined。
+ */
+function readMessageContent(
+  data: MemorySinkEvent['data'],
+): ReadonlyArray<{ readonly type?: string; readonly text?: string }> | undefined {
+  if (data === undefined || data === null) return undefined
+  if (typeof data !== 'object') return undefined
+  const record = data as Readonly<Record<string, unknown>>
+  const top = record['content']
+  if (Array.isArray(top)) return top as ReadonlyArray<{ readonly type?: string; readonly text?: string }>
+  const nested = record['message']
+  if (nested !== undefined && nested !== null && typeof nested === 'object') {
+    const inner = (nested as Readonly<Record<string, unknown>>)['content']
+    if (Array.isArray(inner)) {
+      return inner as ReadonlyArray<{ readonly type?: string; readonly text?: string }>
+    }
+  }
+  return undefined
+}
+
+/**
+ * 截断单条消息到 `maxChars` 字符(超出部分尾部追加 `…`),便于控制转录总
+ * 体长度。
+ * @param text - 原始文本。
+ * @param maxChars - 截断阈值;<= 0 时不截断。
+ * @returns 截断后的文本;未截断时原样返回。
+ */
+function truncateMessage(text: string, maxChars: number): string {
+  if (maxChars <= 0) return text
+  if (text.length <= maxChars) return text
+  return `${text.slice(0, Math.max(0, maxChars - 1))}…`
+}
+
+/**
+ * `extractTurnTranscript` 的可选参数:限制消息条数 / 总字符数。
+ */
+export interface ExtractTurnTranscriptOptions {
+  /** 最多收集的消息数(用户 + 助手合计);缺省 {@link TRANSCRIPT_DEFAULT_MAX_MESSAGES}。 */
+  readonly maxMessages?: number
+  /** 总字符上限;超过即停止追加消息。缺省 {@link TRANSCRIPT_DEFAULT_MAX_CHARS}。 */
+  readonly maxChars?: number
+  /** 单条消息字符上限;超出尾部加 `…`。缺省 {@link TRANSCRIPT_PER_MESSAGE_MAX_CHARS}。 */
+  readonly maxCharsPerMessage?: number
+}
+
+/**
+ * 从 `agent.session.events` 尾部向前抽取本轮 user / assistant 转录文本。
+ * - 只接受 `type === 'user/message'` 或 `type === 'assistant/message'` 的事件;
+ * - `user/message` 必须 `data.source.kind === 'user'`(默认记忆上下文注入是
+ *   plugin 源,本插件过滤掉,避免「记忆复读回音」);
+ * - 按 events 顺序保留时间正序(user/assistant 交替);
+ * - 单条消息按 `maxCharsPerMessage` 截断(尾部 `…`),总条数按 `maxMessages`,
+ *   总字符按 `maxChars` 双重截断;
+ * - 防御性读 events:非数组 / 元素缺 data / content 非数组 / 块缺 text 全
+ *   安全跳过,不抛错。
+ * @param agent - the stopping agent;its session.events is the transcript source.
+ * @param opts - 截断阈值;缺省按模块常量。
+ * @returns `user: ...\nassistant: ...` 形式的转录;无可用内容返回空串。
+ */
+export function extractTurnTranscript(
+  agent: MemorySinkAgent,
+  opts?: ExtractTurnTranscriptOptions,
+): string {
+  const events = agent.session.events
+  if (!Array.isArray(events) || events.length === 0) return ''
+  const maxMessages = opts?.maxMessages ?? TRANSCRIPT_DEFAULT_MAX_MESSAGES
+  const maxChars = opts?.maxChars ?? TRANSCRIPT_DEFAULT_MAX_CHARS
+  const maxPerMessage = opts?.maxCharsPerMessage ?? TRANSCRIPT_PER_MESSAGE_MAX_CHARS
+  if (maxMessages <= 0) return ''
+
+  // 从尾部向前收集,保证拿到「最近 maxMessages 条」;再按原序翻回来。
+  const collected: Array<{ role: 'user' | 'assistant'; text: string }> = []
+  for (let i = events.length - 1; i >= 0 && collected.length < maxMessages; i -= 1) {
+    const event = events[i]
+    if (event === undefined || event === null) continue
+    const role = classifyEventRole(event)
+    if (role === null) continue
+    const text = truncateMessage(
+      extractTextFromContent(readMessageContent(event.data)),
+      maxPerMessage,
+    )
+    if (text === '') continue
+    collected.push({ role, text })
+  }
+  collected.reverse()
+
+  // 按总字符上限再截一次;超长就按时间顺序丢尾。
+  const lines: string[] = []
+  let used = 0
+  for (const { role, text } of collected) {
+    const label = `${role}: `
+    const cost = label.length + text.length + 1 // +1 for newline
+    if (used + cost > maxChars && lines.length > 0) break
+    lines.push(`${label}${text}`)
+    used += cost
+  }
+  return lines.join('\n')
+}
+
+/**
+ * 判定会话事件是 user 还是 assistant 角色;不符合条件的返回 null。
+ * `user/message` 必须 `data.source.kind === 'user'`(排除 plugin 注入);
+ * `assistant/message` 无 source 限制(DSH 默认产生的就是 assistant 角色)。
+ */
+function classifyEventRole(event: MemorySinkEvent): 'user' | 'assistant' | null {
+  if (event.type === 'user/message') {
+    const data = event.data
+    if (data === undefined || data === null || typeof data !== 'object') return null
+    const source = (data as Readonly<Record<string, unknown>>)['source']
+    if (source === undefined || source === null || typeof source !== 'object') return null
+    const kind = (source as Readonly<Record<string, unknown>>)['kind']
+    return kind === 'user' ? 'user' : null
+  }
+  if (event.type === 'assistant/message') return 'assistant'
+  return null
+}
+
+/**
+ * Build the user-prompt payload handed to the LLM extractor.
+ * v0.102.0 起:`extractTurnTranscript` 从 `agent.session.events` 取真实转录,
+ * 转录为空时返回 null,`runTurnReview` 会直接跳过 LLM 调用(避免空转录编造)。
+ * 转录非空时把 workspace / project 行 + 转录一起交给模型。
+ * @param agent - the stopping agent;its session cwd shapes the prompt and
+ *   `events` provides the just-completed turn transcript.
+ * @returns the extractor user-prompt text;null when no usable transcript exists.
+ */
+export function buildExtractPrompt(agent: MemorySinkAgent): string | null {
   const cwd = agent.session.header.cwd
   const cwdLine = cwd === undefined || cwd.trim() === ''
     ? 'workspace: <none>'
@@ -176,10 +360,15 @@ export function buildExtractPrompt(agent: MemorySinkAgent): string {
   const projectLine = cwd === undefined || cwd.trim() === ''
     ? 'project: <none>'
     : `project: ${projectNameOf(cwd)}`
+  const transcript = extractTurnTranscript(agent)
+  if (transcript === '') return null
   return [
-    'Distill durable facts from the just-completed turn into long-term memory.',
+    'Distill durable facts from the conversation transcript below into long-term memory.',
     cwdLine,
     projectLine,
+    '<transcript>',
+    transcript,
+    '</transcript>',
     'Return JSON only, no prose.',
   ].join('\n')
 }
@@ -218,6 +407,10 @@ export async function persistExtractedFacts(
 /**
  * The full turn-stopping pipeline: gate → extract → persist.
  * Errors at any step are swallowed and logged at warn level.
+ *
+ * v0.102.0 起:`buildExtractPrompt` 返回 null(无可用转录)时直接跳过 LLM
+ * 调用,根除「无米下锅凭空编造」;其余门禁(autoReview、route、signal、
+ * shouldReview)顺序不变。
  * @param params - gate inputs, the abort signal, and the optional extractor.
  * @returns after the best-effort pipeline settles (never rejects).
  */
@@ -244,6 +437,10 @@ export async function runTurnReview(params: {
     if (!shouldReview(counts)) return
   }
   if (params.llm === undefined) return
+  // v0.102.0:转录为空时跳过 LLM 调用,杜绝「无对话可抽却让 LLM 编造」——
+  // 调用方本来就会过滤返回的 facts,但与其消耗一次 LLM 调用,不如直接拒跑。
+  const prompt = buildExtractPrompt(params.agent)
+  if (prompt === null) return
   let timeout: ReturnType<typeof setTimeout> | undefined
   try {
     const timeoutPromise = new Promise<never>((_resolve, reject) => {
@@ -253,7 +450,7 @@ export async function runTurnReview(params: {
       params.llm({
         route: params.route,
         system: EXTRACT_SYSTEM_PROMPT,
-        prompt: buildExtractPrompt(params.agent),
+        prompt,
         signal: params.signal,
       }),
       timeoutPromise,

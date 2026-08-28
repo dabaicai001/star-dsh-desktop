@@ -6,8 +6,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
 import {
-  apply, composeMemoryContext, isAutoReviewEnabled, isMemoryConfigured,
-  MEMORY_TOOL_NAME, memoryRouteOf, renderMemoryContext,
+  apply, composeMemoryContext, hasLiveInjection, isAutoReviewEnabled, isMemoryConfigured,
+  MEMORY_TOOL_NAME, memoryRouteOf, recordInjection, renderMemoryContext, shouldInject,
 } from '../src/index.ts'
 import { apply as applyInvariant } from '../src/invariant.ts'
 
@@ -332,5 +332,200 @@ describe('package shells', () => {
     // The companion is intentionally empty: no runtime invariant to assert.
     installers[0]!()
     expect(dispose).toBeTypeOf('function')
+  })
+})
+
+describe('v0.102.0 injection dedup', () => {
+  const TEXT = 'Long-term memories (persistent across sessions; ...):\n[user profile]\nfoo'
+
+  function injectionEvent(text: string, plugin = 'starhub-memory-context') {
+    return {
+      type: 'user/message',
+      data: {
+        content: [{ type: 'text', text }],
+        source: { kind: 'plugin', plugin },
+      },
+    }
+  }
+
+  describe('hasLiveInjection', () => {
+    it('matches a plugin-sourced user message with matching text', () => {
+      const events = [injectionEvent(TEXT)]
+      expect(hasLiveInjection(events, TEXT)).toBe(true)
+    })
+
+    it('ignores plugin events with mismatching plugin id', () => {
+      const events = [injectionEvent(TEXT, 'some-other-plugin')]
+      expect(hasLiveInjection(events, TEXT)).toBe(false)
+    })
+
+    it('ignores plugin events with mismatching text', () => {
+      const events = [injectionEvent('something-else')]
+      expect(hasLiveInjection(events, TEXT)).toBe(false)
+    })
+
+    it('ignores user-sourced messages (not plugin)', () => {
+      const events = [{
+        type: 'user/message',
+        data: { content: [{ type: 'text', text: TEXT }], source: { kind: 'user' } },
+      }]
+      expect(hasLiveInjection(events, TEXT)).toBe(false)
+    })
+
+    it('returns false on missing or non-array events', () => {
+      expect(hasLiveInjection(undefined, TEXT)).toBe(false)
+      // @ts-expect-error -- non-array inputs are defensive-tested
+      expect(hasLiveInjection('bogus', TEXT)).toBe(false)
+    })
+
+    it('survives malformed event entries without throwing', () => {
+      const events = [
+        { type: 'user/message' },
+        { type: 'user/message', data: null },
+        { type: 'user/message', data: { content: 'not-an-array' } },
+        { type: 'user/message', data: { content: [{ type: 'image' }] } },
+        injectionEvent(TEXT),
+      ]
+      expect(hasLiveInjection(events, TEXT)).toBe(true)
+    })
+  })
+
+  describe('shouldInject', () => {
+    it('injects when no previous record exists for the session', () => {
+      expect(shouldInject(undefined, TEXT, [injectionEvent(TEXT)])).toBe(true)
+    })
+
+    it('skips when text matches and events still hold the live injection', () => {
+      expect(shouldInject(TEXT, TEXT, [injectionEvent(TEXT)])).toBe(false)
+    })
+
+    it('re-injects when text matches but events no longer carry the injection', () => {
+      // compaction 可能把上一条注入裁掉了;仍要重新注入。
+      const events = [{ type: 'user/message', data: { content: [{ type: 'text', text: 'unrelated' }] } }]
+      expect(shouldInject(TEXT, TEXT, events)).toBe(true)
+    })
+
+    it('skips via Map dedup when events are absent', () => {
+      // 任何环境(events 缺失)都能抑制重复注入。
+      expect(shouldInject(TEXT, TEXT, undefined)).toBe(false)
+    })
+
+    it('skips via Map dedup when events are an empty array', () => {
+      expect(shouldInject(TEXT, TEXT, [])).toBe(false)
+    })
+
+    it('re-injects when text changes', () => {
+      const newText = TEXT + '\nappend'
+      expect(shouldInject(TEXT, newText, [injectionEvent(TEXT)])).toBe(true)
+    })
+  })
+
+  describe('recordInjection', () => {
+    it('stores the latest text under the session id', () => {
+      const map = new Map<string, { text: string }>()
+      recordInjection(map, 'sess-1', TEXT)
+      expect(map.get('sess-1')?.text).toBe(TEXT)
+    })
+
+    it('evicts the oldest session when over the 64-session cap (FIFO)', () => {
+      const map = new Map<string, { text: string }>()
+      for (let i = 0; i < 64; i += 1) recordInjection(map, `sess-${i}`, TEXT)
+      expect(map.size).toBe(64)
+      recordInjection(map, 'sess-65', TEXT)
+      expect(map.size).toBe(64)
+      // 最旧的 sess-0 被 FIFO 踢出。
+      expect(map.has('sess-0')).toBe(false)
+      expect(map.has('sess-65')).toBe(true)
+    })
+  })
+
+  describe('apply dedup end-to-end', () => {
+    async function runStep(
+      listeners: PreStepListener[],
+      agent: unknown,
+      decision: PreStepDecision = ENTER,
+    ): Promise<PreStepDecision> {
+      const listener = listeners[0]
+      expect(listener).toBeDefined()
+      return listener!({ agent, signal: new AbortController().signal }, () => Promise.resolve(decision))
+    }
+
+    it('skips a second pre-step when text and live injection are both present', async () => {
+      const { transport } = makeTransport(CARDS)
+      const { ctx, listeners } = makeCtx(
+        { 'sdk-transport': transport },
+        { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
+      )
+      apply(ctx)
+      const agent = makeAgent('/w')
+      // 第一次注入:events 是空(模拟刚启动,日志还没追上)→ 仍注入。
+      const first = await runStep(listeners, agent)
+      expect(first.kind).toBe('enter')
+      expect((first as { messages: unknown[] }).messages).toHaveLength(1)
+      // 把本次注入文本回灌到 events(模拟 agent-loop 已写入日志)。
+      const injectedText = ((((first as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
+      ;(agent as { session: { events?: unknown[] } }).session.events = [injectionEvent(injectedText)]
+      // 第二次 pre-step:内容 + 事件流都匹配 → 跳过。
+      const second = await runStep(listeners, agent)
+      expect(second).toBe(ENTER)
+    })
+
+    it('re-injects when the live injection is gone from events (compaction clip)', async () => {
+      const { transport } = makeTransport(CARDS)
+      const { ctx, listeners } = makeCtx(
+        { 'sdk-transport': transport },
+        { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
+      )
+      apply(ctx)
+      const agent = makeAgent('/w')
+      const first = await runStep(listeners, agent)
+      const injectedText = ((((first as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
+      // 事件流里留一条无关 user/message(模拟 compaction 把上次注入裁掉)。
+      ;(agent as { session: { events?: unknown[] } }).session.events = [{ type: 'user/message', data: { content: [{ type: 'text', text: 'unrelated' }] } }]
+      const second = await runStep(listeners, agent)
+      expect(second.kind).toBe('enter')
+      expect((second as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text).toBe(injectedText)
+    })
+
+    it('re-injects when the rendered memory text changes', async () => {
+      // 通过可变的 transport 响应模拟「卡片内容变化 → 渲染文本变化」:
+      // 同一 transport 在两次 request 间返回不同内容,plugin 必须重新注入。
+      const mutableResult = { current: { cards: [{ scope: 'user', content: 'A', char_count: 1, char_limit: 1375, entry_count: 1 }] } }
+      const request = vi.fn(async () => mutableResult.current)
+      const transport = { request } as unknown as JsonRpcTransportPeer
+      const { ctx, listeners } = makeCtx(
+        { 'sdk-transport': transport },
+        { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
+      )
+      apply(ctx)
+      const agent = makeAgent('/w')
+      // 第一次注入,events 回灌本次文本。
+      const first = await runStep(listeners, agent)
+      const firstText = ((((first as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
+      expect(firstText).toContain('A')
+      ;(agent as { session: { events?: unknown[] } }).session.events = [injectionEvent(firstText)]
+      // 渲染文本变化 → 必须重新注入。
+      mutableResult.current = { cards: [{ scope: 'user', content: 'B', char_count: 1, char_limit: 1375, entry_count: 1 }] }
+      const second = await runStep(listeners, agent)
+      expect(second.kind).toBe('enter')
+      const secondText = ((((second as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
+      expect(secondText).not.toBe(firstText)
+      expect(secondText).toContain('B')
+    })
+
+    it('dedupes by Map alone when session.events is absent', async () => {
+      const { transport } = makeTransport(CARDS)
+      const { ctx, listeners } = makeCtx(
+        { 'sdk-transport': transport },
+        { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
+      )
+      apply(ctx)
+      // 两次 pre-step,session.events 始终缺失(DSH web 会话就属此情形)。
+      const agent = makeAgent('/w')
+      const first = await runStep(listeners, agent)
+      expect((first as { messages: unknown[] }).messages).toHaveLength(1)
+      const second = await runStep(listeners, agent)
+      expect(second).toBe(ENTER)
+    })
   })
 })

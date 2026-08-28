@@ -7,6 +7,7 @@ import {
   apply,
   buildExtractPrompt,
   countMessages,
+  extractTurnTranscript,
   MEMORY_WRITE_METHOD,
   persistExtractedFacts,
   projectNameOf,
@@ -30,13 +31,35 @@ function streamingLlm(text: string) {
   return { stream }
 }
 
-function makeAgent(cwd?: string, events: ReadonlyArray<{ type: string }> = []) {
+function makeAgent(
+  cwd?: string,
+  events: ReadonlyArray<{ type: string; data?: unknown }> = [],
+) {
   return {
     session: {
       id: 'sess-1',
       header: cwd === undefined ? {} : { cwd },
       events,
     },
+  }
+}
+
+/** 构造一条 user/message 事件(默认 user 源,可被 plugin 源覆盖)。 */
+function userMsg(text: string, sourceKind: 'user' | 'plugin' = 'user') {
+  return {
+    type: 'user/message',
+    data: {
+      content: [{ type: 'text', text }],
+      source: { kind: sourceKind },
+    },
+  }
+}
+
+/** 构造一条 assistant/message 事件。 */
+function assistantMsg(text: string) {
+  return {
+    type: 'assistant/message',
+    data: { content: [{ type: 'text', text }] },
   }
 }
 
@@ -138,16 +161,29 @@ describe('countMessages', () => {
 
 describe('buildExtractPrompt', () => {
   it('mentions the workspace folder', () => {
-    const text = buildExtractPrompt(makeAgent('E:\\ws'))
+    const text = buildExtractPrompt(makeAgent('E:\\ws', [userMsg('hi'), assistantMsg('hello')]))
     expect(text).toContain('workspace: E:\\ws')
   })
   it('mentions the project name derived from the cwd basename', () => {
-    const text = buildExtractPrompt(makeAgent('E:\\ws\\starhub'))
+    const text = buildExtractPrompt(makeAgent('E:\\ws\\starhub', [userMsg('hi'), assistantMsg('hello')]))
     expect(text).toContain('project: starhub')
   })
-  it('marks blank sessions', () => {
-    expect(buildExtractPrompt(makeAgent())).toContain('workspace: <none>')
-    expect(buildExtractPrompt(makeAgent())).toContain('project: <none>')
+  it('returns null when no usable transcript exists (v0.102.0)', () => {
+    expect(buildExtractPrompt(makeAgent('E:\\ws'))).toBeNull()
+    expect(buildExtractPrompt(makeAgent())).toBeNull()
+  })
+  it('wraps the transcript inside <transcript>...</transcript>', () => {
+    const text = buildExtractPrompt(makeAgent('/x', [userMsg('hi'), assistantMsg('hello')]))
+    expect(text).toContain('<transcript>')
+    expect(text).toContain('user: hi')
+    expect(text).toContain('assistant: hello')
+    expect(text).toContain('</transcript>')
+    expect(text).toContain('Return JSON only, no prose.')
+  })
+  it('keeps cwd/project markers when transcript is available', () => {
+    const text = buildExtractPrompt(makeAgent('E:\\ws\\starhub', [userMsg('hi'), assistantMsg('hello')]))
+    expect(text).toContain('workspace: E:\\ws\\starhub')
+    expect(text).toContain('project: starhub')
   })
 })
 
@@ -213,13 +249,17 @@ describe('persistExtractedFacts', () => {
 })
 
 describe('runTurnReview', () => {
+  const transcriptAgent = () => makeAgent('/x', [
+    userMsg('hello there'),
+    assistantMsg('general kenobi'),
+    userMsg('any preferences?'),
+    assistantMsg('yes: 中文回复'),
+  ])
+
   it('skips when autoReview disabled', async () => {
     const llm = vi.fn()
     await runTurnReview({
-      agent: makeAgent('/x', [
-        { type: 'user/message' }, { type: 'assistant/message' },
-        { type: 'user/message' }, { type: 'assistant/message' },
-      ]),
+      agent: transcriptAgent(),
       signal: new AbortController().signal,
       transport: undefined,
       llm,
@@ -231,7 +271,7 @@ describe('runTurnReview', () => {
   it('skips when below message gate', async () => {
     const llm = vi.fn()
     await runTurnReview({
-      agent: makeAgent('/x', [{ type: 'user/message' }, { type: 'assistant/message' }]),
+      agent: makeAgent('/x', [userMsg('hi'), assistantMsg('hello')]),
       signal: new AbortController().signal,
       transport: undefined,
       llm,
@@ -245,10 +285,7 @@ describe('runTurnReview', () => {
     const controller = new AbortController()
     controller.abort()
     await runTurnReview({
-      agent: makeAgent('/x', [
-        { type: 'user/message' }, { type: 'assistant/message' },
-        { type: 'user/message' }, { type: 'assistant/message' },
-      ]),
+      agent: transcriptAgent(),
       signal: controller.signal,
       transport: undefined,
       llm,
@@ -260,10 +297,7 @@ describe('runTurnReview', () => {
   it('skips when llm extractor missing', async () => {
     const request = vi.fn()
     await runTurnReview({
-      agent: makeAgent('/x', [
-        { type: 'user/message' }, { type: 'assistant/message' },
-        { type: 'user/message' }, { type: 'assistant/message' },
-      ]),
+      agent: transcriptAgent(),
       signal: new AbortController().signal,
       transport: { request } as unknown as JsonRpcTransportPeer,
       llm: undefined,
@@ -275,10 +309,7 @@ describe('runTurnReview', () => {
   it('skips when the memory model route is missing (v0.94.0 hard gate)', async () => {
     const llm = vi.fn()
     await runTurnReview({
-      agent: makeAgent('/x', [
-        { type: 'user/message' }, { type: 'assistant/message' },
-        { type: 'user/message' }, { type: 'assistant/message' },
-      ]),
+      agent: transcriptAgent(),
       signal: new AbortController().signal,
       transport: undefined,
       llm,
@@ -291,10 +322,7 @@ describe('runTurnReview', () => {
     const request = vi.fn(async () => ({}))
     const llm = vi.fn(async () => ({ facts: [{ content: 'persisted' }] }))
     await runTurnReview({
-      agent: makeAgent('/x', [
-        { type: 'user/message' }, { type: 'assistant/message' },
-        { type: 'user/message' }, { type: 'assistant/message' },
-      ]),
+      agent: transcriptAgent(),
       signal: new AbortController().signal,
       transport: { request } as unknown as JsonRpcTransportPeer,
       llm,
@@ -303,14 +331,19 @@ describe('runTurnReview', () => {
     })
     expect(llm).toHaveBeenCalledOnce()
     expect(llm).toHaveBeenCalledWith(expect.objectContaining({ route: ROUTE }))
+    // 抽取 prompt 必须包含转录块。
+    const call = llm.mock.calls[0]![0] as { prompt: string }
+    expect(call.prompt).toContain('<transcript>')
+    expect(call.prompt).toContain('general kenobi')
     expect(request).toHaveBeenCalledWith(MEMORY_WRITE_METHOD, {
       scope: 'folder:/x', content: 'persisted',
     })
   })
   it('does not gate on absent session events (v0.98.x web-kernel fix)', async () => {
     // DSH web 会话的消息事件并不总进入 session.events(count 为 0/0);已触发
-    // turn-stopping 即代表本轮回合确有对话,因此计数缺失时应放行,由 LLM 自行判断。
-    const request = vi.fn(async () => ({}))
+    // turn-stopping 即代表本轮回合确有对话,因此计数缺失时应放行,但 v0.102.0
+    // 起在没有 transcript 时直接跳过 LLM,以避免「无米下锅凭空编造」。
+    const request = vi.fn()
     const llm = vi.fn(async () => ({ facts: [{ content: 'kept-absent' }] }))
     await runTurnReview({
       agent: makeAgent('/x', []), // events 为空,count = {user:0, assistant:0}
@@ -320,19 +353,34 @@ describe('runTurnReview', () => {
       autoReviewEnabled: true,
       route: ROUTE,
     })
-    expect(llm).toHaveBeenCalledOnce()
-    expect(request).toHaveBeenCalledWith(MEMORY_WRITE_METHOD, {
-      scope: 'folder:/x', content: 'kept-absent',
+    expect(llm).not.toHaveBeenCalled()
+    expect(request).not.toHaveBeenCalled()
+  })
+  it('does not call the LLM when the transcript is empty (v0.102.0)', async () => {
+    // 类型不完整的 user/message 事件 → 没有可读文本 → 转录为空 → 跳过 LLM。
+    const request = vi.fn()
+    const llm = vi.fn(async () => ({ facts: [{ content: 'should-not-happen' }] }))
+    await runTurnReview({
+      agent: makeAgent('/x', [
+        { type: 'user/message' },
+        { type: 'assistant/message' },
+        { type: 'user/message' },
+        { type: 'assistant/message' },
+      ]),
+      signal: new AbortController().signal,
+      transport: { request } as unknown as JsonRpcTransportPeer,
+      llm,
+      autoReviewEnabled: true,
+      route: ROUTE,
     })
+    expect(llm).not.toHaveBeenCalled()
+    expect(request).not.toHaveBeenCalled()
   })
   it('swallows LLM errors and does not write', async () => {
     const request = vi.fn()
     const llm = vi.fn(async () => { throw new Error('boom') })
     await runTurnReview({
-      agent: makeAgent('/x', [
-        { type: 'user/message' }, { type: 'assistant/message' },
-        { type: 'user/message' }, { type: 'assistant/message' },
-      ]),
+      agent: transcriptAgent(),
       signal: new AbortController().signal,
       transport: { request } as unknown as JsonRpcTransportPeer,
       llm,
@@ -347,10 +395,7 @@ describe('runTurnReview', () => {
       const request = vi.fn()
       const llm = vi.fn(() => new Promise<never>(() => {}))
       const reviewPromise = runTurnReview({
-        agent: makeAgent('/x', [
-          { type: 'user/message' }, { type: 'assistant/message' },
-          { type: 'user/message' }, { type: 'assistant/message' },
-        ]),
+        agent: transcriptAgent(),
         signal: new AbortController().signal,
         transport: { request } as unknown as JsonRpcTransportPeer,
         llm,
@@ -368,10 +413,7 @@ describe('runTurnReview', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const llm = vi.fn(async () => { throw 'plain failure' })
     await runTurnReview({
-      agent: makeAgent('/x', [
-        { type: 'user/message' }, { type: 'assistant/message' },
-        { type: 'user/message' }, { type: 'assistant/message' },
-      ]),
+      agent: transcriptAgent(),
       signal: new AbortController().signal,
       transport: undefined,
       llm,
@@ -455,8 +497,10 @@ describe('apply (turn-stopping hook)', () => {
   }
 
   const busyAgent = () => makeAgent('/x', [
-    { type: 'user/message' }, { type: 'assistant/message' },
-    { type: 'user/message' }, { type: 'assistant/message' },
+    userMsg('how do I configure SSH?'),
+    assistantMsg('set the host in settings/SSH then click connect'),
+    userMsg('and the jump host?'),
+    assistantMsg('add it under JumpHost then test connection'),
   ])
 
   it('runs the review pipeline when autoReview and the memory route are on', async () => {
@@ -533,5 +577,91 @@ describe('package shells', () => {
     // The companion is intentionally empty: no runtime invariant to assert.
     installers[0]!()
     expect(dispose).toBeTypeOf('function')
+  })
+})
+
+describe('extractTurnTranscript (v0.102.0 transcript-aware extraction)', () => {
+  it('returns empty string on missing events', () => {
+    expect(extractTurnTranscript(makeAgent('/x'))).toBe('')
+  })
+
+  it('returns empty string when events is not an array', () => {
+    const agent = makeAgent('/x')
+    ;(agent.session as { events: unknown }).events = 'bogus'
+    expect(extractTurnTranscript(agent)).toBe('')
+  })
+
+  it('emits user/assistant turns in chronological order', () => {
+    const out = extractTurnTranscript(makeAgent('/x', [
+      userMsg('hello'),
+      assistantMsg('hi there'),
+      userMsg('how are you?'),
+      assistantMsg('great, thanks'),
+    ]))
+    expect(out).toBe('user: hello\nassistant: hi there\nuser: how are you?\nassistant: great, thanks')
+  })
+
+  it('drops plugin-sourced user messages (memory-context injection echo)', () => {
+    // memory-context 注入的是 plugin 源 user/message,转录必须排除,避免「复读回音」。
+    const out = extractTurnTranscript(makeAgent('/x', [
+      userMsg('记忆一长段文本', 'plugin'),
+      userMsg('真实用户提问'),
+      assistantMsg('真实助手回答'),
+    ]))
+    expect(out).not.toContain('记忆一长段文本')
+    expect(out).toBe('user: 真实用户提问\nassistant: 真实助手回答')
+  })
+
+  it('truncates individual messages beyond maxCharsPerMessage with an ellipsis', () => {
+    const long = 'x'.repeat(2_000)
+    const out = extractTurnTranscript(makeAgent('/x', [userMsg(long)]), { maxCharsPerMessage: 10 })
+    expect(out.endsWith('…')).toBe(true)
+    expect(out.length).toBeLessThanOrEqual('user: '.length + 10)
+  })
+
+  it('caps to maxMessages and keeps chronological order from the tail', () => {
+    // 4 条消息,只取最近 2 条 → 应是 tail user + tail assistant。
+    const out = extractTurnTranscript(makeAgent('/x', [
+      userMsg('first user'),
+      assistantMsg('first assistant'),
+      userMsg('second user'),
+      assistantMsg('second assistant'),
+    ]), { maxMessages: 2 })
+    expect(out).toBe('user: second user\nassistant: second assistant')
+  })
+
+  it('respects total maxChars by dropping from the tail when over budget', () => {
+    const out = extractTurnTranscript(makeAgent('/x', [
+      userMsg('a'.repeat(60)),
+      assistantMsg('b'.repeat(60)),
+      userMsg('c'.repeat(60)),
+    ]), { maxChars: 80 })
+    // 第一条 user + label 就要 ~67 字符,再加第二条就超 80 → 只留第一条。
+    expect(out).toBe('user: ' + 'a'.repeat(60))
+  })
+
+  it('survives malformed events without throwing', () => {
+    const events = [
+      { type: 'tool/result' },
+      { type: 'user/message' }, // no data
+      { type: 'user/message', data: null },
+      { type: 'user/message', data: { content: 'oops' } }, // content 不是数组
+      { type: 'user/message', data: { content: [{ type: 'image' }] } }, // 块不是 text
+      userMsg('hi'),
+      assistantMsg('hello'),
+    ]
+    expect(extractTurnTranscript(makeAgent('/x', events))).toBe('user: hi\nassistant: hello')
+  })
+
+  it('treats maxMessages <= 0 as no extraction', () => {
+    expect(extractTurnTranscript(makeAgent('/x', [userMsg('x')]), { maxMessages: 0 })).toBe('')
+  })
+
+  it('skips empty-text messages entirely', () => {
+    const out = extractTurnTranscript(makeAgent('/x', [
+      userMsg(''),
+      assistantMsg('only one with text'),
+    ]))
+    expect(out).toBe('assistant: only one with text')
   })
 })
