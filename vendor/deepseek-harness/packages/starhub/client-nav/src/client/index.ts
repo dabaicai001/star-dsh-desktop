@@ -31,12 +31,12 @@ import type { ISessions, IWorkspaces } from '@deepseek-ai/dsh-client-runtime/cli
 import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import { createStarHubAssetSource } from './asset-source.ts'
+import { createStarHubAssetSource, DOCKER_REFERENCE_TAG, STARHUB_ASSET_SOURCE } from './asset-source.ts'
 import { createStarhubFileSource } from './file-source.ts'
 import { createAskAiHandler, createOpenAssetHandler, subscribeHostEvents } from './host-events.ts'
 import {
   createAiChatOverlay, createConnectionManagerOverlay, createStarHubAssets, createToolSelectionBridge,
-  createToolsPanelOverlay,
+  createToolsPanelOverlay, type RustAsset,
 } from './store.ts'
 import { createFileViewerBridge } from './file-viewer/state.ts'
 import { FileViewerOverlay } from './file-viewer/FileViewerOverlay.tsx'
@@ -44,7 +44,8 @@ import { StarHubConnCard } from './conn/StarHubConnCard.tsx'
 import { ExecDrawerButton } from './conn/ExecDrawerButton.tsx'
 import { createExecRecordsBridge, subscribeSshExecEvents } from './conn/exec-records.ts'
 import type { FileViewTarget } from './file-viewer/state.ts'
-import { assetWindowUrl, type StarHubAsset } from './sections.ts'
+import { assetSubtitle, assetWindowUrl, type StarHubAsset } from './sections.ts'
+import { bindAssetContext } from './tool-context.ts'
 import { focusWindowByKey, openNewPage, tauriInvoke } from './tauri.ts'
 import { ScreenshotButton } from './screenshot/ScreenshotButton.tsx'
 import { StarHubOverlay } from './StarHubOverlay.tsx'
@@ -235,6 +236,34 @@ export function apply(ctx: Context): void {
       if (binding === undefined) return
       const input = conversation.input.for(binding.ctx)
       input.setDraft(input.state.getSnapshot().draft + text)
+    },
+    // 资产行右键「引用到当前对话框」(v0.103.0):与 `@` 资产 source pick 同语义——
+    // 先轻绑定资产上下文(starhub-tool-context settings,会话级),再把引用 chip
+    // 插到草稿末尾(insertReference 走输入机,chip 由 starhub-asset codec 在提交时
+    // 序列化为模型可读文本);输入机忙碌(非 plain/claimed 或 draftRev CAS 失败)
+    // 时退化为纯文本追加,与文件引用一致。无当前会话时静默不动作(同文件引用)。
+    insertAssetReference: (asset: RustAsset) => {
+      const current = sessions.list.getSnapshot().current
+      if (current === undefined) return
+      const binding = sessions.binding(current)
+      if (binding === undefined) return
+      bindAssetContext(connection.api, selection.source.getSnapshot(), asset, current)
+      const sub = assetSubtitle(asset)
+      // Docker 资产带 [Docker] 删除保护标注(与 pick 候选/引用文本一致)。
+      const dockerMark = asset.type === 'docker' ? ` ${DOCKER_REFERENCE_TAG}` : ''
+      const label = `${sub === '' ? asset.name : `${asset.name} (${sub})`}${dockerMark}`
+      const input = conversation.input.for(binding.ctx)
+      const snapshot = input.state.getSnapshot()
+      const inserted = input.insertReference(
+        {
+          source: STARHUB_ASSET_SOURCE,
+          ref: asset.id,
+          label,
+          clipboardText: `@${asset.name}`,
+        },
+        { start: snapshot.draft.length, end: snapshot.draft.length, draftRev: snapshot.draftRev },
+      )
+      if (!inserted) input.setDraft(`${snapshot.draft}@${label} `)
     },
     hooks: {
       selection: selection.source,

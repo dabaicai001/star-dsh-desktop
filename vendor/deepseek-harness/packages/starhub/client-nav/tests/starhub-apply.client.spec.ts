@@ -48,7 +48,7 @@ interface RegisterOptions {
 }
 
 /** 最小 ctx 替身:slots.inject 立即触发 register,layout/get/effect 打桩。 */
-function fakeContext() {
+function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; connection?: unknown } = {}) {
   const register = vi.fn((_options: RegisterOptions, _component: unknown) => () => {})
   const inject = vi.fn((_name: string, fn: () => unknown) => fn())
   const registerSource = vi.fn((_src: unknown) => () => {})
@@ -61,11 +61,11 @@ function fakeContext() {
   const get = vi.fn((name: string) => {
     switch (name) {
       case 'connection':
-        return { api: { settings: { update: vi.fn(() => Promise.resolve({ result: { ok: true } })) } } }
+        return overrides.connection ?? { api: { settings: { update: vi.fn(() => Promise.resolve({ result: { ok: true } })) } } }
       case 'inputTriggers':
         return { registerSource }
       case 'sessions':
-        return {
+        return overrides.sessions ?? {
           list: {
             getSnapshot: () => ({ current: undefined, ids: [], byId: {} }),
             // exec-records 会话跟踪(apply 层)订阅 list;返回 disposer,与
@@ -77,7 +77,7 @@ function fakeContext() {
       case 'workspaces':
         return { list: { getSnapshot: () => ({ recentWorkspaceId: undefined }) } }
       case 'conversation':
-        return {
+        return overrides.conversation ?? {
           createDraftImages: vi.fn(() => []),
           releaseDraftImages: vi.fn(),
           input: { for: vi.fn(() => ({ setDraft: vi.fn(), addImages: vi.fn(() => true) })) },
@@ -244,6 +244,83 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     const face = provided.starhubFileViewer as { open?: unknown } | undefined
     expect(typeof face?.open).toBe('function')
+  })
+
+  // 资产右键「引用到当前对话框」(v0.103.0):apply 层注入面 insertAssetReference
+  // 的装配语义——轻绑定 settings 上下文 + 引用 chip 插入草稿末尾。
+  const refAsset = {
+    id: 'a1', type: 'ssh', name: 'prod-server', group_id: null,
+    config: { host: '10.0.0.5', username: 'deploy' },
+    key_id: null, tags: [], favorite: false, last_used_at: null, created_at: 0, updated_at: 0,
+  }
+
+  function referenceContext(inputStub: { insertReference: ReturnType<typeof vi.fn>; setDraft: ReturnType<typeof vi.fn> }) {
+    const settingsUpdate = vi.fn(() => Promise.resolve({ result: { ok: true } }))
+    const input = {
+      ...inputStub,
+      addImages: vi.fn(() => true),
+      state: { getSnapshot: () => ({ draft: '查一下 ', draftRev: 3 }) },
+    }
+    const harness = fakeContext({
+      connection: { api: { settings: { update: settingsUpdate } } },
+      sessions: {
+        list: {
+          getSnapshot: () => ({ current: 's1', ids: ['s1'], byId: {} }),
+          subscribe: () => () => {},
+        },
+        open: vi.fn(), clear: vi.fn(), binding: vi.fn(() => ({ ctx: {} })),
+      },
+      conversation: {
+        createDraftImages: vi.fn(() => []),
+        releaseDraftImages: vi.fn(),
+        input: { for: vi.fn(() => input) },
+      },
+    })
+    return { ...harness, settingsUpdate }
+  }
+
+  it('tools panel inject references an asset into the current conversation (chip + light binding)', () => {
+    const insertReference = vi.fn(() => true)
+    const setDraft = vi.fn()
+    const { ctx, register, settingsUpdate } = referenceContext({ insertReference, setDraft })
+    applyPlugin(ctx)
+    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    panel.insertAssetReference(refAsset)
+    // 轻绑定:starhub-tool-context settings patch 带会话 id 与资产(与 @ pick 同通道)
+    expect(settingsUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      ns: 'starhub-tool-context',
+      patch: expect.objectContaining({ sessionId: 's1', assetId: 'a1', assetName: 'prod-server' }),
+    }))
+    // chip 插在草稿末尾(span 从 draft 末起,带 pick 时刻 draftRev)
+    expect(insertReference).toHaveBeenCalledWith(
+      { source: STARHUB_ASSET_SOURCE, ref: 'a1', label: 'prod-server (deploy@10.0.0.5)', clipboardText: '@prod-server' },
+      { start: 4, end: 4, draftRev: 3 },
+    )
+    expect(setDraft).not.toHaveBeenCalled()
+  })
+
+  it('falls back to plain-text append when the input machine refuses the chip', () => {
+    const insertReference = vi.fn(() => false)
+    const setDraft = vi.fn()
+    const { ctx, register } = referenceContext({ insertReference, setDraft })
+    applyPlugin(ctx)
+    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    // Docker 资产:纯文本回退同样带 [Docker] 删除保护标注
+    panel.insertAssetReference({ ...refAsset, id: 'd1', type: 'docker', name: 'local-docker', config: {} })
+    expect(setDraft).toHaveBeenCalledWith('查一下 @local-docker [Docker] ')
+  })
+
+  it('no-ops the asset reference when no session is current', () => {
+    const settingsUpdate = vi.fn(() => Promise.resolve({ result: { ok: true } }))
+    const { ctx, register } = fakeContext({
+      connection: { api: { settings: { update: settingsUpdate } } },
+    })
+    applyPlugin(ctx)
+    // apply 启动期的记忆开关初始同步也会写一次 settings,先清掉再断言本路径不写
+    settingsUpdate.mockClear()
+    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    panel.insertAssetReference(refAsset)
+    expect(settingsUpdate).not.toHaveBeenCalled()
   })
 
   it('invariant registers the package name', async () => {

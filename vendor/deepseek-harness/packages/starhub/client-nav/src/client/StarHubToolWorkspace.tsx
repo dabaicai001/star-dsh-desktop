@@ -6,8 +6,9 @@
  * 浏览器预览新标签页)。行尾 hover 出编辑钮,经 openConnectionManager(asset)
  * 打开连接对话框的编辑模式;列头带资产数、刷新与「新建连接」入口。
  *
- * 资产行右键菜单(与任务 3 的 dsh 右键菜单同款 Menu 原语):打开 / 编辑 /
- * 复制连接信息(名称 + user@host 到剪贴板)/ 删除(删除复用连接对话框编辑
+ * 资产行右键菜单(与任务 3 的 dsh 右键菜单同款 Menu 原语):打开 / 引用到当前
+ * 对话框(插入 `@` 引用 chip 并轻绑定资产上下文,与 `@` pick 同语义)/
+ * 编辑 / 复制连接信息(名称 + user@host 到剪贴板)/ 删除(删除复用连接对话框编辑
  * 模式内的两步确认删除入口,不在菜单里直接执行破坏性操作)。
  *
  * 浏览器预览(无 Tauri IPC)时 refresh 落入 preview 态,这里展示预览提示
@@ -24,7 +25,7 @@ import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  IconCloseOutline16, IconCopyOutline16, IconEditOutline16, IconPlusOutline16,
+  IconCloseOutline16, IconCopyOutline16, IconEditOutline16, IconLinkOutline16, IconPlusOutline16,
   IconRefreshOutline14, IconRightUpOutline16, IconTrashOutline16,
   writeClipboard, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -57,6 +58,8 @@ export interface StarHubToolWorkspaceInjected {
   selectSubcategory: (key: string) => void
   /** 把引用文本追加进当前会话对话框输入框(文件树右键「引用文件/文件夹」)。 */
   insertFileReference: (text: string) => void
+  /** 把资产作为引用 chip 插入当前会话对话框并轻绑定资产上下文(资产行右键「引用到当前对话框」)。 */
+  insertAssetReference: (asset: RustAsset) => void
   hooks: {
     selection: SnapshotStore<ToolSelection>
     assets: SnapshotStore<StarHubAssetListState>
@@ -71,13 +74,15 @@ export type StarHubToolWorkspaceProps =
   & PropsRuntime<'shell.overlay'>
   & InjectFace<StarHubToolWorkspaceInjected>
 
-/** 单个资产行:主按钮(打开)+ 行尾编辑钮 + 右键菜单(打开/编辑/复制/删除)。 */
-function AssetRow({ asset, badgeLabel, active, onOpen, onEdit, onDelete }: {
+/** 单个资产行:主按钮(打开)+ 行尾编辑钮 + 右键菜单(打开/引用/编辑/复制/删除)。 */
+function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDelete }: {
   asset: RustAsset
   badgeLabel: string
   /** 当前打开(选中)的资产行高亮。 */
   active: boolean
   onOpen: () => void
+  /** 引用到当前对话框:插入 `@` 引用 chip 并轻绑定资产上下文。 */
+  onReference: () => void
   onEdit: () => void
   /** 删除走连接对话框编辑模式(内含两步确认的 delete_asset 入口)。 */
   onDelete: () => void
@@ -92,6 +97,7 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onEdit, onDelete }: {
   const subtitle = assetSubtitle(asset)
   const items: MenuEntry[] = [
     { id: 'open', label: '打开', icon: <IconRightUpOutline16 /> },
+    { id: 'reference', label: '引用到当前对话框', icon: <IconLinkOutline16 /> },
     { id: 'edit', label: '编辑', icon: <IconEditOutline16 /> },
     { id: 'copy', label: copied ? '已复制' : '复制连接信息', icon: <IconCopyOutline16 /> },
     { type: 'separator', id: 'asset-delete-separator' },
@@ -127,11 +133,12 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onEdit, onDelete }: {
         items={items}
         onSelect={(id) => {
           if (id === 'open') onOpen()
+          else if (id === 'reference') onReference()
           else if (id === 'edit') onEdit()
           else if (id === 'copy') {
             const text = subtitle === '' ? asset.name : `${asset.name} ${subtitle}`
             void writeClipboard(text).then((ok) => { if (ok) setCopied(true) })
-          /* v8 ignore start -- 菜单 id 枚举完备(open/edit/copy/delete),delete 条件的假分支不可达 */
+          /* v8 ignore start -- 菜单 id 枚举完备(open/reference/edit/copy/delete),delete 条件的假分支不可达 */
           } else if (id === 'delete') onDelete()
           /* v8 ignore stop */
         }}
@@ -162,7 +169,7 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onEdit, onDelete }: {
 export function StarHubToolWorkspace({
   openAsset, refreshAssets, openConnectionManager,
   closeFileTree, closeExecView, clearExecRecords, disconnectExecSession,
-  closeTools, selectSubcategory, insertFileReference,
+  closeTools, selectSubcategory, insertFileReference, insertAssetReference,
   useSelection, useAssets, useFileTree, useToolsPanel, useSessions, useExecRecords,
 }: StarHubToolWorkspaceProps) {
   // toolsPanel 开关:未提供该 hook(组件在旧测试桩/独立渲染下)时默认视为打开。
@@ -255,6 +262,7 @@ export function StarHubToolWorkspace({
                   openConnectionManager,
                   refreshAssets,
                   selectSubcategory,
+                  insertAssetReference,
                 },
               ))}
             </div>
@@ -279,6 +287,7 @@ function renderSubcategory(
     openConnectionManager: (asset?: RustAsset) => void
     refreshAssets: () => void
     selectSubcategory: (key: string) => void
+    insertAssetReference: (asset: RustAsset) => void
   },
 ) {
   const expanded = subcategory.key === activeSubcategory
@@ -328,6 +337,7 @@ function renderSubcategory(
                   badgeLabel={subcategory.label}
                   active={activeAssetId === asset.id}
                   onOpen={() =>{  handlers.openAsset(asset) }}
+                  onReference={() =>{  handlers.insertAssetReference(asset) }}
                   onEdit={() =>{  handlers.openConnectionManager(asset) }}
                   onDelete={() =>{  handlers.openConnectionManager(asset) }}
                 />

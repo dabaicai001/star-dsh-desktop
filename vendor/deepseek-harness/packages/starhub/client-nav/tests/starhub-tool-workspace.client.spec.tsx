@@ -61,6 +61,7 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
     closeTools: vi.fn(),
     selectSubcategory: vi.fn(),
     insertFileReference: vi.fn(),
+    insertAssetReference: vi.fn(),
     useAssets,
     useSelection,
     useFileTree,
@@ -273,6 +274,21 @@ describe('StarHubToolWorkspace', () => {
     fireEvent.click(screen.getByText('删除'))
     expect(props.openConnectionManager).toHaveBeenCalledTimes(1)
     expect(props.openConnectionManager).toHaveBeenCalledWith(sshAsset)
+  })
+
+  it('routes the row context-menu 引用到当前对话框 entry to insertAssetReference', () => {
+    const props = workspaceProps()
+    props.bridge.selectSubcategory('terminal')
+    props.assets.update((d) => { d.assets = [sshAsset] })
+    render(<StarHubToolWorkspace {...props} />)
+    fireEvent.contextMenu(screen.getByText('prod-server'))
+    fireEvent.click(screen.getByText('引用到当前对话框'))
+    // 引用经注入面回调分发(真正的 chip 插入 + 轻绑定在 apply 层)
+    expect(props.insertAssetReference).toHaveBeenCalledTimes(1)
+    expect(props.insertAssetReference).toHaveBeenCalledWith(sshAsset)
+    // 引用不触发打开操作页,也不进连接对话框
+    expect(props.bridge.source.getSnapshot().assetId).toBeNull()
+    expect(props.openConnectionManager).not.toHaveBeenCalled()
   })
 
   it('routes the row context-menu 打开 and 编辑 entries to their callbacks', () => {
