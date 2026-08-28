@@ -59,6 +59,51 @@ async fn trim_audit_log(pool: &sqlx::SqlitePool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
+/// 写入一条审计日志并自动修剪(内部共用实现)。
+///
+/// 两个调用方:Tauri 命令 [`audit_log`](前端 UI / 设置页操作审计)与
+/// `harness::tools` 的 AI 工具调用审计(category="ai")。写入成功后修剪
+/// 失败只告警不阻断。
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn insert_audit_log(
+    pool: &sqlx::SqlitePool,
+    category: &str,
+    action: &str,
+    target: Option<&str>,
+    detail: Option<Value>,
+    session_id: Option<&str>,
+    asset_id: Option<&str>,
+    success: bool,
+) -> Result<i64, String> {
+    let now = chrono::Utc::now().timestamp();
+    let detail_str = match &detail {
+        Some(v) => Some(serde_json::to_string(v).map_err(|e| e.to_string())?),
+        None => None,
+    };
+
+    let result = sqlx::query(
+        "INSERT INTO audit_log (timestamp, category, action, target, detail, session_id, asset_id, success) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(now)
+    .bind(category)
+    .bind(action)
+    .bind(target)
+    .bind(&detail_str)
+    .bind(session_id)
+    .bind(asset_id)
+    .bind(success as i32)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to insert audit log: {}", e))?;
+
+    // 写入成功后自动修剪,超出上限只删最早记录;修剪失败只告警不阻断
+    if let Err(e) = trim_audit_log(pool).await {
+        tracing::warn!("Failed to trim audit log: {}", e);
+    }
+
+    Ok(result.last_insert_rowid())
+}
+
 /// 记录一条审计日志
 #[tauri::command]
 pub async fn audit_log(
@@ -71,34 +116,17 @@ pub async fn audit_log(
     success: Option<bool>,
 ) -> Result<i64, String> {
     let pool = db::get_pool()?;
-    let now = chrono::Utc::now().timestamp();
-    let detail_str = match &detail {
-        Some(v) => Some(serde_json::to_string(v).map_err(|e| e.to_string())?),
-        None => None,
-    };
-    let success_val = success.unwrap_or(true) as i32;
-
-    let result = sqlx::query(
-        "INSERT INTO audit_log (timestamp, category, action, target, detail, session_id, asset_id, success) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    insert_audit_log(
+        pool,
+        &category,
+        &action,
+        target.as_deref(),
+        detail,
+        session_id.as_deref(),
+        asset_id.as_deref(),
+        success.unwrap_or(true),
     )
-    .bind(now)
-    .bind(&category)
-    .bind(&action)
-    .bind(&target)
-    .bind(&detail_str)
-    .bind(&session_id)
-    .bind(&asset_id)
-    .bind(success_val)
-    .execute(pool)
     .await
-    .map_err(|e| format!("Failed to insert audit log: {}", e))?;
-
-    // 写入成功后自动修剪,超出上限只删最早记录;修剪失败只告警不阻断
-    if let Err(e) = trim_audit_log(pool).await {
-        tracing::warn!("Failed to trim audit log: {}", e);
-    }
-
-    Ok(result.last_insert_rowid())
 }
 
 /// 查询审计日志(分页 + 类别筛选)
