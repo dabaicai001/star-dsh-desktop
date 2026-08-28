@@ -130,8 +130,9 @@ describe('redis service commands', () => {
 })
 
 describe('redisScanAccumulate', () => {
-  /** 造一个按页返回的假 SCAN:每页返回 [cursor, cursor+count),下一游标前移 count-overlap。 */
-  function fakeScanPages(totalKeys: number, perPage: number, overlap = 0) {
+  /** 造一个按页返回的假 SCAN:每页返回 [cursor, cursor+count),下一游标前移 count-overlap。
+   * 页大小取 redisScanAccumulate 传入的 count 提示;`overlap` > 0 时相邻页重复返回交叠键。 */
+  function fakeScanPages(totalKeys: number, overlap = 0) {
     let pages = 0
     const scan = async (cursor: number, _match?: string, count = 100): Promise<RedisScanResult> => {
       pages += 1
@@ -145,7 +146,7 @@ describe('redisScanAccumulate', () => {
   }
 
   it('loops until the cursor returns to 0, accumulating every key', async () => {
-    const { scan, pages } = fakeScanPages(1250, 500)
+    const { scan, pages } = fakeScanPages(1250)
     const result = await redisScanAccumulate(scan, 0, undefined, [], 10_000, 500)
     expect(result.keys).toHaveLength(1250)
     expect(result.keys[0]?.key).toBe('k0')
@@ -156,7 +157,7 @@ describe('redisScanAccumulate', () => {
   })
 
   it('stops at the batch limit and reports an incomplete state for 加载更多', async () => {
-    const { scan, pages } = fakeScanPages(2500, 500)
+    const { scan, pages } = fakeScanPages(2500)
     const result = await redisScanAccumulate(scan, 0, undefined, [], 1000, 500)
     expect(result.keys).toHaveLength(1000)
     expect(result.complete).toBe(false)
@@ -165,7 +166,7 @@ describe('redisScanAccumulate', () => {
   })
 
   it('continues from a stored cursor, keeping existing keys', async () => {
-    const { scan, pages } = fakeScanPages(1500, 500)
+    const { scan, pages } = fakeScanPages(1500)
     const first = await redisScanAccumulate(scan, 0, undefined, [], 500, 500)
     expect(first.keys).toHaveLength(500)
     expect(first.complete).toBe(false)
@@ -179,7 +180,7 @@ describe('redisScanAccumulate', () => {
 
   it('deduplicates overlapping pages when SCAN revisits keys', async () => {
     // 每页与上一页重叠 100 个 key(模拟 SCAN 偶发重复)。
-    const { scan } = fakeScanPages(1000, 500, 100)
+    const { scan } = fakeScanPages(1000, 100)
     const result = await redisScanAccumulate(scan, 0, undefined, [], 10_000, 500)
     expect(result.keys).toHaveLength(1000)
     expect(new Set(result.keys.map(k => k.key)).size).toBe(1000)

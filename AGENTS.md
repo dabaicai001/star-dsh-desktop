@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.101.1(在 v0.101.0 基础上修复前端测试桩缺口:starhub-apply 测试对 `sessions.list` 缺 `subscribe` 桩,与 v0.100.1 执行记录会话跟踪(apply 层 `index.ts` 调 `sessions.list.subscribe`)脱节,10 例报 `sessions.list.subscribe is not a function`;补桩后 client-nav 全量测试 880/880 通过,并同步 Redis 工作台 SCAN 指示器断言 + 新增跨 SCAN 游标页续传回归用例) |
+| 当前版本 | v0.101.2(在 v0.101.1 基础上修复 Release 构建失败:`build:lib:client` 的 `tsc -b tsconfig.client.json` 对含 tests 的 client 程序报 `TS6133: 'perPage' is declared but its value is never read`,来自 redis-service 测试新增的 `fakeScanPages` 辅助——移除未使用的 `perPage` 形参(页码大小实际由 SCAN 的 count 提示驱动),client 全量类型检查恢复 EXIT=0,测试行为不变(11 例仍通过)) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-28 (v0.101.1)*
+*最后更新: 2026-08-28 (v0.101.2)*

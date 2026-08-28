@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.101.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.101.2-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,6 +148,9 @@
 
 ## 当前版本
 
+### v0.101.2 (2026-08-28)
+- 🐛 修复 v0.101.1 Release 构建失败:`build:lib:client` 的 `tsc -b tsconfig.client.json`(包含 tests 的 client 程序)报 `TS6133: 'perPage' 未使用`,来自 redis-service 测试新增的 `fakeScanPages` 辅助——移除未使用的 `perPage` 形参,client 全量类型检查恢复 EXIT=0,测试行为不变(11 例仍通过)。
+
 ### v0.101.1 (2026-08-28)
 - 🐛 修复 v0.101.0 遗留的前端测试桩缺口:starhub-apply 测试对 `sessions.list` 缺 `subscribe` 桩,与 v0.100.1 执行记录会话跟踪脱节,10 例报 `sessions.list.subscribe is not a function`;补 `subscribe` 桩后全量 client-nav 测试通过(880/880)。
 - ✅ 同步 Redis 工作台 SCAN 加载指示器断言为新进度文本,并新增「跨 SCAN 游标页续传直到归零」回归用例。
@@ -157,9 +160,6 @@
 - ✨ MySQL 表数据网格新增 HubHex 风格 WHERE 条件栏:回车应用(服务端 raw filter)、Shift+回车换行、Esc/× 清除、切表重置;导出 Excel 透传当前 WHERE 条件。
 - ✨ Redis 键树改为连续 SCAN 分页加载:展开 db 时从 0 游标连续遍历直到归零(单批上限 10k keys),解决大 db 只展示首页约百条键的问题;加载中展示「已加载 X / 总数 Y」进度,超单批上限出「加载更多」按钮按游标续传;沿用 MATCH 搜索过滤,SCAN 重复键去重。
 - 🐛 移除表数据网格「快捷筛选」输入(其 `quickFilter` 参数未被 Tauri command 声明,属被静默丢弃的死路径)。
-
-### v0.100.3 (2026-08-28)
-- 🐛 Edit 卡「查看」打开壳内窗口仍显示单栏:点击 Edit/Write 卡的文件名链接时,外壳 `openFile` 对所有文件链接一律以 `kind:'read'`(单栏 textarea)打开壳内文件查看窗,导致文件变更对比的 `kind:'edit'` 左右双栏分支在真实 UI 里从未被触发——现在 `openFile` 契约允许变更行携带其应用后 hunks 作为可选第二参数,`FileMutationRow` 在点击时附上,dsh 壳以 `kind:'edit'`(表头「变更前 / 变更后」红绿对比)打开;无 diff(如报错/普通打开)仍走原 `read` 打开路径
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

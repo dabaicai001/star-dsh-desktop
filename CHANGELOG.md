@@ -14,6 +14,11 @@
 
 ---
 
+## [0.101.2] - 2026-08-28
+
+### 修复
+- 修复 v0.101.1 Release 构建失败(`build:lib:client` 的 `tsc -b tsconfig.client.json` 在包含 tests 的 client 程序里报 `TS6133: 'perPage' is declared but its value is never read`,来自 redis-service 测试新增的 `fakeScanPages(totalKeys, perPage, count)` 辅助——移除未使用的 `perPage` 形参(页码大小实际由 SCAN 传入的 count 提示驱动),client 全量类型检查恢复 EXIT=0;测试行为不变(11 例仍通过)
+
 ## [0.101.1] - 2026-08-28
 
 ### 修复
