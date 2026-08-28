@@ -426,6 +426,77 @@ fn install_resolves_vendor_dependencies_via_junction() {
     let _ = fs::remove_dir_all(app_data.parent().unwrap());
 }
 
+/// 打包布局(prod 闭包):无 vendor/ 源码树,peer 包与 @deepseek-ai 依赖
+/// 都从 node_modules/@deepseek-ai/ 直接命中(v0.101.x 前打包版装插件必报错)。
+#[test]
+fn install_works_against_packaged_runtime_layout() {
+    let root = std::env::temp_dir().join(format!(
+        "starhub-plugin-test-packaged-{}-{}",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let app_data = root.join("app-data");
+    let runtime_root = root.join("dsh-runtime");
+    // 假 prod 闭包:peer 包与依赖包只在 node_modules/@deepseek-ai/ 下
+    for pkg in PEER_PACKAGE_DIRS {
+        let dir = runtime_root.join("node_modules/@deepseek-ai").join(pkg);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("package.json"),
+            format!("{{\"name\": \"@deepseek-ai/{pkg}\"}}"),
+        )
+        .unwrap();
+    }
+    let dep_dir = runtime_root.join("node_modules/@deepseek-ai/dsh-client-runtime");
+    fs::create_dir_all(&dep_dir).unwrap();
+    fs::write(
+        dep_dir.join("package.json"),
+        r#"{"name": "@deepseek-ai/dsh-client-runtime"}"#,
+    )
+    .unwrap();
+
+    let paths = PluginPaths::at(app_data.clone());
+    paths.ensure_layout().unwrap();
+    let src = root.join("src-plugin");
+    write_minimal_plugin(&src, "dsh-tool-packaged");
+    fs::write(
+        src.join("package.json"),
+        r#"{"name": "dsh-tool-packaged", "main": "lib/index.js",
+            "dependencies": {"@deepseek-ai/dsh-client-runtime": "workspace:^"},
+            "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}}"#,
+    )
+    .unwrap();
+
+    let record = install_local_dir(&paths, &src, &runtime_root).expect("打包布局应可安装");
+    assert_eq!(record.id, "dsh-tool-packaged");
+    let nm = paths.plugins_dir().join("node_modules/@deepseek-ai");
+    assert!(nm.join("cordis").exists(), "peer junction 应来自 prod 闭包");
+    assert!(
+        nm.join("dsh-client-runtime").exists(),
+        "@deepseek-ai 依赖应直接命中闭包"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// 两种布局都定位不到任何 peer 包时,ensure_peer_links 必须报错(fail-loud)。
+#[test]
+fn ensure_peer_links_fails_when_no_layout_matches() {
+    let root = std::env::temp_dir().join(format!(
+        "starhub-plugin-test-nopeer-{}-{}",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let plugins_dir = root.join("plugins");
+    let runtime_root = root.join("empty-runtime");
+    fs::create_dir_all(&runtime_root).unwrap();
+    let error = ensure_peer_links(&plugins_dir, &runtime_root).expect_err("应报错");
+    assert!(
+        matches!(error, PluginError::PathResolve(_)),
+        "应为 PathResolve: {error}"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
 #[test]
 fn install_client_plugin_marks_dsh_client() {
     let (app_data, vendor_root) = test_roots("client");

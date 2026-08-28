@@ -8,7 +8,8 @@
 //!     ├── cordis.yml             # 用户插件 entry 清单(本模块独占生成,请勿手改)
 //!     ├── registry.json          # 来源/版本/启停/许可元数据
 //!     ├── market-cache.json      # 插件市场目录缓存(带抓取时间)
-//!     ├── node_modules/@deepseek-ai/{cordis,cosmokit,schemastery}  # → vendor 的 junction
+//!     ├── node_modules/@deepseek-ai/{cordis,cosmokit,schemastery}  # → runtime 的 junction
+//!     │   # (dev 指向 vendor/<pkg>;prod 闭包指向 node_modules/@deepseek-ai/<pkg>)
 //!     └── <id>/                  # 每个插件一个目录,含 package.json(dsh.bundle manifest)
 //! ```
 //!
@@ -49,8 +50,9 @@ const MAX_ZIP_BYTES: usize = 64 * 1024 * 1024;
 const MARKET_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// peer 依赖 junction:第三方 dsh 插件普遍 `import '@deepseek-ai/cordis'`,
-/// ESM 从 plugins/ 向上找不到 vendor 的 node_modules,需为这三个包建立
-/// 指向 vendor 对应目录的链接(目录名即包名后缀)。
+/// ESM 从 plugins/ 向上找不到 runtime 的 node_modules,需为这三个包建立
+/// 指向 runtime 对应目录的链接(dev:vendor/<pkg>;prod 闭包:
+/// node_modules/@deepseek-ai/<pkg>,目录名即包名后缀)。
 const PEER_PACKAGE_DIRS: [&str; 3] = ["cordis", "cosmokit", "schemastery"];
 
 #[derive(Debug, Error)]
@@ -392,23 +394,36 @@ fn save_registry(paths: &PluginPaths, registry: &Registry) -> Result<(), PluginE
 
 // ============================== peer junction ==============================
 
-/// 在 `<plugins>/node_modules/@deepseek-ai/` 下为 cordis / cosmokit / schemastery
-/// 建指向 vendor 对应目录的链接(Windows 用 `mklink /J` 目录 junction,不需要
-/// 管理员;失败回退整目录复制)。已存在(链接或目录)则跳过。
-fn ensure_peer_links(plugins_dir: &Path, vendor_root: &Path) -> Result<(), PluginError> {
-    let vendor_dir = vendor_root.join("vendor");
-    if !vendor_dir.is_dir() {
-        return Err(PluginError::PathResolve(format!(
-            "vendor 依赖目录不存在: {}",
-            vendor_dir.display()
-        )));
-    }
-    let link_base = plugins_dir.join("node_modules").join("@deepseek-ai");
-    for dir_name in PEER_PACKAGE_DIRS {
-        let target = vendor_dir.join(dir_name);
-        if !target.is_dir() {
-            continue;
+/// 按布局定位 peer 包目录:dev 在 `<runtime>/vendor/<dir>`(vendor 仓库树),
+/// prod 闭包在 `<runtime>/node_modules/@deepseek-ai/<dir>`(pnpm deploy 物化,
+/// 目录名即包名后缀)。
+fn peer_package_dir(vendor_root: &Path, dir_name: &str) -> Option<PathBuf> {
+    for candidate in [
+        vendor_root.join("vendor").join(dir_name),
+        vendor_root
+            .join("node_modules")
+            .join("@deepseek-ai")
+            .join(dir_name),
+    ] {
+        if candidate.is_dir() {
+            return Some(candidate);
         }
+    }
+    None
+}
+
+/// 在 `<plugins>/node_modules/@deepseek-ai/` 下为 cordis / cosmokit / schemastery
+/// 建指向 runtime 对应目录的链接(Windows 用 `mklink /J` 目录 junction,不需要
+/// 管理员;失败回退整目录复制)。已存在(链接或目录)则跳过。
+/// 三个 peer 一个都定位不到时报错(dev/prod 两种布局均缺失才是真异常)。
+fn ensure_peer_links(plugins_dir: &Path, vendor_root: &Path) -> Result<(), PluginError> {
+    let link_base = plugins_dir.join("node_modules").join("@deepseek-ai");
+    let mut resolved = 0usize;
+    for dir_name in PEER_PACKAGE_DIRS {
+        let Some(target) = peer_package_dir(vendor_root, dir_name) else {
+            continue;
+        };
+        resolved += 1;
         // 包名以目标 package.json 为准(防御上游改名),取最后一段作链接名
         let package_json = target.join("package.json");
         let package_name = fs::read_to_string(&package_json)
@@ -436,6 +451,12 @@ fn ensure_peer_links(plugins_dir: &Path, vendor_root: &Path) -> Result<(), Plugi
                 ))
             })?;
         }
+    }
+    if resolved == 0 {
+        return Err(PluginError::PathResolve(format!(
+            "peer 依赖目录缺失(vendor/<pkg> 与 node_modules/@deepseek-ai/<pkg> 均未找到): {}",
+            vendor_root.display()
+        )));
     }
     Ok(())
 }
@@ -492,10 +513,15 @@ fn copy_dir_all(src: &Path, dst: &Path, skip_node_modules: bool) -> std::io::Res
 
 // ============================== 依赖分层解析 ==============================
 
-/// 在 vendor 树内按包名定位一个 `@deepseek-ai/<name>` 包目录。
-/// 遍历 packages/*/* 与 vendor/* 的 package.json name 字段匹配;
+/// 在 runtime 树内按包名定位一个 `@deepseek-ai/<name>` 包目录。
+/// prod 闭包(hoisted node_modules,deploy 物化)按包名直接命中,免全树扫描;
+/// dev 布局遍历 packages/*/* 与 vendor/* 的 package.json name 字段匹配;
 /// vendor 树几百个包,单次安装线性扫描开销可接受(毫秒级)。
 fn find_vendor_package(vendor_root: &Path, spec: &str) -> Option<PathBuf> {
+    let direct = vendor_root.join("node_modules").join(spec);
+    if direct.is_dir() {
+        return Some(direct);
+    }
     let mut found = None;
     for base in ["packages", "vendor"] {
         let base_dir = vendor_root.join(base);
