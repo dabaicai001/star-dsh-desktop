@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.101.2(在 v0.101.1 基础上修复 Release 构建失败:`build:lib:client` 的 `tsc -b tsconfig.client.json` 对含 tests 的 client 程序报 `TS6133: 'perPage' is declared but its value is never read`,来自 redis-service 测试新增的 `fakeScanPages` 辅助——移除未使用的 `perPage` 形参(页码大小实际由 SCAN 的 count 提示驱动),client 全量类型检查恢复 EXIT=0,测试行为不变(11 例仍通过)) |
+| 当前版本 | v0.102.0(MySQL / ClickHouse 表数据网格 WHERE 栏新增**字段自动提示**:光标处输入标识符词时弹出列名建议(前缀匹配优先、子串次之,带列类型)与 SQL 关键字(AND/OR/NOT/LIKE/IN/IS/NULL/BETWEEN 等)建议;表达式开头或 AND/OR/NOT/左括号后的空白位直接提示全部列。↑/↓ 导航、Tab/Enter 接受、鼠标点击接受、Esc 先关弹层(再按才清空筛选)、失焦自动关闭;词输全后自动剔除完全匹配项,Enter 应用筛选的原语义不变。列清单复用切表时已有的 list_columns 调用,不增加额外请求) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-28 (v0.101.2)*
+*最后更新: 2026-08-28 (v0.102.0)*

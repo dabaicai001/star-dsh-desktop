@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.101.2-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.102.0-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,18 +148,22 @@
 
 ## 当前版本
 
+### v0.102.0 (2026-08-28)
+- ✨ MySQL / ClickHouse 表数据网格 WHERE 栏新增**字段自动提示**:光标处输入标识符词时弹出列名建议(前缀匹配优先、子串次之,带列类型)与 SQL 关键字(AND/OR/NOT/LIKE/IN/IS/NULL/BETWEEN 等)建议;表达式开头或 AND/OR/NOT/左括号后的空白位直接提示全部列。↑/↓ 导航、Tab/Enter 接受、鼠标点击接受、Esc 先关弹层(再按才清空筛选)、失焦自动关闭;词输全后自动剔除完全匹配项,Enter 应用筛选的原语义不变。列清单复用切表时已有的 list_columns 调用,不增加额外请求
+- ✨ 数据网格整体视觉优化:表名等宽高亮、操作按钮统一圆角描边风格、WHERE 输入框聚焦高亮、行 hover、错误条与筛选 badge 重排,全部沿用 DSW 设计 token
+- ✨ Redis 工作台重构:**key 搜索移到每个 db 节点下**(替代原全局失效搜索框),每个展开的 db 有独立搜索框(350ms 防抖,`*?[]` glob 字符透传,普通词自动包 `*term*` 模糊匹配),各 db 搜索词独立保存、切 db 互不干扰;侧栏加宽,key 行操作按钮 hover 显示,类型徽章按 string/hash/list/set/zset 着色
+- ✨ Redis 值编辑器重构:SET / ZSET / LIST / HASH 成员**可直接编辑保存**(改名先删旧成员再写新:SREM/ZREM/HDEL;list 新增行走 RPUSH,修复原空索引 LSET 死路);成员框新增**客户端筛选**输入(子串过滤,编辑仍映射原始行号);ZSET 分数列、LIST 索引列等按类型自适应占位
+- 🐛 修复 Redis **切换 key 不生效**:值编辑器经 openRef 在挂载时只捕获一次的死代码驱动,点击其他 key 不重新加载——改为受控 props(connId/redisKey/keyType)+ React key 重挂载,点哪个 key 加载哪个;顺带修复「重试」按钮点击后永不重新拉取(effect 不随重试重跑)的潜伏 bug
+- 🐛 修复 AI 助手记忆 `starhub-memory-context` **注入频率过高**:原实现在每一次模型请求(含工具调用的每步续传)都重复注入同一份记忆文本;改为按会话记录注入日志,仅首轮 / 记忆内容变化 / compaction 把注入挤出上下文后才重新注入
+- 🐛 修复 AI 助手记忆 `starhub-memory-sink` **自动摘要不触发/总结不对**:抽取 prompt 里根本没有携带对话内容(LLM 无料可蒸馏,产出空或臆造事实),且会把插件注入的记忆当用户输入形成回声室——新增 extractTurnTranscript 提取最近 8 条真实用户/助手消息(仅认 source.kind='user' 的用户消息,单条 800 / 总量 3000 字符截断),空转录直接跳过 LLM 调用,抽取系统提示禁止编造转录之外的事实
+- 🐛 修复 dsh 用户插件 peer 依赖 junction 仅支持 dev 布局:ensure_peer_links 原来只认 `<runtime>/vendor/<pkg>`,prod 闭包(pnpm deploy 物化到 node_modules/@deepseek-ai/<pkg>)下三个 peer 全部定位失败导致插件加载报错——改为按布局探测两种候选目录,均缺失才报错
+
 ### v0.101.2 (2026-08-28)
 - 🐛 修复 v0.101.1 Release 构建失败:`build:lib:client` 的 `tsc -b tsconfig.client.json`(包含 tests 的 client 程序)报 `TS6133: 'perPage' 未使用`,来自 redis-service 测试新增的 `fakeScanPages` 辅助——移除未使用的 `perPage` 形参,client 全量类型检查恢复 EXIT=0,测试行为不变(11 例仍通过)。
 
 ### v0.101.1 (2026-08-28)
 - 🐛 修复 v0.101.0 遗留的前端测试桩缺口:starhub-apply 测试对 `sessions.list` 缺 `subscribe` 桩,与 v0.100.1 执行记录会话跟踪脱节,10 例报 `sessions.list.subscribe is not a function`;补 `subscribe` 桩后全量 client-nav 测试通过(880/880)。
 - ✅ 同步 Redis 工作台 SCAN 加载指示器断言为新进度文本,并新增「跨 SCAN 游标页续传直到归零」回归用例。
-
-### v0.101.0 (2026-08-28)
-- ✨ MySQL 数据库工作台新增「新建查询」按钮:SQL 区改为多查询标签(「查询 1…N」),「＋ 新建查询」追加空白标签并激活,每个标签独立 SQL 草稿与执行结果,标签可关闭(至少保留一个)。
-- ✨ MySQL 表数据网格新增 HubHex 风格 WHERE 条件栏:回车应用(服务端 raw filter)、Shift+回车换行、Esc/× 清除、切表重置;导出 Excel 透传当前 WHERE 条件。
-- ✨ Redis 键树改为连续 SCAN 分页加载:展开 db 时从 0 游标连续遍历直到归零(单批上限 10k keys),解决大 db 只展示首页约百条键的问题;加载中展示「已加载 X / 总数 Y」进度,超单批上限出「加载更多」按钮按游标续传;沿用 MATCH 搜索过滤,SCAN 重复键去重。
-- 🐛 移除表数据网格「快捷筛选」输入(其 `quickFilter` 参数未被 Tauri command 声明,属被静默丢弃的死路径)。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

@@ -14,6 +14,20 @@
 
 ---
 
+## [0.102.0] - 2026-08-28
+
+### 新增
+- MySQL / ClickHouse 表数据网格 WHERE 栏新增**字段自动提示**:光标处输入标识符词时弹出列名建议(前缀匹配优先、子串次之,带列类型)与 SQL 关键字(AND/OR/NOT/LIKE/IN/IS/NULL/BETWEEN 等)建议;表达式开头或 AND/OR/NOT/左括号后的空白位直接提示全部列。↑/↓ 导航、Tab/Enter 接受、鼠标点击接受、Esc 先关弹层(再按才清空筛选)、失焦自动关闭;词输全后自动剔除完全匹配项,Enter 应用筛选的原语义不变。列清单复用切表时已有的 list_columns 调用,不增加额外请求
+- 数据网格整体视觉优化:表名等宽高亮、操作按钮统一圆角描边风格、WHERE 输入框聚焦高亮、行 hover、错误条与筛选 badge 重排,全部沿用 DSW 设计 token
+- Redis 工作台重构:**key 搜索移到每个 db 节点下**(替代原全局失效搜索框),每个展开的 db 有独立搜索框(350ms 防抖,`*?[]` glob 字符透传,普通词自动包 `*term*` 模糊匹配),各 db 搜索词独立保存、切 db 互不干扰;侧栏加宽,key 行操作按钮 hover 显示,类型徽章按 string/hash/list/set/zset 着色
+- Redis 值编辑器重构:SET / ZSET / LIST / HASH 成员**可直接编辑保存**(改名先删旧成员再写新:SREM/ZREM/HDEL;list 新增行走 RPUSH,修复原空索引 LSET 死路);成员框新增**客户端筛选**输入(子串过滤,编辑仍映射原始行号);ZSET 分数列、LIST 索引列等按类型自适应占位
+
+### 修复
+- 修复 Redis **切换 key 不生效**:值编辑器经 openRef 在挂载时只捕获一次的死代码驱动,点击其他 key 不重新加载——改为受控 props(connId/redisKey/keyType)+ React key 重挂载,点哪个 key 加载哪个;顺带修复「重试」按钮点击后永不重新拉取(effect 不随重试重跑)的潜伏 bug
+- 修复 AI 助手记忆 `starhub-memory-context` **注入频率过高**:原实现在每一次模型请求(含工具调用的每步续传)都重复注入同一份记忆文本;改为按会话记录注入日志,仅首轮 / 记忆内容变化 / compaction 把注入挤出上下文后才重新注入
+- 修复 AI 助手记忆 `starhub-memory-sink` **自动摘要不触发/总结不对**:抽取 prompt 里根本没有携带对话内容(LLM 无料可蒸馏,产出空或臆造事实),且会把插件注入的记忆当用户输入形成回声室——新增 extractTurnTranscript 提取最近 8 条真实用户/助手消息(仅认 source.kind='user' 的用户消息,单条 800 / 总量 3000 字符截断),空转录直接跳过 LLM 调用,抽取系统提示禁止编造转录之外的事实
+- 修复 dsh 用户插件 peer 依赖 junction 仅支持 dev 布局:ensure_peer_links 原来只认 `<runtime>/vendor/<pkg>`,prod 闭包(pnpm deploy 物化到 node_modules/@deepseek-ai/<pkg>)下三个 peer 全部定位失败导致插件加载报错——改为按布局探测两种候选目录,均缺失才报错
+
 ## [0.101.2] - 2026-08-28
 
 ### 修复
