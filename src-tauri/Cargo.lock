@@ -6638,7 +6638,6 @@ dependencies = [
  "chrono",
  "futures",
  "glob-match",
- "gtk",
  "image",
  "keyring-core",
  "linux-keyutils-keyring-store",

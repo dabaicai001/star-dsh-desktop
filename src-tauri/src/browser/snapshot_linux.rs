@@ -11,7 +11,7 @@
 use std::time::Duration;
 use tauri::WebviewWindow;
 use tokio::sync::oneshot;
-use webkit2gtk::prelude::WebViewExt;
+use webkit2gtk::WebViewExt;
 use webkit2gtk::{SnapshotOptions, SnapshotRegion};
 
 /// 快照完成回调超时(页面渲染进程卡死时兜底)。
