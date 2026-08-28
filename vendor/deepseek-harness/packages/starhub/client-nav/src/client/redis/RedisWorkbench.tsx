@@ -13,6 +13,15 @@
  * 客户端当前 db,键操作(打开/重命名/删除/清空/新建)与 CLI(db_redis_execute)
  * 都作用在展开的库上。已加载的键按 db 缓存,收起再展开不重复请求(部分加载的
  * 缓存命中时自动续传一批)。
+ *
+ * v0.102.0:
+ * - **搜索移到每个展开的 db 区块内**(per-db 搜索词,互不影响),输入经 350ms
+ *   防抖自动重扫该 db(旧版全局搜索框只写 state、从不触发重扫,等于失效);
+ *   不含 glob 字符(* ? [ ])的词自动包成 `*词*` 子串匹配,含 glob 字符原样透传。
+ * - **修复不能切换 key**:旧版经 openRef 回调打开,openRef 只在编辑器挂载
+ *   effect 里捕获一次,openValue 从 key A 换成 key B 时编辑器不重挂载、永远
+ *   停在 A;现在 RedisValueEditor 改为受控 props(redisKey/keyType)并以
+ *   React key 按 key 重挂载。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RustAsset } from '../store.ts'
@@ -26,6 +35,20 @@ const DB_INDEXES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 
 /** 单批连续 SCAN 的 key 总量上限:超过则停在 batch 末尾,由「加载更多」续传。 */
 const SCAN_BATCH_LIMIT = 10_000
+
+/** 搜索输入防抖:停敲 350ms 后自动按新匹配重扫展开的 db。 */
+const SEARCH_DEBOUNCE_MS = 350
+
+/**
+ * 搜索词 → SCAN MATCH 模式:含 glob 字符(* ? [ ])原样透传(用户自定义模式),
+ * 否则包成 `*词*` 子串匹配(符合「搜索」直觉,避免裸词只匹配完整 key)。
+ * @param term - 用户输入(已 trim)。
+ * @returns MATCH 模式;空串表示不过滤。
+ */
+export function toScanMatch(term: string): string {
+  if (term === '') return ''
+  return /[*?[\]]/.test(term) ? term : `*${term}*`
+}
 
 /** 单个 db 的懒加载缓存:展开时取一次,收起保留。 */
 interface DbLoadable {
@@ -131,7 +154,8 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
   const [activeDb, setActiveDb] = useState(0)
   /** 各 db 懒加载缓存(键 + 总数 + 搜索匹配)。 */
   const [dbLists, setDbLists] = useState<ReadonlyMap<number, DbLoadable>>(new Map())
-  const [search, setSearch] = useState('')
+  /** per-db 搜索词(v0.102.0:搜索框移入各 db 区块,词按 db 隔离持久)。 */
+  const [searchDrafts, setSearchDrafts] = useState<ReadonlyMap<number, string>>(new Map())
   const [cliOpen, setCliOpen] = useState(false)
   const [cliInput, setCliInput] = useState('')
   const [cliOutput, setCliOutput] = useState<string>('')
@@ -171,9 +195,14 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     }
   }, [notify, patchDbList])
 
-  /** 连续加载某个 db 的键(从 0 游标 SCAN 到归零/单批上限;带当前搜索过滤),写入该 db 缓存。 */
-  const loadKeysForDb = useCallback(async (connId: string, db: number) => {
-    const match = search.trim()
+  /** 取/写某个 db 的搜索词(per-db 隔离)。 */
+  const searchFor = useCallback((db: number) => searchDrafts.get(db) ?? '', [searchDrafts])
+  const setSearchFor = useCallback((db: number, text: string) => {
+    setSearchDrafts(prev => new Map(prev).set(db, text))
+  }, [])
+
+  /** 连续加载某个 db 的键(从 0 游标 SCAN 到归零/单批上限;按 match 过滤),写入该 db 缓存。 */
+  const loadKeysForDb = useCallback(async (connId: string, db: number, match: string) => {
     patchDbList(db, { loading: true, error: null })
     try {
       const { keys, cursor, complete } = await redisScanAccumulate(
@@ -184,7 +213,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     } catch (e: unknown) {
       patchDbList(db, { loading: false, error: e instanceof Error ? e.message : String(e) })
     }
-  }, [search, patchDbList])
+  }, [patchDbList])
 
   /**
    * 从缓存游标续传某个 db 的剩余键(「加载更多」/ 部分缓存展开时自动续传一批):
@@ -263,7 +292,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
       }
     }
     const cached = dbLists.get(db)
-    const match = search.trim()
+    const match = toScanMatch(searchFor(db).trim())
     // 缓存命中:键 + 搜索匹配一致时不再从头请求。完整缓存直接复用;部分缓存
     // (上次停在单批上限)自动从游标续传一批,避免大 db 每次展开都重扫。
     if (cached !== undefined && cached.match === match) {
@@ -271,23 +300,37 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
       void loadMoreKeysForDb(connId, db)
       return
     }
-    await Promise.all([refreshSizeForDb(connId, db), loadKeysForDb(connId, db)])
+    await Promise.all([refreshSizeForDb(connId, db), loadKeysForDb(connId, db, match)])
   }
 
-  /** 重新加载某个 db 的键与总数(错误重试 / 刷新钮共用)。 */
+  /** 重新加载某个 db 的键与总数(错误重试 / 刷新钮共用),沿用该 db 当前搜索词。 */
   const reloadDb = async (db: number) => {
     const connId = connRef.current
     /* v8 ignore next -- 仅连接建立后触发 */
     if (connId === null) return
-    await Promise.all([refreshSizeForDb(connId, db), loadKeysForDb(connId, db)])
+    await Promise.all([refreshSizeForDb(connId, db), loadKeysForDb(connId, db, toScanMatch(searchFor(db).trim()))])
   }
 
   /** 重新加载当前展开 db(键操作 / CLI / 清空后的数据同步)。 */
   const refreshExpanded = async (connId: string) => {
     /* v8 ignore next -- 调用方全部保证展开态:键行/刷新钮仅在展开时可用 */
     if (expandedDb === null) return
-    await Promise.all([refreshSizeForDb(connId, expandedDb), loadKeysForDb(connId, expandedDb)])
+    await Promise.all([refreshSizeForDb(connId, expandedDb), loadKeysForDb(connId, expandedDb, toScanMatch(searchFor(expandedDb).trim()))])
   }
+
+  // 搜索词防抖:展开 db 的搜索词与其缓存匹配串不一致时,停敲 350ms 自动重扫;
+  // toggleDb 的首次加载(entry 未建)不在此处触发,避免双请求。
+  const expandedSearch = expandedDb === null ? '' : searchFor(expandedDb)
+  useEffect(() => {
+    if (expandedDb === null) return
+    const connId = connRef.current
+    if (connId === null) return
+    const entry = dbLists.get(expandedDb)
+    const desired = toScanMatch(expandedSearch.trim())
+    if (entry === undefined || entry.match === desired) return
+    const timer = window.setTimeout(() =>{  void loadKeysForDb(connId, expandedDb, desired) }, SEARCH_DEBOUNCE_MS)
+    return () =>{  window.clearTimeout(timer) }
+  }, [expandedDb, expandedSearch, dbLists, loadKeysForDb])
 
   /** 键变更操作后同步:展开时刷新其键,收起时只刷新当前 db 总数。 */
   const syncAfterMutation = async (connId: string) => {
@@ -395,10 +438,10 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
   const keyTree = useMemo(() => buildKeyTree(expandedEntry?.keys ?? []), [expandedEntry?.keys])
   const expandedFolders = useMemo(() => {
     // 搜索态强制全展开,让过滤结果直接可见;否则默认全收起,只显示已点开的文件夹。
-    if (search.trim() !== '') return allFolderPaths(keyTree)
+    if (expandedSearch.trim() !== '') return allFolderPaths(keyTree)
     if (expandedDb === null) return EMPTY_FOLDER_PATHS
     return expandedKeys.get(expandedDb) ?? EMPTY_FOLDER_PATHS
-  }, [keyTree, expandedKeys, expandedDb, search])
+  }, [keyTree, expandedKeys, expandedDb, expandedSearch])
 
   const id = connRef.current
   const shownDb = expandedDb ?? activeDb
@@ -428,8 +471,6 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
           <div className={css.body}>
             <div className={css.side}>
               <div className={css.toolbar}>
-                <input className={css.searchInput} placeholder="搜索 key…" value={search} disabled={!connected}
-                  onChange={(e) =>{  setSearch(e.target.value) }} aria-label="搜索 key" />
                 <button type="button" className={css.iconButton} title="刷新" aria-label="刷新"
                   disabled={!connected || expandedDb === null || expandedEntry?.loading === true}
                   /* v8 ignore next -- 刷新钮在未展开/未连接时 disabled,守卫分支不可达 */
@@ -438,8 +479,9 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                   disabled={!connected} onClick={() => void flushDb()}>⌀</button>
                 <button type="button" className={css.iconButton} title="CLI" aria-label="CLI"
                   disabled={!connected} onClick={() =>{  setCliOpen(v => !v) }}>⌨</button>
+                <span className={css.toolbarSpacer} />
                 <button type="button" className={css.primaryButton} title="新建 Key" aria-label="新建 Key"
-                  disabled={!connected} onClick={() =>{  setNewKeyOpen(true) }}>＋</button>
+                  disabled={!connected} onClick={() =>{  setNewKeyOpen(true) }}>＋ 新建 Key</button>
               </div>
 
               <div className={css.dbTree} role="tree" aria-label="DB 列表">
@@ -447,7 +489,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                   const open = expandedDb === db
                   const entry = dbLists.get(db)
                   return (
-                    <div className={css.dbNode} key={db} role="treeitem">
+                    <div className={`${css.dbNode} ${open ? css.dbNodeOpen : ''}`} key={db} role="treeitem">
                       <div className={css.dbRow}>
                         <button type="button" className={css.keyMain} onClick={() =>{  void toggleDb(db) }}
                           aria-expanded={open} aria-label={`数据库 db${db}`}>
@@ -458,6 +500,20 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                       </div>
                       {open && (
                         <div className={css.dbChildren}>
+                          <div className={css.dbSearchRow}>
+                            <input
+                              className={css.dbSearch}
+                              placeholder={`搜索 db${db} 的 key…`}
+                              aria-label="搜索 key"
+                              spellCheck={false}
+                              value={searchFor(db)}
+                              onChange={(e) =>{  setSearchFor(db, e.target.value) }}
+                            />
+                            {searchFor(db) !== '' && (
+                              <button type="button" className={css.dbSearchClear} aria-label="清除搜索" title="清除搜索"
+                                onClick={() =>{  setSearchFor(db, '') }}>×</button>
+                            )}
+                          </div>
                           {entry === undefined && <div className={css.dbStatus}>加载键…</div>}
                           {entry !== undefined && entry.loading && (
                             <div className={css.dbStatus} data-testid="redis-scan-progress">
@@ -524,11 +580,16 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
               {cliOutput !== '' && <pre className={css.cliOutput}>{cliOutput}</pre>}
               {openValue !== null && id !== null ? (
                 <RedisValueEditor
+                  key={openValue.key}
                   connId={id}
-                  openRef={(open) => { open(openValue.key, openValue.type) }}
+                  redisKey={openValue.key}
+                  keyType={openValue.type}
                 />
               ) : (
-                <div className={css.placeholder}>选择一个 key 查看 / 编辑</div>
+                <div className={css.placeholder}>
+                  <div className={css.placeholderTitle}>未选择 Key</div>
+                  <div className={css.placeholderDesc}>在左侧展开一个 db,点击 key 查看 / 编辑</div>
+                </div>
               )}
             </div>
           </div>

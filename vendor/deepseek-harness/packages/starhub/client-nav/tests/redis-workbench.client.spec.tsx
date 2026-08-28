@@ -111,7 +111,7 @@ describe('RedisWorkbench connect & DB tree', () => {
       expect(screen.getByTestId('redis-head-badge').textContent).toBe('db0')
       expect(screen.getByTestId('redis-head-count').textContent).toBe('0 keys')
       expect((screen.getByLabelText('刷新') as HTMLButtonElement).disabled).toBe(true)
-      expect(screen.getByText('选择一个 key 查看 / 编辑')).toBeTruthy()
+      expect(screen.getByText('未选择 Key')).toBeTruthy()
     } finally {
       restore()
     }
@@ -215,7 +215,7 @@ describe('RedisWorkbench connect & DB tree', () => {
       await waitFor(() =>{  expect(screen.queryByTitle('user:1')).toBeNull() })
       expect(screen.getByRole('button', { name: '数据库 db0' }).getAttribute('aria-expanded')).toBe('false')
       expect(screen.getByTestId('redis-head-badge').textContent).toBe('db0')
-      expect(screen.getByText('选择一个 key 查看 / 编辑')).toBeTruthy()
+      expect(screen.getByText('未选择 Key')).toBeTruthy()
       // 缓存命中:再展开不重复请求,键立即回来。
       const scansBefore = invoke.mock.calls.filter(c => c[0] === 'db_redis_scan').length
       clickDb(0)
@@ -362,25 +362,58 @@ describe('RedisWorkbench lazy DB tree interactions', () => {
     }
   })
 
-  it('re-applies the search on re-expand (cache mismatch) and on refresh', async () => {
+  it('searches keys per-db with debounce: glob passthrough, substring wrap, forced folder expansion, clear', async () => {
     const invoke = installTauri()
     const restore = stubInvoke(invoke)
     try {
       renderWorkbench()
       await expandDb0WithKeys()
-      // 收起后再设搜索,重展开:缓存匹配串不一致 → 按新搜索重新取。
-      clickDb(0)
-      await waitFor(() =>{  expect(screen.queryByTitle('user:1')).toBeNull() })
-      fireEvent.change(screen.getByLabelText('搜索 key'), { target: { value: 'user:*' } })
-      clickDb(0)
+      // 搜索框在展开的 db 区块内(v0.102.0 起 per-db)。
+      const searchBox = screen.getByLabelText('搜索 key')
+      const scansBefore = invoke.mock.calls.filter(c => c[0] === 'db_redis_scan').length
+      // 含 glob 字符的词原样透传为 MATCH 模式。
+      fireEvent.change(searchBox, { target: { value: 'user:*' } })
       await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_scan', expect.objectContaining({ connId: 'c1', matchPattern: 'user:*' })) })
-      await waitFor(() =>{  expect(screen.getByTitle('user:1')).toBeTruthy() })
-      // 搜索态强制文件夹全展开。
-      expect((screen.getByLabelText('文件夹 user')).getAttribute('aria-expanded')).toBe('true')
-      // 刷新按钮按当前搜索重扫。
+      expect(invoke.mock.calls.filter(c => c[0] === 'db_redis_scan').length).toBeGreaterThan(scansBefore)
+      // 搜索态强制文件夹全展开(结果直接可见)。
+      await waitFor(() =>{  expect((screen.getByLabelText('文件夹 user')).getAttribute('aria-expanded')).toBe('true') })
+      // 不含 glob 字符的词自动包成子串匹配 *词*。
+      fireEvent.change(searchBox, { target: { value: 'user' } })
+      await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_scan', expect.objectContaining({ connId: 'c1', matchPattern: '*user*' })) })
+      // 清除按钮清空搜索词 → 触发无 MATCH 的全量重扫。
+      const beforeClear = invoke.mock.calls.filter(c => c[0] === 'db_redis_scan').length
+      fireEvent.click(screen.getByLabelText('清除搜索'))
+      await waitFor(() =>{  expect((searchBox as HTMLInputElement).value).toBe('') })
+      await waitFor(() =>{  expect(invoke.mock.calls.filter(c => c[0] === 'db_redis_scan').length).toBeGreaterThan(beforeClear) })
+      const lastScan = invoke.mock.calls.filter(c => c[0] === 'db_redis_scan').at(-1)
+      expect((lastScan?.[1] as Record<string, unknown>).matchPattern).toBeUndefined()
+      // 刷新按钮按当前(空)搜索重扫。
       const before = invoke.mock.calls.filter(c => c[0] === 'db_redis_scan').length
       fireEvent.click(screen.getByLabelText('刷新'))
       await waitFor(() =>{  expect(invoke.mock.calls.filter(c => c[0] === 'db_redis_scan').length).toBeGreaterThan(before) })
+    } finally {
+      restore()
+    }
+  })
+
+  it('keeps per-db search terms isolated when switching DBs', async () => {
+    const invoke = installTauri()
+    const restore = stubInvoke(invoke)
+    try {
+      renderWorkbench()
+      await expandDb0WithKeys()
+      fireEvent.change(screen.getByLabelText('搜索 key'), { target: { value: 'user' } })
+      await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_scan', expect.objectContaining({ matchPattern: '*user*' })) })
+      // 切到 db3:其搜索词独立(空),不按 db0 的词过滤。
+      clickDb(3)
+      await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_select', { connId: 'c1', db: 3 }) })
+      await waitFor(() =>{  expect((screen.getByLabelText('搜索 key') as HTMLInputElement).value).toBe('') })
+      // 切回 db0:搜索词恢复,缓存匹配串一致 → 不重复请求。
+      const scansBefore = invoke.mock.calls.filter(c => c[0] === 'db_redis_scan').length
+      clickDb(0)
+      await waitFor(() =>{  expect((screen.getByLabelText('搜索 key') as HTMLInputElement).value).toBe('user') })
+      await new Promise(res => setTimeout(res, 450))
+      expect(invoke.mock.calls.filter(c => c[0] === 'db_redis_scan').length).toBe(scansBefore)
     } finally {
       restore()
     }
@@ -448,11 +481,11 @@ describe('RedisWorkbench actions', () => {
     try {
       renderWorkbench()
       await expandDb0WithKeys()
-      expect(screen.getByText('选择一个 key 查看 / 编辑')).toBeTruthy()
+      expect(screen.getByText('未选择 Key')).toBeTruthy()
       fireEvent.click(screen.getByTitle('user:1'))
       // RedisValueEditor 通过 openRef 立即打开该 key → get_value
       await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_get_value', { connId: 'c1', key: 'user:1' }) })
-      expect(screen.queryByText('选择一个 key 查看 / 编辑')).toBeNull()
+      expect(screen.queryByText('未选择 Key')).toBeNull()
     } finally {
       restore()
     }
@@ -476,7 +509,7 @@ describe('RedisWorkbench actions', () => {
       fireEvent.click(screen.getByLabelText('删除 user:1'))
       await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_del', { connId: 'c1', keys: ['user:1'] }) })
       await waitFor(() =>{  expect(screen.getByText('已删除:user:1')).toBeTruthy() })
-      await waitFor(() =>{  expect(screen.getByText('选择一个 key 查看 / 编辑')).toBeTruthy() })
+      await waitFor(() =>{  expect(screen.getByText('未选择 Key')).toBeTruthy() })
     } finally {
       restore()
       confirmSpy.mockRestore()
