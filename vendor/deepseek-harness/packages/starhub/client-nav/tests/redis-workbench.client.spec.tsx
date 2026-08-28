@@ -400,8 +400,8 @@ describe('RedisWorkbench lazy DB tree interactions', () => {
       renderWorkbench()
       await waitConnected()
       clickDb(0)
-      // SCAN 挂起:加载中提示可见,刷新钮禁用。
-      await waitFor(() =>{  expect(screen.getByText('加载键…')).toBeTruthy() })
+      // SCAN 挂起:加载进度提示可见(含已加载/总数),刷新钮禁用。
+      await waitFor(() =>{  expect(screen.getByText(/正在加载键…/)).toBeTruthy() })
       expect((screen.getByLabelText('刷新') as HTMLButtonElement).disabled).toBe(true)
       releaseScan({ keys: [keyInfo('user:1')], cursor: 0, total: 1 })
       const folder = await waitFor(() =>{  return screen.getByLabelText('文件夹 user') })
@@ -986,6 +986,37 @@ describe('RedisWorkbench failure variants', () => {
       await waitFor(() =>{  expect(screen.getByLabelText('新 key 名')).toBeTruthy() })
       fireEvent.click(screen.getByText('取消'))
       await waitFor(() =>{  expect(screen.queryByLabelText('新 key 名')).toBeNull() })
+    } finally {
+      restore()
+    }
+  })
+
+  it('follows the SCAN cursor across pages to load every key, not just the first page', async () => {
+    // 第一页返回 cursor=5 且只带 user:1;第二页 cursor=0 带回 sess:2。修复前仅取一页,
+    // 只会看到 user:1;现在连续 SCAN 直到游标归零,两个 key 都加载。
+    const invoke = vi.fn((cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === 'db_redis_connect') return Promise.resolve({ connId: 'c1', host: 'h', port: 6379 })
+      if (cmd === 'db_redis_db_size') return Promise.resolve({ size: 2 })
+      if (cmd === 'db_redis_scan') {
+        const cursor = (args?.cursor as number) ?? 0
+        if (cursor === 0) return Promise.resolve({ keys: [keyInfo('user:1')], cursor: 5, total: 2 })
+        return Promise.resolve({ keys: [keyInfo('sess:2', 'hash')], cursor: 0, total: 2 })
+      }
+      return Promise.resolve(null)
+    })
+    const restore = stubInvoke(invoke)
+    try {
+      renderWorkbench()
+      await waitConnected()
+      clickDb(0)
+      // 两页都请求过(游标跟随而非只 GET 一页)。
+      const userFolder = await waitFor(() =>{  return screen.getByLabelText('文件夹 user') })
+      fireEvent.click(userFolder)
+      await waitFor(() =>{  expect(screen.getByTitle('user:1')).toBeTruthy() })
+      fireEvent.click(screen.getByLabelText('文件夹 sess'))
+      await waitFor(() =>{  expect(screen.getByTitle('sess:2')).toBeTruthy() })
+      const scanCalls = invoke.mock.calls.filter(c => c[0] === 'db_redis_scan')
+      expect(scanCalls.length).toBe(2)
     } finally {
       restore()
     }

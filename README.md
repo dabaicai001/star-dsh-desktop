@@ -9,7 +9,7 @@
 数据库客户端 · SSH/SFTP · Docker 面板 · AI 助手 · 原生桌面应用
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.101.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.101.1-cyan)]()
 [![Status](https://img.shields.io/badge/status-active%20development-brightgreen)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
@@ -148,6 +148,10 @@
 
 ## 当前版本
 
+### v0.101.1 (2026-08-28)
+- 🐛 修复 v0.101.0 遗留的前端测试桩缺口:starhub-apply 测试对 `sessions.list` 缺 `subscribe` 桩,与 v0.100.1 执行记录会话跟踪脱节,10 例报 `sessions.list.subscribe is not a function`;补 `subscribe` 桩后全量 client-nav 测试通过(880/880)。
+- ✅ 同步 Redis 工作台 SCAN 加载指示器断言为新进度文本,并新增「跨 SCAN 游标页续传直到归零」回归用例。
+
 ### v0.101.0 (2026-08-28)
 - ✨ MySQL 数据库工作台新增「新建查询」按钮:SQL 区改为多查询标签(「查询 1…N」),「＋ 新建查询」追加空白标签并激活,每个标签独立 SQL 草稿与执行结果,标签可关闭(至少保留一个)。
 - ✨ MySQL 表数据网格新增 HubHex 风格 WHERE 条件栏:回车应用(服务端 raw filter)、Shift+回车换行、Esc/× 清除、切表重置;导出 Excel 透传当前 WHERE 条件。
@@ -156,10 +160,6 @@
 
 ### v0.100.3 (2026-08-28)
 - 🐛 Edit 卡「查看」打开壳内窗口仍显示单栏:点击 Edit/Write 卡的文件名链接时,外壳 `openFile` 对所有文件链接一律以 `kind:'read'`(单栏 textarea)打开壳内文件查看窗,导致文件变更对比的 `kind:'edit'` 左右双栏分支在真实 UI 里从未被触发——现在 `openFile` 契约允许变更行携带其应用后 hunks 作为可选第二参数,`FileMutationRow` 在点击时附上,dsh 壳以 `kind:'edit'`(表头「变更前 / 变更后」红绿对比)打开;无 diff(如报错/普通打开)仍走原 `read` 打开路径
-
-### v0.100.2 (2026-08-27)
-- 🐛 Edit/Write 差异卡部分场景回落通用 IN/OUT 卡的问题修复:wire 视图因 presenter 解析或跨分页 call/result 配对失败而缺失时,前端改从事件持久 `meta.diffs` 兜底重建双栏差异卡(载荷畸形仍走通用路径)。
-- 🐛 工具卡文件链接指向已删除文件时,报错从裸 OS 文案改为带路径的「file not found: <path>」。
 
 > 最近 3 个版本（完整演进见 [CHANGELOG.md](./CHANGELOG.md)）。
 

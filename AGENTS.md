@@ -29,7 +29,7 @@
 | 主分支 | `main` |
 | 协议 | MIT |
 | 立项时间 | 2026-06-04 |
-| 当前版本 | v0.101.0(DB 工作台:SQL 区新增「新建查询」按钮→多查询标签「查询 1…N」各自独立草稿与结果;表数据网格新增 HubHex 风格 WHERE 条件栏,回车应用为服务端 raw filter、Shift+回车换行、Esc/× 清除、切表重置,导出 Excel 透传当前 WHERE;Redis 键树改为连续 SCAN 分页加载,展开 db 从 0 游标遍历到归零/单批 10k 上限,加载中展示「已加载 X/总数 Y」进度、超上限出「加载更多」按游标续传。附带移除表数据网格原「快捷筛选」输入——其 quickFilter 参数未被 db_mysql_get_table_data 的 Tauri command 声明,是被静默丢弃的死路径) |
+| 当前版本 | v0.101.1(在 v0.101.0 基础上修复前端测试桩缺口:starhub-apply 测试对 `sessions.list` 缺 `subscribe` 桩,与 v0.100.1 执行记录会话跟踪(apply 层 `index.ts` 调 `sessions.list.subscribe`)脱节,10 例报 `sessions.list.subscribe is not a function`;补桩后 client-nav 全量测试 880/880 通过,并同步 Redis 工作台 SCAN 指示器断言 + 新增跨 SCAN 游标页续传回归用例) |
 
 ---
 
@@ -463,4 +463,4 @@ npm run tauri:build
 
 ---
 
-*最后更新: 2026-08-28 (v0.101.0)*
+*最后更新: 2026-08-28 (v0.101.1)*

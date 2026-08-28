@@ -66,7 +66,12 @@ function fakeContext() {
         return { registerSource }
       case 'sessions':
         return {
-          list: { getSnapshot: () => ({ current: undefined, ids: [], byId: {} }) },
+          list: {
+            getSnapshot: () => ({ current: undefined, ids: [], byId: {} }),
+            // exec-records 会话跟踪(apply 层)订阅 list;返回 disposer,与
+            // runtime/client-apply.client.spec.ts 的 sessions mock 同形态。
+            subscribe: () => () => {},
+          },
           open: vi.fn(), clear: vi.fn(), binding: vi.fn(() => undefined),
         }
       case 'workspaces':

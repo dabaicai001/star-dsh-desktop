@@ -14,6 +14,11 @@
 
 ---
 
+## [0.101.1] - 2026-08-28
+
+### 修复
+- 修复 v0.101.0 遗留的前端测试桩缺口:starhub-apply 测试的 `fakeContext()` 对 `sessions.list` 只打了 `getSnapshot` 桩、缺 `subscribe`,与 v0.100.1 执行记录会话跟踪(apply 层 `index.ts` 调 `sessions.list.subscribe`)脱节,导致该套件 10 例报 `sessions.list.subscribe is not a function`——补 `subscribe: () => () => {}`(对齐 `runtime/client-apply.client.spec.ts` 的 sessions mock 形态);同步把 Redis 工作台 SCAN 加载指示器断言改为匹配新的「正在加载键…」进度文本,并新增「跨 SCAN 游标页续传直到归零」回归用例
+
 ## [0.101.0] - 2026-08-28
 
 ### 新增
