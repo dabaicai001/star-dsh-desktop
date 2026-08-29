@@ -158,13 +158,27 @@ Phase 1 实现 `DockerDesktop`;后续 `WslDesktop` / `E2BDesktop`(接 E2B 云服
 
 `desktop_exec`:箱内执行任意命令(`docker exec` 直通)。装软件、启进程、查箱内状态全用它;作为沙箱与「外界逻辑」的交换口,保持每次确认。
 
+### 4.5 人机协同(登录墙/扫码登录场景)
+
+沙箱内应用普遍需要登录,扫码登录、短信验证、密码输入都只能由人完成。机制三件套:
+
+| 机制 | 说明 | 审批 |
+|---|---|---|
+| **接管模式** | 直播 tab 一键切换「围观 ⇄ 接管」:接管时 noVNC 双向(指针/键盘注入沙箱),用户在沙箱里亲手扫码确认、输密码;**凭据永不经过 AI 工具与审计** | —(用户主动行为) |
+| `desktop_request_user_action` | AI 撞到登录墙时调用:`{message, timeoutSeconds}`;前端把沙箱 tab 顶到前台 + 横幅展示 message,用户完成后点「已完成」交还控制,工具返回「用户已完成」或超时 | 任务授权内放行 |
+| **登录态沉淀** | `desktop_commit_sandbox`:任务结束(或登录完成)时把实例 `docker commit` 固化为**模板新版本**,下次从新版创建的实例自带登录态——扫码一次,受益永久 | 软确认 |
+
+并发互斥:接管期间 AI 的 §4.3 写操作一律拒绝(返回「用户接管中,请稍后重试」),避免人机抢鼠标;**接管不撤销任务授权**,交还后 AI 恢复全自动。AI 通过截图回灌自行判断二维码过期/登录成功,登录墙处理流程沉淀为内置 Skill 文案。
+
+典型时序:AI 打开应用 → 截图发现二维码登录页 → `desktop_request_user_action("请用手机扫描沙箱屏幕上的二维码登录")` → 用户在直播 tab 看到二维码、手机扫码确认 → 点「已完成」→ AI 截图确认登录成功 → 继续任务 → 结束提示固化为模板新版本。
+
 ## 5. 安全模型
 
 ### 5.1 任务级授权,替代逐条确认
 
 1. `desktop_create_sandbox` 的确认即**任务级授权**:「允许 AI 在沙箱(模板 `xxx`)中完成:<任务描述>」;
 2. 授权期内该会话对该实例的 §4.2/§4.3 工具**自动放行**(approval-bridge 按「会话持有效授权 + 实例 id 匹配」判定);
-3. 授权失效条件(任一):实例销毁/暂停、用户撤销、会话结束、超时回收(默认 60 分钟,可配);
+3. 授权失效条件(任一):实例销毁/暂停、用户撤销、会话结束、超时回收(默认 60 分钟,可配);**用户接管不撤销授权,只暂停 AI 写操作**(§4.5);
 4. `desktop_exec` 不在授权内,恒确认。
 
 ### 5.2 容器隔离加固(补容器弱于 VM 的部分)
@@ -172,7 +186,7 @@ Phase 1 实现 `DockerDesktop`;后续 `WslDesktop` / `E2BDesktop`(接 E2B 云服
 实例启动固定带:`--network` 按档位(none/bridge/自定义受限 bridge)、`--cap-drop ALL`、`--security-opt no-new-privileges`、**禁挂 docker.sock**、内存/CPU 限额、根文件系统只读 + 可写 tmpfs 挂载点白名单(可配)。三道保险:
 
 1. **一次性实例**:任务结束 `docker rm -v`,模板永不污染;
-2. **直播围观**:noVNC tab 全程可见 + 醒目**停止/销毁**按钮;
+2. **直播围观 + 可接管**:noVNC tab 全程可见,配醒目**停止/销毁**按钮;默认围观只读,用户可一键接管亲手操作(扫码登录等场景,见 §4.5);
 3. **网络三档**:none / restricted(默认,自定义 bridge 只放白名单域名)/ full,配方声明、创建确认卡明示。
 
 ### 5.3 截图回灌
@@ -201,7 +215,7 @@ Phase 1 实现 `DockerDesktop`;后续 `WslDesktop` / `E2BDesktop`(接 E2B 云服
 | `src-tauri/src/db/` | 模板库/实例/任务授权/回放归档表;assets 加 `desktop-template` 类型 |
 | `packages/starhub/tools/src/index.ts` | `BRIDGED_TOOLS` 追加 §4 全部工具(StarHub 本地包,不动上游) |
 | `packages/starhub/approval-bridge/src/index.ts` | 任务级授权判定 + §5.1 分级 |
-| StarHub 工作台(React) | 沙箱 tab(内嵌 noVNC + 停止/销毁)、模板库管理页、**设置页「沙箱平台」Docker 连接选择器(默认本机)** + 回收超时/网络档/留存期、资产树「沙箱桌面」分类 |
+| StarHub 工作台(React) | 沙箱 tab(内嵌 noVNC + **围观/接管切换** + 求助横幅 + 停止/销毁)、模板库管理页、**设置页「沙箱平台」Docker 连接选择器(默认本机)** + 回收超时/网络档/留存期、资产树「沙箱桌面」分类 |
 | `capabilities/` | 零改动 |
 
 ## 7. 已知坑与对策
@@ -231,7 +245,7 @@ Docker 沙箱环境可进 CI(Linux runner 原生支持 docker),集成测试写�
 
 | 阶段 | 内容 | 版本 |
 |---|---|---|
-| Phase 1(本期) | Docker 执行层全链路:配方/模板、实例池、工具集、任务级授权、noVNC 直播 tab、回放;三平台宿主 | v0.104.0 |
+| Phase 1(本期) | Docker 执行层全链路:配方/模板、实例池、工具集、任务级授权、noVNC 直播 tab、回放、**人机协同(接管模式 / `desktop_request_user_action` / 登录态沉淀,§4.5)**;三平台宿主 | v0.104.0 |
 | Phase 2 | WSL2 执行层(免 Docker Desktop);`E2BDesktop` 云后端(vendor `packages/e2b` POC 借力);模板市场(配方分享);framebuffer 直读高性能截图 | 视反馈 |
 | Phase 3 | Hyper-V Windows 客户机(若 Windows-only 需求出现,届时才需自研 guest-agent);`LocalDesktop` 本机降级(恒确认);UIA/AT-SPI 语义元素树 | 视反馈 |
 
