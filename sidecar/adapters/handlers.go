@@ -1673,6 +1673,16 @@ func RegisterDockerHandlers(server ServerInterface, mgr *pool.Manager) {
 	server.Register("docker.execSessionResize", handleDockerExecSessionResize(mgr))
 	server.Register("docker.execSessionClose", handleDockerExecSessionClose(mgr))
 
+	// 沙箱桌面平台编排能力(docker_manage.go)
+	server.Register("docker.createContainer", handleDockerCreateContainer(mgr))
+	server.Register("docker.pauseContainer", handleDockerPauseContainer(mgr))
+	server.Register("docker.unpauseContainer", handleDockerUnpauseContainer(mgr))
+	server.Register("docker.commitContainer", handleDockerCommitContainer(mgr))
+	server.Register("docker.copyToContainer", handleDockerCopyToContainer(mgr))
+	server.Register("docker.copyFromContainer", handleDockerCopyFromContainer(mgr))
+	server.Register("docker.buildImage", handleDockerBuildImage(mgr))
+	server.Register("docker.createNetwork", handleDockerCreateNetwork(mgr))
+
 	// Docker Compose
 	server.Register("docker.compose.up", handleDockerComposeUp(mgr))
 	server.Register("docker.compose.down", handleDockerComposeDown(mgr))
@@ -1987,6 +1997,161 @@ func handleDockerExec(mgr *pool.Manager) Handler {
 			return nil, err
 		}
 		return adapter.Exec(p.ContainerID, p.Command, p.Workdir, p.TimeoutSec)
+	}
+}
+
+// ─── 沙箱桌面平台编排(docker_manage.go)───
+
+func handleDockerCreateContainer(mgr *pool.Manager) Handler {
+	return func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			ConnID string `json:"connId"`
+			CreateContainerSpec
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		adapter, err := getDockerAdapter(mgr, p.ConnID)
+		if err != nil {
+			return nil, err
+		}
+		return adapter.CreateContainer(&p.CreateContainerSpec)
+	}
+}
+
+func handleDockerPauseContainer(mgr *pool.Manager) Handler {
+	return func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			ConnID      string `json:"connId"`
+			ContainerID string `json:"containerId"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		adapter, err := getDockerAdapter(mgr, p.ConnID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, adapter.PauseContainer(p.ContainerID)
+	}
+}
+
+func handleDockerUnpauseContainer(mgr *pool.Manager) Handler {
+	return func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			ConnID      string `json:"connId"`
+			ContainerID string `json:"containerId"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		adapter, err := getDockerAdapter(mgr, p.ConnID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, adapter.UnpauseContainer(p.ContainerID)
+	}
+}
+
+func handleDockerCommitContainer(mgr *pool.Manager) Handler {
+	return func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			ConnID      string `json:"connId"`
+			ContainerID string `json:"containerId"`
+			Reference   string `json:"reference"`
+			Comment     string `json:"comment,omitempty"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		adapter, err := getDockerAdapter(mgr, p.ConnID)
+		if err != nil {
+			return nil, err
+		}
+		imageID, err := adapter.CommitContainer(p.ContainerID, p.Reference, p.Comment)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"imageId": imageID}, nil
+	}
+}
+
+func handleDockerCopyToContainer(mgr *pool.Manager) Handler {
+	return func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			ConnID      string          `json:"connId"`
+			ContainerID string          `json:"containerId"`
+			DestPath    string          `json:"destPath"`
+			Files       []CopyFileEntry `json:"files"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		adapter, err := getDockerAdapter(mgr, p.ConnID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, adapter.CopyToContainer(p.ContainerID, p.DestPath, p.Files)
+	}
+}
+
+func handleDockerCopyFromContainer(mgr *pool.Manager) Handler {
+	return func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			ConnID      string `json:"connId"`
+			ContainerID string `json:"containerId"`
+			SrcPath     string `json:"srcPath"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		adapter, err := getDockerAdapter(mgr, p.ConnID)
+		if err != nil {
+			return nil, err
+		}
+		return adapter.CopyFromContainer(p.ContainerID, p.SrcPath)
+	}
+}
+
+func handleDockerBuildImage(mgr *pool.Manager) Handler {
+	return func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			ConnID     string `json:"connId"`
+			Dockerfile string `json:"dockerfile"`
+			Tag        string `json:"tag"`
+			PullParent bool   `json:"pullParent,omitempty"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		adapter, err := getDockerAdapter(mgr, p.ConnID)
+		if err != nil {
+			return nil, err
+		}
+		return adapter.BuildImage(p.Dockerfile, p.Tag, p.PullParent)
+	}
+}
+
+func handleDockerCreateNetwork(mgr *pool.Manager) Handler {
+	return func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			ConnID   string            `json:"connId"`
+			Name     string            `json:"name"`
+			Internal bool              `json:"internal,omitempty"`
+			Labels   map[string]string `json:"labels,omitempty"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		adapter, err := getDockerAdapter(mgr, p.ConnID)
+		if err != nil {
+			return nil, err
+		}
+		networkID, err := adapter.CreateNetwork(p.Name, p.Internal, p.Labels)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"networkId": networkID}, nil
 	}
 }
 

@@ -14,6 +14,16 @@
 
 ---
 
+## [0.104.0] - 2026-08-29
+
+### 新增
+- sidecar Docker 适配器补齐沙箱编排能力(沙箱桌面平台 M0,设计见 `docs/superpowers/specs/2026-08-28-desktop-automation-design.md`):
+  - `docker.createContainer`:完整配置创建容器(端口发布默认回环/内存与 CPU 限额/cap-drop/security-opt/只读根 fs/tmpfs/卷/网络模式,可选创建即启动并回读端口绑定)
+  - `docker.buildImage`:单 Dockerfile 构建镜像(模板构建底座)
+  - `docker.copyToContainer` / `docker.copyFromContainer`:文件出入箱(单次 32MB 上限,出箱仅单文件)
+  - `docker.pauseContainer` / `docker.unpauseContainer` / `docker.commitContainer`:暂停/恢复/检查点固化
+  - `docker.createNetwork`:自定义隔离网络(restricted 档底座)
+
 ## [0.103.1] - 2026-08-28
 
 ### 修复

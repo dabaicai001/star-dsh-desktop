@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.103.1(2026-08-28) |
+| 当前版本 | v0.104.0(2026-08-29) |
 
 ## 架构一句话
 
@@ -124,4 +124,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新:2026-08-28(v0.103.1)*
+*最后更新:2026-08-29(v0.104.0)*
