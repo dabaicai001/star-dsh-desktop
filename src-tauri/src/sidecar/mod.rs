@@ -372,7 +372,8 @@ impl SidecarManager {
             .await
     }
 
-    async fn call_with_timeout(
+    /// 长耗时 RPC(镜像构建等)用自定义超时;常规调用走 `call`(120s)。
+    pub async fn call_with_timeout(
         &self,
         method: &str,
         params: serde_json::Value,

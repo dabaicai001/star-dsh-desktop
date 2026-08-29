@@ -44,7 +44,7 @@ pub mod tools;
 mod domain;
 
 /// 沙箱桌面模块复用域执行器的 sidecar 连接原语。
-pub(crate) use domain::{connect_sidecar, load_asset_config, sidecar_call};
+pub(crate) use domain::{connect_sidecar, load_asset_config, sidecar_call, sidecar_call_with_timeout};
 
 /// StarHub × dsh 联动:领域事件 schema(契约 §1,四方共用)。
 pub mod events;

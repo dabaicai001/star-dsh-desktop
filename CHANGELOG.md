@@ -14,6 +14,12 @@
 
 ---
 
+## [0.105.1] - 2026-08-29
+
+### 修复
+- **沙箱桌面长耗时操作突破 sidecar RPC 120 秒默认超时**:`desktop_build_template`(首次构建 5-15 分钟)给 30 分钟上限,`desktop_commit_sandbox` 给 10 分钟,`desktop_exec` 的 RPC 层超时跟随其 `timeoutSec` 参数(+30 秒余量),不再出现「Sidecar RPC timed out after 120 seconds」
+- **构建/固化超时降级为人工操作指引**:超时不再硬失败——`desktop_build_template` 会把 Dockerfile 落盘缓存目录并返回手工 `docker build` 命令(用户执行后重调即命中层缓存秒过);`desktop_commit_sandbox` 返回核对镜像/手工 `docker commit` 的指引
+
 ## [0.105.0] - 2026-08-29
 
 ### 新增

@@ -650,7 +650,7 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
   },
   {
     toolName: 'desktop_build_template',
-    description: '构建模板镜像(首次约 5-15 分钟,之后层缓存秒级)。desktop_create_sandbox 报「镜像未构建」时先调它。会请求用户确认。',
+    description: '构建模板镜像(首次约 5-15 分钟,之后层缓存秒级)。desktop_create_sandbox 报「镜像未构建」时先调它。会请求用户确认。若网络过慢导致超时,工具会返回落盘的 Dockerfile 路径与手工 docker build 命令——把命令转交用户执行,完成后重调本工具即命中缓存秒过。',
     parameters: {
       template: { type: 'string', required: true, description: '模板名(desktop_list_templates 返回)' },
     },
@@ -687,7 +687,7 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
   },
   {
     toolName: 'desktop_commit_sandbox',
-    description: '把沙箱当前状态(含登录态/已装软件)固化为新模板,下次从它创建的沙箱自带该状态。登录完成后推荐调用。会请求用户确认。',
+    description: '把沙箱当前状态(含登录态/已装软件)固化为新模板,下次从它创建的沙箱自带该状态。登录完成后推荐调用。会请求用户确认。超时(commit 大层较慢)时工具返回手工核对/执行 docker commit 的命令,照指引操作后重调即可。',
     parameters: {
       name: { type: 'string', required: true, description: '新模板名(小写字母/数字/中划线)' },
       sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },

@@ -632,6 +632,20 @@ pub(crate) async fn sidecar_call(bridge: &HostBridgeState, method: &str, params:
     sidecar.call(method, params).await
 }
 
+/// 自定义超时的 sidecar 调用(沙箱模板构建等长耗时操作)。
+pub(crate) async fn sidecar_call_with_timeout(
+    bridge: &HostBridgeState,
+    method: &str,
+    params: Value,
+    timeout: std::time::Duration,
+) -> Result<Value, String> {
+    let app = bridge
+        .app()
+        .ok_or_else(|| "无 AppHandle,无法调用 sidecar".to_string())?;
+    let sidecar = app.state::<SidecarManager>();
+    sidecar.call_with_timeout(method, params, timeout).await
+}
+
 /// 按资产配置建立连接,返回 connId。
 pub(crate) async fn connect_sidecar(
     bridge: &HostBridgeState,

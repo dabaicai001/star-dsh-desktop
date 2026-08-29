@@ -275,10 +275,28 @@ async fn platform_call(
     key: &str,
     conn_id: &str,
     method: &str,
+    params: Value,
+) -> Result<Value, String> {
+    platform_call_with_timeout(bridge, manager, key, conn_id, method, params, None).await
+}
+
+/// 自定义超时版 platform_call(模板构建/实例固化等长耗时 RPC;
+/// None 走 sidecar 默认 120 秒)。
+async fn platform_call_with_timeout(
+    bridge: &HostBridgeState,
+    manager: &DesktopManager,
+    key: &str,
+    conn_id: &str,
+    method: &str,
     mut params: Value,
+    timeout: Option<std::time::Duration>,
 ) -> Result<Value, String> {
     params["connId"] = Value::String(conn_id.to_string());
-    match crate::harness::sidecar_call(bridge, method, params).await {
+    let result = match timeout {
+        Some(t) => crate::harness::sidecar_call_with_timeout(bridge, method, params, t).await,
+        None => crate::harness::sidecar_call(bridge, method, params).await,
+    };
+    match result {
         Ok(value) => Ok(value),
         Err(error) => {
             manager.evict_conn(key).await;
@@ -380,7 +398,9 @@ async fn sandbox_exec(
     script: &str,
     timeout_sec: i64,
 ) -> Result<(String, String, i64), String> {
-    let result = platform_call(
+    // RPC 层超时必须盖过 docker exec 自身的 timeoutSec(默认 RPC 只有 120 秒,
+    // 装包/下载类长命令会在 RPC 层先超时);留 30 秒余量给输出回收。
+    let result = platform_call_with_timeout(
         bridge,
         manager,
         platform,
@@ -391,6 +411,7 @@ async fn sandbox_exec(
             "command": ["sh", "-c", script],
             "timeoutSec": timeout_sec,
         }),
+        Some(std::time::Duration::from_secs((timeout_sec.max(1) + 30) as u64)),
     )
     .await?;
     let stdout = result
@@ -559,6 +580,35 @@ async fn capture_screenshot(
     ));
     std::fs::write(&path, &bytes).map_err(|e| format!("写入截图失败: {e}"))?;
     Ok(path.display().to_string())
+}
+
+/// 模板构建超时降级:Dockerfile 落盘缓存目录,返回手工构建指引。
+/// daemon 层缓存全局共享——用户手动 `docker build` 完成后,AI 再次调用
+/// desktop_build_template 会命中全部层缓存,秒级完成并回写模板镜像标记。
+fn manual_build_fallback(
+    bridge: &HostBridgeState,
+    dockerfile: &str,
+    tag: &str,
+    error: &str,
+) -> Result<String, String> {
+    let app = bridge.app().ok_or_else(|| "应用句柄未就绪".to_string())?;
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("缓存目录不可用: {e}"))?
+        .join("desktop-build")
+        .join(tag.replace(':', "_"));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建构建目录失败: {e}"))?;
+    let dockerfile_path = dir.join("Dockerfile");
+    std::fs::write(&dockerfile_path, dockerfile)
+        .map_err(|e| format!("写入 Dockerfile 失败: {e}"))?;
+    Ok(format!(
+        "构建超时(超过 30 分钟):{error}\n\n\
+         通常是拉取基础镜像/安装软件包的网络太慢。Dockerfile 已落盘,可请用户在本机终端手动构建:\n  \
+         docker build -t {tag} \"{}\"\n\
+         构建完成后再次调用 desktop_build_template(会命中层缓存,秒级完成并登记镜像标记),或直接 desktop_create_sandbox 使用该模板。",
+        dir.display(),
+    ))
 }
 
 /// 写操作前的自动截屏留档(回放帧);失败只记日志不阻断操作。
@@ -1169,15 +1219,26 @@ async fn build_template(
     let (template_id, recipe) = load_recipe(pool, template).await?;
     let dockerfile = recipe::generate_dockerfile(&recipe);
     let tag = recipe::image_tag(&recipe);
-    let result = platform_call(
+    // 首次构建 5-15 分钟,远超 sidecar 默认 120 秒;给 30 分钟上限。
+    // 超时降级:Dockerfile 落盘缓存目录,把手工 docker build 命令交给用户
+    // (daemon 层缓存全局共享,手动完成后重调本工具即命中缓存秒过)。
+    let result = match platform_call_with_timeout(
         bridge,
         manager,
         platform,
         conn_id,
         "docker.buildImage",
         serde_json::json!({ "dockerfile": dockerfile, "tag": tag, "pullParent": true }),
+        Some(std::time::Duration::from_secs(1800)),
     )
-    .await?;
+    .await
+    {
+        Ok(value) => value,
+        Err(error) if error.contains("timed out") => {
+            return manual_build_fallback(bridge, &dockerfile, &tag, &error);
+        }
+        Err(error) => return Err(error),
+    };
     sqlx::query("UPDATE sandbox_templates SET image_tag = ? WHERE id = ?")
         .bind(&tag)
         .bind(&template_id)
@@ -1507,7 +1568,9 @@ async fn commit_sandbox(
 ) -> Result<String, String> {
     let new_name = arg_str(args, "name")?;
     let reference = format!("starhub-sandbox-{new_name}:latest");
-    let result = platform_call(
+    // 大层固化可能超过 120 秒,给 10 分钟上限;超时降级为手工 docker commit 提示
+    // (commit 可能已在 daemon 侧完成,提示用户核对镜像后由 AI 重试)。
+    let result = match platform_call_with_timeout(
         bridge,
         manager,
         platform,
@@ -1518,8 +1581,19 @@ async fn commit_sandbox(
             "reference": reference,
             "comment": format!("committed from sandbox {}", instance.id),
         }),
+        Some(std::time::Duration::from_secs(600)),
     )
-    .await?;
+    .await
+    {
+        Ok(value) => value,
+        Err(error) if error.contains("timed out") => {
+            return Ok(format!(
+                "固化超时(超过 10 分钟):{error}\n\ncommit 可能已在 Docker daemon 侧继续执行完成。请人工核对:\n  docker images | grep {reference}\n若镜像不存在,可手动执行:\n  docker commit {} {reference}\n完成后再次调用 desktop_commit_sandbox 即可。",
+                instance.container_id,
+            ));
+        }
+        Err(error) => return Err(error),
+    };
     let image_id = result
         .get("imageId")
         .and_then(Value::as_str)

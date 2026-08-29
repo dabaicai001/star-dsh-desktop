@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.105.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.105.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -41,6 +41,10 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.105.1 (2026-08-29)
+- 🐛 **沙箱桌面长耗时操作突破 sidecar RPC 120 秒默认超时**:`desktop_build_template`(首次构建 5-15 分钟)给 30 分钟上限,`desktop_commit_sandbox` 给 10 分钟,`desktop_exec` 的 RPC 层超时跟随其 `timeoutSec` 参数(+30 秒余量),不再出现「Sidecar RPC timed out after 120 seconds」
+- 🐛 **构建/固化超时降级为人工操作指引**:超时不再硬失败——`desktop_build_template` 会把 Dockerfile 落盘缓存目录并返回手工 `docker build` 命令(用户执行后重调即命中层缓存秒过);`desktop_commit_sandbox` 返回核对镜像/手工 `docker commit` 的指引
 
 ### v0.105.0 (2026-08-29)
 - ✨ **沙箱桌面(Ubuntu 容器沙箱平台,E2B 式架构,M1-M4 一次交付,设计见 `docs/superpowers/specs/2026-08-28-desktop-automation-design.md`)**:AI 在一次性 Ubuntu 24.04 桌面容器(Xvfb + Xfce + x11vnc + noVNC)里操作任意 Linux 桌面应用,画面对用户全程直播
