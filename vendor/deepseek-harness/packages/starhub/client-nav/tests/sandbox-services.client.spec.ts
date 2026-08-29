@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 /**
  * 沙箱桌面前端服务(sandbox/services.ts):Tauri 命令名/参数契约、
- * Docker 资产过滤、noVNC URL 参数、fileSrc 预览降级。
+ * Docker 资产过滤、直播窗口命令参数、fileSrc 预览降级。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   deleteSandboxTemplate, fetchReplayFrames, fetchSandboxOverview, fileSrc,
-  listDockerAssets, novncUrl, onUserActionRequest, replyUserAction,
-  sandboxLifecycle, setSandboxPlatform, setTakeover, upsertSandboxTemplate,
+  listDockerAssets, onUserActionRequest, openSandboxLiveWindow, replyUserAction,
+  sandboxLifecycle, setSandboxPlatform, upsertSandboxTemplate,
 } from '../src/client/sandbox/services.ts'
 
 afterEach(() => {
@@ -53,14 +53,24 @@ describe('sandbox services', () => {
     expect(invoke).toHaveBeenCalledWith('desktop_ui_replay_frames', { sandboxId: 'sb-1' })
   })
 
-  it('sandboxLifecycle / setTakeover / replyUserAction map to their commands', async () => {
+  it('sandboxLifecycle / replyUserAction map to their commands', async () => {
     const invoke = stubInvoke()
     await sandboxLifecycle('sb-1', 'destroy')
-    await setTakeover('c-1', true)
     await replyUserAction('r-1', false)
     expect(invoke).toHaveBeenNthCalledWith(1, 'desktop_ui_lifecycle', { sandboxId: 'sb-1', action: 'destroy' })
-    expect(invoke).toHaveBeenNthCalledWith(2, 'desktop_set_takeover', { containerId: 'c-1', active: true })
-    expect(invoke).toHaveBeenNthCalledWith(3, 'desktop_user_action_reply', { requestId: 'r-1', done: false })
+    expect(invoke).toHaveBeenNthCalledWith(2, 'desktop_user_action_reply', { requestId: 'r-1', done: false })
+  })
+
+  it('openSandboxLiveWindow passes ids/port and the takeover flag', async () => {
+    const invoke = stubInvoke()
+    await openSandboxLiveWindow({ id: 'sb-1', containerId: 'c-1', novncPort: 6080 }, false)
+    await openSandboxLiveWindow({ id: 'sb-1', containerId: 'c-1', novncPort: 6080 }, true)
+    expect(invoke).toHaveBeenNthCalledWith(1, 'desktop_ui_open_live_window', {
+      sandboxId: 'sb-1', containerId: 'c-1', novncPort: 6080, takeover: false,
+    })
+    expect(invoke).toHaveBeenNthCalledWith(2, 'desktop_ui_open_live_window', {
+      sandboxId: 'sb-1', containerId: 'c-1', novncPort: 6080, takeover: true,
+    })
   })
 
   it('onUserActionRequest subscribes to starhub://desktop-user-action', async () => {
@@ -86,11 +96,6 @@ describe('sandbox services', () => {
       { id: 'a1', name: '本地' },
       { id: 'a3', name: '远程 Docker' },
     ])
-  })
-
-  it('novncUrl sets view_only only in watch mode', () => {
-    expect(novncUrl(6080, true)).toBe('http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale&view_only=1')
-    expect(novncUrl(6080, false)).toBe('http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale')
   })
 
   it('fileSrc uses convertFileSrc when injected, empty string in preview', () => {

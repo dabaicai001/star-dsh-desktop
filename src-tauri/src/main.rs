@@ -410,13 +410,13 @@ fn main() {
             // ai-browser 窗口开放(capabilities/browser.json 收窄)
             commands::browser::browser_internal_result,
             // 沙箱桌面(UI 状态读写;容器生命周期只走 AI 工具路径与 UI 生命周期命令)
-            commands::desktop::desktop_set_takeover,
             commands::desktop::desktop_ui_overview,
             commands::desktop::desktop_ui_set_platform,
             commands::desktop::desktop_ui_upsert_template,
             commands::desktop::desktop_ui_delete_template,
             commands::desktop::desktop_ui_lifecycle,
             commands::desktop::desktop_ui_replay_frames,
+            commands::desktop::desktop_ui_open_live_window,
             commands::desktop::desktop_user_action_reply,
             // File
             commands::file::open_file_external,

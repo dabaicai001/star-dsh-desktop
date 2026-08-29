@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * 「请求人工介入」横幅(SandboxUserActionBanner):无事件渲染 null;收到
- * starhub://desktop-user-action 弹出横幅,「已完成」/「无法完成」经
- * desktop_user_action_reply 应答并收起。
+ * starhub://desktop-user-action 弹出横幅,「打开直播画面」拉起接管窗口,
+ * 「已完成」/「无法完成」经 desktop_user_action_reply 应答并收起。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -79,6 +79,22 @@ describe('SandboxUserActionBanner', () => {
     await waitFor(() => {
       expect(invokeCalls).toContainEqual({ cmd: 'desktop_user_action_reply', args: { requestId: 'r-1', done: false } })
     })
+  })
+
+  it('opens the takeover live window via 打开直播画面', async () => {
+    stubTauri()
+    render(<SandboxUserActionBanner />)
+    await waitFor(() => expect(eventHandlers.length).toBe(1))
+    act(() => { fireUserAction(EVENT) })
+    fireEvent.click(screen.getByRole('button', { name: '打开直播画面' }))
+    await waitFor(() => {
+      expect(invokeCalls).toContainEqual({
+        cmd: 'desktop_ui_open_live_window',
+        args: { sandboxId: 'sb-1', containerId: 'c-1', novncPort: 6080, takeover: true },
+      })
+    })
+    // 开窗不收起横幅,倒计时/应答按钮仍可用
+    expect(screen.queryByRole('alertdialog')).not.toBeNull()
   })
 
   it('counts down and dismisses at zero', async () => {

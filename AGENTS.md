@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.105.1(2026-08-29) |
+| 当前版本 | v0.106.0(**沙箱直播改为独立 Tauri 窗口**:工具面板「沙箱桌面」实例卡片的「直播/接管」按钮不再使用侧边栏内嵌 iframe(尺寸太小,且 iframe permissions-policy 禁止全屏),改为新开独立窗口全页加载 noVNC——围观 = `view_only` 只读,接管 = 双向键鼠 + 接管互斥;同沙箱重复点击即「关旧窗开新窗」完成围观 ⇄ 接管切换;接管窗口被关闭(含主窗口退出联动)由 Rust `Destroyed` 钩子自动释放接管,不再依赖前端 React 清理) |
 
 ## 架构一句话
 
@@ -126,4 +126,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新:2026-08-29(v0.105.1)*
+*最后更新:2026-08-29(v0.106.0)*

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * 沙箱桌面工作面板(SandboxPanel):概览加载/错误态、实例卡片动作
- * (直播 iframe、停止/恢复/销毁生命周期命令、回放弹窗)、接管互斥
- * (开关 + 关闭直播自动退出接管)、模板编辑/新增/删除。
+ * (直播/接管独立窗口命令、停止/恢复/销毁生命周期命令、回放弹窗)、
+ * 模板编辑/新增/删除。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -86,31 +86,44 @@ describe('SandboxPanel', () => {
     expect(screen.getByText(/没有运行中的沙箱/)).toBeTruthy()
   })
 
-  it('opens the noVNC viewer in watch mode and closes it', async () => {
+  it('opens the live window in watch mode via 直播', async () => {
     await renderPanel()
     fireEvent.click(screen.getByRole('button', { name: '直播' }))
-    const frame = screen.getByTitle(/沙箱直播/) as HTMLIFrameElement
-    expect(frame.src).toContain('view_only=1')
-    expect(screen.getByText(/围观中/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '关闭直播' }))
-    expect(screen.queryByTitle(/沙箱直播/)).toBeNull()
+    await waitFor(() => {
+      expect(invokeCalls).toContainEqual({
+        cmd: 'desktop_ui_open_live_window',
+        args: { sandboxId: INSTANCE.id, containerId: 'c-1', novncPort: 6080, takeover: false },
+      })
+    })
   })
 
-  it('toggles takeover via desktop_set_takeover and swaps the iframe mode', async () => {
+  it('opens the live window in takeover mode via 接管', async () => {
     await renderPanel()
-    fireEvent.click(screen.getByRole('button', { name: '直播' }))
     fireEvent.click(screen.getByRole('button', { name: '接管' }))
     await waitFor(() => {
-      expect(invokeCalls).toContainEqual({ cmd: 'desktop_set_takeover', args: { containerId: 'c-1', active: true } })
+      expect(invokeCalls).toContainEqual({
+        cmd: 'desktop_ui_open_live_window',
+        args: { sandboxId: INSTANCE.id, containerId: 'c-1', novncPort: 6080, takeover: true },
+      })
     })
-    const frame = screen.getByTitle(/沙箱直播/) as HTMLIFrameElement
-    expect(frame.src).not.toContain('view_only=1')
-    expect(screen.getByText(/接管中/)).toBeTruthy()
-    // 关闭直播自动退出接管
-    fireEvent.click(screen.getByRole('button', { name: '关闭直播' }))
-    await waitFor(() => {
-      expect(invokeCalls).toContainEqual({ cmd: 'desktop_set_takeover', args: { containerId: 'c-1', active: false } })
-    })
+  })
+
+  it('hides 接管 for paused instances', async () => {
+    await renderPanel(overviewResult({ instances: [{ ...INSTANCE, status: 'paused' }] }))
+    expect(screen.getByRole('button', { name: '直播' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '接管' })).toBeNull()
+  })
+
+  it('surfaces live-window errors in the banner', async () => {
+    stubTauri()
+    invokeResult = (cmd) => {
+      if (cmd === 'desktop_ui_open_live_window') return Promise.reject(new Error('创建沙箱直播窗口失败:boom'))
+      return overviewResult()
+    }
+    render(<SandboxPanel />)
+    await waitFor(() => expect(screen.queryByText('加载沙箱…')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: '直播' }))
+    await waitFor(() => expect(screen.getByText(/创建沙箱直播窗口失败/)).toBeTruthy())
   })
 
   it('runs lifecycle actions (pause/destroy) and refreshes', async () => {

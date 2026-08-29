@@ -5,7 +5,7 @@
 
 use crate::desktop::{recipe, DesktopManager};
 use sqlx::Row;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 /// 沙箱 tab 的停止(pause)/恢复(resume)/销毁(destroy)按钮。
 #[tauri::command]
@@ -15,17 +15,6 @@ pub async fn desktop_ui_lifecycle(
     action: String,
 ) -> Result<String, String> {
     crate::desktop::ui_lifecycle(&app, &sandbox_id, &action).await
-}
-
-/// 围观/接管开关:active=true 期间 AI 写操作一律拒绝(授权不撤销)。
-#[tauri::command]
-pub async fn desktop_set_takeover(
-    manager: State<'_, DesktopManager>,
-    container_id: String,
-    active: bool,
-) -> Result<(), String> {
-    manager.set_takeover(&container_id, active).await;
-    Ok(())
 }
 
 /// 沙箱 tab 总览:实例列表 + 模板列表 + 当前平台选择。
@@ -155,6 +144,67 @@ pub async fn desktop_ui_delete_template(name: String) -> Result<(), String> {
         .execute(pool)
         .await
         .map_err(|e| format!("删除模板失败: {e}"))?;
+    Ok(())
+}
+
+/// 沙箱 tab 的「直播/接管」按钮:打开(或重建)该沙箱的直播独立窗口,
+/// 全页加载 noVNC(替代侧边栏内嵌 iframe——尺寸受限且 iframe
+/// permissions-policy 禁用全屏)。takeover=false 围观(view_only);
+/// true 接管(双向 + 进入接管互斥),窗口销毁时自动释放接管——用户直接
+/// 关窗也不能残留接管态。同沙箱已有直播窗口时先销毁重建(围观/接管
+/// 切换需要换 view_only 参数)。窗口 label `sandbox-live-*` 不匹配任何
+/// capability:noVNC 页无任何 app command 权限(与 ai-browser 同姿势)。
+#[tauri::command]
+pub async fn desktop_ui_open_live_window(
+    app: AppHandle,
+    manager: State<'_, DesktopManager>,
+    sandbox_id: String,
+    container_id: String,
+    novnc_port: u16,
+    takeover: bool,
+) -> Result<(), String> {
+    let short: String = sandbox_id.chars().take(8).collect();
+    let label = format!("sandbox-live-{short}");
+    // 先销毁旧窗口:若旧窗口是接管模式,其 Destroyed 钩子会先释放接管,
+    // 再以新模式重建,围观 ⇄ 接管切换即「关旧开新」。
+    if let Some(existing) = app.get_webview_window(&label) {
+        existing
+            .destroy()
+            .map_err(|e| format!("关闭旧直播窗口失败:{e}"))?;
+    }
+    if takeover {
+        manager.set_takeover(&container_id, true).await;
+    }
+    let mut url = format!("http://127.0.0.1:{novnc_port}/vnc.html?autoconnect=1&resize=scale");
+    if !takeover {
+        url.push_str("&view_only=1");
+    }
+    let parsed = tauri::Url::parse(&url).map_err(|e| format!("noVNC URL 非法:{e}"))?;
+    let title = if takeover {
+        format!("沙箱直播 {short}(接管中)")
+    } else {
+        format!("沙箱直播 {short}")
+    };
+    let window = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed))
+        .title(title)
+        .inner_size(1280.0, 800.0)
+        .center()
+        .build()
+        .map_err(|e| format!("创建沙箱直播窗口失败:{e}"))?;
+    if takeover {
+        let app_handle = app.clone();
+        window.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                let app = app_handle.clone();
+                let container_id = container_id.clone();
+                tauri::async_runtime::spawn(async move {
+                    app.state::<DesktopManager>()
+                        .set_takeover(&container_id, false)
+                        .await;
+                });
+            }
+        });
+    }
     Ok(())
 }
 

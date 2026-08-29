@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.105.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.106.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -41,6 +41,11 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.106.0 (2026-08-29)
+- ✨ **沙箱直播改为独立 Tauri 窗口**:工具面板「沙箱桌面」实例卡片的「直播/接管」按钮不再使用侧边栏内嵌 iframe(尺寸太小,且 iframe permissions-policy 禁止全屏),改为新开独立窗口全页加载 noVNC——围观 = `view_only` 只读,接管 = 双向键鼠 + 接管互斥;同沙箱重复点击即「关旧窗开新窗」完成围观 ⇄ 接管切换;接管窗口被关闭(含主窗口退出联动)由 Rust `Destroyed` 钩子自动释放接管,不再依赖前端 React 清理
+- ✨ **「请求人工介入」横幅新增「打开直播画面」按钮**:AI 调 `desktop_request_user_action`(扫码登录/输密码等)时,用户一键拉起该沙箱的接管窗口,操作完点「已完成」闭环
+- 🔧 **新增 `desktop_ui_open_live_window` 命令,移除 `desktop_set_takeover`**:接管生命周期(进入/释放)并入开窗命令,`desktop_set_takeover` 已无调用方;直播窗口 label `sandbox-live-*` 不匹配任何 capability,noVNC 页无任何 app command 权限(与 ai-browser 窗口同姿势)
 
 ### v0.105.1 (2026-08-29)
 - 🐛 **沙箱桌面长耗时操作突破 sidecar RPC 120 秒默认超时**:`desktop_build_template`(首次构建 5-15 分钟)给 30 分钟上限,`desktop_commit_sandbox` 给 10 分钟,`desktop_exec` 的 RPC 层超时跟随其 `timeoutSec` 参数(+30 秒余量),不再出现「Sidecar RPC timed out after 120 seconds」

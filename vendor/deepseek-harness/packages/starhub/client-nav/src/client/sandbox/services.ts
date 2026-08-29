@@ -81,9 +81,26 @@ export function sandboxLifecycle(sandboxId: string, action: 'destroy' | 'pause' 
   return tauriInvoke<string>('desktop_ui_lifecycle', { sandboxId, action })
 }
 
-/** 围观/接管开关(active=true 期间 AI 写操作被拒)。 */
-export function setTakeover(containerId: string, active: boolean): Promise<void> {
-  return tauriInvoke('desktop_set_takeover', { containerId, active })
+/** 直播窗口目标(实例卡片或「请求人工介入」事件都够用)。 */
+export interface LiveWindowTarget {
+  id: string
+  containerId: string
+  novncPort: number
+}
+
+/**
+ * 打开沙箱直播独立 Tauri 窗口(全页 noVNC,不再是侧边栏 iframe——
+ * 内嵌尺寸太小且 iframe permissions-policy 禁用全屏)。takeover=false
+ * 围观(view_only);true 接管(双向 + 接管互斥,窗口关闭由 Rust 自动
+ * 释放接管)。同沙箱重复打开 = 关旧窗开新窗(围观 ⇄ 接管切换)。
+ */
+export function openSandboxLiveWindow(target: LiveWindowTarget, takeover: boolean): Promise<void> {
+  return tauriInvoke('desktop_ui_open_live_window', {
+    sandboxId: target.id,
+    containerId: target.containerId,
+    novncPort: target.novncPort,
+    takeover,
+  })
 }
 
 /** 「请求人工介入」应答:done=true 已完成,false 无法完成。 */
@@ -113,9 +130,4 @@ export function fileSrc(path: string): string {
   return internals?.convertFileSrc !== undefined ? internals.convertFileSrc(path) : ''
 }
 
-/** noVNC 直播 URL(围观 view_only / 接管双向)。 */
-export function novncUrl(port: number, viewOnly: boolean): string {
-  const params = new URLSearchParams({ autoconnect: '1', resize: 'scale' })
-  if (viewOnly) params.set('view_only', '1')
-  return `http://127.0.0.1:${port}/vnc.html?${params.toString()}`
-}
+/** noVNC 直播 URL 由 Rust desktop_ui_open_live_window 构造(独立窗口全页加载),前端不再内嵌。 */
