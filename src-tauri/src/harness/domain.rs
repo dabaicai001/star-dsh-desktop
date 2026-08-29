@@ -39,7 +39,7 @@ fn ai_ssh_conn_id(asset_id: &str) -> String {
 
 /// 把资产 id 解析为完整连接配置(含 Keyring 合并的敏感字段)。
 /// 返回 (asset_type, config);资产不存在时报错。
-async fn load_asset_config(asset_id: &str) -> Result<(String, Value), String> {
+pub(crate) async fn load_asset_config(asset_id: &str) -> Result<(String, Value), String> {
     let pool = crate::db::get_pool()?;
     let row = sqlx::query("SELECT type, config_json, key_id FROM assets WHERE id = ?")
         .bind(asset_id)
@@ -624,7 +624,7 @@ async fn wait_for_transfer(
 // DB / Redis / ES / Docker 域(经 Sidecar)
 // ============================================================
 
-async fn sidecar_call(bridge: &HostBridgeState, method: &str, params: Value) -> Result<Value, String> {
+pub(crate) async fn sidecar_call(bridge: &HostBridgeState, method: &str, params: Value) -> Result<Value, String> {
     let app = bridge
         .app()
         .ok_or_else(|| "无 AppHandle,无法调用 sidecar".to_string())?;
@@ -633,7 +633,7 @@ async fn sidecar_call(bridge: &HostBridgeState, method: &str, params: Value) -> 
 }
 
 /// 按资产配置建立连接,返回 connId。
-async fn connect_sidecar(
+pub(crate) async fn connect_sidecar(
     bridge: &HostBridgeState,
     asset_type: &str,
     config: &Value,
@@ -956,7 +956,7 @@ async fn execute_docker(
             let container = as_str(args.get("container").unwrap_or(&Value::Null));
             let tail = as_str(args.get("tail").unwrap_or(&Value::Null));
             let tail = if tail.is_empty() { "200".to_string() } else { tail };
-            let r = sidecar_call(bridge, "docker.containerLogs", serde_json::json!({ "connId": conn_id, "container": container, "tail": tail })).await?;
+            let r = sidecar_call(bridge, "docker.containerLogs", serde_json::json!({ "connId": conn_id, "containerId": container, "tail": tail })).await?;
             let logs = r.as_array().cloned().unwrap_or_default();
             Ok(logs.iter().map(|l| format!("[{}] {}", as_str(l.get("stream").unwrap_or(&Value::Null)), as_str(l.get("message").unwrap_or(&Value::Null)))).collect::<Vec<_>>().join("\n"))
         }
@@ -969,8 +969,8 @@ async fn execute_docker(
             let command = as_str(args.get("command").unwrap_or(&Value::Null));
             let r = sidecar_call(bridge, "docker.exec", serde_json::json!({
                 "connId": conn_id,
-                "container": container,
-                "cmd": ["sh", "-c", command],
+                "containerId": container,
+                "command": ["sh", "-c", command],
                 "timeoutSec": 30,
             })).await?;
             let stdout = as_str(r.get("stdout").unwrap_or(&Value::Null));

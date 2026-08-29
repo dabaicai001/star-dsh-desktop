@@ -204,6 +204,14 @@ async fn dispatch_tool(
         return Ok(text);
     }
 
+    // 沙箱桌面(desktop_*):Ubuntu 容器沙箱平台,进程内经 sidecar Docker
+    // 适配器编排;任务级授权与接管互斥在 desktop 模块执行点强制(设计 §5)。
+    if crate::desktop::DESKTOP_TOOLS.contains(&name) {
+        let text = crate::desktop::execute_from_bridge(bridge, session_id, name, args).await?;
+        on_ai_tool_success(bridge, session_id, name, args, &text).await;
+        return Ok(text);
+    }
+
     // 全局工具在 Rust 内执行;list_capabilities 是静态内容,不需要数据库
     // (测试环境可能没有初始化全局 pool)
     if name == "starhub_list_capabilities" {

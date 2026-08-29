@@ -6627,7 +6627,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "starhub"
-version = "0.104.0"
+version = "0.105.0"
 dependencies = [
  "anyhow",
  "apple-native-keyring-store",
@@ -6662,6 +6662,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-util",
+ "toml 0.8.2",
  "tracing",
  "tracing-subscriber",
  "uuid",

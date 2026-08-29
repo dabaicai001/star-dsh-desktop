@@ -245,7 +245,7 @@ Docker 沙箱环境可进 CI(Linux runner 原生支持 docker),集成测试写�
 
 | 阶段 | 内容 | 版本 |
 |---|---|---|
-| Phase 1(本期) | Docker 执行层全链路:配方/模板、实例池、工具集、任务级授权、noVNC 直播 tab、回放、**人机协同(接管模式 / `desktop_request_user_action` / 登录态沉淀,§4.5)**;三平台宿主 | v0.104.0 |
+| Phase 1(本期) | Docker 执行层全链路:配方/模板、实例池、工具集、任务级授权、noVNC 直播 tab、回放、**人机协同(接管模式 / `desktop_request_user_action` / 登录态沉淀,§4.5)**;三平台宿主 | v0.104.0(M0 sidecar 编排能力)+ v0.105.0(M1-M4 全量落地,✅ 已完成) |
 | Phase 2 | WSL2 执行层(免 Docker Desktop);`E2BDesktop` 云后端(vendor `packages/e2b` POC 借力);模板市场(配方分享);framebuffer 直读高性能截图 | 视反馈 |
 | Phase 3 | Hyper-V Windows 客户机(若 Windows-only 需求出现,届时才需自研 guest-agent);`LocalDesktop` 本机降级(恒确认);UIA/AT-SPI 语义元素树 | 视反馈 |
 
@@ -255,4 +255,8 @@ Docker 沙箱环境可进 CI(Linux runner 原生支持 docker),集成测试写�
 
 ---
 
-*草案 v4(Ubuntu 固定 + Docker 默认),待评审;确认后出实施 plan 再动工。*
+*v4 已落地(v0.105.0):M0 sidecar 编排能力(v0.104.0)+ M1 Rust desktop 模块 /
+M2 工具桥与审批分级 / M3 前端(直播 tab、模板管理、设置平台选择器、人工介入横幅)/
+M4 截图回灌与回放。实现偏差:实例池未单独抽象(单实例按授权绑定,够用);
+`desktop_request_user_action` 不走 dsh://tool-exec 泛化转发,改为专用
+`starhub://desktop-user-action` 事件 + `desktop_user_action_reply` 命令(应答链路自有).*

@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.104.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.105.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -41,6 +41,12 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.105.0 (2026-08-29)
+- ✨ **沙箱桌面(Ubuntu 容器沙箱平台,E2B 式架构,M1-M4 一次交付,设计见 `docs/superpowers/specs/2026-08-28-desktop-automation-design.md`)**:AI 在一次性 Ubuntu 24.04 桌面容器(Xvfb + Xfce + x11vnc + noVNC)里操作任意 Linux 桌面应用,画面对用户全程直播
+- ✨ **Rust 主进程新增 `desktop` 模块**:`desktop/mod.rs`(DesktopManager:平台连接缓存/授权/接管/人工介入应答;全部工具实现经 sidecar Docker 适配器编排)、`desktop/recipe.rs`(配方解析校验 + Dockerfile 生成,含 Ubuntu 24.04 firefox/chromium 为 snap 壳的坑说明)、`commands/desktop.rs`(UI 命令:接管开关/概览/平台设置/模板 CRUD/回放帧/生命周期/人工介入应答)
+- ✨ **前端(client-nav)**:沙箱桌面工作面板(实例卡片/直播查看器/回放查看器/模板编辑器)、「请求人工介入」全局横幅(`starhub://desktop-user-action` 事件 + 倒计时)、设置「沙箱平台」tab;配套 25 个新 vitest 用例(面板/横幅/设置/服务/装配/工具树)
+- 🐛 **修复 `docker_exec` 域工具参数键名错位**(搭车修复):Rust 进程内执行器发 `container`/`cmd`,sidecar 期望 `containerId`/`command`——该工具自方案1 迁移后实际一直报错,现对齐
 
 ### v0.104.0 (2026-08-29)
 - ✨ sidecar Docker 适配器补齐沙箱编排能力(沙箱桌面平台 M0,设计见 `docs/superpowers/specs/2026-08-28-desktop-automation-design.md`)

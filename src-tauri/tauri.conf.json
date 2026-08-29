@@ -1,6 +1,6 @@
 {
   "productName": "StarHub",
-  "version": "0.104.0",
+  "version": "0.105.0",
   "identifier": "com.starhub.app",
   "build": {
     "frontendDist": "../shell-placeholder",

@@ -102,6 +102,8 @@ pub fn kind_for_tool(tool: &str) -> &'static str {
         other if other.starts_with("es_") => "db.query_executed",
         // AI 浏览器(无痕独立窗口)动作类
         other if other.starts_with("browser_") => "browser.action",
+        // 沙箱桌面动作类
+        other if other.starts_with("desktop_") => "desktop.action",
         _ => "tool.executed",
     }
 }
@@ -157,6 +159,28 @@ fn tool_summary(tool: &str, args: &serde_json::Value) -> String {
                 format!("{other} 执行成功")
             } else {
                 format!("{other}: {url}")
+            }
+        }
+        // 沙箱桌面:desktop_type 只记输入长度(凭据防御),exec 记命令全文(箱内执行),
+        // 点击/拖拽记坐标,其余记模板/沙箱定位信息。
+        "desktop_type" => {
+            let len = get("text").chars().count();
+            format!("desktop_type: 输入 {len} 字符")
+        }
+        "desktop_exec" => format!("desktop_exec: {}", get("command")),
+        "desktop_click" | "desktop_double_click" | "desktop_move_mouse" => {
+            format!("{tool}: ({},{})", get("x"), get("y"))
+        }
+        "desktop_press_key" => format!("desktop_press_key: {}", get("key")),
+        "desktop_create_sandbox" => {
+            format!("desktop_create_sandbox: 模板 {}", get("template"))
+        }
+        other if other.starts_with("desktop_") => {
+            let sandbox = get("sandboxId");
+            if sandbox.is_empty() {
+                format!("{other} 执行成功")
+            } else {
+                format!("{other}: 沙箱 {sandbox}")
             }
         }
         other => format!("{other} 执行成功"),

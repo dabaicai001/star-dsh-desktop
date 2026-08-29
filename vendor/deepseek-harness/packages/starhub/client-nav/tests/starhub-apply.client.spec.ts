@@ -3,11 +3,12 @@
  * client-nav 插件装配(apply,rc.2 适配后):各槽位注册的槽名、组件与注入面
  * (工具面板桥 / 连接对话框桥 / 文件查看窗 / git 分支胶囊 / 截图按钮附件)
  * 与工具树子类选中语义(selectSubcategory 写选择桥,不再联动布局开关)。
- * rc.2 注册面(v0.100.0 起右下角 BastionExecPanel 浮层席位移除):
- * `sidebar.footer.action`(工具入口)+ `shell.overlay`×3(overlay / 文件查看 /
- * AI 连接卡 / 工具面板→共 4 席之一无独立浮层)+ `conversation.session.
+ * rc.2 注册面(v0.100.0 起右下角 BastionExecPanel 浮层席位移除;
+ * v0.105.0 起沙箱桌面横幅 + 沙箱平台设置 tab 入列):
+ * `sidebar.footer.action`(工具入口)+ `shell.overlay`×5(overlay / 文件查看 /
+ * AI 连接卡 / 沙箱横幅 / 工具面板)+ `conversation.session.
  * header.actions`×3(git / 文件树 / 执行)+ `conversation.input.left`(截图)
- * + `settings.section`×5。
+ * + `settings.section`×6。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
@@ -22,6 +23,8 @@ import { ExecDrawerButton } from '../src/client/conn/ExecDrawerButton.tsx'
 import { FileViewerOverlay } from '../src/client/file-viewer/FileViewerOverlay.tsx'
 import { StarHubConnCard } from '../src/client/conn/StarHubConnCard.tsx'
 import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
+import { SandboxUserActionBanner } from '../src/client/sandbox/SandboxUserActionBanner.tsx'
+import { SandboxSettingsTab } from '../src/client/settings/sandbox.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
 import { STARHUB_FILE_SOURCE } from '../src/client/file-source.ts'
 import { AboutTab } from '../src/client/settings/about.tsx'
@@ -107,21 +110,21 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
       'sidebar.footer.action',
-      'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
+      'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
       'conversation.session.header.actions', 'conversation.session.header.actions',
       'conversation.session.header.actions',
       'conversation.input.left',
-      'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
+      'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
       'settings.action',
     ])
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
       StarHubFooterButton,
-      StarHubOverlay, FileViewerOverlay, StarHubConnCard, StarHubToolWorkspace,
+      StarHubOverlay, FileViewerOverlay, StarHubConnCard, SandboxUserActionBanner, StarHubToolWorkspace,
       GitBranchPill, FileTreeButton, ExecDrawerButton,
       ScreenshotButton,
       // AiTab 经 () => createElement(AiTab, { api }) 包装,按函数断言。
-      expect.any(Function), PluginsTab, AuditTab, AlertTab, AboutTab,
+      expect.any(Function), PluginsTab, AuditTab, AlertTab, SandboxSettingsTab, AboutTab,
       OpenConfigAction,
     ])
   })
@@ -133,7 +136,7 @@ describe('client-nav apply (rc.2)', () => {
     const injected = footerConfig.inject() as { openTools: () => void }
     expect(injected.openTools).toBeTypeOf('function')
     // toolsPanel 快照桥挂在工具面板(workspace)槽的 inject hooks 舱位,footer 只负责打开。
-    const panelConfig = register.mock.calls[4]![0]
+    const panelConfig = register.mock.calls[5]![0]
     const panelInjected = panelConfig.inject() as {
       openTools?: never
       hooks: { toolsPanel: { getSnapshot: () => { open: boolean } } }
@@ -173,7 +176,7 @@ describe('client-nav apply (rc.2)', () => {
   it('tools panel inject selects a subcategory through the selection bridge', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const panelConfig = register.mock.calls[4]![0]
+    const panelConfig = register.mock.calls[5]![0]
     const injected = panelConfig.inject() as {
       selectSubcategory: (key: string) => void
       hooks: { selection: { getSnapshot: () => { subcategory: string | null } } }
@@ -204,7 +207,7 @@ describe('client-nav apply (rc.2)', () => {
   it('tools panel inject closes the panel through the bridge', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const panelConfig = register.mock.calls[4]![0]
+    const panelConfig = register.mock.calls[5]![0]
     const injected = panelConfig.inject() as { closeTools: () => void; hooks: { toolsPanel: { getSnapshot: () => { open: boolean } } } }
     injected.closeTools()
     expect(injected.hooks.toolsPanel.getSnapshot()).toEqual({ open: false })
@@ -215,7 +218,7 @@ describe('client-nav apply (rc.2)', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const panel = register.mock.calls[4]![0].inject() as { openAsset: (asset: unknown) => void }
+      const panel = register.mock.calls[5]![0].inject() as { openAsset: (asset: unknown) => void }
       const esAsset = {
         id: 'es1', type: 'db', name: 'es-1', group_id: null,
         config: { dbType: 'elasticsearch', host: 'h' },
@@ -284,7 +287,7 @@ describe('client-nav apply (rc.2)', () => {
     const setDraft = vi.fn()
     const { ctx, register, settingsUpdate } = referenceContext({ insertReference, setDraft })
     applyPlugin(ctx)
-    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    const panel = register.mock.calls[5]![0].inject() as { insertAssetReference: (asset: unknown) => void }
     panel.insertAssetReference(refAsset)
     // 轻绑定:starhub-tool-context settings patch 带会话 id 与资产(与 @ pick 同通道)
     expect(settingsUpdate).toHaveBeenCalledWith(expect.objectContaining({
@@ -304,7 +307,7 @@ describe('client-nav apply (rc.2)', () => {
     const setDraft = vi.fn()
     const { ctx, register } = referenceContext({ insertReference, setDraft })
     applyPlugin(ctx)
-    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    const panel = register.mock.calls[5]![0].inject() as { insertAssetReference: (asset: unknown) => void }
     // Docker 资产:纯文本回退同样带 [Docker] 删除保护标注
     panel.insertAssetReference({ ...refAsset, id: 'd1', type: 'docker', name: 'local-docker', config: {} })
     expect(setDraft).toHaveBeenCalledWith('查一下 @local-docker [Docker] ')
@@ -318,7 +321,7 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     // apply 启动期的记忆开关初始同步也会写一次 settings,先清掉再断言本路径不写
     settingsUpdate.mockClear()
-    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    const panel = register.mock.calls[5]![0].inject() as { insertAssetReference: (asset: unknown) => void }
     panel.insertAssetReference(refAsset)
     expect(settingsUpdate).not.toHaveBeenCalled()
   })

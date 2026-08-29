@@ -190,3 +190,39 @@ describe('browser_* gate(AI 浏览器,无痕独立窗口)', () => {
     expect(classifyStarHubCall('browser_nope', {})).toBeNull()
   })
 })
+
+describe('desktop_* gate(沙箱桌面,任务级授权)', () => {
+  it('hard-flags desktop_exec (沙箱与外界逻辑的交换口,即使 never 策略)', () => {
+    const verdict = classifyStarHubCall('desktop_exec', { command: 'ls' })
+    expect(verdict?.ask).toBe(true)
+    expect(verdict?.hard).toBe(true)
+  })
+
+  it('soft-asks for lifecycle/management tools;create 的确认即任务级授权', () => {
+    const create = classifyStarHubCall('desktop_create_sandbox', { template: 'ubuntu-desktop' })
+    expect(create?.ask).toBe(true)
+    expect(create?.hard).toBeUndefined()
+    if (create?.reason !== undefined) expect(create.reason).toContain('任务级授权')
+    for (const tool of [
+      'desktop_build_template', 'desktop_pause_sandbox', 'desktop_resume_sandbox',
+      'desktop_destroy_sandbox', 'desktop_commit_sandbox',
+    ]) {
+      const verdict = classifyStarHubCall(tool, {})
+      expect(verdict?.ask, tool).toBe(true)
+      expect(verdict?.hard, tool).toBeUndefined()
+    }
+  })
+
+  it('allows in-sandbox perception/action tools (授权由宿主在执行点强制)', () => {
+    for (const tool of [
+      'desktop_list_templates', 'desktop_sandbox_status', 'desktop_sandbox_replay',
+      'desktop_screenshot', 'desktop_list_windows', 'desktop_get_foreground_window',
+      'desktop_focus_window', 'desktop_click', 'desktop_double_click',
+      'desktop_move_mouse', 'desktop_scroll', 'desktop_drag', 'desktop_type',
+      'desktop_press_key', 'desktop_request_user_action',
+    ]) {
+      expect(classifyStarHubCall(tool, {}), tool).toEqual({ ask: false })
+    }
+    expect(classifyStarHubCall('desktop_nope', {})).toBeNull()
+  })
+})

@@ -8,7 +8,7 @@
  * 直接驱动这两份裸 source。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   createToolSelectionBridge, type StarHubAssetListState, type ToolSelection,
@@ -140,6 +140,16 @@ describe('StarHubToolWorkspace', () => {
     render(<StarHubToolWorkspace {...props} />)
     expect(screen.getByText('浏览器预览模式')).toBeTruthy()
     expect(screen.queryByText(/资产加载失败/)).toBeNull()
+  })
+
+  it('renders the sandbox panel (no asset list) for the sandbox subcategory', async () => {
+    const props = workspaceProps()
+    props.bridge.selectSubcategory('sandbox')
+    render(<StarHubToolWorkspace {...props} />)
+    // 沙箱子类无资产概念:展开即 SandboxPanel;无 Tauri IPC(测试环境)时
+    // 面板落到概览错误态而不是资产加载态。
+    await waitFor(() => expect(screen.getByText(/沙箱概览不可用/)).toBeTruthy())
+    expect(screen.queryByText(/暂无 沙箱桌面 连接/)).toBeNull()
   })
 
   it('shows the per-subcategory empty state with a 新建连接 button when no assets match', () => {

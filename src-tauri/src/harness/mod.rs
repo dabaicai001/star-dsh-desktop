@@ -43,6 +43,9 @@ pub mod tools;
 /// 方案1:进程内域工具执行器(域工具直接在 Rust 主进程执行,不再依赖前端面板)。
 mod domain;
 
+/// 沙箱桌面模块复用域执行器的 sidecar 连接原语。
+pub(crate) use domain::{connect_sidecar, load_asset_config, sidecar_call};
+
 /// StarHub × dsh 联动:领域事件 schema(契约 §1,四方共用)。
 pub mod events;
 

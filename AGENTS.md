@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.104.0(2026-08-29) |
+| 当前版本 | v0.105.0(2026-08-29) |
 
 ## 架构一句话
 
@@ -25,11 +25,13 @@ starhub/
 │   ├── src/
 │   │   ├── main.rs           # 入口(主窗口关闭联动销毁其余窗口)
 │   │   ├── commands/         # 全部 Tauri Command:ssh / sftp / db / docker / ai_memory /
-│   │   │                     # asset / audit / alert / broker / browser / dsh_plugins /
-│   │   │                     # file / harness / local / mcp / screenshot / secret / sidecar
+│   │   │                     # asset / audit / alert / broker / browser / desktop(沙箱桌面 UI)/
+│   │   │                     # dsh_plugins / file / harness / local / mcp / screenshot /
+│   │   │                     # secret / sidecar
 │   │   ├── ssh/              # SSH 会话(russh):auth / session / known_hosts / sftp_transport
 │   │   ├── sftp/             # SFTP 会话与传输(russh-sftp)
 │   │   ├── browser/          # AI 浏览器(无痕独立窗口):mod / script / cdp(Win)/ snapshot_*(mac/Linux)
+│   │   ├── desktop/          # 沙箱桌面(Ubuntu 容器沙箱平台):mod(编排/授权/接管)/ recipe(配方)
 │   │   ├── harness/          # dsh 桥与插件宿主(harness/plugins)
 │   │   ├── db/               # 本地 SQLite 持久化(sqlx)
 │   │   ├── keyring/          # 系统 Keyring 封装
@@ -124,4 +126,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新:2026-08-29(v0.104.0)*
+*最后更新:2026-08-29(v0.105.0)*

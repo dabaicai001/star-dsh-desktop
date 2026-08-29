@@ -6,6 +6,7 @@
 mod commands;
 mod browser;
 mod db;
+mod desktop;
 mod harness;
 mod keyring;
 mod mcp;
@@ -113,6 +114,8 @@ fn main() {
         .manage(harness::HarnessManager::new())
         .manage(harness::web::DshWebManager::new())
         .manage(browser::BrowserManager::new())
+        // 沙箱桌面:任务级授权 / 平台连接缓存 / 接管互斥状态
+        .manage(desktop::DesktopManager::new())
         // 联动 M1:会话附着注册表(ssh_attach/ssh_detach + live.snapshot 快照源)
         .manage(registry::SessionRegistry::new())
         // 主窗口关闭 = 应用退出:CloseRequested 阶段先销毁其余全部窗口
@@ -406,6 +409,15 @@ fn main() {
             // AI 浏览器(无痕独立窗口):页面 eval 结果回传,仅此一条命令对
             // ai-browser 窗口开放(capabilities/browser.json 收窄)
             commands::browser::browser_internal_result,
+            // 沙箱桌面(UI 状态读写;容器生命周期只走 AI 工具路径与 UI 生命周期命令)
+            commands::desktop::desktop_set_takeover,
+            commands::desktop::desktop_ui_overview,
+            commands::desktop::desktop_ui_set_platform,
+            commands::desktop::desktop_ui_upsert_template,
+            commands::desktop::desktop_ui_delete_template,
+            commands::desktop::desktop_ui_lifecycle,
+            commands::desktop::desktop_ui_replay_frames,
+            commands::desktop::desktop_user_action_reply,
             // File
             commands::file::open_file_external,
             // Local machine (AI #LOCAL workspace)

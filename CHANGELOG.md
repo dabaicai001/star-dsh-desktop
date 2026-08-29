@@ -14,6 +14,21 @@
 
 ---
 
+## [0.105.0] - 2026-08-29
+
+### 新增
+- **沙箱桌面(Ubuntu 容器沙箱平台,E2B 式架构,M1-M4 一次交付,设计见 `docs/superpowers/specs/2026-08-28-desktop-automation-design.md`)**:AI 在一次性 Ubuntu 24.04 桌面容器(Xvfb + Xfce + x11vnc + noVNC)里操作任意 Linux 桌面应用,画面对用户全程直播
+  - **模板 → 实例 → 销毁**:模板 = 配方 TOML(base/资源/网络档/预装软件,表驱动存 SQLite)+ 构建产物镜像 tag;`desktop_build_template` 构建镜像,`desktop_create_sandbox` 秒级开实例(noVNC 端口自动分配),任务结束 `desktop_destroy_sandbox` 销毁;暂停/恢复(`desktop_pause_sandbox` / `desktop_resume_sandbox`)与登录态固化(`desktop_commit_sandbox` → 新模板)齐备
+  - **23 个 `desktop_*` AI 工具**:截图回灌(`desktop_screenshot` PNG 落盘,模型经 read_image 看画面)、窗口管理(wmctrl/xdotool)、键鼠操作(click/double_click/move/scroll/drag/type/press_key,坐标 = 截图物理像素)、箱内命令(`desktop_exec`)、人机协作(`desktop_request_user_action`:扫码登录/输密码/验证码时横幅请用户出手,用户点「已完成」AI 继续)
+  - **安全模型(§5)**:任务级授权——`desktop_create_sandbox` 一次确认 = 本次任务沙箱内全部操作权限(60 分钟),授权存在性/过期/实例匹配由 Rust 宿主在执行点强制;`desktop_exec` 恒确认(hard 档);容器硬化 cap-drop ALL + no-new-privileges + 不挂 docker.sock;网络档 none/restricted(自定义隔离网络)/full
+  - **围观/接管**:工具面板「沙箱桌面」子类内嵌 noVNC 直播;用户接管期间 AI 写操作一律拒绝(不撤销授权);每次写操作前自动截屏留档为回放帧,`desktop_sandbox_replay` / 面板「回放」查看
+  - **沙箱平台选择器**(设置 → 沙箱平台):选择既有 Docker 连接作为执行平台,默认本机;所选连接失效时报错,绝不静默回落本机
+- **Rust 主进程新增 `desktop` 模块**:`desktop/mod.rs`(DesktopManager:平台连接缓存/授权/接管/人工介入应答;全部工具实现经 sidecar Docker 适配器编排)、`desktop/recipe.rs`(配方解析校验 + Dockerfile 生成,含 Ubuntu 24.04 firefox/chromium 为 snap 壳的坑说明)、`commands/desktop.rs`(UI 命令:接管开关/概览/平台设置/模板 CRUD/回放帧/生命周期/人工介入应答)
+- **前端(client-nav)**:沙箱桌面工作面板(实例卡片/直播查看器/回放查看器/模板编辑器)、「请求人工介入」全局横幅(`starhub://desktop-user-action` 事件 + 倒计时)、设置「沙箱平台」tab;配套 25 个新 vitest 用例(面板/横幅/设置/服务/装配/工具树)
+
+### 修复
+- **修复 `docker_exec` 域工具参数键名错位**(搭车修复):Rust 进程内执行器发 `container`/`cmd`,sidecar 期望 `containerId`/`command`——该工具自方案1 迁移后实际一直报错,现对齐
+
 ## [0.104.0] - 2026-08-29
 
 ### 新增

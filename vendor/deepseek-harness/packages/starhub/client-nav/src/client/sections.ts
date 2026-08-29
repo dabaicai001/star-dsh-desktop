@@ -129,6 +129,15 @@ export const STARHUB_SUBCATEGORIES: readonly StarHubSubcategory[] = [
     Icon: IconArchiveOutline20,
     matches: a => routeNameForAsset(a) === 'docker',
   },
+  {
+    // 沙箱桌面:无资产概念(实例/模板存 SQLite),树节点展开后渲染
+    // SandboxPanel(StarHubToolWorkspace 对 key='sandbox' 特判)。
+    key: 'sandbox',
+    label: '沙箱桌面',
+    routePrefix: '/sandbox',
+    Icon: IconArchiveOutline20,
+    matches: () => false,
+  },
 ]
 
 /**

@@ -1,6 +1,6 @@
 [package]
 name = "starhub"
-version = "0.104.0"
+version = "0.105.0"
 edition = "2021"
 
 [dependencies]
@@ -46,6 +46,8 @@ image = { version = "0.25.10", optional = true }
 # base64 此前仅截图特性使用;AI 浏览器 CDP 截图(Windows)与 WKWebView/WebKitGTK
 # 截图也要用,提升为常驻依赖(纯 Rust 小 crate,不影响 glibc 2.35 兼容版基线)。
 base64 = "0.23"
+# 沙箱桌面:模板配方(*.starhub-sandbox.toml)解析
+toml = "0.8"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = "1.1.0"

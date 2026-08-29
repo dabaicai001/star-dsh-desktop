@@ -226,6 +226,8 @@ const ALWAYS_ASK_TOOLS: ReadonlySet<string> = new Set([
   'mcp_call',
   // AI 浏览器:任意 JS 注入页面上下文,能力等同在 DevTools 里执行代码
   'browser_eval',
+  // 沙箱桌面:箱内任意命令是沙箱与「外界逻辑」的交换口,不在任务级授权内
+  'desktop_exec',
 ])
 
 /** 即使 never 策略也必须确认的 ALWAYS_ASK 工具(删除类/任意代码执行)。 */
@@ -233,6 +235,7 @@ const ALWAYS_ASK_HARD_TOOLS: ReadonlySet<string> = new Set([
   'es_delete_document',
   'es_delete_index',
   'browser_eval',
+  'desktop_exec',
 ])
 
 /** Redis 只读命令首词。 */
@@ -305,6 +308,17 @@ export function classifyStarHubCall(toolName: string, args: unknown): GateVerdic
     case 'browser_press_key':
     case 'browser_select_option':
       return { ask: true, reason: '浏览器动作会对外部站点产生真实操作,需要确认' }
+    // 沙箱桌面(设计 §5.1):create_sandbox 的确认 = 任务级授权,之后箱内
+    // 截图/键鼠由宿主按授权在执行点放行;管理类(构建/暂停/恢复/销毁/固化)
+    // 软确认;desktop_exec 在 ALWAYS_ASK + hard 档。
+    case 'desktop_create_sandbox':
+      return { ask: true, reason: '创建沙箱即授予 AI 本次任务的全部沙箱内操作权限(任务级授权)' }
+    case 'desktop_build_template':
+    case 'desktop_pause_sandbox':
+    case 'desktop_resume_sandbox':
+    case 'desktop_destroy_sandbox':
+    case 'desktop_commit_sandbox':
+      return { ask: true, reason: '沙箱管理操作,需要确认' }
     default:
       // 只读域工具(列表/查询/搜索/上传下载以外的 sftp、excel 工作簿操作等)放行。
       return ALLOW
@@ -325,6 +339,14 @@ const STARHUB_DOMAIN_TOOLS: ReadonlySet<string> = new Set([
   'browser_reload', 'browser_state', 'browser_extract', 'browser_click',
   'browser_type', 'browser_press_key', 'browser_select_option',
   'browser_scroll', 'browser_screenshot', 'browser_eval',
+  // 沙箱桌面(Ubuntu 容器沙箱平台)
+  'desktop_list_templates', 'desktop_build_template', 'desktop_create_sandbox',
+  'desktop_sandbox_status', 'desktop_pause_sandbox', 'desktop_resume_sandbox',
+  'desktop_destroy_sandbox', 'desktop_commit_sandbox', 'desktop_sandbox_replay',
+  'desktop_screenshot', 'desktop_list_windows', 'desktop_get_foreground_window',
+  'desktop_focus_window', 'desktop_click', 'desktop_double_click',
+  'desktop_move_mouse', 'desktop_scroll', 'desktop_drag', 'desktop_type',
+  'desktop_press_key', 'desktop_exec', 'desktop_request_user_action',
 ])
 
 /** 会话的有效审批策略:会话覆盖优先,缺省组合配置(ask)。 */

@@ -1,0 +1,28 @@
+.root { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
+.section { display: flex; flex-direction: column; gap: 6px; }
+.sectionTitle { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 600; }
+.card { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); }
+.cardMain { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.cardTitle { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cardSub { font-size: 11px; opacity: 0.65; }
+.cardActions { display: flex; gap: 6px; }
+.button { padding: 3px 10px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; background: transparent; color: inherit; font-size: 12px; cursor: pointer; }
+.button:hover:not(:disabled) { background: var(--dsw-alias-bg-layer-3, rgba(127,127,127,0.12)); }
+.button:disabled { opacity: 0.5; cursor: default; }
+.danger { color: var(--dsw-alias-text-danger, #d33); }
+.status { padding: 12px; font-size: 12px; opacity: 0.75; }
+.errorBanner { padding: 6px 10px; border-radius: 6px; background: rgba(211, 51, 51, 0.12); color: var(--dsw-alias-text-danger, #d33); font-size: 12px; }
+.viewer { display: flex; flex-direction: column; gap: 6px; height: 70vh; }
+.viewerBar { display: flex; align-items: center; gap: 8px; }
+.viewerTitle { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewerFrame { flex: 1; border: 1px solid var(--dsw-alias-border-l3); border-radius: 8px; background: #000; }
+.dialogMask { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.4); z-index: 10; }
+.dialog { display: flex; flex-direction: column; gap: 8px; width: min(720px, 90vw); max-height: 85vh; padding: 14px; border-radius: 10px; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l3); overflow: auto; }
+.recipeEditor { width: 100%; font-family: ui-monospace, monospace; font-size: 12px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-layer-1, transparent); color: inherit; padding: 8px; }
+.replayList { display: flex; flex-direction: column; gap: 8px; overflow: auto; }
+.replayRow { display: flex; flex-direction: column; gap: 4px; }
+.replayShot { max-width: 100%; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); }
+.banner { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 10px; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l3); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); z-index: 100; }
+.bannerText { font-size: 13px; max-width: 60vw; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-layer-1, transparent); color: inherit; font-size: 13px; }

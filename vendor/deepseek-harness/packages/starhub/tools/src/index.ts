@@ -638,6 +638,170 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
       },
     },
   },
+  // ── 沙箱桌面(Ubuntu 容器沙箱平台,设计 docs/superpowers/specs/2026-08-28-desktop-automation-design.md)──
+  // 安全模型:desktop_create_sandbox 的一次确认 = 任务级授权(60 分钟),授权期内
+  // 箱内截图/键鼠全自动放行(授权由宿主在执行点强制);desktop_exec 恒确认;
+  // 用户接管直播 tab 期间写操作被拒(不撤销授权)。坐标 = 最近一次截图的物理像素,
+  // 界面变化后必须重新 desktop_screenshot。
+  {
+    toolName: 'desktop_list_templates',
+    description: '列出沙箱桌面的可用模板(名称/镜像是否已构建/创建时间)。',
+    parameters: {},
+  },
+  {
+    toolName: 'desktop_build_template',
+    description: '构建模板镜像(首次约 5-15 分钟,之后层缓存秒级)。desktop_create_sandbox 报「镜像未构建」时先调它。会请求用户确认。',
+    parameters: {
+      template: { type: 'string', required: true, description: '模板名(desktop_list_templates 返回)' },
+    },
+  },
+  {
+    toolName: 'desktop_create_sandbox',
+    description: '从模板创建一次性 Ubuntu 桌面沙箱并启动。这一次确认即授予本次任务的沙箱内全部操作权限(任务级授权,60 分钟);沙箱画面对用户全程直播可见,任务结束应 desktop_destroy_sandbox 销毁。会请求用户确认。',
+    parameters: {
+      template: { type: 'string', description: '模板名,默认 ubuntu-desktop' },
+      task: { type: 'string', description: '任务描述,展示在确认卡与直播 tab 上' },
+    },
+  },
+  {
+    toolName: 'desktop_sandbox_status',
+    description: '查询沙箱状态;不带 sandboxId 时列出全部未销毁实例。',
+    parameters: {
+      sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },
+    },
+  },
+  {
+    toolName: 'desktop_pause_sandbox',
+    description: '暂停沙箱(≈ E2B pause)。会请求用户确认。',
+    parameters: { sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' } },
+  },
+  {
+    toolName: 'desktop_resume_sandbox',
+    description: '恢复已暂停的沙箱。会请求用户确认。',
+    parameters: { sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' } },
+  },
+  {
+    toolName: 'desktop_destroy_sandbox',
+    description: '销毁沙箱实例(回放帧归档保留);任务完成后必须调用。会请求用户确认。',
+    parameters: { sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' } },
+  },
+  {
+    toolName: 'desktop_commit_sandbox',
+    description: '把沙箱当前状态(含登录态/已装软件)固化为新模板,下次从它创建的沙箱自带该状态。登录完成后推荐调用。会请求用户确认。',
+    parameters: {
+      name: { type: 'string', required: true, description: '新模板名(小写字母/数字/中划线)' },
+      sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },
+    },
+  },
+  {
+    toolName: 'desktop_sandbox_replay',
+    description: '读取沙箱的操作回放帧(每次写操作前的自动截屏留档):动作 | 时间 | 截图路径。',
+    parameters: {
+      sandboxId: { type: 'string', required: true, description: '沙箱 id' },
+      limit: { type: 'number', description: '返回帧数,默认 50,上限 500' },
+    },
+  },
+  {
+    toolName: 'desktop_screenshot',
+    description: '截取沙箱屏幕(PNG 落盘返回路径);随后调用 read_image 读取即可看到画面。坐标类操作必须基于最近一次截图;界面变化后重新截图。',
+    parameters: { sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' } },
+  },
+  {
+    toolName: 'desktop_list_windows',
+    description: '列出沙箱内窗口(id | 几何 | 标题),供 desktop_focus_window 选目标。',
+    parameters: { sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' } },
+  },
+  {
+    toolName: 'desktop_get_foreground_window',
+    description: '查询沙箱内当前前台窗口(标题与 id)。',
+    parameters: { sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' } },
+  },
+  {
+    toolName: 'desktop_focus_window',
+    description: '聚焦沙箱内指定窗口(置前台)。用户接管中会被拒绝。',
+    parameters: {
+      windowId: { type: 'string', required: true, description: '窗口 id(desktop_list_windows 返回)' },
+      sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },
+    },
+  },
+  {
+    toolName: 'desktop_click',
+    description: '在沙箱屏幕坐标单击。坐标基于最近一次 desktop_screenshot 的物理像素。用户接管中会被拒绝。',
+    parameters: {
+      x: { type: 'number', required: true, description: '横坐标(物理像素)' },
+      y: { type: 'number', required: true, description: '纵坐标(物理像素)' },
+      button: { type: 'string', description: 'left(默认)/middle/right' },
+      sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },
+    },
+  },
+  {
+    toolName: 'desktop_double_click',
+    description: '在沙箱屏幕坐标双击(坐标约定同 desktop_click)。',
+    parameters: {
+      x: { type: 'number', required: true }, y: { type: 'number', required: true },
+      sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },
+    },
+  },
+  {
+    toolName: 'desktop_move_mouse',
+    description: '移动指针到坐标(hover 触发用),不点击。',
+    parameters: {
+      x: { type: 'number', required: true }, y: { type: 'number', required: true },
+      sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },
+    },
+  },
+  {
+    toolName: 'desktop_scroll',
+    description: '在坐标处滚动。amount 为像素量,内部换算为滚轮格数。',
+    parameters: {
+      x: { type: 'number', required: true }, y: { type: 'number', required: true },
+      direction: { type: 'string', required: true, description: 'up/down/left/right' },
+      amount: { type: 'number', description: '滚动像素量,默认 600' },
+      sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },
+    },
+  },
+  {
+    toolName: 'desktop_drag',
+    description: '从 (fromX,fromY) 拖拽到 (toX,toY)。',
+    parameters: {
+      fromX: { type: 'number', required: true }, fromY: { type: 'number', required: true },
+      toX: { type: 'number', required: true }, toY: { type: 'number', required: true },
+      sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },
+    },
+  },
+  {
+    toolName: 'desktop_type',
+    description: '向沙箱当前焦点输入文本(支持 Unicode/中文)。密码等敏感内容应由用户接管输入(desktop_request_user_action),不要代输。文本内容不进审计。',
+    parameters: {
+      text: { type: 'string', required: true, description: '要输入的文本' },
+      sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },
+    },
+  },
+  {
+    toolName: 'desktop_press_key',
+    description: '按键:Enter/Tab/Escape/Backspace/Delete/方向键/Home/End/PageUp/PageDown/Space/F1-F24,组合键用 ctrl+s / ctrl+shift+s 语法。',
+    parameters: {
+      key: { type: 'string', required: true, description: '键名或组合键' },
+      sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },
+    },
+  },
+  {
+    toolName: 'desktop_exec',
+    description: '在沙箱内执行任意 shell 命令(装软件、启进程、查状态)。是沙箱与外界逻辑的交换口,每次调用都会请求用户确认。',
+    parameters: {
+      command: { type: 'string', required: true, description: 'shell 命令' },
+      timeoutSec: { type: 'number', description: '超时秒数,默认 60,上限 600' },
+      sandboxId: { type: 'string', description: '沙箱 id,默认当前授权沙箱' },
+    },
+  },
+  {
+    toolName: 'desktop_request_user_action',
+    description: '请求用户在沙箱直播 tab 中人工完成操作(扫码登录、输密码、短信验证等)。message 会横幅展示给用户,用户完成后点「已完成」你即收到结果继续。不要代输密码。',
+    parameters: {
+      message: { type: 'string', required: true, description: '给用户看的操作指引,如「请用手机扫描沙箱屏幕上的二维码登录微信」' },
+      timeoutSeconds: { type: 'number', description: '等待秒数,默认 300' },
+    },
+  },
 ]
 
 /**

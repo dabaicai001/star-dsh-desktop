@@ -36,6 +36,7 @@ import { FileTreePanel } from './file-tree/FileTreePanel.tsx'
 import type { FileTreeState } from './file-tree/state.ts'
 import { ExecRecordList } from './conn/ExecRecordList.tsx'
 import type { ExecRecordsState } from './conn/exec-records.ts'
+import { SandboxPanel } from './sandbox/SandboxPanel.tsx'
 import css from './StarHubToolWorkspace.module.css'
 
 /** Business face injected by the registration: the connection wire + bridge/asset writes. */
@@ -307,20 +308,23 @@ function renderSubcategory(
       </button>
       {expanded && (
         <div className={css.assetGroup}>
-          {loading && <div className={css.status}>加载资产…</div>}
-          {!loading && preview && (
+          {subcategory.key === 'sandbox' ? (
+            // 沙箱桌面无资产概念:展开即渲染实例/模板管理面板
+            <SandboxPanel />
+          ) : loading && <div className={css.status}>加载资产…</div>}
+          {subcategory.key !== 'sandbox' && !loading && preview && (
             <div className={css.status}>
               <div className={css.previewTitle}>浏览器预览模式</div>
               <div>当前页面跑在纯浏览器里,没有 StarHub 桌面端后端(Tauri IPC),资产列表不可用。</div>
             </div>
           )}
-          {!loading && !preview && error !== null && (
+          {subcategory.key !== 'sandbox' && !loading && !preview && error !== null && (
             <div className={css.status}>
               <div>资产加载失败:{error}</div>
               <button type="button" className={css.retryButton} onClick={() =>{  handlers.refreshAssets() }}>重试</button>
             </div>
           )}
-          {!loading && !preview && error === null && matched.length === 0 && (
+          {subcategory.key !== 'sandbox' && !loading && !preview && error === null && matched.length === 0 && (
             <div className={css.status}>
               <div>暂无 {subcategory.label} 连接。</div>
               <button type="button" className={css.retryButton} onClick={() =>{  handlers.openConnectionManager() }}>
@@ -328,7 +332,7 @@ function renderSubcategory(
               </button>
             </div>
           )}
-          {!loading && !preview && error === null && matched.length > 0 && (
+          {subcategory.key !== 'sandbox' && !loading && !preview && error === null && matched.length > 0 && (
             <div className={css.list}>
               {matched.map(asset => (
                 <AssetRow

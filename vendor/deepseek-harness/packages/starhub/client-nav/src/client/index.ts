@@ -55,6 +55,8 @@ import { FileTreeButton } from './file-tree/FileTreeButton.tsx'
 import { createFileTreeBridge } from './file-tree/state.ts'
 import { StarHubToolWorkspace, type StarHubToolWorkspaceInjected } from './StarHubToolWorkspace.tsx'
 import { AboutTab } from './settings/about.tsx'
+import { SandboxSettingsTab } from './settings/sandbox.tsx'
+import { SandboxUserActionBanner } from './sandbox/SandboxUserActionBanner.tsx'
 import { AiTab } from './settings/ai.tsx'
 import { AlertTab } from './settings/alert.tsx'
 import { AuditTab } from './settings/audit.tsx'
@@ -199,6 +201,14 @@ export function apply(ctx: Context): void {
     order: 115,
     label: 'StarHub ConnCard',
   }, StarHubConnCard))
+  // 沙箱桌面「请求人工介入」常驻横幅(desktop_request_user_action):无待答
+  // 请求时渲染 null;事件订阅在组件内部(HMR/卸载自动退订)。
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'starhub-sandbox-user-action',
+    order: 120,
+    label: 'StarHub Sandbox UserAction',
+  }, SandboxUserActionBanner))
   const workspaceInject = (): StarHubToolWorkspaceInjected => ({
     openAsset: openAssetPage,
     refreshAssets: assets.refresh,
@@ -407,7 +417,8 @@ export function apply(ctx: Context): void {
     { id: 'starhub-plugins', order: 31, label: '插件市场', component: PluginsTab },
     { id: 'starhub-audit', order: 32, label: '审计日志', component: AuditTab },
     { id: 'starhub-alert', order: 33, label: '告警规则', component: AlertTab },
-    { id: 'starhub-about', order: 34, label: '关于', component: AboutTab },
+    { id: 'starhub-sandbox', order: 34, label: '沙箱平台', component: SandboxSettingsTab },
+    { id: 'starhub-about', order: 35, label: '关于', component: AboutTab },
   ]
   for (const tab of starhubTabs) {
     ctx.slots.inject('settings.section', () => ctx.slots.register({
