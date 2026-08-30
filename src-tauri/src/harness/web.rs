@@ -948,7 +948,13 @@ mod tests {
         assert_eq!(read_target(&link), std::fs::canonicalize(&target_b).unwrap());
 
         // 5. 真实目录占用 → 不删除、不报错
+        // 移除链接本身与 ensure_dir_link_fresh 内部同规则:Windows 目录
+        // junction 用 rmdir;Unix 目录 symlink 必须 unlink(remove_dir 报
+        // ENOTDIR,Linux CI 上 code 20 NotADirectory)。
+        #[cfg(target_os = "windows")]
         fs::remove_dir(&link).unwrap();
+        #[cfg(not(target_os = "windows"))]
+        fs::remove_file(&link).unwrap();
         fs::create_dir_all(&link).unwrap();
         fs::write(link.join("user-data.txt"), "keep").unwrap();
         ensure_dir_link_fresh(&link, &target_a).unwrap();
