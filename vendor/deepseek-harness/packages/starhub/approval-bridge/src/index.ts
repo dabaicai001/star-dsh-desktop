@@ -5,16 +5,19 @@
  *
  * 1. preset 消费:session/created 时读取共享 settings.yaml 的 `permission`
  *    命名空间(dsh web GUI「设置 → 通用 → 权限」写入的 defaultPreset),
- *    把会话审批策略固定为 ask/never——StarHub 侧不再有自己的命令白名单,
- *    审核策略统一由 dsh 权限体系供给。
+ *    把会话审批策略固定为 ask——v0.106.1 起不再把 danger-full-access 映射为
+ *    never:dsh-user-approval 的 decide() 在 never 下先于所有 answerer 直接
+ *    拒,hard 档删除确认(desktop_exec / DELETE FROM 等)会被静默驳回,
+ *    与「hard 死规定必须弹卡」的设计意图矛盾(v0.106.0 实测事故)。
+ *    StarHub 侧不再有自己的命令白名单,审核策略统一由 dsh 权限体系供给。
  * 2. starhub_* 工具风险门(防误删核心):tools/pre-execute 上把「需要人工
  *    确认」的调用升级为 ask(写操作恒 ask;命令/SQL 按只读判定放行、风险词
  *    命中或不确定一律 ask)。删除/高危档(`hard`)与权限预设脱钩:风险词命中
- *    (rm/find -delete/docker 删除/DROP/TRUNCATE/Redis DEL 等)即使会话策略
- *    为 never(danger-full-access 全访问)也必须弹确认卡,绝不静默放行;
- *    只有普通写操作档才随 never 策略放行,与 dsh 自家「全访问不弹审批」
- *    语义对齐。注意:preset 只提供策略,「哪些调用该问」的决定只由本门
- *    产生——删除本门 = 域工具不再有任何确认。
+ *    (rm/find -delete/docker 删除/DROP/TRUNCATE/DELETE FROM/Redis DEL 等)
+ *    任何预设下都弹确认卡,绝不静默放行;普通写操作档在 danger-full-access
+ *    (全访问)预设下静默放行——「全访问 = 只有删除/高危才确认」,与 dsh 自家
+ *    「全访问不弹审批」语义对齐。注意:preset 只提供策略,「哪些调用该问」的
+ *    决定只由本门产生——删除本门 = 域工具不再有任何确认。
  * 3. 审批应答桥:approval/request 经 SDK stdio 双向 request
  *    (方法 `starhub/approval.request`)桥回 StarHub Rust 主进程,由前端
  *    确认卡给出 allowed-once / rejected;桥不可用一律 fail closed。
@@ -35,7 +38,6 @@ import {
   effectiveApprovalPolicy,
   setApprovalPolicy,
   type ApprovalOutcome,
-  type ApprovalPolicy,
 } from '@deepseek-ai/dsh-user-approval'
 
 export const name = 'starhub-approval-bridge'
@@ -349,9 +351,28 @@ const STARHUB_DOMAIN_TOOLS: ReadonlySet<string> = new Set([
   'desktop_press_key', 'desktop_exec', 'desktop_request_user_action',
 ])
 
-/** 会话的有效审批策略:会话覆盖优先,缺省组合配置(ask)。 */
-function sessionPolicy(ctx: Context, session: Session): ApprovalPolicy {
-  return effectiveApprovalPolicy(session.events) ?? ctx.approval.config.policy ?? 'ask'
+/**
+ * 会话的当前权限 preset:最后一次 /permission 切换(`permission/preset`
+ * 事件,由 dsh-permission-presets 写入)优先;从未切换过用 settings.yaml
+ * 的 defaultPreset(只读消费)。本包不依赖 permission-presets,事件类型
+ * 按字符串判定、payload 防御性收窄。
+ * @param session - 目标会话。
+ * @param readDefaultPreset - settings.yaml 的 defaultPreset 读取器。
+ * @returns preset 名;两者皆缺时为 undefined(视为非全访问,软确认照弹)。
+ */
+function sessionPreset(
+  session: Session,
+  readDefaultPreset: () => string | undefined,
+): string | undefined {
+  for (let index = session.events.length - 1; index >= 0; index -= 1) {
+    const event = session.events[index]
+    if (event === undefined) continue
+    if ((event.type as string) === 'permission/preset') {
+      const preset = (event.data as { preset?: unknown }).preset
+      return typeof preset === 'string' ? preset : undefined
+    }
+  }
+  return readDefaultPreset()
 }
 
 /** 审批桥插件配置(默认值语义见 {@link apply})。 */
@@ -392,6 +413,10 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
   //    命名空间归口:ownsPermissionSettings=true(内嵌 AI 内核等没有
   //    permission-presets 的组合)由本桥注册并持有;false(starhub-web,
   //    permission-presets 在组合内)只读消费其解析值,绝不重复注册。
+  //    v0.106.1:任何 preset 都钉 ask,绝不钉 never——never 会让
+  //    dsh-user-approval 的 decide() 先于 answerer 直接拒,hard 档删除
+  //    确认被静默驳回(全访问下 desktop_exec 必拒的事故)。全访问的
+  //    「软确认放行」改由风险门按 preset 判断(见下)。
   const readDefaultPreset: () => string | undefined = ownsPermissionSettings
     ? (() => {
       const permissionScope = ctx.settings.register(PERMISSION_NAMESPACE, PermissionSchema)
@@ -403,13 +428,13 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
     }
   ctx.on('session/created', (session) => {
     if (effectiveApprovalPolicy(session.events) !== undefined) return
-    const preset = readDefaultPreset()
-    const policy: ApprovalPolicy = preset === 'danger-full-access' ? 'never' : 'ask'
-    setApprovalPolicy(session, policy)
+    setApprovalPolicy(session, 'ask')
   })
 
-  // 2. starhub_* 工具风险门:never 策略只放行「软确认」档(普通写操作),
-  //    删除/高危档(hard)是死规定——即使全访问(never)也仍弹确认卡。
+  // 2. starhub_* 工具风险门:删除/高危档(hard)是死规定——任何预设下都弹
+  //    确认卡;普通写操作档(软确认)只在 danger-full-access(全访问)预设下
+  //    静默放行,其余预设照弹。「当前预设」取会话里最后一次 /permission 切换
+  //    (permission/preset 事件),没有过切换用 settings.yaml 的 defaultPreset。
   ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
     const decision = await next()
     if (decision.kind !== 'allow') return decision
@@ -417,8 +442,8 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
     if (agent === undefined) return decision
     const verdict = classifyStarHubCall(exec.name, exec.arguments)
     if (verdict === null || !verdict.ask) return decision
-    const policy = sessionPolicy(ctx, agent.session)
-    if (policy === 'never' && verdict.hard !== true) return decision
+    const preset = sessionPreset(agent.session, readDefaultPreset)
+    if (preset === 'danger-full-access' && verdict.hard !== true) return decision
     return verdict.reason === undefined ? { kind: 'ask' } : { kind: 'ask', reason: verdict.reason }
   })
 

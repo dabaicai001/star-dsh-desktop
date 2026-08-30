@@ -14,6 +14,12 @@
 
 ---
 
+## [0.106.1] - 2026-08-30
+
+### 修复
+- **权限「全访问」下删除/高危确认卡必被拒(审批 never 策略短路)**:`danger-full-access` 预设此前把会话审批策略钉为 `never`,而 `dsh-user-approval` 的 `decide()` 在 `never` 下先于确认卡应答器直接拒——`desktop_exec`、`DELETE FROM`、`rm -rf` 等 hard 档确认卡根本不弹,直接报「the user rejected tool」。修复(approval-bridge + starhub-web 组合两处协同,不动 dsh 内核):任何预设都钉 `ask`,「全访问放行普通写操作」改由风险门按当前 preset 判定——**全访问 = 只有删除/高危操作弹确认卡,其余静默**;已在 never 卡住的老会话重新切一次权限预设(或新开会话)即恢复。详见 `docs/踩坑记录.md` §32
+- **dsh web profile 的本地包 junction 钉死旧路径,升级后加载陈旧/开发树插件代码**:junction 创建后「存在即复用」从不校验指向——dev 与 release 共用同一 app data 时,release 会经旧 junction 加载开发树的过期 `lib/`(v0.106.0 直播窗口「装了新包却还是旧界面」事故);安装目录变更同理。修复:`web.rs` 新增 `ensure_dir_link_fresh`,已存在链接校验指向(read_link + canonicalize 双侧对齐),漂移/悬挂删旧重建,真实目录占用告警跳过;LOCAL_PACKAGES 与 RUNTIME_HOSTED_PATCH_DEPS 两处统一走它,附 5 分支回归测试。详见 `docs/踩坑记录.md` §31
+
 ## [0.106.0] - 2026-08-29
 
 ### 新增

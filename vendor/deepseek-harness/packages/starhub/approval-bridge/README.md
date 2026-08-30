@@ -6,20 +6,25 @@ dsh 权限 preset(`settings.yaml` 的 `permission.defaultPreset`,dsh web GUI
 「设置 → 通用 → 权限」写入)供给,本包只消费它。
 
 - **preset 消费**:`session/created` 时读取 `permission.defaultPreset`,把会话
-  审批策略固定为 `ask`/`never`(`danger-full-access` → `never`,其余 → `ask`)。
-  只填空缺:permission-presets 已按 preset 整体钉入 sandbox + approval 的会话
-  不再覆写(无条件覆写会与钉入 preset 冲突,如 `workspace-write + never` 不匹配
-  任何 preset,派生出不存在的 `custom` 权限状态)。
+  审批策略固定为 `ask`。v0.106.1 起任何 preset 都钉 `ask`、绝不钉 `never`:
+  `dsh-user-approval` 的 `decide()` 在 `never` 下先于所有 answerer 直接拒,
+  hard 档删除确认会被静默驳回(全访问下 `desktop_exec` 必拒的事故,见
+  StarHub `docs/踩坑记录.md` §32)。「全访问放行软确认」改由风险门按 preset
+  判定。只填空缺:permission-presets 已按 preset 整体钉入 sandbox + approval
+  的会话不再覆写(无条件覆写会与钉入 preset 冲突,如 `workspace-write + never`
+  不匹配任何 preset,派生出不存在的 `custom` 权限状态)。
   StarHub 不再有自有命令白名单,也不维护策略表。
 - **风险门(防误删核心)**:`tools/pre-execute` 上把需要人工确认的 starhub 域
   工具调用升级为 `ask`:写操作(sftp 上下传、ES 写、memory、skill_save、
   mcp_call)恒 ask;命令/SQL 按只读判定放行,风险词(移植自 StarHub
   `commandGuard.ts`)命中或不确定一律 ask。**删除/高危档(hard)与权限预设
   脱钩**:`rm`/`find -delete`/`ip link del`/`journalctl --vacuum`/Docker
-  删除类/`DROP`/`TRUNCATE`/Redis `DEL` 等风险词命中一律 `hard: true`,
-  即使会话策略为 `never`(danger-full-access 全访问)也必须弹确认卡,
-  绝不静默放行(死规定,见 `classifyStarHubCall` 的 `hard` 档);只有普通
-  写操作档才随 `never` 策略放行(与 dsh 全访问语义对齐)。
+  删除类/`DROP`/`TRUNCATE`/`DELETE FROM`/Redis `DEL` 等风险词命中一律
+  `hard: true`,任何预设下都必须弹确认卡,绝不静默放行(死规定,见
+  `classifyStarHubCall` 的 `hard` 档);普通写操作档只在
+  `danger-full-access`(全访问)预设下静默放行(与 dsh 全访问语义对齐)——
+  「当前预设」取会话最后一次 `/permission` 切换(`permission/preset` 事件),
+  未切换过用 settings.yaml 的 `defaultPreset`。
   注意:dsh preset 只提供策略(ask/never),不产生「哪些调用该问」的
   决定——本门是 starhub 域工具唯一的 ask 来源,删除它意味着
   `DROP TABLE` / `rm -rf` 不再有任何确认。
@@ -65,6 +70,6 @@ Not applicable — the package never participates in model requests.
 
 - 授权一律 one-shot(`allowed-once`),没有「本次会话不再询问」记忆——dsh 的
   策略层(preset)承担持久豁免,会话级记忆授权待上游 seam。
-- 风险分级:只读放行 / 普通写 ask(随 never 放行)/ 删除高危 hard ask(死规定,
-  永不随 never 放行)三档;L0-L3 精细分级(影响面前置、二次确认、执行前备份)
-  见 `docs/联动设计-dsh中枢-2026-08-17.md` 讨论,待立项。
+- 风险分级:只读放行 / 普通写 ask(全访问预设下静默放行)/ 删除高危 hard ask
+  (死规定,任何预设下都弹)三档;L0-L3 精细分级(影响面前置、二次确认、执行前
+  备份)见 `docs/联动设计-dsh中枢-2026-08-17.md` 讨论,待立项。

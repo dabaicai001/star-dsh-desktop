@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.106.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.106.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -41,6 +41,10 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.106.1 (2026-08-30)
+- 🐛 **权限「全访问」下删除/高危确认卡必被拒(审批 never 策略短路)**:`danger-full-access` 预设此前把会话审批策略钉为 `never`,而 `dsh-user-approval` 的 `decide()` 在 `never` 下先于确认卡应答器直接拒——`desktop_exec`、`DELETE FROM`、`rm -rf` 等 hard 档确认卡根本不弹,直接报「the user rejected tool」。修复(approval-bridge + starhub-web 组合两处协同,不动 dsh 内核):任何预设都钉 `ask`,「全访问放行普通写操作」改由风险门按当前 preset 判定——**全访问 = 只有删除/高危操作弹确认卡,其余静默**;已在 never 卡住的老会话重新切一次权限预设(或新开会话)即恢复。详见 `docs/踩坑记录.md` §32
+- 🐛 **dsh web profile 的本地包 junction 钉死旧路径,升级后加载陈旧/开发树插件代码**:junction 创建后「存在即复用」从不校验指向——dev 与 release 共用同一 app data 时,release 会经旧 junction 加载开发树的过期 `lib/`(v0.106.0 直播窗口「装了新包却还是旧界面」事故);安装目录变更同理。修复:`web.rs` 新增 `ensure_dir_link_fresh`,已存在链接校验指向(read_link + canonicalize 双侧对齐),漂移/悬挂删旧重建,真实目录占用告警跳过;LOCAL_PACKAGES 与 RUNTIME_HOSTED_PATCH_DEPS 两处统一走它,附 5 分支回归测试。详见 `docs/踩坑记录.md` §31
 
 ### v0.106.0 (2026-08-29)
 - ✨ **沙箱直播改为独立 Tauri 窗口**:工具面板「沙箱桌面」实例卡片的「直播/接管」按钮不再使用侧边栏内嵌 iframe(尺寸太小,且 iframe permissions-policy 禁止全屏),改为新开独立窗口全页加载 noVNC——围观 = `view_only` 只读,接管 = 双向键鼠 + 接管互斥;同沙箱重复点击即「关旧窗开新窗」完成围观 ⇄ 接管切换;接管窗口被关闭(含主窗口退出联动)由 Rust `Destroyed` 钩子自动释放接管,不再依赖前端 React 清理

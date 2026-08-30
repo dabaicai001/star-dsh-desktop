@@ -19,6 +19,28 @@
   config:
     nativeOpen: false
 
+# 全访问语义收窄(v0.106.1):danger-full-access 的 approval 由 never 改 ask。
+# never 会让 dsh-user-approval 的 decide() 先于所有 answerer 直接拒,StarHub
+# 风险门的 hard 档(DELETE FROM / rm -rf / desktop_exec 等删除/高危确认)被
+# 静默驳回——「全访问」变成「hard 确认卡必拒」。改 ask 后由 starhub-approval-bridge
+# 风险门按 preset 判定:全访问预设下软确认(普通写操作)静默放行,hard 档照弹;
+# dsh 自家 bash/fs 工具在 sandbox danger-full-access 下本就不走审批升级,行为不变。
+# 约束:base 侧 approval 插件的组合默认 policy 由 DSH_PERMISSION_MODE 表达式给出,
+# 该 env 为 danger-full-access 时默认 never 与本表 ask 不匹配,permission-presets
+# 会派生 custom 并 fail loud——StarHub 不设置该环境变量(web.rs 注入,勿加)。
+- id: permission
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: ask
+
 # StarHub 壳导航由 client-nav 注册 DSH React 原生工作台入口。
 # starhub-host-static 将 React 资产工作台托管在 /starhub-react/，dist 路径由
 # STARHUB_WINDOW_DIST 或仓库布局解析。

@@ -4,9 +4,11 @@
  * - 只读放行:ls / ps / find 纯列举 / docker ps 等;
  * - 风险升级(hard 死规定档):rm(-rf)、find -delete/-exec、ip link del、
  *   journalctl --vacuum、docker rm/rmi/prune/compose down、DROP/TRUNCATE、
- *   Redis DEL 等删除类命令一律 ask,并且 hard=true 表示即使会话策略为
- *   never(全访问)也必须人工确认;
- * - 普通写操作(写 SQL、非只读 shell 命令)ask 但不置 hard(never 可放行)。
+ *   Redis DEL 等删除类命令一律 ask,并且 hard=true 表示与权限预设脱钩、
+ *   任何预设(含 danger-full-access 全访问)都必须人工确认(v0.106.1 起
+ *   会话策略恒 ask,never 短路确认卡的事故见 docs/踩坑记录.md §32);
+ * - 普通写操作(写 SQL、非只读 shell 命令)ask 但不置 hard(全访问预设
+ *   下由风险门静默放行,其余预设照弹)。
  */
 import { describe, expect, it } from 'vitest'
 import { classifyStarHubCall } from '../src/index.ts'

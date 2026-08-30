@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.106.0(**沙箱直播改为独立 Tauri 窗口**:工具面板「沙箱桌面」实例卡片的「直播/接管」按钮不再使用侧边栏内嵌 iframe(尺寸太小,且 iframe permissions-policy 禁止全屏),改为新开独立窗口全页加载 noVNC——围观 = `view_only` 只读,接管 = 双向键鼠 + 接管互斥;同沙箱重复点击即「关旧窗开新窗」完成围观 ⇄ 接管切换;接管窗口被关闭(含主窗口退出联动)由 Rust `Destroyed` 钩子自动释放接管,不再依赖前端 React 清理) |
+| 当前版本 | v0.106.1(**权限「全访问」下删除/高危确认卡必被拒(审批 never 策略短路)**:`danger-full-access` 预设此前把会话审批策略钉为 `never`,而 `dsh-user-approval` 的 `decide()` 在 `never` 下先于确认卡应答器直接拒——`desktop_exec`、`DELETE FROM`、`rm -rf` 等 hard 档确认卡根本不弹,直接报「the user rejected tool」。修复(approval-bridge + starhub-web 组合两处协同,不动 dsh 内核):任何预设都钉 `ask`,「全访问放行普通写操作」改由风险门按当前 preset 判定——**全访问 = 只有删除/高危操作弹确认卡,其余静默**;已在 never 卡住的老会话重新切一次权限预设(或新开会话)即恢复。详见 `docs/踩坑记录.md` §32) |
 
 ## 架构一句话
 
@@ -126,4 +126,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新:2026-08-29(v0.106.0)*
+*最后更新:2026-08-30(v0.106.1)*
