@@ -14,6 +14,12 @@
 
 ---
 
+## [0.106.2] - 2026-08-30
+
+### 修复
+- **沙箱桌面点「直播/接管」报 `desktop_ui_open_live_window not allowed by ACL`**:v0.106.0 把 `desktop_set_takeover` 重构为 `desktop_ui_open_live_window` 时漏同步 app command ACL 清单——`permissions/commands.toml` 仍列已移除的旧命令、缺新命令,远端 dsh 主壳(127.0.0.1 origin)调用被 ACL 拦下;同步清单并修正 `desktop/mod.rs` 过时注释
+- **沙箱桌面面板窄栏下实例卡片文字逐字折行**:卡片按钮组(直播/接管/停止/回放/销毁)不换行,把信息区挤到只剩几个字符宽,`running · 平台 local · noVNC :32768` 逐字竖排;`.card` 加 `flex-wrap`、`.cardMain` 改 `flex: 1 1 160px`、`.cardActions` 允许换行,窄栏下按钮组整体折到下一行
+
 ## [0.106.1] - 2026-08-30
 
 ### 修复

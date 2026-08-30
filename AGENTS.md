@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.106.1(**权限「全访问」下删除/高危确认卡必被拒(审批 never 策略短路)**:`danger-full-access` 预设此前把会话审批策略钉为 `never`,而 `dsh-user-approval` 的 `decide()` 在 `never` 下先于确认卡应答器直接拒——`desktop_exec`、`DELETE FROM`、`rm -rf` 等 hard 档确认卡根本不弹,直接报「the user rejected tool」。修复(approval-bridge + starhub-web 组合两处协同,不动 dsh 内核):任何预设都钉 `ask`,「全访问放行普通写操作」改由风险门按当前 preset 判定——**全访问 = 只有删除/高危操作弹确认卡,其余静默**;已在 never 卡住的老会话重新切一次权限预设(或新开会话)即恢复。详见 `docs/踩坑记录.md` §32) |
+| 当前版本 | v0.106.2(**沙箱桌面点「直播/接管」报 `desktop_ui_open_live_window not allowed by ACL`**:v0.106.0 把 `desktop_set_takeover` 重构为 `desktop_ui_open_live_window` 时漏同步 app command ACL 清单——`permissions/commands.toml` 仍列已移除的旧命令、缺新命令,远端 dsh 主壳(127.0.0.1 origin)调用被 ACL 拦下;同步清单并修正 `desktop/mod.rs` 过时注释) |
 
 ## 架构一句话
 

@@ -9,7 +9,7 @@
 //! - 任务级授权:`desktop_create_sandbox` 成功即建立 session → sandbox 授权
 //!   (60 分钟),授权期内写操作自动放行——授权存在性/过期/实例匹配由本模块
 //!   在执行点强制(审批层只决定 create/exec 是否弹卡);
-//! - 用户接管(前端 `desktop_set_takeover` 命令)期间写操作一律拒绝,
+//! - 用户接管(前端 `desktop_ui_open_live_window` takeover=true)期间写操作一律拒绝,
 //!   接管不撤销授权;
 //! - 每次写操作前自动截屏留档(sandbox_replay_frames),支持回放;
 //! - `desktop_type` 的文本不进审计(审计摘要在 events.rs 只记长度)。

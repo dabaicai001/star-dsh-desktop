@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.106.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.106.2-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -41,6 +41,10 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.106.2 (2026-08-30)
+- 🐛 **沙箱桌面点「直播/接管」报 `desktop_ui_open_live_window not allowed by ACL`**:v0.106.0 把 `desktop_set_takeover` 重构为 `desktop_ui_open_live_window` 时漏同步 app command ACL 清单——`permissions/commands.toml` 仍列已移除的旧命令、缺新命令,远端 dsh 主壳(127.0.0.1 origin)调用被 ACL 拦下;同步清单并修正 `desktop/mod.rs` 过时注释
+- 🐛 **沙箱桌面面板窄栏下实例卡片文字逐字折行**:卡片按钮组(直播/接管/停止/回放/销毁)不换行,把信息区挤到只剩几个字符宽,`running · 平台 local · noVNC :32768` 逐字竖排;`.card` 加 `flex-wrap`、`.cardMain` 改 `flex: 1 1 160px`、`.cardActions` 允许换行,窄栏下按钮组整体折到下一行
 
 ### v0.106.1 (2026-08-30)
 - 🐛 **权限「全访问」下删除/高危确认卡必被拒(审批 never 策略短路)**:`danger-full-access` 预设此前把会话审批策略钉为 `never`,而 `dsh-user-approval` 的 `decide()` 在 `never` 下先于确认卡应答器直接拒——`desktop_exec`、`DELETE FROM`、`rm -rf` 等 hard 档确认卡根本不弹,直接报「the user rejected tool」。修复(approval-bridge + starhub-web 组合两处协同,不动 dsh 内核):任何预设都钉 `ask`,「全访问放行普通写操作」改由风险门按当前 preset 判定——**全访问 = 只有删除/高危操作弹确认卡,其余静默**;已在 never 卡住的老会话重新切一次权限预设(或新开会话)即恢复。详见 `docs/踩坑记录.md` §32
