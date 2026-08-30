@@ -1,11 +1,11 @@
 .root { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
 .section { display: flex; flex-direction: column; gap: 6px; }
 .sectionTitle { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 600; }
-.card { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); }
-.cardMain { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.card { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); }
+.cardMain { display: flex; flex-direction: column; min-width: 0; flex: 1 1 160px; }
 .cardTitle { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cardSub { font-size: 11px; opacity: 0.65; }
-.cardActions { display: flex; gap: 6px; }
+.cardSub { font-size: 11px; opacity: 0.65; overflow-wrap: break-word; }
+.cardActions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .button { padding: 3px 10px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; background: transparent; color: inherit; font-size: 12px; cursor: pointer; }
 .button:hover:not(:disabled) { background: var(--dsw-alias-bg-layer-3, rgba(127,127,127,0.12)); }
 .button:disabled { opacity: 0.5; cursor: default; }
