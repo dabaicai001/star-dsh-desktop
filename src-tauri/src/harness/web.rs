@@ -259,7 +259,10 @@ impl DshWebManager {
         )
         .map_err(|e| DshWebError::PathResolve(format!("物化 cordis.patch.yml 失败: {e}")))?;
 
-        // 3. 本地包 junction(已存在则复用,目标本就固定指向 vendor)
+        // 3. 本地包 junction(目标随 runtime_dir 漂移:升级换安装目录、
+        //    dev⇄release 共用同一 app data 都会让旧 junction 钉死上一次的
+        //    路径——v0.106.0 事故:release 加载到 dev 树的陈旧 lib。已存在
+        //    必须校验指向,漂移即删旧重建,不能「存在即复用」)
         let node_modules_root = dsh_home.join("profiles").join("node_modules");
         let link_base = node_modules_root.join("@deepseek-ai");
         std::fs::create_dir_all(&link_base).map_err(|e| {
@@ -267,9 +270,6 @@ impl DshWebManager {
         })?;
         for dir_name in LOCAL_PACKAGES {
             let link = link_base.join(format!("dsh-starhub-{dir_name}"));
-            if link.exists() {
-                continue;
-            }
             let target = runtime_dir.join("packages").join("starhub").join(dir_name);
             // 旧部署的 runtime 可能还没有该包目录(如 v0.71 新增的 tool-context):
             // 跳过即可——healed profiles/node_modules 兜底会从安装闭包解析;
@@ -278,13 +278,7 @@ impl DshWebManager {
                 tracing::warn!("本地包目录缺失,跳过 junction: {}", target.display());
                 continue;
             }
-            plugins::create_dir_link(&link, &target).map_err(|e| {
-                DshWebError::PathResolve(format!(
-                    "junction 创建失败({} → {}): {e}",
-                    link.display(),
-                    target.display()
-                ))
-            })?;
+            ensure_dir_link_fresh(&link, &target)?;
         }
         // 3.1 闭包外 patch 依赖 junction(sdk-jsonrpc-server 等):healProfilesModuleFallback
         // 只从 apps/cli 安装闭包建链,web profile patch 直接引用的闭包外包永不落地到
@@ -293,9 +287,6 @@ impl DshWebManager {
         // 沿真实目录 parent-walk 自解析),使 prod 与全新 DSH_HOME 都能稳定启动。
         for dir_name in RUNTIME_HOSTED_PATCH_DEPS {
             let link = link_base.join(format!("dsh-{dir_name}"));
-            if link.exists() {
-                continue;
-            }
             let target = runtime_dir
                 .join("node_modules")
                 .join("@deepseek-ai")
@@ -304,13 +295,8 @@ impl DshWebManager {
                 tracing::warn!("闭包外 patch 依赖目录缺失,跳过 junction: {}", target.display());
                 continue;
             }
-            plugins::create_dir_link(&link, &target).map_err(|e| {
-                DshWebError::PathResolve(format!(
-                    "junction 创建失败({} → {}): {e}",
-                    link.display(),
-                    target.display()
-                ))
-            })?;
+            // 与本地包同理:目标随 runtime_dir 漂移,已存在必须校验指向
+            ensure_dir_link_fresh(&link, &target)?;
         }
 
         // 3.5 用户 UI 插件注入(dsh 插件体系打通):内置插件注册进 registry,
@@ -551,6 +537,64 @@ async fn web_write_loop(
 /// entry 已过 Normal 组件校验;这里仍防御性转义,保证任何输入不破坏 yml。
 fn yaml_single_quoted(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
+}
+
+/// 建立指向 `target` 的目录链接(junction/symlink),已存在时校验指向:
+/// - 目标一致 → 复用;
+/// - 目标漂移(升级换安装目录、dev⇄release 共用 app data、目标已被删除的
+///   悬挂链接)→ 删旧链接重建。注意判断要用 `symlink_metadata` 而非
+///   `link.exists()`:后者跟随链接,悬挂 junction 会返回 false,直接
+///   mklink 又因「已存在」失败,永远卡死;
+/// - 该位置是真实目录/文件(非链接)→ 告警跳过,绝不删除用户数据。
+fn ensure_dir_link_fresh(link: &Path, target: &Path) -> Result<(), DshWebError> {
+    let meta = match std::fs::symlink_metadata(link) {
+        Ok(meta) => meta,
+        Err(_) => {
+            // 不存在:直接建
+            return plugins::create_dir_link(link, target).map_err(|e| {
+                DshWebError::PathResolve(format!(
+                    "junction 创建失败({} → {}): {e}",
+                    link.display(),
+                    target.display()
+                ))
+            });
+        }
+    };
+    if !meta.file_type().is_symlink() {
+        tracing::warn!("junction 位置被真实目录/文件占用,保留不重建: {}", link.display());
+        return Ok(());
+    }
+    // canonicalize 对齐两侧(Windows 上 read_link 可能带 \\?\ 前缀、大小写差异);
+    // 读不出目标(悬挂)或目标漂移都重建
+    let current = std::fs::read_link(link)
+        .ok()
+        .and_then(|p| std::fs::canonicalize(p).ok());
+    let expected = std::fs::canonicalize(target).ok();
+    if current.is_some() && current == expected {
+        return Ok(());
+    }
+    tracing::info!(
+        "junction 目标漂移,删旧重建: {} → {}(原指向 {:?})",
+        link.display(),
+        target.display(),
+        std::fs::read_link(link).map(|p| p.display().to_string()).unwrap_or_default()
+    );
+    // Windows 目录 junction 用 rmdir 语义移除;Unix 目录 symlink 用 unlink
+    // (remove_dir 对 symlink 报 ENOTDIR)
+    #[cfg(target_os = "windows")]
+    let removed = fs::remove_dir(link);
+    #[cfg(not(target_os = "windows"))]
+    let removed = fs::remove_file(link);
+    removed.map_err(|e| {
+        DshWebError::PathResolve(format!("移除漂移 junction 失败({}): {e}", link.display()))
+    })?;
+    plugins::create_dir_link(link, target).map_err(|e| {
+        DshWebError::PathResolve(format!(
+            "junction 重建失败({} → {}): {e}",
+            link.display(),
+            target.display()
+        ))
+    })
 }
 
 /// 同步用户 UI 插件到 dsh web 组合:
@@ -855,6 +899,61 @@ mod tests {
             "禁用后 junction 应清理"
         );
         assert!(!patch2.contains("dsh-ui-a"), "禁用后 patch 不再追加");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// junction 目标漂移修复(v0.106.0 事故:release 经旧 junction 加载 dev 树
+    /// 陈旧 lib):同目标复用、漂移重建、悬挂重建、真实目录不触碰。
+    #[test]
+    fn ensure_dir_link_fresh_repoints_drifted_junction() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!(
+            "starhub-web-link-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let target_a = root.join("runtime-a").join("pkg");
+        let target_b = root.join("runtime-b").join("pkg");
+        fs::create_dir_all(&target_a).unwrap();
+        fs::create_dir_all(&target_b).unwrap();
+        let link = root
+            .join("profiles")
+            .join("node_modules")
+            .join("@deepseek-ai")
+            .join("dsh-starhub-x");
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+
+        let read_target = |link: &Path| {
+            std::fs::canonicalize(std::fs::read_link(link).unwrap()).unwrap()
+        };
+
+        // 1. 不存在 → 建到 A
+        ensure_dir_link_fresh(&link, &target_a).unwrap();
+        assert_eq!(read_target(&link), std::fs::canonicalize(&target_a).unwrap());
+
+        // 2. 同目标 → 复用(链接仍是同一个,内容标记不变)
+        fs::write(target_a.join("marker.txt"), "a").unwrap();
+        ensure_dir_link_fresh(&link, &target_a).unwrap();
+        assert!(link.join("marker.txt").exists(), "同目标应复用旧链接");
+
+        // 3. 目标漂移 A→B → 删旧重建
+        ensure_dir_link_fresh(&link, &target_b).unwrap();
+        assert_eq!(read_target(&link), std::fs::canonicalize(&target_b).unwrap());
+        assert!(!link.join("marker.txt").exists(), "重建后应指向 B(无 A 的标记)");
+
+        // 4. 悬挂链接(目标已删)→ 重建
+        fs::remove_dir_all(&target_b).unwrap();
+        fs::create_dir_all(&target_b).unwrap();
+        ensure_dir_link_fresh(&link, &target_b).unwrap();
+        assert_eq!(read_target(&link), std::fs::canonicalize(&target_b).unwrap());
+
+        // 5. 真实目录占用 → 不删除、不报错
+        fs::remove_dir(&link).unwrap();
+        fs::create_dir_all(&link).unwrap();
+        fs::write(link.join("user-data.txt"), "keep").unwrap();
+        ensure_dir_link_fresh(&link, &target_a).unwrap();
+        assert!(link.join("user-data.txt").exists(), "真实目录不应被删除");
+
         let _ = fs::remove_dir_all(&root);
     }
 }
