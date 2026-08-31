@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.108.0(**工具面板新增「Android」子类(adb 设备列表)**:侧栏工具面板此前只有 终端/数据库/Docker/沙箱桌面,Android 实体机无处可看;新增 Android 子类(无资产概念,与沙箱桌面同姿势特判),展开渲染设备卡片列表(型号/serial/状态徽标,unauthorized 提示「请在手机上允许 USB 调试」、offline 提示拔插重试),就绪设备带「打开直播」按钮(独立窗口围观,窗口内可切接管);新增 UI 命令 `android_ui_list_devices`(只读免授权)与 `android_ui_open_live`(用户点击 = 审批表达,分辨率现场探测,与 AI 路径共用 `open_live_window`),并同步 `permissions/commands.toml` ACL) |
+| 当前版本 | v0.109.0(**新增 AI 工具 `android_ui_tree`(结构化坐标来源,根治读图估坐标误差)**:导出当前界面无障碍节点树(`uiautomator dump` 落 `/data/local/tmp/starhub/` 后 base64 回传,免疫旧版 adb exec-out 的 CRLF 损坏),解析出可点击/有文字节点清单——每项含中心点坐标(设备物理像素,可直接传 `android_tap`)、文字、desc、resource-id、类名;点击定位从「截图估像素」变「查表取精确坐标」(此前观测到把顶部横幅误当列表首行、整列 y 偏移一个行高的纯视觉误差)。shell 权限走 UiAutomation,不需要手机开无障碍服务;锁屏/FLAG_SECURE 安全页/游戏等自绘画面返回空并提示回退截图;`maxNodes` 参数控制返回上限(默认 200,上限 500)) |
 
 ## 架构一句话
 
@@ -30,7 +30,7 @@ starhub/
 │   │   │                     # local / mcp / screenshot / secret / sidecar
 │   │   ├── ssh/              # SSH 会话(russh):auth / session / known_hosts / sftp_transport
 │   │   ├── sftp/             # SFTP 会话与传输(russh-sftp)
-│   │   ├── android/          # Android 实体机(adb):mod(授权/直播双模/scrcpy 通道/19 工具)
+│   │   ├── android/          # Android 实体机(adb):mod(授权/直播双模/scrcpy 通道/20 工具)
 │   │   ├── browser/          # AI 浏览器(无痕独立窗口):mod / script / cdp(Win)/ snapshot_*(mac/Linux)
 │   │   ├── desktop/          # 沙箱桌面(Ubuntu 容器沙箱平台):mod(编排/授权/接管)/ recipe(配方)
 │   │   ├── harness/          # dsh 桥与插件宿主(harness/plugins)
@@ -127,4 +127,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新:2026-08-31(v0.108.0)*
+*最后更新:2026-08-31(v0.109.0)*

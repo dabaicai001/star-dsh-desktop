@@ -861,6 +861,14 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
     },
   },
   {
+    toolName: 'android_ui_tree',
+    description: '导出当前界面的无障碍节点树(uiautomator dump,shell 权限,不需要手机开无障碍服务),返回可点击/有文字元素清单:每项含中心点坐标(设备物理像素,可直接传给 android_tap)、文字、desc、resource-id、类名。定位可点元素优先用它——精确坐标,不用从截图估像素;截图(read_image)用于确认视觉效果,以及锁屏/安全页/游戏等无无障碍节点的画面(此时本工具返回空并提示回退截图)。',
+    parameters: {
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+      maxNodes: { type: 'number', description: '返回节点上限,默认 200,上限 500' },
+    },
+  },
+  {
     toolName: 'android_tap',
     description: '在设备屏幕坐标点按。坐标为设备物理像素(= 最近一次 android_screenshot 原始文件的像素,分辨率以其结果注明为准);若 read_image 提示图被缩小(multiply coordinates by k),先把图上坐标乘以 k 再传入,不要直接传显示图坐标。用户在直播窗口接管中会被拒绝。',
     parameters: {

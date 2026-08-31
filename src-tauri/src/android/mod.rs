@@ -49,6 +49,7 @@ pub const ANDROID_TOOLS: &[&str] = &[
     // 感知(授权内放行)
     "android_screenshot",
     "android_current_app",
+    "android_ui_tree",
     // 操作(授权内放行,接管互斥)
     "android_tap",
     "android_double_tap",
@@ -689,6 +690,99 @@ fn parse_wm_size(output: &str) -> Option<(i64, i64)> {
         physical = physical.or(Some((w, h)));
     }
     physical
+}
+
+// ============================================================
+// uiautomator dump 解析(纯函数,单测覆盖)
+// ============================================================
+
+/// uiautomator dump 的一个界面节点(坐标为设备物理像素,与 input tap 同坐标系)。
+#[derive(Debug, Clone, PartialEq)]
+struct UiNode {
+    text: String,
+    desc: String,
+    resource_id: String,
+    /// 短类名(android.widget.TextView → TextView)。
+    class: String,
+    clickable: bool,
+    /// (left, top, right, bottom)。
+    bounds: (i64, i64, i64, i64),
+}
+
+impl UiNode {
+    /// 可点中心点(android_tap 直接可用的物理像素坐标)。
+    fn center(&self) -> (i64, i64) {
+        (
+            (self.bounds.0 + self.bounds.2) / 2,
+            (self.bounds.1 + self.bounds.3) / 2,
+        )
+    }
+}
+
+/// bounds="[l,t][r,b]" 解析。
+fn parse_bounds(s: &str) -> Option<(i64, i64, i64, i64)> {
+    // 形如 "[0,66][1200,220]"
+    let (lt, rb) = s.strip_prefix('[')?.split_once("][")?;
+    let (l, t) = lt.split_once(',')?;
+    let (r, b) = rb.strip_suffix(']')?.split_once(',')?;
+    Some((
+        l.parse().ok()?,
+        t.parse().ok()?,
+        r.parse().ok()?,
+        b.parse().ok()?,
+    ))
+}
+
+/// XML 实体反转义(uiautomator 属性值里的 &amp;/&lt;/&gt;/&quot;/&#39; 等)。
+fn xml_unescape(s: &str) -> String {
+    let mut out = s.replace("&lt;", "<").replace("&gt;", ">");
+    out = out.replace("&quot;", "\"").replace("&#39;", "'");
+    // &amp; 必须最后处理(否则 &amp;lt; 会被二次反转义)
+    out.replace("&amp;", "&")
+}
+
+/// 取 tag 片段里的属性值。属性值内的 `"`/`>` 已被 XML 转义,按引号配对取是安全的。
+fn node_attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let pat = format!("{name}=\"");
+    let start = tag.find(&pat)? + pat.len();
+    let end = tag[start..].find('"')? + start;
+    Some(&tag[start..end])
+}
+
+/// 解析 uiautomator dump XML,提取「可点击或有文字/desc」的节点(按文档序)。
+/// 输入是完整 hierarchy XML;属性值里的 `>` 已转义,`<node ` 到 `>` 即一个 tag。
+fn parse_ui_nodes(xml: &str) -> Vec<UiNode> {
+    let mut nodes = Vec::new();
+    let mut rest = xml;
+    while let Some(start) = rest.find("<node ") {
+        let after = &rest[start..];
+        let Some(end) = after.find('>') else { break };
+        let tag = &after[..end];
+        let bounds = node_attr(tag, "bounds").and_then(parse_bounds);
+        if let Some(bounds) = bounds {
+            let text = node_attr(tag, "text").map(xml_unescape).unwrap_or_default();
+            let desc = node_attr(tag, "content-desc")
+                .map(xml_unescape)
+                .unwrap_or_default();
+            let clickable = node_attr(tag, "clickable") == Some("true");
+            let zero_area = bounds.0 == bounds.2 || bounds.1 == bounds.3;
+            if (clickable || !text.is_empty() || !desc.is_empty()) && !zero_area {
+                let class = node_attr(tag, "class")
+                    .map(|c| c.rsplit('.').next().unwrap_or(c).to_string())
+                    .unwrap_or_default();
+                nodes.push(UiNode {
+                    text,
+                    desc,
+                    resource_id: node_attr(tag, "resource-id").unwrap_or("").to_string(),
+                    class,
+                    clickable,
+                    bounds,
+                });
+            }
+        }
+        rest = &after[end + 1..];
+    }
+    nodes
 }
 
 /// shell 单引号转义(与 desktop 模块同规则)。
@@ -2018,6 +2112,65 @@ pub async fn execute_from_bridge(
                 out.trim()
             ))
         }
+        "android_ui_tree" => {
+            let ctx = device_ctx(&manager, session_id, args).await?;
+            // dump 的「UI hierchary dumped to:」行重定向掉,stdout 只剩 base64
+            // (base64 天然免疫 exec-out 的 CRLF 损坏:剥离空白后解码)。
+            let dump = adb_shell(
+                &manager,
+                &ctx.adb,
+                &ctx.authz.serial,
+                "mkdir -p /data/local/tmp/starhub && \
+                 uiautomator dump /data/local/tmp/starhub/ui-dump.xml > /dev/null && \
+                 base64 /data/local/tmp/starhub/ui-dump.xml",
+                30,
+            )
+            .await?;
+            use base64::Engine;
+            let b64: String = dump.chars().filter(|c| !c.is_whitespace()).collect();
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(&b64)
+                .map_err(|e| format!("界面树 base64 解码失败: {e}"))?;
+            let xml = String::from_utf8(bytes)
+                .map_err(|e| format!("界面树不是 UTF-8: {e}"))?;
+            let nodes = parse_ui_nodes(&xml);
+            if nodes.is_empty() {
+                return Ok(
+                    "当前界面没有可读的无障碍节点(锁屏/FLAG_SECURE 安全页/自绘画面)。改用 android_screenshot + read_image 读图估算坐标。"
+                        .to_string(),
+                );
+            }
+            let max = args
+                .get("maxNodes")
+                .and_then(Value::as_i64)
+                .unwrap_or(200)
+                .clamp(1, 500) as usize;
+            let mut lines = vec![format!(
+                "设备 {} 界面节点({} 个可交互/有文字;中心坐标 = 设备物理像素,可直接传给 android_tap):",
+                ctx.authz.serial,
+                nodes.len()
+            )];
+            for node in nodes.iter().take(max) {
+                let (cx, cy) = node.center();
+                let mut parts = vec![format!("({cx},{cy})")];
+                parts.push(if node.clickable { "[可点]" } else { "[文字]" }.to_string());
+                if !node.text.is_empty() {
+                    parts.push(format!("\"{}\"", node.text.chars().take(60).collect::<String>()));
+                }
+                if !node.desc.is_empty() {
+                    parts.push(format!("desc:{}", node.desc.chars().take(60).collect::<String>()));
+                }
+                if !node.resource_id.is_empty() {
+                    parts.push(format!("id:{}", node.resource_id));
+                }
+                parts.push(node.class.clone());
+                lines.push(parts.join(" "));
+            }
+            if nodes.len() > max {
+                lines.push(format!("…(共 {} 个,已截断到 {max};调大 maxNodes 再看)", nodes.len()));
+            }
+            Ok(lines.join("\n"))
+        }
         "android_tap" | "android_double_tap" => {
             let ctx = device_ctx(&manager, session_id, args).await?;
             guard_takeover(&manager, &ctx.authz.serial).await?;
@@ -2405,6 +2558,34 @@ mod tests {
 
         assert_eq!(png_dimensions(b"NOTPNG"), None);
         assert_eq!(png_dimensions(&png[..20]), None);
+    }
+
+    #[test]
+    fn ui_tree_parsing() {
+        assert_eq!(parse_bounds("[0,66][1200,220]"), Some((0, 66, 1200, 220)));
+        assert_eq!(parse_bounds("garbage"), None);
+        assert_eq!(xml_unescape("A &amp; B &lt;C&gt; &#39;q&#39;"), "A & B <C> 'q'");
+        // &amp;lt; 只反转义一层
+        assert_eq!(xml_unescape("&amp;lt;"), "&lt;");
+
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hierarchy rotation="0">
+<node index="0" text="" resource-id="" class="android.widget.FrameLayout" content-desc="" clickable="false" bounds="[0,0][1200,2670]">
+  <node index="0" text="微信(123)" resource-id="com.tencent.mm:id/title" class="android.widget.TextView" content-desc="" clickable="false" bounds="[440,143][680,187]"/>
+  <node index="1" text="" resource-id="com.tencent.mm:id/search" class="android.widget.ImageView" content-desc="搜&gt;索" clickable="true" bounds="[948,132][1044,228]"/>
+  <node index="2" text="不可见零面积" resource-id="" class="android.widget.TextView" content-desc="" clickable="false" bounds="[0,0][0,0]"/>
+</node>
+</hierarchy>"#;
+        let nodes = parse_ui_nodes(xml);
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(nodes[0].text, "微信(123)");
+        assert!(!nodes[0].clickable);
+        assert_eq!(nodes[0].center(), (560, 165));
+        assert!(nodes[1].clickable);
+        assert_eq!(nodes[1].desc, "搜>索");
+        assert_eq!(nodes[1].class, "ImageView");
+        assert_eq!(nodes[1].center(), (996, 180));
+        assert!(parse_ui_nodes("<hierarchy/>").is_empty());
     }
 
     #[test]
