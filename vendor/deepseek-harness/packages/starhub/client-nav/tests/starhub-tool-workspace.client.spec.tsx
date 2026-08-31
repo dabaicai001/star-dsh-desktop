@@ -152,6 +152,16 @@ describe('StarHubToolWorkspace', () => {
     expect(screen.queryByText(/暂无 沙箱桌面 连接/)).toBeNull()
   })
 
+  it('renders the android panel (no asset list) for the android subcategory', async () => {
+    const props = workspaceProps()
+    props.bridge.selectSubcategory('android')
+    render(<StarHubToolWorkspace {...props} />)
+    // Android 子类无资产概念:展开即 AndroidPanel;无 Tauri IPC(测试环境)时
+    // 面板落到浏览器预览提示而不是资产加载态。
+    await waitFor(() => expect(screen.getByText(/浏览器里/)).toBeTruthy())
+    expect(screen.queryByText(/暂无 Android 连接/)).toBeNull()
+  })
+
   it('shows the per-subcategory empty state with a 新建连接 button when no assets match', () => {
     const props = workspaceProps()
     props.bridge.selectSubcategory('docker')

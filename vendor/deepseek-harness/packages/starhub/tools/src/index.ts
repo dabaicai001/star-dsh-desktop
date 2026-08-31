@@ -848,7 +848,7 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
   },
   {
     toolName: 'android_screenshot',
-    description: '截取设备屏幕(PNG)并返回本机文件路径;随后调用 read_image 读取即可看到画面。坐标类操作必须基于最近一次截图;界面变化后重新截图。',
+    description: '截取设备屏幕(PNG)并返回本机文件路径;随后调用 read_image 读取即可看到画面。截图文件是设备物理分辨率(结果里注明,如 1200x2670,不同机型/横竖屏各不相同,以当次结果为准);read_image 展示给你的图可能被按比例缩小并注明 "multiply coordinates by k"——你在显示图上量到的坐标必须乘以 k 才是 android_tap 等坐标类工具要的物理像素;未注明缩放则直接用图上坐标。坐标类操作必须基于最近一次截图;界面变化后重新截图。',
     parameters: {
       serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
     },
@@ -862,25 +862,25 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
   },
   {
     toolName: 'android_tap',
-    description: '在设备屏幕坐标点按。坐标基于最近一次 android_screenshot 的物理像素。用户在直播窗口接管中会被拒绝。',
+    description: '在设备屏幕坐标点按。坐标为设备物理像素(= 最近一次 android_screenshot 原始文件的像素,分辨率以其结果注明为准);若 read_image 提示图被缩小(multiply coordinates by k),先把图上坐标乘以 k 再传入,不要直接传显示图坐标。用户在直播窗口接管中会被拒绝。',
     parameters: {
-      x: { type: 'number', required: true, description: '横坐标(物理像素)' },
-      y: { type: 'number', required: true, description: '纵坐标(物理像素)' },
+      x: { type: 'number', required: true, description: '横坐标(设备物理像素)' },
+      y: { type: 'number', required: true, description: '纵坐标(设备物理像素)' },
       serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
     },
   },
   {
     toolName: 'android_double_tap',
-    description: '在设备屏幕坐标双击(坐标约定同 android_tap)。',
+    description: '在设备屏幕坐标双击(坐标约定同 android_tap:设备物理像素,read_image 缩图坐标需先乘其提示的倍数)。',
     parameters: {
-      x: { type: 'number', required: true, description: '横坐标(物理像素)' },
-      y: { type: 'number', required: true, description: '纵坐标(物理像素)' },
+      x: { type: 'number', required: true, description: '横坐标(设备物理像素)' },
+      y: { type: 'number', required: true, description: '纵坐标(设备物理像素)' },
       serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
     },
   },
   {
     toolName: 'android_swipe',
-    description: '从 (fromX,fromY) 滑动到 (toX,toY)(拖拽/手势通用;durationMs 控制时长,长按拖拽用大时长)。',
+    description: '从 (fromX,fromY) 滑动到 (toX,toY)(拖拽/手势通用;durationMs 控制时长,长按拖拽用大时长)。坐标约定同 android_tap:设备物理像素,read_image 缩图坐标需先乘其提示的倍数。',
     parameters: {
       fromX: { type: 'number', required: true, description: '起点横坐标' },
       fromY: { type: 'number', required: true, description: '起点纵坐标' },
@@ -892,7 +892,7 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
   },
   {
     toolName: 'android_scroll',
-    description: '滚动:direction(up/down/left/right,指内容滚动方向)+ 像素量(默认 600),以 (x,y) 为中心(默认屏幕中心)。',
+    description: '滚动:direction(up/down/left/right,指内容滚动方向)+ 像素量(默认 600),以 (x,y) 为中心(默认屏幕中心)。坐标约定同 android_tap:设备物理像素,read_image 缩图坐标需先乘其提示的倍数。',
     parameters: {
       direction: { type: 'string', description: 'up/down/left/right,默认 down' },
       amount: { type: 'number', description: '滚动像素量,默认 600' },

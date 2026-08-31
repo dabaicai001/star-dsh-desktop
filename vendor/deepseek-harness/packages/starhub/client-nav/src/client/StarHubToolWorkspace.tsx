@@ -1,7 +1,8 @@
 /**
  * StarHub 工具面板(rc.2 适配,2026-08-26):由侧栏底部「工具」入口
  * (sidebar.footer.action → toolsPanel 桥)打开的 shell.overlay 面板,显示
- * 当前子类(终端 / 数据库 / Docker)的资产(连接)列表;点资产行经注入的
+ * 当前子类(终端 / 数据库 / Docker)的资产(连接)列表;无资产概念的子类
+ * (沙箱桌面 / Android)渲染各自的工作面板。点资产行经注入的
  * openAsset 回调新开该实例的独立操作页窗口(桌面端 Tauri webview 窗口,
  * 浏览器预览新标签页)。行尾 hover 出编辑钮,经 openConnectionManager(asset)
  * 打开连接对话框的编辑模式;列头带资产数、刷新与「新建连接」入口。
@@ -37,7 +38,13 @@ import type { FileTreeState } from './file-tree/state.ts'
 import { ExecRecordList } from './conn/ExecRecordList.tsx'
 import type { ExecRecordsState } from './conn/exec-records.ts'
 import { SandboxPanel } from './sandbox/SandboxPanel.tsx'
+import { AndroidPanel } from './android/AndroidPanel.tsx'
 import css from './StarHubToolWorkspace.module.css'
+
+/** 无资产概念的子类:展开后渲染各自工作面板,不走资产列表逻辑。 */
+function isAssetlessSubcategory(key: string): boolean {
+  return key === 'sandbox' || key === 'android'
+}
 
 /** Business face injected by the registration: the connection wire + bridge/asset writes. */
 export interface StarHubToolWorkspaceInjected {
@@ -152,8 +159,9 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
 /**
  * Render the StarHub tools side panel: the mask + right-edge drawer shown when
  * the footer「工具」entry opens it. Inside, a collapsed tree renders the
- * subcategory rows (终端 / 数据库 / Docker), each expandable to its asset
- * (connection) list; clicking an asset opens its operation page. Also syncs
+ * subcategory rows (终端 / 数据库 / Docker / 沙箱桌面 / Android), each
+ * expandable to its asset list or dedicated panel; clicking an asset opens
+ * its operation page. Also syncs
  * the current tool selection to host settings for AI context (Path B plan 4.3).
  *
  * 文件树视图(2026-08-24):面板内「文件树」按钮把 fileTree bridge 置 open 后,
@@ -248,7 +256,7 @@ export function StarHubToolWorkspace({
             </header>
             <div className={css.tree}>
               {activeSubcategory === null && (
-                <div className={css.status}>点击展开一个子类(终端 / 数据库 / Docker)查看连接。</div>
+                <div className={css.status}>点击展开一个子类(终端 / 数据库 / Docker / 沙箱桌面 / Android)查看内容。</div>
               )}
               {STARHUB_SUBCATEGORIES.map(subcategory => renderSubcategory(
                 subcategory,
@@ -308,23 +316,23 @@ function renderSubcategory(
       </button>
       {expanded && (
         <div className={css.assetGroup}>
-          {subcategory.key === 'sandbox' ? (
-            // 沙箱桌面无资产概念:展开即渲染实例/模板管理面板
-            <SandboxPanel />
-          ) : loading && <div className={css.status}>加载资产…</div>}
-          {subcategory.key !== 'sandbox' && !loading && preview && (
+          {/* 无资产概念的子类:沙箱桌面渲染实例/模板面板,Android 渲染 adb 设备面板 */}
+          {subcategory.key === 'sandbox' && <SandboxPanel />}
+          {subcategory.key === 'android' && <AndroidPanel />}
+          {!isAssetlessSubcategory(subcategory.key) && loading && <div className={css.status}>加载资产…</div>}
+          {!isAssetlessSubcategory(subcategory.key) && !loading && preview && (
             <div className={css.status}>
               <div className={css.previewTitle}>浏览器预览模式</div>
               <div>当前页面跑在纯浏览器里,没有 StarHub 桌面端后端(Tauri IPC),资产列表不可用。</div>
             </div>
           )}
-          {subcategory.key !== 'sandbox' && !loading && !preview && error !== null && (
+          {!isAssetlessSubcategory(subcategory.key) && !loading && !preview && error !== null && (
             <div className={css.status}>
               <div>资产加载失败:{error}</div>
               <button type="button" className={css.retryButton} onClick={() =>{  handlers.refreshAssets() }}>重试</button>
             </div>
           )}
-          {subcategory.key !== 'sandbox' && !loading && !preview && error === null && matched.length === 0 && (
+          {!isAssetlessSubcategory(subcategory.key) && !loading && !preview && error === null && matched.length === 0 && (
             <div className={css.status}>
               <div>暂无 {subcategory.label} 连接。</div>
               <button type="button" className={css.retryButton} onClick={() =>{  handlers.openConnectionManager() }}>
@@ -332,7 +340,7 @@ function renderSubcategory(
               </button>
             </div>
           )}
-          {subcategory.key !== 'sandbox' && !loading && !preview && error === null && matched.length > 0 && (
+          {!isAssetlessSubcategory(subcategory.key) && !loading && !preview && error === null && matched.length > 0 && (
             <div className={css.list}>
               {matched.map(asset => (
                 <AssetRow

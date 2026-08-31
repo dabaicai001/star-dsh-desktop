@@ -419,6 +419,8 @@ fn main() {
             // 沙箱桌面(UI 状态读写;容器生命周期只走 AI 工具路径与 UI 生命周期命令)
             commands::android::android_ui_get_config,
             commands::android::android_ui_set_adb_path,
+            commands::android::android_ui_list_devices,
+            commands::android::android_ui_open_live,
             commands::desktop::desktop_ui_overview,
             commands::desktop::desktop_ui_set_platform,            commands::desktop::desktop_ui_upsert_template,
             commands::desktop::desktop_ui_delete_template,

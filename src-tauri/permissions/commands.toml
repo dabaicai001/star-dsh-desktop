@@ -28,6 +28,8 @@ commands.allow = [
   "alert_test_webhook",
   "alert_update",
   "android_ui_get_config",
+  "android_ui_list_devices",
+  "android_ui_open_live",
   "android_ui_set_adb_path",
   "audit_clear",
   "audit_list",

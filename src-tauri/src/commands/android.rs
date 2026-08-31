@@ -1,7 +1,9 @@
-//! Android 实体机的 UI Tauri Command(设置页「Android 设备」tab)。
+//! Android 实体机的 UI Tauri Command(设置页「Android 设备」tab + 工具面板
+//! 「Android」子类)。
 //!
-//! 与 AI 工具路径(android/mod.rs,经 dsh 桥)分离:只读写 adb 二进制配置,
-//! 不做任何设备操作(设备写操作只由 AI 工具路径驱动,审批语义不被 UI 绕过)。
+//! 与 AI 工具路径(android/mod.rs,经 dsh 桥)分离:只读设备列表与 adb 配置
+//! 读写,不做任何设备写操作(设备写操作只由 AI 工具路径驱动,审批语义不被
+//! UI 绕过)。打开直播窗口是用户手势(对齐 desktop_ui_open_live_window)。
 
 use tauri::{AppHandle, Manager};
 
@@ -57,4 +59,31 @@ pub async fn android_ui_set_adb_path(app: AppHandle, path: Option<String>) -> Re
         .invalidate_adb_cache()
         .await;
     Ok(())
+}
+
+/// 工具面板「Android」子类:adb 设备列表(serial/state/model)。只读,不需要授权。
+#[tauri::command]
+pub async fn android_ui_list_devices(app: AppHandle) -> Result<serde_json::Value, String> {
+    let manager = app.state::<crate::android::AndroidManager>();
+    let devices = crate::android::ui_list_devices(&manager).await?;
+    Ok(serde_json::Value::Array(
+        devices
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "serial": d.serial,
+                    "state": d.state,
+                    "model": d.model,
+                })
+            })
+            .collect(),
+    ))
+}
+
+/// 工具面板「Android」子类:打开设备直播窗口(用户点击 = 审批表达;围观/接管
+/// 由直播页内的「接管」开关控制,与 AI 工具路径打开的窗口完全同款)。
+#[tauri::command]
+pub async fn android_ui_open_live(app: AppHandle, serial: String) -> Result<(), String> {
+    let manager = app.state::<crate::android::AndroidManager>();
+    crate::android::ui_open_live(&app, &manager, &serial).await
 }

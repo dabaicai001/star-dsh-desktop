@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.107.0(**Android 实体机直连(adb,设计见 `docs/superpowers/specs/2026-08-30-android-device-design.md`)**:AI 经 adb 直接操作用户真实的 Android 手机(开发者模式 → USB 调试 / 无线调试),与沙箱桌面并列、互不影响) |
+| 当前版本 | v0.108.0(**工具面板新增「Android」子类(adb 设备列表)**:侧栏工具面板此前只有 终端/数据库/Docker/沙箱桌面,Android 实体机无处可看;新增 Android 子类(无资产概念,与沙箱桌面同姿势特判),展开渲染设备卡片列表(型号/serial/状态徽标,unauthorized 提示「请在手机上允许 USB 调试」、offline 提示拔插重试),就绪设备带「打开直播」按钮(独立窗口围观,窗口内可切接管);新增 UI 命令 `android_ui_list_devices`(只读免授权)与 `android_ui_open_live`(用户点击 = 审批表达,分辨率现场探测,与 AI 路径共用 `open_live_window`),并同步 `permissions/commands.toml` ACL) |
 
 ## 架构一句话
 
@@ -127,4 +127,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新:2026-08-31(v0.107.0)*
+*最后更新:2026-08-31(v0.108.0)*

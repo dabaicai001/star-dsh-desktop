@@ -607,12 +607,12 @@ async fn adb_shell(
 
 /// `adb devices -l` 的一台设备。
 #[derive(Debug, Clone, PartialEq)]
-struct AdbDevice {
-    serial: String,
+pub(crate) struct AdbDevice {
+    pub serial: String,
     /// device / unauthorized / offline 等。
-    state: String,
+    pub state: String,
     /// -l 附加信息里的 model(可能为空)。
-    model: String,
+    pub model: String,
 }
 
 /// 解析 `adb devices -l` 输出(跳过表头与空行)。
@@ -823,6 +823,18 @@ fn ensure_png(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     }
 }
 
+/// PNG IHDR 解析宽高(8 字节签名 + 4 长度 + "IHDR" 后两个 BE u32)。
+/// 截图真实像素 = 坐标契约的事实来源:不同机型/分辨率/横竖屏都以它为准,
+/// 不信任 connect 时缓存的分辨率(wm size 可能被改、设备可能旋转)。
+fn png_dimensions(bytes: &[u8]) -> Option<(i64, i64)> {
+    if bytes.len() < 24 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") || &bytes[12..16] != b"IHDR" {
+        return None;
+    }
+    let w = u32::from_be_bytes(bytes[16..20].try_into().ok()?);
+    let h = u32::from_be_bytes(bytes[20..24].try_into().ok()?);
+    Some((w as i64, h as i64))
+}
+
 /// scrcpy 帧元头(12 字节 BE):u64 pts_and_flags + u32 packet_size。
 /// bit63 = config 包(SPS/PPS),bit62 = keyframe。
 fn parse_frame_meta(header: &[u8]) -> Option<(bool, bool, usize)> {
@@ -861,14 +873,17 @@ async fn capture_png(
     ensure_png(stdout)
 }
 
-/// 截图落应用缓存目录 android-shots/,返回文件路径;有直播会话时同步最新帧。
+/// 截图落应用缓存目录 android-shots/,返回文件路径 + 截图真实物理分辨率
+/// (PNG IHDR 直读,任意机型/横竖屏都准确);有直播会话时同步最新帧。
 async fn capture_screenshot(
     app: &tauri::AppHandle,
     manager: &AndroidManager,
     adb: &str,
     serial: &str,
-) -> Result<String, String> {
+) -> Result<(String, (i64, i64)), String> {
     let bytes = capture_png(manager, adb, serial).await?;
+    let dims = png_dimensions(&bytes)
+        .ok_or_else(|| "截图 PNG 头解析失败(无法确定物理分辨率)".to_string())?;
     if let Ok(mut live) = manager.live.lock() {
         if let Some(session) = live.get_mut(serial) {
             session.frame = Some((bytes.clone(), std::time::Instant::now()));
@@ -886,7 +901,7 @@ async fn capture_screenshot(
         chrono::Local::now().format("%Y%m%d-%H%M%S-%3f")
     ));
     std::fs::write(&path, &bytes).map_err(|e| format!("写入截图失败: {e}"))?;
-    Ok(path.display().to_string())
+    Ok((path.display().to_string(), dims))
 }
 
 /// 写操作前的自动截屏留档(回放帧);失败只记日志不阻断操作。
@@ -898,7 +913,9 @@ async fn record_frame(
     session_id: &str,
     action: &str,
 ) {
-    let shot = capture_screenshot(app, manager, adb, serial).await;
+    let shot = capture_screenshot(app, manager, adb, serial)
+        .await
+        .map(|(path, _dims)| path);
     if let Ok(pool) = crate::db::get_pool() {
         let (action_text, shot_path) = match &shot {
             Ok(path) => (action.to_string(), Some(path.clone())),
@@ -1672,6 +1689,78 @@ async fn type_text(
     Ok(format!("已经 ADBKeyBoard 广播输入 {} 字符", text.chars().count()))
 }
 
+/// 打开(或重建)一台设备的直播窗口:先销毁旧窗口(其 Destroyed 钩子停旧泵
+/// 并回收 scrcpy),再 start_live + 建新会话。AI 工具(android_open_live)
+/// 与 UI 命令(android_ui_open_live)共用。窗口 label android-live-* 不匹配
+/// 任何 capability:直播页无任何 app command 权限(与 sandbox-live 同姿势);
+/// 输入/帧/视频全部经 custom protocol。
+pub(crate) fn open_live_window(
+    app: &tauri::AppHandle,
+    manager: &AndroidManager,
+    serial: &str,
+    resolution: (i64, i64),
+) -> Result<(), String> {
+    let short: String = serial.chars().take(8).collect();
+    let label = format!("android-live-{short}");
+    if let Some(existing) = app.get_webview_window(&label) {
+        existing
+            .destroy()
+            .map_err(|e| format!("关闭旧直播窗口失败:{e}"))?;
+    }
+    manager.start_live(app, serial, resolution);
+    let url = format!("android-live://localhost/{serial}/index.html");
+    let parsed = tauri::Url::parse(&url).map_err(|e| format!("直播 URL 非法:{e}"))?;
+    let window = tauri::WebviewWindowBuilder::new(
+        app,
+        &label,
+        tauri::WebviewUrl::External(parsed),
+    )
+    .title(format!("Android 直播 {short}"))
+    .inner_size(420.0, 860.0)
+    .center()
+    .build()
+    .map_err(|e| format!("创建直播窗口失败:{e}"))?;
+    let manager_clone = manager.clone();
+    let serial_for_hook = serial.to_string();
+    window.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            manager_clone.stop_live(&serial_for_hook);
+        }
+    });
+    Ok(())
+}
+
+/// UI 命令用(工具面板「Android」子类):adb 设备列表。只读,不需要授权。
+pub(crate) async fn ui_list_devices(manager: &AndroidManager) -> Result<Vec<AdbDevice>, String> {
+    let adb = resolve_adb(manager).await?;
+    let (stdout, _, _) = adb_raw(
+        manager,
+        &adb,
+        None,
+        &["devices".to_string(), "-l".to_string()],
+        15,
+    )
+    .await?;
+    Ok(parse_devices(&String::from_utf8_lossy(&stdout)))
+}
+
+/// UI 命令用:打开设备直播窗口(用户在面板上点击 = 审批表达,围观/接管)。
+/// 分辨率现场探测(wm size),不依赖 AI 授权缓存——面板路径没有授权条目。
+pub(crate) async fn ui_open_live(
+    app: &tauri::AppHandle,
+    manager: &AndroidManager,
+    serial: &str,
+) -> Result<(), String> {
+    if !valid_serial(serial) {
+        return Err(format!("设备 serial 非法: {serial:?}"));
+    }
+    let adb = resolve_adb(manager).await?;
+    let out = adb_shell(manager, &adb, serial, "wm size", 15).await?;
+    let resolution =
+        parse_wm_size(&out).ok_or_else(|| format!("分辨率探测失败(wm size 输出异常): {out}"))?;
+    open_live_window(app, manager, serial, resolution)
+}
+
 /// harness 桥入口:android_* 工具在此分发执行,返回模型可读文本。
 pub async fn execute_from_bridge(
     bridge: &HostBridgeState,
@@ -1901,9 +1990,16 @@ pub async fn execute_from_bridge(
         }
         "android_screenshot" => {
             let ctx = device_ctx(&manager, session_id, args).await?;
-            let path = capture_screenshot(&app, &manager, &ctx.adb, &ctx.authz.serial).await?;
+            let (path, (w, h)) =
+                capture_screenshot(&app, &manager, &ctx.adb, &ctx.authz.serial).await?;
             Ok(format!(
-                "已截取设备屏幕(PNG),保存于:{path}\n调用 read_image 读取该文件即可看到画面。"
+                "已截取设备屏幕(PNG,物理像素 {w}x{h}),保存于:{path}\n\
+                 调用 read_image 读取该文件即可看到画面。\n\
+                 坐标约定(覆盖任意机型,以本条分辨率为准):android_tap/android_double_tap/\
+                 android_swipe/android_scroll 的坐标 = 本截图原始文件的像素(设备物理像素 \
+                 {w}x{h})。read_image 展示给你的图可能被缩小——其结果会注明 \
+                 \"downscaled from {w}x{h} … multiply coordinates by k\",此时把你在显示图上\
+                 量到的坐标乘以 k 再传入;未注明缩放时直接用图上坐标。"
             ))
         }
         "android_current_app" => {
@@ -2083,36 +2179,7 @@ pub async fn execute_from_bridge(
         "android_open_live" => {
             let ctx = device_ctx(&manager, session_id, args).await?;
             let serial = ctx.authz.serial.clone();
-            let short: String = serial.chars().take(8).collect();
-            let label = format!("android-live-{short}");
-            // 先销毁旧窗口(其 Destroyed 钩子停旧泵并回收 scrcpy),再建新会话。
-            if let Some(existing) = app.get_webview_window(&label) {
-                existing
-                    .destroy()
-                    .map_err(|e| format!("关闭旧直播窗口失败:{e}"))?;
-            }
-            manager.start_live(&app, &serial, ctx.authz.resolution);
-            let url = format!("android-live://localhost/{serial}/index.html");
-            let parsed = tauri::Url::parse(&url).map_err(|e| format!("直播 URL 非法:{e}"))?;
-            // 窗口 label android-live-* 不匹配任何 capability:直播页无任何 app
-            // command 权限(与 sandbox-live 同姿势);输入/帧/视频全部经 custom protocol。
-            let window = tauri::WebviewWindowBuilder::new(
-                &app,
-                &label,
-                tauri::WebviewUrl::External(parsed),
-            )
-            .title(format!("Android 直播 {short}"))
-            .inner_size(420.0, 860.0)
-            .center()
-            .build()
-            .map_err(|e| format!("创建直播窗口失败:{e}"))?;
-            let manager_clone = manager.clone();
-            let serial_for_hook = serial.clone();
-            window.on_window_event(move |event| {
-                if matches!(event, tauri::WindowEvent::Destroyed) {
-                    manager_clone.stop_live(&serial_for_hook);
-                }
-            });
+            open_live_window(&app, &manager, &serial, ctx.authz.resolution)?;
             Ok(format!(
                 "直播窗口已打开(设备 {serial})。scrcpy 通道就绪后自动切换 H.264 实时画面,否则截图轮询兜底;窗口内勾选「接管」后用户可亲手操作,期间你的写操作会被拒绝。"
             ))
@@ -2315,6 +2382,29 @@ mod tests {
         let (x1, _, x2, _) = scroll_swipe(10, 1000, "left", 600, (1080, 2400)).unwrap();
         assert!(x1 >= 0 && x2 < 1080);
         assert!(scroll_swipe(0, 0, "diagonal", 100, (1080, 2400)).is_err());
+    }
+
+    #[test]
+    fn png_dimensions_reads_ihdr() {
+        // 1200x2670(小米一类 20:9 机型)与 1080x2400 都必须直读 IHDR
+        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+        png.extend_from_slice(&13u32.to_be_bytes()); // IHDR 数据长度
+        png.extend_from_slice(b"IHDR");
+        png.extend_from_slice(&1200u32.to_be_bytes());
+        png.extend_from_slice(&2670u32.to_be_bytes());
+        assert_eq!(png_dimensions(&png), Some((1200, 2670)));
+        png.truncate(16);
+        png.extend_from_slice(&1080u32.to_be_bytes());
+        png.extend_from_slice(&2400u32.to_be_bytes());
+        assert_eq!(png_dimensions(&png), Some((1080, 2400)));
+        // 横屏(旋转后 w > h)同样直读
+        png.truncate(16);
+        png.extend_from_slice(&2670u32.to_be_bytes());
+        png.extend_from_slice(&1200u32.to_be_bytes());
+        assert_eq!(png_dimensions(&png), Some((2670, 1200)));
+
+        assert_eq!(png_dimensions(b"NOTPNG"), None);
+        assert_eq!(png_dimensions(&png[..20]), None);
     }
 
     #[test]

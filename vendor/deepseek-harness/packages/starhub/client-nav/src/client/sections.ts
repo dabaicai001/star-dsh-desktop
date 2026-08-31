@@ -2,9 +2,11 @@
  * StarHub 功能导航事实表:三层结构「工具大类 → 子类 → 资产路由」(P1 方案)。
  *
  * 侧栏展示「工具」大类行(即分组头,可展开),下挂子类(终端 / 数据库 /
- * Docker);点子类 → 右侧工具工作区列显示该类型的资产(连接)列表;点资产
- * 行 → 新开独立窗口加载该实例的 React 原生操作页(`/starhub-react/`),不再
- * 以整幅 overlay 盖住主壳或回落到 Vue embed。
+ * Docker / 沙箱桌面 / Android);点子类 → 右侧工具工作区列显示该类型的资产
+ * (连接)列表;点资产行 → 新开独立窗口加载该实例的 React 原生操作页
+ * (`/starhub-react/`),不再以整幅 overlay 盖住主壳或回落到 Vue embed。
+ * 沙箱桌面与 Android 无资产概念(实例存 SQLite / 设备经 adb 发现),展开后
+ * 渲染各自的工作面板而非资产列表。
  * 子类只定义分组/图标/资产匹配;实例路由前缀一律按资产类型经
  * `routePrefixForAsset` 派生(数据库子类混有多种库,不能共用子类前缀)。
  * Excel 已不在导航里(功能退役出侧栏);设置直接融入 dsh 底部设置面板
@@ -12,6 +14,7 @@
  */
 import {
   IconArchiveOutline20,
+  IconBrowseOutline16,
   IconCodeOutline16,
   IconDataOutline16,
   type IconProps,
@@ -136,6 +139,15 @@ export const STARHUB_SUBCATEGORIES: readonly StarHubSubcategory[] = [
     label: '沙箱桌面',
     routePrefix: '/sandbox',
     Icon: IconArchiveOutline20,
+    matches: () => false,
+  },
+  {
+    // Android 实体机:无资产概念(设备经 adb 现场发现,不落连接管理器),
+    // 树节点展开后渲染 AndroidPanel(StarHubToolWorkspace 对 key='android' 特判)。
+    key: 'android',
+    label: 'Android',
+    routePrefix: '/android',
+    Icon: IconBrowseOutline16,
     matches: () => false,
   },
 ]
