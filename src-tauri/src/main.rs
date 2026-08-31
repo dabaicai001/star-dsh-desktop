@@ -4,6 +4,7 @@
 )]
 
 mod commands;
+mod android;
 mod browser;
 mod db;
 mod desktop;
@@ -116,6 +117,12 @@ fn main() {
         .manage(browser::BrowserManager::new())
         // 沙箱桌面:任务级授权 / 平台连接缓存 / 接管互斥状态
         .manage(desktop::DesktopManager::new())
+        // Android 实体机:任务级授权 / adb 路径缓存 / 直播帧与 scrcpy 会话
+        .manage(android::AndroidManager::new())
+        // Android 直播窗口内容:android-live://localhost/<serial>/(页面/帧/视频/接管输入)
+        .register_uri_scheme_protocol("android-live", |ctx, request| {
+            android::live_protocol_handler(ctx.app_handle(), request)
+        })
         // 联动 M1:会话附着注册表(ssh_attach/ssh_detach + live.snapshot 快照源)
         .manage(registry::SessionRegistry::new())
         // 主窗口关闭 = 应用退出:CloseRequested 阶段先销毁其余全部窗口
@@ -410,9 +417,10 @@ fn main() {
             // ai-browser 窗口开放(capabilities/browser.json 收窄)
             commands::browser::browser_internal_result,
             // 沙箱桌面(UI 状态读写;容器生命周期只走 AI 工具路径与 UI 生命周期命令)
+            commands::android::android_ui_get_config,
+            commands::android::android_ui_set_adb_path,
             commands::desktop::desktop_ui_overview,
-            commands::desktop::desktop_ui_set_platform,
-            commands::desktop::desktop_ui_upsert_template,
+            commands::desktop::desktop_ui_set_platform,            commands::desktop::desktop_ui_upsert_template,
             commands::desktop::desktop_ui_delete_template,
             commands::desktop::desktop_ui_lifecycle,
             commands::desktop::desktop_ui_replay_frames,

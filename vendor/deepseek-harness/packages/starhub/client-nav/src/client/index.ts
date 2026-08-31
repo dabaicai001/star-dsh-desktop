@@ -55,6 +55,7 @@ import { FileTreeButton } from './file-tree/FileTreeButton.tsx'
 import { createFileTreeBridge } from './file-tree/state.ts'
 import { StarHubToolWorkspace, type StarHubToolWorkspaceInjected } from './StarHubToolWorkspace.tsx'
 import { AboutTab } from './settings/about.tsx'
+import { AndroidSettingsTab } from './settings/android.tsx'
 import { SandboxSettingsTab } from './settings/sandbox.tsx'
 import { SandboxUserActionBanner } from './sandbox/SandboxUserActionBanner.tsx'
 import { AiTab } from './settings/ai.tsx'
@@ -418,7 +419,8 @@ export function apply(ctx: Context): void {
     { id: 'starhub-audit', order: 32, label: '审计日志', component: AuditTab },
     { id: 'starhub-alert', order: 33, label: '告警规则', component: AlertTab },
     { id: 'starhub-sandbox', order: 34, label: '沙箱平台', component: SandboxSettingsTab },
-    { id: 'starhub-about', order: 35, label: '关于', component: AboutTab },
+    { id: 'starhub-android', order: 35, label: 'Android 设备', component: AndroidSettingsTab },
+    { id: 'starhub-about', order: 36, label: '关于', component: AboutTab },
   ]
   for (const tab of starhubTabs) {
     ctx.slots.inject('settings.section', () => ctx.slots.register({

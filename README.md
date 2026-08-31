@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.106.2-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.107.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -38,35 +38,24 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 **AI 助手**:OpenAI 兼容协议(可接 GPT / Claude / DeepSeek / Ollama 等),Function Calling 直接驱动 SSH / 数据库 / SFTP / Docker / 本地文件 / 浏览器等工具;`@` 绑定资产、`#` 绑定上下文;无痕 AI 浏览器(14 个 `browser_*` 工具,Windows 走 CDP 可信输入);三级记忆卡 + 会话全文存档;MCP Server 挂载;所有 AI 发起的写操作都要经过确认卡审批并落审计日志。
 
+**AI 助手**:OpenAI 兼容协议(可接 GPT / Claude / DeepSeek / Ollama 等),Function Calling 直接驱动 SSH / 数据库 / SFTP / Docker / 本地文件 / 浏览器等工具;`@` 绑定资产、`#` 绑定上下文;无痕 AI 浏览器(14 个 `browser_*` 工具,Windows 走 CDP 可信输入);三级记忆卡 + 会话全文存档;MCP Server 挂载;所有 AI 发起的写操作都要经过确认卡审批并落审计日志。
+
+**AI 沙箱桌面**(E2B 式):AI 在一次性 Ubuntu 24.04 桌面容器(Xvfb + Xfce + noVNC)里操作任意 Linux 桌面应用——截图回灌、窗口管理、键鼠操作、箱内命令,全程 23 个 `desktop_*` 工具;模板 → 实例 → 销毁,登录态可固化为新模板;画面在独立直播窗口对用户全程可见,用户可随时「接管」亲手操作(接管期间 AI 写操作自动暂停),扫码登录/输密码时可一键请人工出手。
+
+**Android 实体机直连**(adb):AI 直接操作用户真实的 Android 手机(开发者模式 → USB 调试 / 无线调试)——截屏看画面、点按/滑动/滚动、按键、输入文本、按包名启动 App、设备文件传输、无线配对,共 19 个 `android_*` 工具;直播窗口走 bundled scrcpy-server 的 H.264 实时画面(不可用自动降级截图轮询),同样支持围观/接管;任务级授权(60 分钟)、任意 shell 恒确认 hard 档、每次写操作自动截屏留档可回放——真实设备,每一步都有据可查。
+
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
 
-### v0.106.2 (2026-08-30)
-- 🐛 **沙箱桌面点「直播/接管」报 `desktop_ui_open_live_window not allowed by ACL`**:v0.106.0 把 `desktop_set_takeover` 重构为 `desktop_ui_open_live_window` 时漏同步 app command ACL 清单——`permissions/commands.toml` 仍列已移除的旧命令、缺新命令,远端 dsh 主壳(127.0.0.1 origin)调用被 ACL 拦下;同步清单并修正 `desktop/mod.rs` 过时注释
-- 🐛 **沙箱桌面面板窄栏下实例卡片文字逐字折行**:卡片按钮组(直播/接管/停止/回放/销毁)不换行,把信息区挤到只剩几个字符宽,`running · 平台 local · noVNC :32768` 逐字竖排;`.card` 加 `flex-wrap`、`.cardMain` 改 `flex: 1 1 160px`、`.cardActions` 允许换行,窄栏下按钮组整体折到下一行
+### v0.107.0 (2026-08-31)
+- ✨ **Android 实体机直连(adb,设计见 `docs/superpowers/specs/2026-08-30-android-device-design.md`)**:AI 经 adb 直接操作用户真实的 Android 手机(开发者模式 → USB 调试 / 无线调试),与沙箱桌面并列、互不影响
+- ✨ **直播窗口(围观/接管,对齐沙箱语义)**:`android_open_live` 打开独立窗口,画面经 `android-live://` custom protocol 供给——scrcpy 模式(bundled scrcpy-server v2.7,SHA256 钉死,H.264 经 adb forward 回本机,直播页 WebCodecs 增量解码)不可用时自动降级截图轮询;接管期间 AI 写操作一律拒绝;窗口销毁自动回收
+- ✨ **安全模型**:任务级授权由 Rust 宿主在执行点强制(serial 匹配/过期);`android_exec` 恒确认 hard(never 预设也不静默);pull/push/wireless 恒确认软档;每次写操作前自动截屏留档(`android_replay` 可查);`android_type` 文本不进审计(只记长度)
+- ✨ **adb 二进制供给**:设置(设置 → Android 设备 tab)→ STARHUB_ADB_PATH → PATH → 平台常见位置四级解析;全部缺失时报错带三平台安装引导,AI 可用本机工具代装;旧版 adb exec-out 的 CRLF 二进制损坏自动修复
+- ✨ **配套**:Rust 新增 `android` 模块(19 工具 + custom protocol + scrcpy 通道,纯函数单测覆盖);前端新增设置「Android 设备」tab;19 个 AI 工具进审批风险门(android_exec hard / 传输与无线软档 / connect=任务级授权)
 
-### v0.106.1 (2026-08-30)
-- 🐛 **权限「全访问」下删除/高危确认卡必被拒(审批 never 策略短路)**:`danger-full-access` 预设此前把会话审批策略钉为 `never`,而 `dsh-user-approval` 的 `decide()` 在 `never` 下先于确认卡应答器直接拒——`desktop_exec`、`DELETE FROM`、`rm -rf` 等 hard 档确认卡根本不弹,直接报「the user rejected tool」。修复(approval-bridge + starhub-web 组合两处协同,不动 dsh 内核):任何预设都钉 `ask`,「全访问放行普通写操作」改由风险门按当前 preset 判定——**全访问 = 只有删除/高危操作弹确认卡,其余静默**;已在 never 卡住的老会话重新切一次权限预设(或新开会话)即恢复。详见 `docs/踩坑记录.md` §32
-- 🐛 **dsh web profile 的本地包 junction 钉死旧路径,升级后加载陈旧/开发树插件代码**:junction 创建后「存在即复用」从不校验指向——dev 与 release 共用同一 app data 时,release 会经旧 junction 加载开发树的过期 `lib/`(v0.106.0 直播窗口「装了新包却还是旧界面」事故);安装目录变更同理。修复:`web.rs` 新增 `ensure_dir_link_fresh`,已存在链接校验指向(read_link + canonicalize 双侧对齐),漂移/悬挂删旧重建,真实目录占用告警跳过;LOCAL_PACKAGES 与 RUNTIME_HOSTED_PATCH_DEPS 两处统一走它,附 5 分支回归测试。详见 `docs/踩坑记录.md` §31
-
-### v0.106.0 (2026-08-29)
-- ✨ **沙箱直播改为独立 Tauri 窗口**:工具面板「沙箱桌面」实例卡片的「直播/接管」按钮不再使用侧边栏内嵌 iframe(尺寸太小,且 iframe permissions-policy 禁止全屏),改为新开独立窗口全页加载 noVNC——围观 = `view_only` 只读,接管 = 双向键鼠 + 接管互斥;同沙箱重复点击即「关旧窗开新窗」完成围观 ⇄ 接管切换;接管窗口被关闭(含主窗口退出联动)由 Rust `Destroyed` 钩子自动释放接管,不再依赖前端 React 清理
-- ✨ **「请求人工介入」横幅新增「打开直播画面」按钮**:AI 调 `desktop_request_user_action`(扫码登录/输密码等)时,用户一键拉起该沙箱的接管窗口,操作完点「已完成」闭环
-- 🔧 **新增 `desktop_ui_open_live_window` 命令,移除 `desktop_set_takeover`**:接管生命周期(进入/释放)并入开窗命令,`desktop_set_takeover` 已无调用方;直播窗口 label `sandbox-live-*` 不匹配任何 capability,noVNC 页无任何 app command 权限(与 ai-browser 窗口同姿势)
-
-### v0.105.1 (2026-08-29)
-- 🐛 **沙箱桌面长耗时操作突破 sidecar RPC 120 秒默认超时**:`desktop_build_template`(首次构建 5-15 分钟)给 30 分钟上限,`desktop_commit_sandbox` 给 10 分钟,`desktop_exec` 的 RPC 层超时跟随其 `timeoutSec` 参数(+30 秒余量),不再出现「Sidecar RPC timed out after 120 seconds」
-- 🐛 **构建/固化超时降级为人工操作指引**:超时不再硬失败——`desktop_build_template` 会把 Dockerfile 落盘缓存目录并返回手工 `docker build` 命令(用户执行后重调即命中层缓存秒过);`desktop_commit_sandbox` 返回核对镜像/手工 `docker commit` 的指引
-
-### v0.105.0 (2026-08-29)
-- ✨ **沙箱桌面(Ubuntu 容器沙箱平台,E2B 式架构,M1-M4 一次交付,设计见 `docs/superpowers/specs/2026-08-28-desktop-automation-design.md`)**:AI 在一次性 Ubuntu 24.04 桌面容器(Xvfb + Xfce + x11vnc + noVNC)里操作任意 Linux 桌面应用,画面对用户全程直播
-- ✨ **Rust 主进程新增 `desktop` 模块**:`desktop/mod.rs`(DesktopManager:平台连接缓存/授权/接管/人工介入应答;全部工具实现经 sidecar Docker 适配器编排)、`desktop/recipe.rs`(配方解析校验 + Dockerfile 生成,含 Ubuntu 24.04 firefox/chromium 为 snap 壳的坑说明)、`commands/desktop.rs`(UI 命令:接管开关/概览/平台设置/模板 CRUD/回放帧/生命周期/人工介入应答)
-- ✨ **前端(client-nav)**:沙箱桌面工作面板(实例卡片/直播查看器/回放查看器/模板编辑器)、「请求人工介入」全局横幅(`starhub://desktop-user-action` 事件 + 倒计时)、设置「沙箱平台」tab;配套 25 个新 vitest 用例(面板/横幅/设置/服务/装配/工具树)
-- 🐛 **修复 `docker_exec` 域工具参数键名错位**(搭车修复):Rust 进程内执行器发 `container`/`cmd`,sidecar 期望 `containerId`/`command`——该工具自方案1 迁移后实际一直报错,现对齐
-
-### v0.104.0 (2026-08-29)
-- ✨ sidecar Docker 适配器补齐沙箱编排能力(沙箱桌面平台 M0,设计见 `docs/superpowers/specs/2026-08-28-desktop-automation-design.md`)
+历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 下载
 

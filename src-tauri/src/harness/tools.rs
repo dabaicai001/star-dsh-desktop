@@ -212,6 +212,14 @@ async fn dispatch_tool(
         return Ok(text);
     }
 
+    // Android 实体机(android_*):adb 直连真实设备;任务级授权与接管互斥在
+    // android 模块执行点强制(docs/superpowers/specs/2026-08-30-android-device-design.md)。
+    if crate::android::ANDROID_TOOLS.contains(&name) {
+        let text = crate::android::execute_from_bridge(bridge, session_id, name, args).await?;
+        on_ai_tool_success(bridge, session_id, name, args, &text).await;
+        return Ok(text);
+    }
+
     // 全局工具在 Rust 内执行;list_capabilities 是静态内容,不需要数据库
     // (测试环境可能没有初始化全局 pool)
     if name == "starhub_list_capabilities" {
@@ -237,6 +245,12 @@ const AUDIT_ARG_WHITELIST: &[&str] = &[
     "url",
     "id",
     "key",
+    // Android 实体机:无线调试主机 / 文件传输路径(定位信息,非凭据)
+    "host",
+    "remotePath",
+    "localDir",
+    "remoteDir",
+    "serial",
 ];
 
 /// AI 工具调用审计(v0.103.0,设置 → 审计「AI」类别):
@@ -407,6 +421,7 @@ fn list_capabilities() -> String {
         "docker": ["容器", "镜像", "日志", "Inspect", "SSH/TCP/Socket 连接"],
         "excel": ["工作簿", "CSV", "编辑", "筛选", "排序", "公式", "导入导出"],
         "local": ["Windows PowerShell", "macOS/Linux /bin/sh", "目录与路径元数据", "文本文件读写", "复制/移动/删除"],
+        "android": ["Android 实体机(adb)", "截屏回灌", "触控/滑动/按键/输入", "App 启动", "直播围观/接管", "文件传输", "无线调试配对"],
         "application": ["资产与标签导航", "新建连接", "设置", "AI Agents", "Skills"],
     })
     .to_string()

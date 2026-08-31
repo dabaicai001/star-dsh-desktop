@@ -14,6 +14,17 @@
 
 ---
 
+## [0.107.0] - 2026-08-31
+
+### 新增
+- **Android 实体机直连(adb,设计见 `docs/superpowers/specs/2026-08-30-android-device-design.md`)**:AI 经 adb 直接操作用户真实的 Android 手机(开发者模式 → USB 调试 / 无线调试),与沙箱桌面并列、互不影响
+  - **19 个 `android_*` AI 工具**:设备发现(`android_list_devices`,unauthorized 状态引导)、任务级授权连接(`android_connect` 一次确认 = 60 分钟设备操作权限,探测型号/版本/分辨率)、截图回灌(`android_screenshot` → read_image)、前台感知(`android_current_app` 返回当前 Activity)、触控(tap/double_tap/swipe/scroll)、文本输入(`android_type`:ASCII 直输,中文等非 ASCII 走 ADBKeyBoard 广播并带安装引导)、按键白名单(`android_press_key` → KEYCODE_*)、按包名启动 App、无线调试封装(`android_wireless`:配对码由用户从手机读取)、设备文件传输(`android_pull`/`android_push`,远端目录白名单)、万能钥匙 `android_exec`(恒确认 hard 档)
+  - **直播窗口(围观/接管,对齐沙箱语义)**:`android_open_live` 打开独立窗口,画面经 `android-live://` custom protocol 供给——**scrcpy 模式**(bundled scrcpy-server v2.7,SHA256 钉死,来源/校验记录见 `resources/scrcpy/PROVENANCE.md`,H.264 经 adb forward 回本机,直播页 WebCodecs 增量解码,约 12fps)不可用时自动降级**截图轮询**(~1.5fps);窗口内「接管」开关打开后用户可亲手点/滑/按键/输文本,期间 AI 写操作一律拒绝(不撤销授权);窗口销毁自动回收(停泵 + 杀 scrcpy-server + 解除 adb forward);窗口 label 不匹配任何 capability,页面无 app command 权限
+  - **安全模型(§5)**:真实设备误操作是真实后果——任务级授权由 Rust 宿主在执行点强制(serial 匹配/过期);`android_exec` 恒确认 hard(never 预设也不静默);pull/push/wireless 恒确认软档;每次写操作前自动截屏留档(`android_replay_frames` 表,`android_replay` 可查);`android_type` 文本不进审计(只记长度)
+  - **adb 二进制供给**:settings `android.adb_path`(设置 → Android 设备 tab 可配)→ STARHUB_ADB_PATH → PATH → 平台常见位置四级解析;全部缺失时报错文本带三平台安装引导,AI 可用本机工具代装;旧版 adb exec-out 的 CRLF 二进制损坏自动修复(k 个 \r+\n → k-1 个 \r+\n)
+- **Rust 主进程新增 `android` 模块**:`android/mod.rs`(AndroidManager:授权/adb 路径缓存/直播注册表/scrcpy 通道;custom protocol 处理器;19 工具实现,纯函数单测覆盖 devices 解析/键码映射/输入转义/PNG 修复/环形缓冲重同步)、`commands/android.rs`(设置 tab 的配置读写)
+- **前端(client-nav)**:设置「Android 设备」tab(adb 路径配置 + 当前生效值展示),配套 vitest 用例
+
 ## [0.106.2] - 2026-08-30
 
 ### 修复

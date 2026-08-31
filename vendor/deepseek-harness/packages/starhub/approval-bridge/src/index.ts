@@ -230,6 +230,12 @@ const ALWAYS_ASK_TOOLS: ReadonlySet<string> = new Set([
   'browser_eval',
   // 沙箱桌面:箱内任意命令是沙箱与「外界逻辑」的交换口,不在任务级授权内
   'desktop_exec',
+  // Android 实体机:真实设备上的任意 shell 命令(实体机不可销毁,比沙箱更严)
+  'android_exec',
+  // Android 实体机:文件传输与无线配对(对齐 sftp 恒确认软档)
+  'android_pull',
+  'android_push',
+  'android_wireless',
 ])
 
 /** 即使 never 策略也必须确认的 ALWAYS_ASK 工具(删除类/任意代码执行)。 */
@@ -238,6 +244,7 @@ const ALWAYS_ASK_HARD_TOOLS: ReadonlySet<string> = new Set([
   'es_delete_index',
   'browser_eval',
   'desktop_exec',
+  'android_exec',
 ])
 
 /** Redis 只读命令首词。 */
@@ -321,6 +328,13 @@ export function classifyStarHubCall(toolName: string, args: unknown): GateVerdic
     case 'desktop_destroy_sandbox':
     case 'desktop_commit_sandbox':
       return { ask: true, reason: '沙箱管理操作,需要确认' }
+    // Android 实体机(设计 §5):connect 的确认 = 任务级授权,之后设备上
+    // 截图/触控由宿主按授权在执行点放行;open_live 软确认(开直播窗口);
+    // android_exec 恒确认 hard;pull/push/wireless 恒确认软档(上面集合)。
+    case 'android_connect':
+      return { ask: true, reason: '连接实体手机即授予 AI 本次任务对该设备的操作权限(任务级授权,真实设备)' }
+    case 'android_open_live':
+      return { ask: true, reason: '打开设备直播窗口,需要确认' }
     default:
       // 只读域工具(列表/查询/搜索/上传下载以外的 sftp、excel 工作簿操作等)放行。
       return ALLOW
@@ -349,6 +363,13 @@ const STARHUB_DOMAIN_TOOLS: ReadonlySet<string> = new Set([
   'desktop_focus_window', 'desktop_click', 'desktop_double_click',
   'desktop_move_mouse', 'desktop_scroll', 'desktop_drag', 'desktop_type',
   'desktop_press_key', 'desktop_exec', 'desktop_request_user_action',
+  // Android 实体机(adb 直连真实设备)
+  'android_list_devices', 'android_connect', 'android_disconnect',
+  'android_device_status', 'android_replay', 'android_wireless',
+  'android_screenshot', 'android_current_app', 'android_tap',
+  'android_double_tap', 'android_swipe', 'android_scroll', 'android_type',
+  'android_press_key', 'android_launch_app', 'android_open_live',
+  'android_pull', 'android_push', 'android_exec',
 ])
 
 /**

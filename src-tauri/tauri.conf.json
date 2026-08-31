@@ -1,6 +1,6 @@
 {
   "productName": "StarHub",
-  "version": "0.106.2",
+  "version": "0.107.0",
   "identifier": "com.starhub.app",
   "build": {
     "frontendDist": "../shell-placeholder",
@@ -32,7 +32,8 @@
     ],
     "resources": {
       "binaries/dsh-runtime/": "dsh-runtime/",
-      "../dist-starhub-react/": "dist-starhub-react/"
+      "../dist-starhub-react/": "dist-starhub-react/",
+      "resources/scrcpy/": "resources/scrcpy/"
     },
     "windows": {
       "nsis": {

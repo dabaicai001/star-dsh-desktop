@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.106.2(**沙箱桌面点「直播/接管」报 `desktop_ui_open_live_window not allowed by ACL`**:v0.106.0 把 `desktop_set_takeover` 重构为 `desktop_ui_open_live_window` 时漏同步 app command ACL 清单——`permissions/commands.toml` 仍列已移除的旧命令、缺新命令,远端 dsh 主壳(127.0.0.1 origin)调用被 ACL 拦下;同步清单并修正 `desktop/mod.rs` 过时注释) |
+| 当前版本 | v0.107.0(**Android 实体机直连(adb,设计见 `docs/superpowers/specs/2026-08-30-android-device-design.md`)**:AI 经 adb 直接操作用户真实的 Android 手机(开发者模式 → USB 调试 / 无线调试),与沙箱桌面并列、互不影响) |
 
 ## 架构一句话
 
@@ -25,11 +25,12 @@ starhub/
 │   ├── src/
 │   │   ├── main.rs           # 入口(主窗口关闭联动销毁其余窗口)
 │   │   ├── commands/         # 全部 Tauri Command:ssh / sftp / db / docker / ai_memory /
-│   │   │                     # asset / audit / alert / broker / browser / desktop(沙箱桌面 UI)/
-│   │   │                     # dsh_plugins / file / harness / local / mcp / screenshot /
-│   │   │                     # secret / sidecar
+│   │   │                     # android(Android 设备设置)/ asset / audit / alert / broker /
+│   │   │                     # browser / desktop(沙箱桌面 UI)/ dsh_plugins / file / harness /
+│   │   │                     # local / mcp / screenshot / secret / sidecar
 │   │   ├── ssh/              # SSH 会话(russh):auth / session / known_hosts / sftp_transport
 │   │   ├── sftp/             # SFTP 会话与传输(russh-sftp)
+│   │   ├── android/          # Android 实体机(adb):mod(授权/直播双模/scrcpy 通道/19 工具)
 │   │   ├── browser/          # AI 浏览器(无痕独立窗口):mod / script / cdp(Win)/ snapshot_*(mac/Linux)
 │   │   ├── desktop/          # 沙箱桌面(Ubuntu 容器沙箱平台):mod(编排/授权/接管)/ recipe(配方)
 │   │   ├── harness/          # dsh 桥与插件宿主(harness/plugins)
@@ -126,4 +127,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新:2026-08-30(v0.106.1)*
+*最后更新:2026-08-31(v0.107.0)*

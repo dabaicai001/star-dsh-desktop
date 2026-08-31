@@ -227,4 +227,33 @@ describe('desktop_* gate(沙箱桌面,任务级授权)', () => {
     }
     expect(classifyStarHubCall('desktop_nope', {})).toBeNull()
   })
+
+  it('android: connect/open_live 软确认,exec 恒确认 hard,传输/无线恒确认软档,感知/操作放行', () => {
+    // 任务级授权与开窗:ask 不置 hard
+    for (const tool of ['android_connect', 'android_open_live']) {
+      const verdict = classifyStarHubCall(tool, {})
+      expect(verdict?.ask, tool).toBe(true)
+      expect(verdict?.hard, tool).toBeUndefined()
+    }
+    // 实体机任意 shell:恒确认 hard(never 策略也不静默放行)
+    const exec = classifyStarHubCall('android_exec', { command: 'pm list packages' })
+    expect(exec?.ask).toBe(true)
+    expect(exec?.hard).toBe(true)
+    // 文件传输与无线配对:恒确认软档
+    for (const tool of ['android_pull', 'android_push', 'android_wireless']) {
+      const verdict = classifyStarHubCall(tool, {})
+      expect(verdict?.ask, tool).toBe(true)
+      expect(verdict?.hard, tool).toBeUndefined()
+    }
+    // 授权内感知/操作:门放行(授权与接管互斥由宿主在执行点强制)
+    for (const tool of [
+      'android_list_devices', 'android_disconnect', 'android_device_status',
+      'android_replay', 'android_screenshot', 'android_current_app',
+      'android_tap', 'android_double_tap', 'android_swipe', 'android_scroll',
+      'android_type', 'android_press_key', 'android_launch_app',
+    ]) {
+      expect(classifyStarHubCall(tool, {}), tool).toEqual({ ask: false })
+    }
+    expect(classifyStarHubCall('android_nope', {})).toBeNull()
+  })
 })

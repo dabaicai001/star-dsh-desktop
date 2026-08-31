@@ -27,6 +27,8 @@ commands.allow = [
   "alert_list",
   "alert_test_webhook",
   "alert_update",
+  "android_ui_get_config",
+  "android_ui_set_adb_path",
   "audit_clear",
   "audit_list",
   "audit_log",

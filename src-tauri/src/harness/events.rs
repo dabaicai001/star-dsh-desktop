@@ -104,6 +104,8 @@ pub fn kind_for_tool(tool: &str) -> &'static str {
         other if other.starts_with("browser_") => "browser.action",
         // 沙箱桌面动作类
         other if other.starts_with("desktop_") => "desktop.action",
+        // Android 实体机动作类
+        other if other.starts_with("android_") => "android.action",
         _ => "tool.executed",
     }
 }
@@ -181,6 +183,42 @@ fn tool_summary(tool: &str, args: &serde_json::Value) -> String {
                 format!("{other} 执行成功")
             } else {
                 format!("{other}: 沙箱 {sandbox}")
+            }
+        }
+        // Android 实体机:android_type 只记输入长度(凭据防御),exec 记命令全文,
+        // 文件传输记路径,触控记坐标,连接/无线记设备定位。
+        "android_type" => {
+            let len = get("text").chars().count();
+            format!("android_type: 输入 {len} 字符")
+        }
+        "android_exec" => format!("android_exec: {}", get("command")),
+        "android_pull" => format!("android_pull: {} → {}", get("remotePath"), get("localDir")),
+        "android_push" => format!(
+            "android_push: {} 个文件 → {}",
+            count_of("localPaths"),
+            get("remoteDir")
+        ),
+        "android_tap" | "android_double_tap" => {
+            format!("{tool}: ({},{})", get("x"), get("y"))
+        }
+        "android_swipe" => format!(
+            "android_swipe: ({},{}) → ({},{})",
+            get("fromX"),
+            get("fromY"),
+            get("toX"),
+            get("toY")
+        ),
+        "android_scroll" => format!("android_scroll: {}", get("direction")),
+        "android_press_key" => format!("android_press_key: {}", get("key")),
+        "android_connect" => format!("android_connect: {}", get("serial")),
+        "android_wireless" => format!("android_wireless: {}", get("host")),
+        "android_launch_app" => format!("android_launch_app: {}", get("package")),
+        other if other.starts_with("android_") => {
+            let serial = get("serial");
+            if serial.is_empty() {
+                format!("{other} 执行成功")
+            } else {
+                format!("{other}: 设备 {serial}")
             }
         }
         other => format!("{other} 执行成功"),

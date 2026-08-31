@@ -802,6 +802,163 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
       timeoutSeconds: { type: 'number', description: '等待秒数,默认 300' },
     },
   },
+  // ── Android 实体机(adb 直连真实设备;语义层在 Rust android 模块)──
+  {
+    toolName: 'android_list_devices',
+    description: '列出 adb 可见的 Android 设备(serial/状态/型号)。状态 unauthorized = 手机上还没点「允许 USB 调试」;未发现设备时引导用户开开发者模式。只读。',
+    parameters: {},
+  },
+  {
+    toolName: 'android_connect',
+    description: '连接(绑定)一台 Android 设备并建立任务级授权(60 分钟,本次确认即授予),之后该设备的全部操作自动放行。serial 可省略(仅一台就绪设备时自动选)。会探测型号/Android 版本/分辨率。没有 adb 时会返回安装引导——可用本机工具(pwsh/bash)代用户安装 platform-tools 后重试。',
+    parameters: {
+      serial: { type: 'string', description: '设备 serial(android_list_devices 返回);仅一台时可省略' },
+      task: { type: 'string', description: '任务描述(记录用)' },
+    },
+  },
+  {
+    toolName: 'android_disconnect',
+    description: '撤销当前会话的设备授权(不改动设备本身,不关闭直播窗口)。',
+    parameters: {},
+  },
+  {
+    toolName: 'android_device_status',
+    description: '设备状态:型号/Android 版本/分辨率/当前前台 Activity/电量。',
+    parameters: {
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_replay',
+    description: '读取设备的操作回放帧(每次写操作前的自动截屏留档):动作 | 时间 | 截图路径。',
+    parameters: {
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+      limit: { type: 'number', description: '返回帧数,默认 50,上限 500' },
+    },
+  },
+  {
+    toolName: 'android_wireless',
+    description: '无线调试(Android 11+):配对(用户在手机 开发者选项 → 无线调试 → 使用配对码配对 上读出 IP:端口 和 6 位配对码)与/或连接(无线调试主页的端口)。完成后用 android_list_devices + android_connect 正常绑定。配对码只能用户从手机读取,不要编造。',
+    parameters: {
+      host: { type: 'string', required: true, description: '手机 IP(与电脑同网段)' },
+      pairPort: { type: 'number', description: '配对端口(配对码页面显示)' },
+      code: { type: 'string', description: '6 位配对码(配对时必填)' },
+      connectPort: { type: 'number', description: '连接端口(无线调试主页显示)' },
+    },
+  },
+  {
+    toolName: 'android_screenshot',
+    description: '截取设备屏幕(PNG)并返回本机文件路径;随后调用 read_image 读取即可看到画面。坐标类操作必须基于最近一次截图;界面变化后重新截图。',
+    parameters: {
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_current_app',
+    description: '返回当前前台 App/Activity(mCurrentFocus)与分辨率。AI 据此知道「现在在哪个 App 的哪个页面」。',
+    parameters: {
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_tap',
+    description: '在设备屏幕坐标点按。坐标基于最近一次 android_screenshot 的物理像素。用户在直播窗口接管中会被拒绝。',
+    parameters: {
+      x: { type: 'number', required: true, description: '横坐标(物理像素)' },
+      y: { type: 'number', required: true, description: '纵坐标(物理像素)' },
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_double_tap',
+    description: '在设备屏幕坐标双击(坐标约定同 android_tap)。',
+    parameters: {
+      x: { type: 'number', required: true, description: '横坐标(物理像素)' },
+      y: { type: 'number', required: true, description: '纵坐标(物理像素)' },
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_swipe',
+    description: '从 (fromX,fromY) 滑动到 (toX,toY)(拖拽/手势通用;durationMs 控制时长,长按拖拽用大时长)。',
+    parameters: {
+      fromX: { type: 'number', required: true, description: '起点横坐标' },
+      fromY: { type: 'number', required: true, description: '起点纵坐标' },
+      toX: { type: 'number', required: true, description: '终点横坐标' },
+      toY: { type: 'number', required: true, description: '终点纵坐标' },
+      durationMs: { type: 'number', description: '滑动时长毫秒,默认 300(50-5000)' },
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_scroll',
+    description: '滚动:direction(up/down/left/right,指内容滚动方向)+ 像素量(默认 600),以 (x,y) 为中心(默认屏幕中心)。',
+    parameters: {
+      direction: { type: 'string', description: 'up/down/left/right,默认 down' },
+      amount: { type: 'number', description: '滚动像素量,默认 600' },
+      x: { type: 'number', description: '中心横坐标,默认屏幕中心' },
+      y: { type: 'number', description: '中心纵坐标,默认屏幕中心' },
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_type',
+    description: '向设备当前焦点输入文本(ASCII 直输;中文等非 ASCII 需设备已装 ADBKeyBoard,未装会返回安装引导)。密码等敏感内容应请用户在手机上亲手输入(直播窗口接管),不要代输。文本内容不进审计。',
+    parameters: {
+      text: { type: 'string', required: true, description: '要输入的文本' },
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_press_key',
+    description: '按键:back/home/recents/enter/tab/space/delete/方向键(up/down/left/right)/center/volumeup/volumedown/power/wake/sleep/menu/search,单字母与数字直映射;不支持组合键(拆成多次调用)。',
+    parameters: {
+      key: { type: 'string', required: true, description: '键名,例如 "back"、"home"、"enter"' },
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_launch_app',
+    description: '按包名启动 App(如 com.tencent.mm)。不确定包名时先用 android_exec 执行 pm list packages 查找。',
+    parameters: {
+      package: { type: 'string', required: true, description: '应用包名' },
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_open_live',
+    description: '打开(或聚焦)设备的直播独立窗口:scrcpy H.264 实时画面(不可用时截图轮询兜底),窗口内可切换「接管」让用户亲手操作(接管期间你的写操作会被拒绝)。建议长时间任务开始时打开,方便用户围观。',
+    parameters: {
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_pull',
+    description: '把设备上的文件/目录拉到本机目录(adb pull)。每次调用都会请求用户确认。',
+    parameters: {
+      remotePath: { type: 'string', required: true, description: '设备上的绝对路径,如 /sdcard/DCIM/xxx.jpg' },
+      localDir: { type: 'string', required: true, description: '本机目标目录(须已存在)' },
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_push',
+    description: '把本机文件推送到设备目录(adb push;远端只允许 /sdcard、/data/local/tmp 之下)。每次调用都会请求用户确认。',
+    parameters: {
+      localPaths: { type: 'array', required: true, description: '本机文件路径列表(1-20 个)' },
+      remoteDir: { type: 'string', required: true, description: '设备目标目录,如 /sdcard/Download' },
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
+  {
+    toolName: 'android_exec',
+    description: '在设备上执行任意 shell 命令(adb shell;查 App 状态、pm list packages、读取系统信息等)。真实设备上的任意命令,每次调用都会请求用户确认。',
+    parameters: {
+      command: { type: 'string', required: true, description: 'shell 命令' },
+      timeoutSec: { type: 'number', description: '超时秒数,默认 60,上限 600' },
+      serial: { type: 'string', description: '设备 serial,默认当前授权设备' },
+    },
+  },
 ]
 
 /**

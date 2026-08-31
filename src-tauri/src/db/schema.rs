@@ -168,6 +168,16 @@ CREATE TABLE IF NOT EXISTS sandbox_replay_frames (
   created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );
 
+-- Android 实体机:回放帧(每次写操作前的自动截屏留档;真实设备,审计更重要)
+CREATE TABLE IF NOT EXISTS android_replay_frames (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  serial TEXT NOT NULL,
+  session_id TEXT,
+  action TEXT NOT NULL,
+  shot_path TEXT,
+  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+);
+
 -- AI 记忆:消息全文索引(external-content,由触发器同步)
 CREATE VIRTUAL TABLE IF NOT EXISTS ai_messages_fts USING fts5(
   content, content='ai_messages', content_rowid='rowid'
@@ -188,6 +198,7 @@ CREATE INDEX IF NOT EXISTS idx_alert_rule_category ON alert_rule(category);
 CREATE INDEX IF NOT EXISTS idx_ai_messages_conv ON ai_messages(conversation_id, seq);
 CREATE INDEX IF NOT EXISTS idx_ai_memories_scope ON ai_memories(scope);
 CREATE INDEX IF NOT EXISTS idx_sandbox_replay_sandbox ON sandbox_replay_frames(sandbox_id);
+CREATE INDEX IF NOT EXISTS idx_android_replay_serial ON android_replay_frames(serial);
 
 -- AI 记忆:FTS 同步触发器(external-content 标准三触发器)
 CREATE TRIGGER IF NOT EXISTS ai_messages_ai AFTER INSERT ON ai_messages BEGIN
