@@ -107,6 +107,24 @@ npm run tauri:dev        # 完整开发:构建 sidecar + React 工作台,启动�
 - AI 执行写操作(SSH 写、SQL 写、文件删除、传输等)一律弹确认卡,超时按拒绝处理
 - hostkey 自动接受不持久化,MFA 验证码不回写
 
+## 关于(About)
+
+**StarHub** — All-in-One DevOps Desktop Command Center。把开发运维每天要用到的工具收进同一个窗口:数据库客户端 · SSH 终端 · SFTP · Docker · AI 助手,以及 AI 驱动的沙箱桌面与 Android 实体机操作。
+
+| 项 | 值 |
+|---|---|
+| 当前版本 | v0.107.0 |
+| 官网 | [starthub.waouzzz.cc](https://starthub.waouzzz.cc/) |
+| 仓库 | [github.com/dabaicai001/star-dsh-desktop](https://github.com/dabaicai001/star-dsh-desktop) |
+| 问题反馈 | [GitHub Issues](https://github.com/dabaicai001/star-dsh-desktop/issues) |
+| 协议 | MIT · Copyright © 2026 StarHub Authors |
+
+**致谢与依赖**:
+
+- AI 主壳基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(插件化 agent harness,`vendor/deepseek-harness` submodule);
+- Android 直播的 H.264 通道使用 [scrcpy](https://github.com/Genymobile/scrcpy) server(Apache-2.0,来源与 SHA256 校验见 `src-tauri/resources/scrcpy/PROVENANCE.md`);
+- 桌面壳 [Tauri](https://tauri.app/),终端 [xterm.js](https://xtermjs.org/),数据库/中间件适配由内置 Go sidecar 承载。
+
 ## License
 
 [MIT](./LICENSE) · Copyright © 2026 StarHub Authors
