@@ -15,7 +15,7 @@
  * @module StarHub SSH/SFTP overlay (client)
  */
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { IconCloseOutline16, IconFolderOpenOutline16, IconLinkOutline16, IconPaperclipOutline16, IconPlusOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutline14, IconCloseFill14, IconCloseOutline16, IconCodeOutline16, IconFolderOpenOutline16, IconLinkOutline16, IconPaperclipOutline16, IconPlusOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -25,6 +25,7 @@ import { SftpPanel } from './SftpPanel.tsx'
 import { BroadcastDialog, type BroadcastSession } from './BroadcastDialog.tsx'
 import { WebBrowser } from './WebBrowser.tsx'
 import { createQuickCommand, importQuickCommands, loadQuickCommands, saveQuickCommands, type QuickCommand } from './quick-commands.ts'
+import { useTerminalTheme } from './terminal-theme.ts'
 import {
   OSC7_INJECT_COMMAND, OSC7_INJECT_ECHO_TEXT, createCwdTracker, createHiddenEchoFilter, isShellPromptLine, parsePwdOutput,
 } from './terminal-cwd.ts'
@@ -127,6 +128,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const shellPromptSeenRef = useRef(false)
   const cwdRef = useRef('')
   const disposedRef = useRef(false)
+  const { theme, termRef } = useTerminalTheme()
 
   const applyCwd = (next: string) => {
     if (!next || next === cwdRef.current) return
@@ -159,12 +161,14 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- theme is a one-time init palette; live changes are re-applied by useTerminalTheme.
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: 'JetBrains Mono, Consolas, monospace',
+      fontFamily: 'SF Mono, JetBrains Mono, Fira Code, Consolas, Courier, PingFang SC, Microsoft YaHei',
       fontSize: 13,
-      theme: { background: '#101822' },
+      theme,
     })
+    termRef.current = term
     const addon = new FitAddon()
     term.loadAddon(addon)
     if (host.current !== null) {
@@ -429,15 +433,15 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
         <input ref={quickImportRef} className={css.fileInput} type="file" accept=".qbl,.qblx" onChange={event => void importQuickCommandFile(event)} />
         {broadcastNotice !== null && (
           <div className={css.notice} role="status">
-            <span className={css.noticeMark} aria-hidden="true">✓</span>
+            <span className={css.noticeMark} aria-hidden="true"><IconCheckOutline14 size={13} /></span>
             <span>{broadcastNotice}</span>
-            <button type="button" className={css.noticeClose} onClick={() =>{  setBroadcastNotice(null) }} aria-label="关闭提示">×</button>
+            <button type="button" className={css.noticeClose} onClick={() =>{  setBroadcastNotice(null) }} aria-label="关闭提示"><IconCloseFill14 size={11} /></button>
           </div>
         )}
         <div className={css.workspace}>
           <main className={css.terminalWorkspace} aria-label="SSH 终端">
             <div className={css.workspaceTabs} role="tablist" aria-label="SSH 工作区">
-              <span className={css.terminalTab} role="tab" aria-selected="true"><span aria-hidden="true">›_</span> 终端</span>
+              <span className={css.terminalTab} role="tab" aria-selected="true"><IconCodeOutline16 size={14} /> 终端</span>
               <span className={css.spacer} />
               <button
                 type="button"
@@ -615,7 +619,7 @@ function QuickCommandEditor({ commands, onChange, onClose }: {
             <div className={css.quickEditorRow} key={command.id}>
               <input value={command.label} placeholder="名称" aria-label="快捷命令名称" onChange={(event) =>{  update(command.id, 'label', event.target.value) }} />
               <textarea value={command.cmd} placeholder="SSH 命令" aria-label="快捷命令内容" onChange={(event) =>{  update(command.id, 'cmd', event.target.value) }} />
-              <button type="button" className={css.quickDelete} onClick={() =>{  onChange(commands.filter(item => item.id !== command.id)) }} title="删除快捷命令" aria-label={`删除 ${command.label || '快捷命令'}`}>×</button>
+              <button type="button" className={css.quickDelete} onClick={() =>{  onChange(commands.filter(item => item.id !== command.id)) }} title="删除快捷命令" aria-label={`删除 ${command.label || '快捷命令'}`}><IconCloseFill14 size={12} /></button>
             </div>
           ))}
           {commands.length === 0 && <div className={css.quickEditorEmpty}>暂无快捷命令。可新增一条，或从 Xshell 导入 `.qbl` / `.qblx`。</div>}

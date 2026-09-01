@@ -24,6 +24,10 @@
  *   React key 按 key 重挂载。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  IconChevronDownOutline14, IconChevronRightOutline14, IconCloseFill14, IconCloseOutline16,
+  IconCodeOutline16, IconEditOutline16, IconPlusOutline16, IconTrashOutline16,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RustAsset } from '../store.ts'
 import { redisConnect, redisDBSize, redisDel, redisDisconnect, redisExecute, redisFlushDB, redisRename, redisScan, redisScanAccumulate, redisSelect, type RedisKeyInfo } from './redis-service.ts'
 import { allFolderPaths, buildKeyTree, countLeaves, type KeyTreeNode } from './key-tree.ts'
@@ -106,9 +110,9 @@ function KeyTreeRow({ node, depth, expanded, onToggle, onOpen, onRename, onDelet
         </button>
         <div className={css.keyActions}>
           <button type="button" className={css.miniButton} title="重命名" aria-label={`重命名 ${k.key}`}
-            onClick={() =>{  onRename(k.key) }}>⟳</button>
+            onClick={() =>{  onRename(k.key) }}><IconEditOutline16 size={13} /></button>
           <button type="button" className={css.miniDanger} title="删除" aria-label={`删除 ${k.key}`}
-            onClick={() =>{  onDelete(k.key) }}>✕</button>
+            onClick={() =>{  onDelete(k.key) }}><IconCloseFill14 size={13} /></button>
         </div>
       </div>
     )
@@ -119,7 +123,9 @@ function KeyTreeRow({ node, depth, expanded, onToggle, onOpen, onRename, onDelet
       <div className={css.keyRow} style={indent}>
         <button type="button" className={css.keyMain} onClick={() =>{  onToggle(node.path) }}
           aria-expanded={open} aria-label={`文件夹 ${node.path}`}>
-          <span className={css.folderChevron}>{open ? '▾' : '▸'}</span>
+          <span className={css.folderChevron} aria-hidden="true">
+            {open ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
+          </span>
           <span className={css.folderName} title={node.path}>{node.name}</span>
           <span className={css.folderCount}>{countLeaves(node)}</span>
         </button>
@@ -476,12 +482,12 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                   /* v8 ignore next -- 刷新钮在未展开/未连接时 disabled,守卫分支不可达 */
                   onClick={() => { const c = connRef.current; if (c !== null) void refreshExpanded(c) }}>⟳</button>
                 <button type="button" className={css.iconButton} title="清空 DB" aria-label="清空 DB"
-                  disabled={!connected} onClick={() => void flushDb()}>⌀</button>
+                  disabled={!connected} onClick={() => void flushDb()}><IconTrashOutline16 size={15} /></button>
                 <button type="button" className={css.iconButton} title="CLI" aria-label="CLI"
-                  disabled={!connected} onClick={() =>{  setCliOpen(v => !v) }}>⌨</button>
+                  disabled={!connected} onClick={() =>{  setCliOpen(v => !v) }}><IconCodeOutline16 size={15} /></button>
                 <span className={css.toolbarSpacer} />
                 <button type="button" className={css.primaryButton} title="新建 Key" aria-label="新建 Key"
-                  disabled={!connected} onClick={() =>{  setNewKeyOpen(true) }}>＋ 新建 Key</button>
+                  disabled={!connected} onClick={() =>{  setNewKeyOpen(true) }}><IconPlusOutline16 size={14} /> 新建 Key</button>
               </div>
 
               <div className={css.dbTree} role="tree" aria-label="DB 列表">
@@ -493,7 +499,9 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                       <div className={css.dbRow}>
                         <button type="button" className={css.keyMain} onClick={() =>{  void toggleDb(db) }}
                           aria-expanded={open} aria-label={`数据库 db${db}`}>
-                          <span className={css.folderChevron}>{open ? '▾' : '▸'}</span>
+                          <span className={css.folderChevron} aria-hidden="true">
+                            {open ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
+                          </span>
                           <span className={css.dbName}>db{db}</span>
                           {entry !== undefined && <span className={css.folderCount}>{entry.size.toLocaleString()}</span>}
                         </button>
@@ -511,7 +519,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                             />
                             {searchFor(db) !== '' && (
                               <button type="button" className={css.dbSearchClear} aria-label="清除搜索" title="清除搜索"
-                                onClick={() =>{  setSearchFor(db, '') }}>×</button>
+                                onClick={() =>{  setSearchFor(db, '') }}><IconCloseOutline16 size={12} /></button>
                             )}
                           </div>
                           {entry === undefined && <div className={css.dbStatus}>加载键…</div>}

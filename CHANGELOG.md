@@ -14,6 +14,17 @@
 
 ---
 
+## [0.109.1] - 2026-09-01
+
+### 修复
+- **SFTP 文件列表过长时滚动条遮挡右侧(file size/末行点击区)**:`SftpPanel` 文件列表加 `scrollbar-gutter: stable` + `overflow-x: hidden`,滚动条始终预留槽位,不再盖住右侧列;末行点击区不再被遮
+- **DB 表切换后残留排序/筛选导致 SQL 1054「Unknown column 'xxx' in 'order clause'」**:`DbDataGrid` 切表时一并重置排序(orderBy/orderDir)、列筛选(columnFilters)与分页(page)(此前只重置 WHERE 条件,切换表后沿用上一张表的列会报 Unknown column);并给数据网格加 `key={selected.table}` 在切表时干净重挂载
+- **Redis 结构类型保存报「HSET requires key field value [field value ...]」**:sidecar `parseRedisCommand` 此前用 `current.Len()>0` 判断 token 结束,把 `redisQuote("")` 生成的空引用串 `""` 丢弃成空 token,HSET/LSET 等命令参数不足;改 `inToken` 标志保留空 token。另修 HSET 校验 `(len(parts)-1)%2` 的 off-by-one(单对 field/value 恒被拒),对齐 ZADD 的 `(len(parts)-2)%2`
+
+### 变更
+- **数据库左侧树侧边栏美化**:库行加数据图标、表行加表图标,展开箭头用真实 chevron SVG(替换 `▾/▸`),选中表行加左侧 accent 条与图标高亮,行距/圆角/间距对齐设计令牌
+- **SSH / 数据库 / Redis 页面文字充当的图标替换为真实 SVG 图标**:SSH 终端标签 `›_`→代码图标、通知 `✓`/`×`→Check/Close 图标、快捷命令删除 `×`;DB 查询标签 `×`、`＋ 新建查询`、树箭头;Redis 值编辑器删除 `✕`/撤销 `↩`/新增 `＋`/清除筛选 `×`;Redis 工作台重命名 `⟳`、删除 `✕`、文件夹箭头 `▾▸`、清空 DB `⌀`、CLI `⌨`、新建 Key `＋`
+
 ## [0.109.0] - 2026-08-31
 
 ### 新增

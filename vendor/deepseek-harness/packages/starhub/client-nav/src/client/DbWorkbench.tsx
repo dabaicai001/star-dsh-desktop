@@ -24,8 +24,9 @@ import { DbDataGrid, cellText } from './DbDataGrid.tsx'
 import { SqlEditor, type SqlCompletionSchema } from './SqlEditor.tsx'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
 import {
+  IconBrowseOutline16, IconChevronDownOutline14, IconChevronRightOutline14, IconCloseFill14,
   IconCloseOutline16, IconCodeOutline16, IconDataOutline16, IconInspectOutline12,
-  IconPlayOutline16, IconRefreshOutline14,
+  IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { NewTableDialog, ColumnListDialog, IndexListDialog } from './DbTableDialogs.tsx'
@@ -107,6 +108,7 @@ function TableRow({ table, selected, database, supportsAlter, actions }: {
         onContextMenu={menu.onContextMenu}
       >
         <span className={css.chevron}>&nbsp;</span>
+        <span className={css.nodeIcon} aria-hidden="true"><IconBrowseOutline16 size={13} /></span>
         <span>{table}</span>
       </button>
       <ContextMenu
@@ -153,7 +155,10 @@ function DatabaseRow({ node, children, actions }: {
         onContextMenu={menu.onContextMenu}
         title={node.name}
       >
-        <span className={css.chevron}>{node.expanded ? '▾' : '▸'}</span>
+        <span className={css.chevron} aria-hidden="true">
+          {node.expanded ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
+        </span>
+        <span className={css.nodeIcon} aria-hidden="true"><IconDataOutline16 size={14} /></span>
         <span>{node.name}</span>
         {node.loading && <span className={css.hint}>…</span>}
       </button>
@@ -806,11 +811,11 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                           onClick={() =>{  closeQuery(tab.id) }}
                           title={`关闭 ${tab.name}`}
                           aria-label={`关闭 ${tab.name}`}
-                        >×</button>
+                        ><IconCloseFill14 size={11} /></button>
                       )}
                     </div>
                   ))}
-                  <button type="button" className={css.queryTabNew} onClick={newQuery} title="新建查询标签" aria-label="新建查询">＋ 新建查询</button>
+                  <button type="button" className={css.queryTabNew} onClick={newQuery} title="新建查询标签" aria-label="新建查询"><IconPlusOutline16 size={12} /> 新建查询</button>
                 </div>
                 {historyOpen && (
                   <div className={css.historyPanel}>
@@ -859,6 +864,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
               <div className={css.placeholder}>选择左侧一个表查看数据(排序 / 分页 / WHERE 筛选 / NULL 高亮已就位)</div>
             ) : (
               <DbDataGrid
+                key={selected.table}
                 connId={connId}
                 table={selected.table}
                 cmdPrefix={cmdPrefix}

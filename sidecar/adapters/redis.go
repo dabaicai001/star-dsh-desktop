@@ -575,7 +575,7 @@ func (a *RedisAdapter) Execute(command string) (*RedisCommandResult, error) {
 		result, err = a.client.HGetAll(a.ctx, parts[1]).Result()
 
 	case "HSET":
-		if len(parts) < 4 || (len(parts)-1)%2 != 0 {
+		if len(parts) < 4 || (len(parts)-2)%2 != 0 {
 			return &RedisCommandResult{Error: "HSET requires key field value [field value ...]"}, nil
 		}
 		args := make([]interface{}, len(parts)-2)
@@ -751,12 +751,15 @@ func (a *RedisAdapter) Execute(command string) (*RedisCommandResult, error) {
 	}, nil
 }
 
-// parseRedisCommand 简单解析 Redis 命令（处理引号）
+// parseRedisCommand 简单解析 Redis 命令（处理引号）。空引用串（如 `""`）必须保留为
+// 一个空 token——Hash/List 成员值可为空字符串,依赖 `redisQuote("")` 生成 `""`,若
+// 被丢弃则 HSET/LSET 等命令会因参数不足报错。
 func parseRedisCommand(command string) []string {
 	var parts []string
 	var current strings.Builder
 	inQuote := false
 	quoteChar := byte(0)
+	inToken := false
 
 	for i := 0; i < len(command); i++ {
 		ch := command[i]
@@ -775,19 +778,22 @@ func parseRedisCommand(command string) []string {
 		} else {
 			if ch == '"' || ch == '\'' {
 				inQuote = true
+				inToken = true
 				quoteChar = ch
 			} else if ch == ' ' || ch == '\t' {
-				if current.Len() > 0 {
+				if inToken {
 					parts = append(parts, current.String())
 					current.Reset()
+					inToken = false
 				}
 			} else {
 				current.WriteByte(ch)
+				inToken = true
 			}
 		}
 	}
 
-	if current.Len() > 0 {
+	if inToken {
 		parts = append(parts, current.String())
 	}
 

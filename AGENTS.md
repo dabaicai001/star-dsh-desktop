@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.109.0(**新增 AI 工具 `android_ui_tree`(结构化坐标来源,根治读图估坐标误差)**:导出当前界面无障碍节点树(`uiautomator dump` 落 `/data/local/tmp/starhub/` 后 base64 回传,免疫旧版 adb exec-out 的 CRLF 损坏),解析出可点击/有文字节点清单——每项含中心点坐标(设备物理像素,可直接传 `android_tap`)、文字、desc、resource-id、类名;点击定位从「截图估像素」变「查表取精确坐标」(此前观测到把顶部横幅误当列表首行、整列 y 偏移一个行高的纯视觉误差)。shell 权限走 UiAutomation,不需要手机开无障碍服务;锁屏/FLAG_SECURE 安全页/游戏等自绘画面返回空并提示回退截图;`maxNodes` 参数控制返回上限(默认 200,上限 500)) |
+| 当前版本 | v0.109.1(**SFTP 文件列表过长时滚动条遮挡右侧(file size/末行点击区)**:`SftpPanel` 文件列表加 `scrollbar-gutter: stable` + `overflow-x: hidden`,滚动条始终预留槽位,不再盖住右侧列;末行点击区不再被遮) |
 
 ## 架构一句话
 

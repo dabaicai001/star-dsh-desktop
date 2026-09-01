@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.109.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.109.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,6 +47,13 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.109.1 (2026-09-01)
+- 🐛 **SFTP 文件列表过长时滚动条遮挡右侧(file size/末行点击区)**:`SftpPanel` 文件列表加 `scrollbar-gutter: stable` + `overflow-x: hidden`,滚动条始终预留槽位,不再盖住右侧列;末行点击区不再被遮
+- 🐛 **DB 表切换后残留排序/筛选导致 SQL 1054「Unknown column 'xxx' in 'order clause'」**:`DbDataGrid` 切表时一并重置排序(orderBy/orderDir)、列筛选(columnFilters)与分页(page)(此前只重置 WHERE 条件,切换表后沿用上一张表的列会报 Unknown column);并给数据网格加 `key={selected.table}` 在切表时干净重挂载
+- 🐛 **Redis 结构类型保存报「HSET requires key field value [field value ...]」**:sidecar `parseRedisCommand` 此前用 `current.Len()>0` 判断 token 结束,把 `redisQuote("")` 生成的空引用串 `""` 丢弃成空 token,HSET/LSET 等命令参数不足;改 `inToken` 标志保留空 token。另修 HSET 校验 `(len(parts)-1)%2` 的 off-by-one(单对 field/value 恒被拒),对齐 ZADD 的 `(len(parts)-2)%2`
+- 🔧 **数据库左侧树侧边栏美化**:库行加数据图标、表行加表图标,展开箭头用真实 chevron SVG(替换 `▾/▸`),选中表行加左侧 accent 条与图标高亮,行距/圆角/间距对齐设计令牌
+- 🔧 **SSH / 数据库 / Redis 页面文字充当的图标替换为真实 SVG 图标**:SSH 终端标签 `›_`→代码图标、通知 `✓`/`×`→Check/Close 图标、快捷命令删除 `×`;DB 查询标签 `×`、`＋ 新建查询`、树箭头;Redis 值编辑器删除 `✕`/撤销 `↩`/新增 `＋`/清除筛选 `×`;Redis 工作台重命名 `⟳`、删除 `✕`、文件夹箭头 `▾▸`、清空 DB `⌀`、CLI `⌨`、新建 Key `＋`
 
 ### v0.109.0 (2026-08-31)
 - ✨ **新增 AI 工具 `android_ui_tree`(结构化坐标来源,根治读图估坐标误差)**:导出当前界面无障碍节点树(`uiautomator dump` 落 `/data/local/tmp/starhub/` 后 base64 回传,免疫旧版 adb exec-out 的 CRLF 损坏),解析出可点击/有文字节点清单——每项含中心点坐标(设备物理像素,可直接传 `android_tap`)、文字、desc、resource-id、类名;点击定位从「截图估像素」变「查表取精确坐标」(此前观测到把顶部横幅误当列表首行、整列 y 偏移一个行高的纯视觉误差)。shell 权限走 UiAutomation,不需要手机开无障碍服务;锁屏/FLAG_SECURE 安全页/游戏等自绘画面返回空并提示回退截图;`maxNodes` 参数控制返回上限(默认 200,上限 500)

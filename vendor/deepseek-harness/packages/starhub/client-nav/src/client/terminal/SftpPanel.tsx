@@ -365,7 +365,7 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
       )}
       {!connected && !connecting && error === null && (
         <div className={css.stateOverlay}>
-          <span className={css.stateIcon} aria-hidden="true">□</span>
+          <span className={css.stateIcon} aria-hidden="true"><IconFolderOpenOutline16 size={18} /></span>
           <strong>{sshConnected ? '正在准备 SFTP 文件通道' : '终端未连接，SFTP 等待 SSH 会话连接'}</strong>
           <span>{sshConnected ? '正在复用当前 SSH 会话，请稍候。' : '终端连接成功后，文件浏览与传输会自动可用。'}</span>
         </div>

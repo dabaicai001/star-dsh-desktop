@@ -225,10 +225,15 @@ export function DbDataGrid({
     if (page > pageCount - 1) setPage(pageCount - 1)
   }, [page, pageCount])
 
-  // 切换表时重置 WHERE 筛选(列筛选保持原行为,不在此处置)。
+  // 切换表时重置全部视图状态(WHERE 条件、排序、列筛选、分页),避免沿用上一张表的
+  // 列导致 SQL 1054「Unknown column 'xxx' in 'order clause' / 'where clause'」。
   useEffect(() => {
     setWhereFilter('')
     setWhereDraft('')
+    setOrderBy(null)
+    setOrderDir('asc')
+    setColumnFilters({})
+    setPage(0)
   }, [table])
 
   const load = useCallback(async (offset: number, size: number, sortCol: string | null, dir: 'asc' | 'desc', filters: Record<string, string>, where: string) => {
