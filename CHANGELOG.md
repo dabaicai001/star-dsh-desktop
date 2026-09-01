@@ -14,6 +14,11 @@
 
 ---
 
+## [0.112.0] - 2026-09-01
+
+### 变更
+- **侧栏品牌 Logo 换成 StarHub**:侧栏顶部的品牌区改为 StarHub 资产——`brandMark`(原 FishLogo)换成 `apps/web/public/starhub-logo.png`(03 字标,边框白边已去除),标题+commit hash 徽标换成 `starhub-badge.png`(04 横版字标,背景已去透明);两图在 DSH web 的 `public/` 静态目录,重建 dsh web 后生效
+
 ## [0.111.0] - 2026-09-01
 
 ### 新增

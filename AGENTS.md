@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.111.0(**恢复「已安装插件」列表与启停/卸载入口(设置 → 插件)**:按用户要求恢复此前下线的「已安装插件」段,列出所有已装 dsh 插件(名称/版本/来源/许可证/描述 + 已启用/禁用、UI/内置/缺失徽标),每项提供启用/禁用开关与卸载按钮(内置与缺失插件禁用这两个操作);首次启用弹风险确认卡(本机代码权限,按插件 id 经 localStorage 记一次确认 `starhub.plugins.enable-acknowledged`,UI 插件显示 `dsh.client` 文案),卸载同样弹确认;变更后经 `dsh_shutdown` 重启 runtime 生效。已装列表加载失败不再静默吞掉(在列表段露出错误,市场仍正常渲染)) |
+| 当前版本 | v0.112.0(**侧栏品牌 Logo 换成 StarHub**:侧栏顶部的品牌区改为 StarHub 资产——`brandMark`(原 FishLogo)换成 `apps/web/public/starhub-logo.png`(03 字标,边框白边已去除),标题+commit hash 徽标换成 `starhub-badge.png`(04 横版字标,背景已去透明);两图在 DSH web 的 `public/` 静态目录,重建 dsh web 后生效) |
 
 ## 架构一句话
 
@@ -127,4 +127,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-01 (v0.111.0)*
+*最后更新: 2026-09-01 (v0.112.0)*

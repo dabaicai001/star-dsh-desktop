@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.111.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.112.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,6 +47,9 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.112.0 (2026-09-01)
+- 🔧 **侧栏品牌 Logo 换成 StarHub**:侧栏顶部的品牌区改为 StarHub 资产——`brandMark`(原 FishLogo)换成 `apps/web/public/starhub-logo.png`(03 字标,边框白边已去除),标题+commit hash 徽标换成 `starhub-badge.png`(04 横版字标,背景已去透明);两图在 DSH web 的 `public/` 静态目录,重建 dsh web 后生效
 
 ### v0.111.0 (2026-09-01)
 - ✨ **恢复「已安装插件」列表与启停/卸载入口(设置 → 插件)**:按用户要求恢复此前下线的「已安装插件」段,列出所有已装 dsh 插件(名称/版本/来源/许可证/描述 + 已启用/禁用、UI/内置/缺失徽标),每项提供启用/禁用开关与卸载按钮(内置与缺失插件禁用这两个操作);首次启用弹风险确认卡(本机代码权限,按插件 id 经 localStorage 记一次确认 `starhub.plugins.enable-acknowledged`,UI 插件显示 `dsh.client` 文案),卸载同样弹确认;变更后经 `dsh_shutdown` 重启 runtime 生效。已装列表加载失败不再静默吞掉(在列表段露出错误,市场仍正常渲染)
