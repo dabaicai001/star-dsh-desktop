@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.113.0(**dsh 插件「重启 dsh web」按钮(设置 → 插件)**:插件增删/启停后,web 运行时的「插件列表」读的是当前 Loader 快照,而将 `dsh.client` 插件接进运行时的动作(`sync_user_client_plugins`)仅在 dsh web 进程 spawn 时执行一次——此前 `dsh_shutdown` 只关 agent runtime,从不重启 web 进程,导致新启用的 UI 插件在「插件列表」查不到。新增 `dsh_web_restart` Tauri command(内部复用 `DshWebManager::shutdown` + `ensure_started`,kill 旧进程后重新 spawn),插件管理页「已安装插件」头部新增「重启 dsh web」按钮,点击后重新注入插件并返回重启后的 URL(Rust `cargo check` 与前端 `tsc --noEmit` 均通过)) |
+| 当前版本 | v0.113.1(**坏插件导致 dsh web / runtime 启动超时无法恢复**:装了个 `apply()` 抛错的插件并启用后,web/runtime boot fail-loud 使进程退出,60s 就绪探测报超时,且 plugin 一直 `enabled`、重启死循环;本次实现 B-4 遗留的「坏插件自救」——web 就绪探测提前感知子进程退出,失败时自动禁用全部启用的用户插件(保留目录与 registry)并重试一次;`HarnessManager::initialize` 失败时同策略。任何坏插件不再阻塞启动,下个版本开机即自动恢复正常状态) |
 
 ## 架构一句话
 

@@ -1398,6 +1398,44 @@ impl HarnessManager {
         cwd: Option<String>,
         config: DshModelConfig,
     ) -> Result<serde_json::Value, HarnessError> {
+        // 坏插件自救:initialize 失败(常见于启用的运行时插件在 boot 时 fail-loud,
+        // 进程退出导致 RPC 超时/断开)时,禁用全部启用的用户插件并整体重试一次。
+        // 插件目录与 registry 保留,设置页可重新启用——应用回到可用状态,坏插件
+        // 不再阻塞启动(B-4 TODO 落地,与 web.rs 的 spawn 自救同策略)。
+        match self.initialize_inner(app, cwd.clone(), config.clone()).await {
+            Ok(value) => Ok(value),
+            Err(first_err) => {
+                let plugin_paths = plugins::PluginPaths::resolve(app)
+                    .map_err(|e| HarnessError::PathResolve(e.to_string()))?;
+                let disabled = plugins::disable_user_plugins(&plugin_paths)
+                    .map_err(|e| HarnessError::Internal(format!("坏插件自救禁用插件失败: {e}")))?;
+                if disabled.is_empty() {
+                    // 没有可禁用的用户插件,失败与插件无关,原样返回
+                    return Err(first_err);
+                }
+                tracing::warn!(
+                    "dsh runtime initialize 失败,已自动禁用用户插件后重试(坏插件自救): {}{}",
+                    first_err,
+                    disabled.join(",")
+                );
+                // 弃掉已损坏的 runtime 并清空指纹,强制下一次 initialize_inner 用
+                // 无用户插件的包装配置重新 spawn。
+                if let Some(old) = self.runtime.lock().await.take() {
+                    let _ = old.shutdown().await;
+                }
+                *self.spawn_fingerprint.lock().await = None;
+                self.initialize_inner(app, cwd, config).await
+            }
+        }
+    }
+
+    /// 单次启动并 initialize。`initialize` 在失败且有用户插件时调用它做坏插件自救重试。
+    async fn initialize_inner(
+        &self,
+        app: &tauri::AppHandle,
+        cwd: Option<String>,
+        config: DshModelConfig,
+    ) -> Result<serde_json::Value, HarnessError> {
         let _start_guard = self.start_lock.lock().await;
         let env = Self::build_spawn_env(app, &cwd, &config)?;
         let fingerprint = env

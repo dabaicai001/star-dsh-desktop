@@ -203,7 +203,36 @@ impl DshWebManager {
         Ok(url)
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn spawn(
+        &self,
+        app: &tauri::AppHandle,
+        bridge: Arc<HostBridgeState>,
+    ) -> Result<DshWebHandle, DshWebError> {
+        match self.spawn_once(app, bridge.clone()).await {
+            Ok(handle) => Ok(handle),
+            Err(err @ DshWebError::ReadyTimeout(_)) => {
+                // 坏插件自救:web 启动超时可能是启用的用户插件在 boot 时 fail-loud
+                // (node 半 apply 抛错 → 整个组合退出 → 就绪探测永不 200)。禁用全部
+                // 启用的用户插件(保留目录与 registry,可在设置页重新启用),重试一次
+                // —— 应用能回到可用状态,坏插件不再阻塞启动(B-4 TODO 落地)。
+                if let Err(e) = plugins::disable_user_plugins(&plugins::PluginPaths::resolve(app)
+                    .map_err(|e| DshWebError::PathResolve(e.to_string()))?)
+                {
+                    tracing::warn!("bad-plugin 自救禁用插件失败: {e}");
+                    return Err(err);
+                }
+                tracing::warn!(
+                    "dsh web 启动超时,已自动禁用用户插件后重试(坏插件自救): {err}"
+                );
+                self.spawn_once(app, bridge).await
+            }
+            Err(other) => Err(other),
+        }
+    }
+
+    /// 单次启动尝试。`spawn` 在超时后调用它做坏插件自救重试。
+    async fn spawn_once(
         &self,
         app: &tauri::AppHandle,
         bridge: Arc<HostBridgeState>,
@@ -408,7 +437,9 @@ impl DshWebManager {
         tokio::spawn(web_write_loop(stdin, notify_rx));
         tokio::spawn(drain_lines("stderr", stderr));
 
-        // 5. 就绪探测:轮询 GET / 直到 200
+        // 5. 就绪探测:轮询 GET / 直到 200;子进程提前退出(坏插件 fail-loud
+        // 令整组合退出)或超时都判定失败,立即转坏插件自救重试,不等满 60s
+        // (救回一个坏插件时把等待从 60s 拉到几秒)。
         let url = format!("http://127.0.0.1:{port}");
         let deadline = tokio::time::Instant::now() + READY_TIMEOUT;
         let client = reqwest::Client::new();
@@ -416,6 +447,14 @@ impl DshWebManager {
             match client.get(&url).send().await {
                 Ok(resp) if resp.status().is_success() => break,
                 _ => {
+                    // 子进程已退出说明组合在就绪前就失败了(坏插件/闭包缺失等),
+                    // 立即结束探测,进入 spawn 的坏插件自救路径。
+                    if child.try_wait().map_err(|e| {
+                        DshWebError::Spawn(format!("等待 web 子进程退出状态失败: {e}"))
+                    })?.is_some() {
+                        let _ = child.start_kill();
+                        return Err(DshWebError::ReadyTimeout(READY_TIMEOUT.as_secs()));
+                    }
                     if tokio::time::Instant::now() >= deadline {
                         let _ = child.start_kill();
                         return Err(DshWebError::ReadyTimeout(READY_TIMEOUT.as_secs()));

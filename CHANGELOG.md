@@ -7,6 +7,12 @@
 
 ## [未发布]
 
+### 修复
+- **坏插件导致 dsh web / runtime 启动超时无法恢复(坏插件自救落地)**:user 装了个 `apply()` 抛错的插件(如 dsh-status-rotator 等)并启用后,web 组合 boot 时 fail-loud 使整个进程退出,就绪探测永不 200 → 60s 报「就绪探测超时」;plugin 一直 `enabled`,重启死循环,连设置页都进不去。本次实现 B-4 遗留的「坏插件自救」自动禁用:
+  - `web.rs`:`spawn` 就绪探测现在**提前感知子进程退出**(不再空等满 60s),失败时自动禁用**全部启用的用户插件**(保留目录与 registry),重新生成 patch/junction 后**重试一次**;重试成功后应用回到可用状态,坏插件在设置页显示为已禁用、可重新启用。
+  - `mod.rs`:`HarnessManager::initialize` 失败(运行时插件 fail-loud 导致 RPC 超时/断开)时同样禁用用户插件并重试一次。
+  - `plugins.rs`:新增 `disable_user_plugins`(仅禁用非内置且已启用的用户插件,幂等)并补单测。—— 任何坏插件不再阻塞启动,下个版本开机即自动恢复正常状态。
+
 ### 计划中
 - Settings 补「代理」「安全」2 个 tab
 - SQL 查询结果可编辑及无主键报错提示（转 K3）

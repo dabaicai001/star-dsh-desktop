@@ -1065,11 +1065,33 @@ pub fn set_enabled(paths: &PluginPaths, id: &str, enabled: bool) -> Result<(), P
     save_registry(paths, &registry)
 }
 
+/// 坏插件自救:web/runtime 启动失败时禁用全部已启用的用户插件。
+/// 仅禁用非内置且已启用的条目(已禁用/内置的不动),写回 registry 并重写
+/// entries yml;返回被禁用的插件 id 列表(供诊断日志)。被禁用的插件保留
+/// 目录与注册表记录,用户可在设置页重新启用——这是「坏插件导致启动整体
+/// 失败」的自动恢复路径(B-4 TODO:配置变更后首次启动失败自动禁用最近变更
+/// 插件,这里按「禁用全部注入中的用户插件」稳妥实现)。幂等:无已启用用户
+/// 插件时返回空列表。
+pub fn disable_user_plugins(paths: &PluginPaths) -> Result<Vec<String>, PluginError> {
+    let mut registry = load_registry(paths)?;
+    let mut disabled: Vec<String> = Vec::new();
+    for record in registry.plugins.iter_mut() {
+        if record.builtin || !record.enabled {
+            continue;
+        }
+        record.enabled = false;
+        disabled.push(record.id.clone());
+    }
+    if !disabled.is_empty() {
+        save_registry(paths, &registry)?;
+    }
+    Ok(disabled)
+}
+
 /// 卸载:移除目录 + registry 记录并重写 yml(需重启 runtime 生效)。
 /// 内置插件不可卸载。
 pub fn uninstall(paths: &PluginPaths, id: &str) -> Result<(), PluginError> {
-    let mut registry = load_registry(paths)?;
-    if registry.plugins.iter().any(|p| p.id == id && p.builtin) {
+    let mut registry = load_registry(paths)?;    if registry.plugins.iter().any(|p| p.id == id && p.builtin) {
         return Err(PluginError::Manifest(format!(
             "内置插件 {id} 不可卸载(壳依赖,随应用发布)"
         )));

@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.113.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.113.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,6 +47,9 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.113.1 (2026-09-01)
+- 🐛 **坏插件导致 dsh web / runtime 启动超时无法恢复(坏插件自救落地)**:装了个 `apply()` 抛错的插件(如 dsh-status-rotator 等)并启用后,web 组合 boot 时 fail-loud 使整个进程退出,就绪探测永不 200 → 60s 报「就绪探测超时」;plugin 一直 `enabled`,重启死循环,连设置页都进不去。本次实现 B-4 遗留的「坏插件自救」自动禁用——`web.rs` 就绪探测提前感知子进程退出(不再空等 60s),失败时自动禁用全部启用的用户插件(保留目录与 registry)并重试一次;`HarnessManager::initialize` 失败时同策略。应用回到可用状态,坏插件在设置页显示为已禁用、可重新启用,下个版本开机即自动恢复正常状态。
 
 ### v0.113.0 (2026-09-01)
 - ✨ **dsh 插件「重启 dsh web」按钮(设置 → 插件)**:插件增删/启停后,web 运行时的「插件列表」读的是当前 Loader 快照,而将 `dsh.client` 插件接进运行时的动作(`sync_user_client_plugins`)仅在 dsh web 进程 spawn 时执行一次——此前 `dsh_shutdown` 只关 agent runtime,从不重启 web 进程,导致新启用的 UI 插件在「插件列表」查不到。新增 `dsh_web_restart` Tauri command(内部复用 `DshWebManager::shutdown` + `ensure_started`,kill 旧进程后重新 spawn),插件管理页「已安装插件」头部新增「重启 dsh web」按钮,点击后重新注入插件并返回重启后的 URL(Rust `cargo check` 与前端 `tsc --noEmit` 均通过)

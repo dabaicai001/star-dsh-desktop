@@ -623,3 +623,27 @@ fn user_client_plugins_filters_enabled_client_only() {
     assert_eq!(clients[0].id, "dsh-ui-a");
     let _ = fs::remove_dir_all(app_data.parent().unwrap());
 }
+
+#[test]
+fn disable_user_plugins_only_disables_enabled_non_builtin() {
+    let (app_data, vendor_root) = test_roots("bad-plugin");
+    let paths = PluginPaths::at(app_data.clone());
+    paths.ensure_layout().unwrap();
+    // 两个用户插件:一个启用、一个已禁用 → 只禁用启用者
+    for (name, enabled) in [("dsh-bad-a", true), ("dsh-bad-b", false)] {
+        let src = app_data.parent().unwrap().join(format!("src-{name}"));
+        write_minimal_plugin(&src, name);
+        install_local_dir(&paths, &src, &vendor_root).unwrap();
+        set_enabled(&paths, name, enabled).unwrap();
+    }
+    let disabled = disable_user_plugins(&paths).unwrap();
+    assert_eq!(disabled, vec!["dsh-bad-a".to_string()]);
+    // registry 中 dsh-bad-a 已禁用,dsh-bad-b 保持禁用
+    let registry = load_registry(&paths).unwrap();
+    let get = |id: &str| registry.plugins.iter().find(|p| p.id == id).unwrap();
+    assert!(!get("dsh-bad-a").enabled);
+    assert!(!get("dsh-bad-b").enabled);
+    // 幂等:再次调用不再产生新禁用
+    assert!(disable_user_plugins(&paths).unwrap().is_empty());
+    let _ = fs::remove_dir_all(app_data.parent().unwrap());
+}
