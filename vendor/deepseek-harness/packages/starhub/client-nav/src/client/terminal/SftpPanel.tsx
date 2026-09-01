@@ -92,6 +92,8 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
   const [transfers, setTransfers] = useState<TransferTask[]>([])
   const [showTransfers, setShowTransfers] = useState(false)
   const [fileDialog, setFileDialog] = useState<FileDialog | null>(null)
+  // 原生拖拽上传:OS 文件拖入窗口时显示覆盖层,drop 时把它上传到当前目录。
+  const [showDropOverlay, setShowDropOverlay] = useState(false)
 
   const pathInputRef = useRef<HTMLInputElement>(null)
   const loadIdRef = useRef(0)
@@ -189,6 +191,30 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
       void unprogress?.()
     }
   }, [sessionId])
+
+  // ---- native drag-drop upload (OS file dropped into the webview) ----
+  useEffect(() => {
+    if (!isTauriRuntime()) return
+    let unenter: TauriUnlisten | undefined
+    let unover: TauriUnlisten | undefined
+    let undrop: TauriUnlisten | undefined
+    let unleave: TauriUnlisten | undefined
+    void tauriListen<{ paths?: string[]; position?: unknown }>('tauri://drag-enter', () => setShowDropOverlay(true)).then((off) => { unenter = off })
+    void tauriListen<{ paths?: string[]; position?: unknown }>('tauri://drag-over', () => setShowDropOverlay(true)).then((off) => { unover = off })
+    void tauriListen<{ paths?: string[]; position?: unknown }>('tauri://drag-drop', (ev) => {
+      setShowDropOverlay(false)
+      const paths = ev?.paths ?? []
+      if (paths.length > 0 && connectedRef.current) void startUpload(paths, path)
+    }).then((off) => { undrop = off })
+    void tauriListen<{ paths?: string[]; position?: unknown }>('tauri://drag-leave', () => setShowDropOverlay(false)).then((off) => { unleave = off })
+    return () => {
+      void unenter?.()
+      void unover?.()
+      void undrop?.()
+      void unleave?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startUpload/connectedRef/path are stable refs or re-created per render; re-subscribe only when the target dir changes
+  }, [sessionId, path])
 
   const visibleEntries = useMemo(
     () => showHidden ? entries : entries.filter(e => !e.name.startsWith('.')),
@@ -518,6 +544,11 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
               <button type="button" className={fileDialog.mode === 'delete' ? css.dangerAction : css.primaryAction} onClick={() => void submitFileDialog()}>{fileDialog.mode === 'delete' ? '删除' : '确认'}</button>
             </div>
           </section>
+        </div>
+      )}
+      {showDropOverlay && (
+        <div className={css.dropOverlay} role="presentation">
+          <span className={css.dropText}>松开以上传到当前目录</span>
         </div>
       )}
     </div>

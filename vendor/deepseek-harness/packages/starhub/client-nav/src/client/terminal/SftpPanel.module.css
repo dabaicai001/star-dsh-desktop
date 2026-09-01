@@ -1,4 +1,6 @@
-.panel { display: flex; height: 100%; flex-direction: column; overflow: hidden; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
+.panel { position: relative; display: flex; height: 100%; flex-direction: column; overflow: hidden; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
+.dropOverlay { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; border: 2px dashed var(--dsw-alias-state-business-primary); background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent); pointer-events: none; }
+.dropText { padding: 10px 18px; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); box-shadow: var(--dsw-shadow-lv2); color: var(--dsw-alias-state-business-primary); font-size: 13px; font-weight: 700; }
 .statusBar { display: flex; height: 34px; flex-shrink: 0; align-items: center; gap: 7px; padding: 0 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-3); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); }
 .dot.online { background: var(--dsw-alias-state-success-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent); }
@@ -26,7 +28,7 @@
 .pathInput, .fileDialogInput { box-sizing: border-box; min-width: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 6px 8px; outline: none; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-family: var(--ds-font-family-code); font-size: 12px; }
 .pathInput { flex: 1; margin: 4px 10px; }
 .pathInput:focus, .fileDialogInput:focus { border-color: var(--dsw-alias-state-business-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 15%, transparent); }
-.fileList { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; background: var(--dsw-alias-bg-layer-1); scrollbar-gutter: stable; }
+.fileList { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: 8px; background: var(--dsw-alias-bg-layer-1); scrollbar-gutter: stable; }
 .listLoading, .listEmpty { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--dsw-alias-label-tertiary); }
 .fileRow { display: flex; min-height: 30px; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-primary); cursor: pointer; }
 .fileRow:hover { background: var(--dsw-alias-interactive-bg-hover); }

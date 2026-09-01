@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { SftpPanel } from '../src/client/terminal/SftpPanel.tsx'
 
@@ -47,6 +47,7 @@ function installTauri(list: unknown) {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.useRealTimers()
   delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
   delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver
 })
@@ -80,5 +81,40 @@ describe('SftpPanel', () => {
     installTauri([])
     render(<SftpPanel asset={asset} sessionId="ssh-1" sshConnected={false} />)
     expect(screen.getByText(/终端未连接/)).toBeTruthy()
+  })
+
+  it('uploads files dropped onto the panel and toggles the drop overlay', async () => {
+    vi.useFakeTimers()
+    ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver = ResizeObserverMock
+    const { invoke, callbacks } = installTauri([
+      { name: 'README.md', path: '/home/deploy/README.md', isDir: false, size: 1234, permissions: 0o644, modified: 0 },
+    ])
+    render(<SftpPanel asset={asset} sessionId="ssh-1" sshConnected={true} />)
+    // 连接 + 列目录的异步链经微任务刷出(伪时钟下用 advanceAsync(0) 一并 flush)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByText('README.md')).toBeTruthy()
+    // handleChunk effect 在 path 变化时会重订阅;活跃的拖拽监听是最末一组:
+    // 末尾 4 个 = drag-enter / drag-over / drag-drop / drag-leave。
+    const base = callbacks.length - 4
+    const emit = (off: number, event: string, payload: Record<string, unknown>) => {
+      const cb = callbacks[base + off]
+      if (cb === undefined) throw new Error(`no callback at ${base + off}`)
+      act(() => { cb({ event, id: base + off, payload }) })
+    }
+    // drag-enter / drag-over → 覆盖层出现
+    emit(0, 'tauri://drag-enter', { paths: ['C:/a.txt'], position: { x: 0, y: 0 } })
+    emit(1, 'tauri://drag-over', { paths: ['C:/a.txt'], position: { x: 0, y: 0 } })
+    expect(screen.getByText('松开以上传到当前目录')).toBeTruthy()
+    // drag-leave → 覆盖层消失
+    emit(3, 'tauri://drag-leave', {})
+    expect(screen.queryByText('松开以上传到当前目录')).toBeNull()
+    // drag-drop → 覆盖层消失 + 对当前目录发起上传(loadDir 的 2s 定时一并推进)
+    emit(2, 'tauri://drag-drop', { paths: ['C:/a.txt'], position: { x: 0, y: 0 } })
+    expect(screen.queryByText('松开以上传到当前目录')).toBeNull()
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(invoke).toHaveBeenCalledWith('sftp_start_upload', {
+      id: 'ssh-1', localPaths: ['C:/a.txt'], remoteDir: '/home/deploy', speedLimit: 0,
+    })
+    vi.useRealTimers()
   })
 })
