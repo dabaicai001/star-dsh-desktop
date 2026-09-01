@@ -294,6 +294,15 @@ export async function shutdownDshRuntime(): Promise<void> {
   await tauriInvoke('dsh_shutdown')
 }
 
+/** 重启 dsh web 进程,使插件增删/启停重新注入 web 运行时。
+ * 插件列表(pluginInventory)读的是 web 运行时 Loader 快照,该注入只在
+ * spawn 时执行一次;变更插件后须重启 web 才能让新启用的 dsh.client 插件
+ * 出现在「插件列表」里。返回重启后的实际 URL。
+ */
+export async function restartDshWeb(): Promise<string> {
+  return tauriInvoke<string>('dsh_web_restart')
+}
+
 // ===== 自动更新(settings 关于 tab) =====
 
 /** 自动更新检查结果。 */

@@ -435,6 +435,19 @@ impl DshWebManager {
             let _ = handle.child.start_kill();
         }
     }
+
+    /// 重启 dsh web 进程: kill 现有子进程并清空单例,随后重新 spawn。
+    /// 用于用户插件增删/启停后让 `sync_user_client_plugins` 重新执行,
+    /// 把新启用的 `dsh.client` 插件接进 web 运行时(否则「插件列表」查不到)。
+    /// 复用 `ensure_started` 的幂等与 start_lock 串行化。
+    pub async fn restart(
+        &self,
+        app: &tauri::AppHandle,
+        bridge: Arc<HostBridgeState>,
+    ) -> Result<String, DshWebError> {
+        self.shutdown().await;
+        self.ensure_started(app, bridge).await
+    }
 }
 
 /// 子进程 stdout/stderr 排空到 tracing(dsh 日志量较大,一律 info 级)。

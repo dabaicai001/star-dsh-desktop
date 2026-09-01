@@ -14,6 +14,11 @@
 
 ---
 
+## [0.113.0] - 2026-09-01
+
+### 新增
+- **dsh 插件「重启 dsh web」按钮(设置 → 插件)**:插件增删/启停后,web 运行时的「插件列表」读的是当前 Loader 快照,而将 `dsh.client` 插件接进运行时的动作(`sync_user_client_plugins`)仅在 dsh web 进程 spawn 时执行一次——此前 `dsh_shutdown` 只关 agent runtime,从不重启 web 进程,导致新启用的 UI 插件在「插件列表」查不到。新增 `dsh_web_restart` Tauri command(内部复用 `DshWebManager::shutdown` + `ensure_started`,kill 旧进程后重新 spawn),插件管理页「已安装插件」头部新增「重启 dsh web」按钮,点击后重新注入插件并返回重启后的 URL(Rust `cargo check` 与前端 `tsc --noEmit` 均通过)
+
 ## [0.112.3] - 2026-09-01
 
 ### 修复

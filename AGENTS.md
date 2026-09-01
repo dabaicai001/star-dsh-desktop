@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.112.3(**CI 构建修复(zmodem.js 类型声明 + noUncheckedIndexedAccess)**:`SshTerminalOverlay.tsx` 新增 `zmodem.js/src/zmodem_browser.js` 引入但缺类型声明(TS7016: Could not find a declaration file);新增 `src/zmodem-browser.d.ts` 环境声明,并在 `onZmodemFilesSelected` 中把 `files[0].name` 先收敛到非空局部变量再用于状态文案(TS2532: Object is possibly 'undefined' ×2);同步修掉测试桩 `vi.fn((command) => ...)` 无参元组导致 `mock.calls.find(...)[1]` 报 TS2352/TS2493 的三个用例) |
+| 当前版本 | v0.113.0(**dsh 插件「重启 dsh web」按钮(设置 → 插件)**:插件增删/启停后,web 运行时的「插件列表」读的是当前 Loader 快照,而将 `dsh.client` 插件接进运行时的动作(`sync_user_client_plugins`)仅在 dsh web 进程 spawn 时执行一次——此前 `dsh_shutdown` 只关 agent runtime,从不重启 web 进程,导致新启用的 UI 插件在「插件列表」查不到。新增 `dsh_web_restart` Tauri command(内部复用 `DshWebManager::shutdown` + `ensure_started`,kill 旧进程后重新 spawn),插件管理页「已安装插件」头部新增「重启 dsh web」按钮,点击后重新注入插件并返回重启后的 URL(Rust `cargo check` 与前端 `tsc --noEmit` 均通过)) |
 
 ## 架构一句话
 
@@ -127,4 +127,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-01 (v0.112.3)*
+*最后更新: 2026-09-01 (v0.113.0)*

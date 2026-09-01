@@ -473,6 +473,7 @@ fn main() {
             commands::ssh::ssh_detach,
             // dsh web GUI 管理器(主壳融合 P1)
             commands::harness::dsh_web_url,
+            commands::harness::dsh_web_restart,
             // dsh 设置文件路径(壳内「打开配置文件」读改)
             commands::harness::dsh_settings_path,
             // dsh 用户插件(支线 B):市场 / URL / 本地三入口 + 逐项启停

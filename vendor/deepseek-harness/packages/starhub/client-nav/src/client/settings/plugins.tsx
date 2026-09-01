@@ -11,7 +11,7 @@ import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { tauriInvoke } from '../tauri.ts'
 import {
   fetchPluginMarket, installLocalPlugin, installPluginFromUrl, isTauriRuntime, listPlugins,
-  setPluginEnabled, shutdownDshRuntime, uninstallPlugin,
+  restartDshWeb, setPluginEnabled, shutdownDshRuntime, uninstallPlugin,
   type DshMarketCatalog, type DshPluginInfo,
 } from './services.ts'
 import s from './settings.module.css'
@@ -67,6 +67,8 @@ export function PluginsTab() {
   const marketPageSize = 6
   const [riskDialogPlugin, setRiskDialogPlugin] = useState<DshPluginInfo | null>(null)
   const [uninstallDialogPlugin, setUninstallDialogPlugin] = useState<DshPluginInfo | null>(null)
+  const [webRestarting, setWebRestarting] = useState(false)
+  const [webRestartMsg, setWebRestartMsg] = useState('')
 
   // 拉取已装列表(供「已安装插件」段与市场「已安装」标记;失败在列表段露出)。
   const loadPlugins = useCallback(async () => {
@@ -153,6 +155,24 @@ export function PluginsTab() {
       setPluginBusyId('')
     }
   }, [afterPluginMutation])
+
+  /** 重启 dsh web 进程:让插件增删/启停重新注入 web 运行时。
+   * 不自动调用——插件变更后 web 进程需要重新 spawn 才能把新启用的 dsh.client
+   * 插件接进「插件列表」;用户在插件页手动点「重启 dsh web」触发(方案 B)。
+   */
+  const onRestartWeb = useCallback(async () => {
+    if (!isTauriRuntime() || webRestarting) return
+    setWebRestarting(true)
+    setWebRestartMsg('')
+    try {
+      await restartDshWeb()
+      setWebRestartMsg('重启完成,插件列表已更新')
+    } catch (error) {
+      setWebRestartMsg(error instanceof Error ? error.message : String(error))
+    } finally {
+      setWebRestarting(false)
+    }
+  }, [webRestarting])
 
   /** 启停开关:禁用直接走;启用且首次时需先过风险提示确认卡。 */
   const onTogglePlugin = (plugin: DshPluginInfo) => {
@@ -250,12 +270,20 @@ export function PluginsTab() {
           <span className={s.sectionTitle}>已安装插件</span>
           <span className={s.spacer} />
           <button
+            type="button" className={s.btnSecondary} title="重启 dsh web"
+            aria-label="重启 dsh web"
+            disabled={webRestarting} onClick={() => void onRestartWeb()}
+          >
+            {webRestarting ? '重启中…' : '重启 dsh web'}
+          </button>
+          <button
             type="button" className={s.btnSecondary} title="刷新" aria-label="刷新"
             disabled={pluginLoading} onClick={() => void loadPlugins()}
           >
             {pluginLoading ? '…' : '刷新'}
           </button>
         </div>
+        {webRestartMsg !== '' && <div className={s.hint}>{webRestartMsg}</div>}
         {pluginError !== '' && <div className={s.errorText}>{pluginError}</div>}
         {pluginList.length === 0 ? (
           <div className={s.empty}>暂无已安装插件。</div>

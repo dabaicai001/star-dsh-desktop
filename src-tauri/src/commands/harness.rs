@@ -85,6 +85,22 @@ pub async fn dsh_web_url(
         .map_err(|e| e.to_string())
 }
 
+/// 重启 dsh web 进程。用户插件增删/启停后,web 运行时的「插件列表」读的是
+/// 当前 Loader 快照,而 `sync_user_client_plugins` 只在 spawn 时跑一次;
+/// 变更插件后须重启 web 才能把新启用的 `dsh.client` 插件接进运行时。
+/// 前端「重启 dsh web」按钮调用(方案 B);返回重启后的实际 URL。
+#[tauri::command]
+pub async fn dsh_web_restart(
+    app: AppHandle,
+    manager: State<'_, crate::harness::web::DshWebManager>,
+) -> Result<String, String> {
+    let bridge = app.state::<HarnessManager>().bridge();
+    manager
+        .restart(&app, bridge)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 返回 dsh 设置文件(settings.yaml)的绝对路径,供壳内「打开配置文件」在
 /// 浏览器内读改(而不是调原生打开器)。路径解析复用 dsh_home_dir,与 web GUI
 /// 的 DSH_SETTINGS_PATH 同源(见 build_spawn_env)。请求只携带返回一个只读
