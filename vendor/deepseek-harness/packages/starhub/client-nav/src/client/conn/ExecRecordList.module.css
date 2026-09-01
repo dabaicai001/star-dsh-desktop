@@ -1,13 +1,13 @@
 /* SSH 执行记录视图(v0.100.0):工具抽屉内的记录列表。样式对齐
    StarHubToolWorkspace.module.css 的抽屉内视觉(头部 / 计数胶囊 / 状态文案),
-   输出区用 --dsw-font-mono,记录多时 .list 纵向滚动。 */
+   输出区用 --ds-font-family-code,记录多时 .list 纵向滚动。 */
 
 .header {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--dsw-border, rgba(127, 127, 127, 0.12));
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
 .title {
@@ -20,8 +20,8 @@
   font-size: 11px;
   padding: 1px 8px;
   border-radius: 999px;
-  background: var(--dsw-accent-weak, rgba(93, 214, 214, 0.15));
-  color: var(--dsw-accent, #5dd6d6);
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-state-business-primary);
 }
 
 .spacer {
@@ -87,7 +87,7 @@
 }
 
 .item {
-  border: 1px solid var(--dsw-border, rgba(127, 127, 127, 0.16));
+  border: 1px solid var(--dsw-alias-border-l3);
   border-radius: 7px;
   overflow: hidden;
 }
@@ -155,8 +155,8 @@
   overflow: hidden;
   padding: 1px 7px;
   border-radius: 999px;
-  background: var(--dsw-accent-weak, rgba(93, 214, 214, 0.15));
-  color: var(--dsw-accent, #5dd6d6);
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-state-business-primary);
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 11px;
@@ -168,7 +168,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--dsw-font-mono);
+  font-family: var(--ds-font-family-code);
   font-size: 11px;
 }
 
@@ -179,7 +179,7 @@
 }
 
 .body {
-  border-top: 1px solid var(--dsw-border, rgba(127, 127, 127, 0.12));
+  border-top: 1px solid var(--dsw-alias-border-l2);
   padding: 8px 9px;
 }
 
@@ -190,7 +190,7 @@
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-font-mono);
+  font-family: var(--ds-font-family-code);
   font-size: 11px;
   line-height: 1.55;
 }

@@ -255,7 +255,7 @@
 }
 
 .checkboxRow input {
-  accent-color: var(--dsw-accent);
+  accent-color: var(--dsw-alias-state-business-primary);
   cursor: pointer;
 }
 
@@ -275,7 +275,7 @@
 .select {
   font-size: 12px;
   padding: 4px 6px;
-  background: var(--dsw-alias-bg-overlay, var(--dsw-alias-surface-field));
+  background: var(--dsw-alias-bg-overlay, var(--dsw-specific-input-major));
   color: var(--dsw-alias-label-primary);
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 4px;
@@ -528,7 +528,7 @@
 
 .range {
   width: 100%;
-  accent-color: var(--dsw-accent);
+  accent-color: var(--dsw-alias-state-business-primary);
 }
 
 /* ===== 记忆管理(AI tab 弹窗) ===== */
@@ -759,7 +759,7 @@
   align-items: center;
   justify-content: center;
   /* 半透明遮罩:透出背后的壳内容(原先 #0b0f14 不透明导致整屏死黑)。 */
-  background: var(--dsw-alias-bg-mask-3, rgba(0, 0, 0, 0.48));
+  background: var(--dsw-alias-bg-mask-3);
   padding: 24px;
 }
 
@@ -770,10 +770,10 @@
   width: min(720px, 100%);
   max-height: min(760px, calc(100vh - 48px));
   overflow: hidden;
-  background: var(--dsw-alias-bg-layer-2, #171b22);
-  border: 1px solid var(--dsw-alias-border-l2, #39414c);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.48);
+  box-shadow: var(--dsw-shadow-lv3);
 }
 
 .dialogHead {
@@ -782,8 +782,8 @@
   gap: 10px;
   min-height: 52px;
   padding: 0 16px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2, #303741);
-  background: var(--dsw-alias-bg-layer-1, #1d222b);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .dialogTitle {
@@ -811,8 +811,8 @@
   min-height: 58px;
   margin: 0;
   padding: 0 16px;
-  border-top: 1px solid var(--dsw-alias-border-l2, #303741);
-  background: var(--dsw-alias-bg-layer-1, #1d222b);
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .actionRow {

@@ -73,7 +73,7 @@
 }
 
 .metaPath {
-  font-family: var(--dsw-font-mono);
+  font-family: var(--ds-font-family-code);
   word-break: break-all;
   white-space: normal !important;
 }
@@ -98,7 +98,7 @@
   padding: 0 14px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 6px;
-  background: var(--dsw-alias-interactive-bg);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
   cursor: pointer;

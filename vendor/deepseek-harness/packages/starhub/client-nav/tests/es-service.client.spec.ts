@@ -124,22 +124,22 @@ describe('indexRowOf', () => {
 })
 
 describe('healthColor', () => {
-  it('returns the right colors for green/yellow/red and a muted fallback', () => {
-    expect(healthColor('green')).toBe('#22c55e')
-    expect(healthColor('yellow')).toBe('#eab308')
-    expect(healthColor('red')).toBe('#ef4444')
-    expect(healthColor('unknown')).toBe('#8a94a6')
+  it('maps health to DSH state tokens (green/yellow/red) and a muted fallback', () => {
+    expect(healthColor('green')).toBe('var(--dsw-alias-state-success-primary)')
+    expect(healthColor('yellow')).toBe('var(--dsw-alias-state-warn-primary)')
+    expect(healthColor('red')).toBe('var(--dsw-alias-state-error-primary)')
+    expect(healthColor('unknown')).toBe('var(--dsw-alias-label-tertiary)')
   })
 })
 
 describe('fieldTypeColor', () => {
-  it('colors known field types and falls back', () => {
-    expect(fieldTypeColor('text')).toMatch(/^#/)
-    expect(fieldTypeColor('keyword')).toMatch(/^#/)
-    expect(fieldTypeColor('long')).toMatch(/^#/)
-    expect(fieldTypeColor('date')).toMatch(/^#/)
-    expect(fieldTypeColor('boolean')).toMatch(/^#/)
-    expect(fieldTypeColor('nested')).toMatch(/^#/)
-    expect(fieldTypeColor('weird')).toMatch(/^#/)
+  it('maps field types to DSH alias/static tokens and falls back', () => {
+    expect(fieldTypeColor('text')).toBe('var(--dsw-alias-state-business-primary)')
+    expect(fieldTypeColor('keyword')).toBe('var(--dsw-alias-state-success-primary)')
+    expect(fieldTypeColor('long')).toBe('var(--dsw-alias-state-warn-primary)')
+    expect(fieldTypeColor('date')).toBe('var(--dsw-static-deepseek-400)')
+    expect(fieldTypeColor('boolean')).toBe('var(--dsw-alias-label-tertiary)')
+    expect(fieldTypeColor('nested')).toBe('var(--dsw-static-blue-450)')
+    expect(fieldTypeColor('weird')).toBe('var(--dsw-alias-label-tertiary)')
   })
 })

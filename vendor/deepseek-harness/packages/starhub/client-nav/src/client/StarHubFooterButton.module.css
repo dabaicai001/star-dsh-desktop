@@ -10,7 +10,7 @@
   box-sizing: border-box;
   border: 0;
   background: transparent;
-  color: var(--dsw-fg-tertiary, currentColor);
+  color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
   border-radius: 12px;
   font: inherit;
@@ -18,8 +18,8 @@
 }
 
 .button:hover {
-  background: var(--dsw-bg-hover, rgba(127, 127, 127, 0.12));
-  color: var(--dsw-fg-primary, currentColor);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 .label {

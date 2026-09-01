@@ -10,7 +10,7 @@
   padding: 0 9px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 12px;
-  background: var(--dsw-alias-interactive-bg);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 1;
@@ -36,7 +36,7 @@
 .count {
   padding: 1px 7px;
   border-radius: 999px;
-  background: var(--dsw-accent-weak, rgba(93, 214, 214, 0.15));
-  color: var(--dsw-accent, #5dd6d6);
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-state-business-primary);
   font-size: 10px;
 }

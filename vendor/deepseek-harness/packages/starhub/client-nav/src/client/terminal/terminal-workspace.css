@@ -1,2 +1,2 @@
 /* Shared visual tokens for the SSH/SFTP workbench. Module styles apply layout; this entry guarantees deployment-time style injection. */
-[data-plugin="@deepseek-ai/dsh-starhub-client-nav"] { --starhub-terminal-surface: #142236; }
+[data-plugin="@deepseek-ai/dsh-starhub-client-nav"] { --starhub-terminal-surface: var(--dsw-alias-markdown-code-block); }

@@ -1,8 +1,8 @@
-.backdrop { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: clamp(16px, 5vw, 48px); background: rgba(5, 12, 20, 0.92); }
-.panel { display: flex; width: min(1080px, 100%); height: min(720px, 100%); min-width: 0; flex-direction: column; overflow: hidden; border: 1px solid #365775; border-radius: 8px; background: #111c2b; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5); }
-.header { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; border-bottom: 1px solid #294562; background: #17263a; color: #dcecff; }
+.backdrop { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: clamp(16px, 5vw, 48px); background: var(--dsw-alias-bg-mask-photo); }
+.panel { display: flex; width: min(1080px, 100%); height: min(720px, 100%); min-width: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); box-shadow: var(--dsw-shadow-lv3); }
+.header { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); }
 .title { overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.closeButton { border: 1px solid transparent; border-radius: 6px; padding: 5px 10px; background: transparent; color: #9bb8d1; cursor: pointer; }
-.closeButton:hover { border-color: #456f94; background: #243e5a; color: #e8f7ff; }
-.terminalHost { flex: 1; min-height: 0; padding: 10px; background: #0b1220; }
+.closeButton { border: 1px solid transparent; border-radius: 6px; padding: 5px 10px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; }
+.closeButton:hover { border-color: var(--dsw-alias-border-l3); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.terminalHost { flex: 1; min-height: 0; padding: 10px; background: var(--dsw-alias-markdown-code-block); }
 .terminalHost :global(.xterm) { height: 100%; }

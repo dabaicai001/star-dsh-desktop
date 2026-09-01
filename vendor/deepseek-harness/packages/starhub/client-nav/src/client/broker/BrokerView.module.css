@@ -56,8 +56,8 @@
   letter-spacing: 0.08em;
   padding: 2px 8px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--dsw-accent) 14%, transparent);
-  color: var(--dsw-accent);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent);
+  color: var(--dsw-alias-state-business-primary);
 }
 
 .name {

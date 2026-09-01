@@ -19,7 +19,7 @@
   padding: 0 9px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 12px;
-  background: var(--dsw-alias-interactive-bg);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 1;
@@ -68,7 +68,7 @@
   border: 1px solid var(--dsw-alias-border-inverted);
   border-radius: 10px;
   background: var(--dsw-specific-menu);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36);
+  box-shadow: var(--dsw-shadow-lv3);
 }
 
 .search {
@@ -78,7 +78,7 @@
   padding: 0 8px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 6px;
-  background: var(--dsw-alias-interactive-bg);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
   outline: none;
@@ -199,7 +199,7 @@
   padding: 0 12px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 6px;
-  background: var(--dsw-alias-interactive-bg);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
   cursor: pointer;

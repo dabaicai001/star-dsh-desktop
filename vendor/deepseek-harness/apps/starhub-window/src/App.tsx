@@ -146,11 +146,33 @@ export function render(container: HTMLElement): void {
   rootRef.render(<WindowShell />)
 }
 
+/** Resolve the workbench-window theme from the opener's `dark` hint, else fall
+ *  back to DSH's default preference (`system` → `prefers-color-scheme`). The
+ *  standalone workbench has no ui-theme plugin tree, so it mirrors the shell's
+ *  resolved theme instead of pinning a fixed palette. */
+export function resolveWindowTheme(search: string): boolean {
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+  const dark = params.get('dark')
+  if (dark !== null) return dark === '1'
+  return typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches
+}
+
 /** Convenience used by tests/main: mount into #root. */
 export function mount(): void {
-  // 独立窗口不跑 dsh 插件树(ui-theme):工作台按深色设计,直接钉住深色调色板。
-  document.documentElement.style.colorScheme = 'dark'
-  document.body.toggleAttribute('data-ds-dark-theme', true)
+  const apply = (dark: boolean): void => {
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+    document.body.toggleAttribute('data-ds-dark-theme', dark)
+  }
+  const params = new URLSearchParams(window.location.search)
+  const fromHint = params.get('dark') !== null
+  // 跟随宿主(DSH 壳)的解析主题:opener 传 `dark` 命中则用,否则按 system 解析;
+  // 独立窗口不跑 dsh 插件树(ui-theme),故按此显式落地 DSH 的深浅色 token 切换。
+  apply(resolveWindowTheme(window.location.search))
+  // system 模式(无显式 dark 提示)下跟随操作系统深色切换实时更新。
+  if (!fromHint && typeof matchMedia !== 'undefined') {
+    const mq = matchMedia('(prefers-color-scheme: dark)')
+    mq.addEventListener('change', () => { apply(mq.matches) })
+  }
   const el = document.getElementById('root')
   if (el !== null) render(el)
 }

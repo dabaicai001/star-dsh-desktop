@@ -55,7 +55,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--dsw-font-mono);
+  font-family: var(--ds-font-family-code);
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -81,7 +81,7 @@
   padding: 0 8px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 6px;
-  background: var(--dsw-alias-interactive-bg);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
   outline: none;
@@ -141,7 +141,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--dsw-font-mono);
+  font-family: var(--ds-font-family-code);
   font-size: 10px;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -150,7 +150,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--dsw-font-mono);
+  font-family: var(--ds-font-family-code);
   font-size: 10px;
   color: var(--dsw-alias-state-warn-primary);
 }

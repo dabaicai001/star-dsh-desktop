@@ -1,7 +1,8 @@
 /* Standalone StarHub workbench window: the dsh plugin tree (ui-theme) does
- * not run here, so the token sheets are imported directly and the dark
- * palette is pinned on <body> in App mount(). Without these sheets every
- * var(--dsw-alias-*) is unresolved and the window renders unstyled white. */
+ * not run here, so the token sheets are imported directly and the resolved
+ * theme (light/dark) is applied on <body> in App mount() from the opener's
+ * `dark` hint. Without these sheets every var(--dsw-alias-*) is unresolved
+ * and the window renders unstyled white. */
 @import '@deepseek-ai/dsh-client-ui-theme/styles/base.css';
 @import '@deepseek-ai/dsh-client-ui-theme/styles/design-platform.css';
 @import '@deepseek-ai/dsh-client-ui-theme/styles/scrollbar.css';
@@ -13,17 +14,6 @@ html, body, #root {
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
   font-family: var(--dsw-font-family);
-}
-
-/* StarHub 工作台在 dsh 令牌表之外的历史令牌(accent / 等宽字体 / 弹层阴影)。 */
-body {
-  --dsw-accent: #5dd6d6;
-  --dsw-accent-soft: rgba(93, 214, 214, 0.15);
-  --dsw-accent-weak: rgba(93, 214, 214, 0.15);
-  --dsw-alias-interactive-accent: #5dd6d6;
-  --dsw-font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas,
-    'Liberation Mono', Menlo, Courier, monospace;
-  --dsw-shadow-popover: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 
 button, input, textarea, select {

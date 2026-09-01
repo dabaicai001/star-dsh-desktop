@@ -207,28 +207,28 @@ export function indexRowOf(raw: unknown): EsIndexInfo {
   }
 }
 
-/** Health badge color: green/yellow/red, fallback muted.
+/** Health badge color: green/yellow/red, fallback muted — all DSH state tokens.
  * @param status - the health status string.
- * @returns the badge color hex.
+ * @returns the badge color as a DSH `--dsw-alias-*` token var().
  */
 export function healthColor(status: string): string {
-  if (status === 'green') return '#22c55e'
-  if (status === 'yellow') return '#eab308'
-  if (status === 'red') return '#ef4444'
-  return '#8a94a6'
+  if (status === 'green') return 'var(--dsw-alias-state-success-primary)'
+  if (status === 'yellow') return 'var(--dsw-alias-state-warn-primary)'
+  if (status === 'red') return 'var(--dsw-alias-state-error-primary)'
+  return 'var(--dsw-alias-label-tertiary)'
 }
 
-/** Field type badge color (mirrors Vue getFieldTypeColor).
+/** Field type badge color (mirrors Vue getFieldTypeColor) — DSH static scale.
  * @param type - the field type string.
- * @returns the badge color hex.
+ * @returns the badge color as a DSH token var().
  */
 export function fieldTypeColor(type: string): string {
-  if (type === 'text') return '#22d3ee'
-  if (type === 'keyword') return '#22c55e'
+  if (type === 'text') return 'var(--dsw-alias-state-business-primary)'
+  if (type === 'keyword') return 'var(--dsw-alias-state-success-primary)'
   if (type === 'long' || type === 'integer' || type === 'short' || type === 'byte'
-    || type === 'double' || type === 'float') return '#eab308'
-  if (type === 'date') return '#a78bfa'
-  if (type === 'boolean') return '#8a94a6'
-  if (type === 'nested' || type === 'object') return '#f472b6'
-  return '#cbd5e1'
+    || type === 'double' || type === 'float') return 'var(--dsw-alias-state-warn-primary)'
+  if (type === 'date') return 'var(--dsw-static-deepseek-400)'
+  if (type === 'boolean') return 'var(--dsw-alias-label-tertiary)'
+  if (type === 'nested' || type === 'object') return 'var(--dsw-static-blue-450)'
+  return 'var(--dsw-alias-label-tertiary)'
 }

@@ -128,21 +128,9 @@ export function apply(ctx: Context): void {
     sync()
     return sessions.list.subscribe(sync)
   }, 'starhub: exec records follow current session')
-  // StarHub 工作台的历史令牌(--dsw-accent / --dsw-font-mono / --dsw-shadow-popover
-  // 等)不在 dsh 令牌表内:经主题覆盖层注入,深浅色各一值,presenter 写到 body
-  // 内联样式;独立 React 窗口无插件树,同值声明在 window-shell.css。
-  const theme = ctx.get('theme')
-  if (theme !== undefined) {
-    const mono = "'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo, Courier, monospace"
-    ctx.effect(() => theme.overrideTokens('starhub', {
-      '--dsw-accent': { light: '#1296a0', dark: '#5dd6d6' },
-      '--dsw-accent-soft': { light: 'rgba(18, 150, 160, 0.12)', dark: 'rgba(93, 214, 214, 0.15)' },
-      '--dsw-accent-weak': { light: 'rgba(18, 150, 160, 0.12)', dark: 'rgba(93, 214, 214, 0.15)' },
-      '--dsw-alias-interactive-accent': { light: '#1296a0', dark: '#5dd6d6' },
-      '--dsw-font-mono': { light: mono, dark: mono },
-      '--dsw-shadow-popover': { light: '0 6px 24px rgba(0, 0, 0, 0.12)', dark: '0 6px 24px rgba(0, 0, 0, 0.35)' },
-    }))
-  }
+  // StarHub 工作台遵循 dsh 设计理念:不再注入自有主题 token(旧 --dsw-accent /
+  // --dsw-font-mono / --dsw-shadow-popover 等历史令牌),统一消费 ui-theme 的
+  // --dsw-alias-* 语义别名,深浅色由 dsh 主题所有者(ui-theme)处理。
   /** 打开资产实例操作页:记录选择桥(供 AI 工具上下文)后一律开「React 独立
    *  程序窗口」(openNewPage → /starhub-react/index.html?asset=…)。所有类型
    *  (SSH / 数据库 / Docker / Redis)统一走独立 React 窗口,不再以壳内
@@ -150,7 +138,15 @@ export function apply(ctx: Context): void {
    *  starhub://open-asset 的 focus 复用。 */
   const openAssetPage = (asset: StarHubAsset): void => {
     selection.openAsset(asset)
-    openNewPage(assetWindowUrl(asset), asset.name, asset.id)
+    // 独立工作台窗口不跑 ui-theme 插件树:把主壳当前解析主题(dark)经 `dark` 参数
+    // 传入,窗口据此切换深浅色 token(跟随 DSH 主题,而非固定深色)。
+    const baseUrl = assetWindowUrl(asset)
+    let url = baseUrl
+    if (typeof document !== 'undefined') {
+      const dark = document.body.hasAttribute('data-ds-dark-theme')
+      url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}dark=${dark ? '1' : '0'}`
+    }
+    openNewPage(url, asset.name, asset.id)
       // 开窗失败(如 IPC 未授权)打日志,不阻断主壳交互
       .catch((e: unknown) => { console.error('打开资产页面失败:', e) })
   }

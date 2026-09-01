@@ -58,7 +58,7 @@ export interface DashboardCardProps {
 
 /** 颜色 → CSS 语义 token(与 Vue 版 color-* 主题一一对应,dsw 无 yellow/purple 专属别名,取静态色)。 */
 export const DASHBOARD_COLOR_TOKENS: Record<DashboardColor, string> = {
-  cyan: 'var(--dsw-accent)',
+  cyan: 'var(--dsw-alias-state-business-primary)',
   green: 'var(--dsw-alias-state-success-primary)',
   yellow: 'var(--dsw-static-amber-400)',
   red: 'var(--dsw-alias-state-error-primary)',

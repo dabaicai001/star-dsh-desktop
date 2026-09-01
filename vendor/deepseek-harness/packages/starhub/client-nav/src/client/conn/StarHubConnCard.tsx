@@ -22,6 +22,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { useTerminalTheme } from '../terminal/terminal-theme.ts'
 import '@xterm/xterm/css/xterm.css'
 import { tauriInvoke, tauriListen, type TauriUnlisten } from '../tauri.ts'
 import css from './StarHubConnCard.module.css'
@@ -69,7 +70,7 @@ export function StarHubConnCard() {
   const [state, setState] = useState<ConnCardState>(null)
   const [mfaAnswers, setMfaAnswers] = useState<string[]>([])
   const hostRef = useRef<HTMLDivElement | null>(null)
-  const termRef = useRef<Terminal | null>(null)
+  const { theme, termRef } = useTerminalTheme()
   const runTimerRef = useRef<number | null>(null)
 
   const clearRunTimer = (): void => {
@@ -143,9 +144,9 @@ export function StarHubConnCard() {
     if (bastionSessionId === null) return
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: 'JetBrains Mono, Consolas, monospace',
+      fontFamily: 'SF Mono, JetBrains Mono, Fira Code, Consolas, Courier, PingFang SC, Microsoft YaHei',
       fontSize: 13,
-      theme: { background: '#101822' },
+      theme,
     })
     const addon = new FitAddon()
     term.loadAddon(addon)

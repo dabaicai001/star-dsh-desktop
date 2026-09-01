@@ -1,6 +1,6 @@
 .editor { flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); }
-.editor :global(.cm-editor) { height: 100%; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 13px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
-.editor :global(.cm-content) { caret-color: var(--dsw-accent); }
+.editor :global(.cm-editor) { height: 100%; font-family: var(--ds-font-family-code); font-size: 13px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
+.editor :global(.cm-content) { caret-color: var(--dsw-alias-state-business-primary); }
 .editor :global(.cm-gutters) { background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-tertiary); border-right: 1px solid var(--dsw-alias-border-l1); }
 .editor :global(.cm-activeLine) { background: var(--dsw-alias-interactive-bg-hover); }
 .editor :global(.cm-tooltip) { background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); }

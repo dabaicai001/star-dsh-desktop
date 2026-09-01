@@ -46,7 +46,7 @@
   overflow: auto;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 8px;
-  background: var(--dsw-alias-interactive-bg);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .column .columnHead {
@@ -54,7 +54,7 @@
   position: sticky;
   top: 0;
   padding: 6px 10px 0;
-  background: var(--dsw-alias-interactive-bg);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .columnHead {
@@ -149,7 +149,7 @@
   padding: 8px 10px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 8px;
-  background: var(--dsw-alias-interactive-bg);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
   font-family: Consolas, 'Courier New', monospace;
   font-size: 12px;
@@ -182,7 +182,7 @@
   padding: 0 14px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 6px;
-  background: var(--dsw-alias-interactive-bg);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
   cursor: pointer;

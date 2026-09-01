@@ -16,7 +16,7 @@
 .mask {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.32);
+  background: var(--dsw-alias-bg-mask-2);
   animation: maskIn 0.14s ease-out;
 }
 
@@ -34,9 +34,9 @@
   max-width: 85vw;
   display: flex;
   flex-direction: column;
-  background: var(--dsw-bg-panel, var(--dsw-bg-primary, #fff));
-  border-left: 1px solid var(--dsw-border, rgba(127, 127, 127, 0.2));
-  box-shadow: var(--dsw-shadow-popover, 0 6px 24px rgba(0, 0, 0, 0.2));
+  background: var(--dsw-alias-bg-layer-2);
+  border-left: 1px solid var(--dsw-alias-border-l3);
+  box-shadow: var(--dsw-shadow-lv3);
   animation: slideIn 0.16s ease-out;
   font-size: 13px;
 }
@@ -51,7 +51,7 @@
   align-items: center;
   gap: 6px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--dsw-border, rgba(127, 127, 127, 0.12));
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
 .title {
@@ -212,8 +212,8 @@
   font-size: 11px;
   padding: 1px 8px;
   border-radius: 999px;
-  background: var(--dsw-accent-weak, rgba(93, 214, 214, 0.15));
-  color: var(--dsw-accent, #5dd6d6);
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-state-business-primary);
   white-space: nowrap;
 }
 
@@ -239,7 +239,7 @@
 
 .rowSub {
   color: var(--dsw-alias-label-tertiary);
-  font-family: var(--dsw-font-mono);
+  font-family: var(--ds-font-family-code);
   font-size: 11px;
 }
 
