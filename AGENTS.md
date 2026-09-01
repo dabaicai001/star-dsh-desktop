@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.112.2(**堡垒机 MFA 验证码弹窗关闭后重开报 `[MFA_FAILED] Keyboard-interactive response channel dropped`**:关闭弹窗/窗口(或取消连接)时 `ssh_disconnect` 丢弃仍在等待的 keyboard-interactive 应答通道,不再让 in-flight connect 一直阻塞到 360s 超时;同时修掉旧任务醒来后盲目 `remove(session_id)` 误删重开连接新 sender 的竞态(新窗口第一次连接就弹验证码,不再复现报错)) |
+| 当前版本 | v0.112.3(**CI 构建修复(zmodem.js 类型声明 + noUncheckedIndexedAccess)**:`SshTerminalOverlay.tsx` 新增 `zmodem.js/src/zmodem_browser.js` 引入但缺类型声明(TS7016: Could not find a declaration file);新增 `src/zmodem-browser.d.ts` 环境声明,并在 `onZmodemFilesSelected` 中把 `files[0].name` 先收敛到非空局部变量再用于状态文案(TS2532: Object is possibly 'undefined' ×2);同步修掉测试桩 `vi.fn((command) => ...)` 无参元组导致 `mock.calls.find(...)[1]` 报 TS2352/TS2493 的三个用例) |
 
 ## 架构一句话
 
@@ -127,4 +127,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-01 (v0.112.2)*
+*最后更新: 2026-09-01 (v0.112.3)*

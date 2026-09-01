@@ -211,10 +211,13 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     const files = input.files
     const session = zmodemSessionRef.current
     const totalBytes = Array.from(files).reduce((sum, file) => sum + file.size, 0)
+    // The early return above guarantees files.length >= 1; noUncheckedIndexedAccess
+    // still types files[0] as File | undefined, so narrow it once before use.
+    const firstFileName = files[0]?.name ?? ''
     try {
       setZmodemTotal(totalBytes)
-      setZmodemStatus(files.length === 1 ? `正在发送 ${files[0].name}` : `正在发送 ${files.length} 个文件`)
-      setZmodemFileName(files.length === 1 ? files[0].name : `${files.length} 个文件`)
+      setZmodemStatus(files.length === 1 ? `正在发送 ${firstFileName}` : `正在发送 ${files.length} 个文件`)
+      setZmodemFileName(files.length === 1 ? firstFileName : `${files.length} 个文件`)
       await Zmodem.Browser.send_files(session, files, {
         on_progress: (file, transfer) => {
           const sent = transfer.get_offset()

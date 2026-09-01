@@ -747,7 +747,7 @@ describe('SshTerminalOverlay', () => {
     ]
     for (const { config, expectAuth } of cases) {
       const callbacks: Array<(event: unknown) => void> = []
-      const invoke = vi.fn((command: string) => {
+      const invoke = vi.fn((command: string, _args?: Record<string, unknown>) => {
         if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
         return Promise.resolve(null)
       })
@@ -761,12 +761,12 @@ describe('SshTerminalOverlay', () => {
       const { unmount } = render(<SshTerminalOverlay asset={{ ...asset, config } as unknown as typeof asset} onClose={vi.fn()} />)
       await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
       const connectCall = invoke.mock.calls.find(([cmd]) => cmd === 'ssh_connect')!
-      expect((connectCall[1] as { config: { auth: unknown } }).config.auth).toEqual(expectAuth)
+      expect((connectCall[1]! as { config: { auth: unknown } }).config.auth).toEqual(expectAuth)
       unmount()
     }
     // kb_interactive: mfaPassword present → password field
     const callbacks: Array<(event: unknown) => void> = []
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((command: string, _args?: Record<string, unknown>) => {
       if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
@@ -781,7 +781,7 @@ describe('SshTerminalOverlay', () => {
     const { unmount } = render(<SshTerminalOverlay asset={mfaAsset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
     const connectCall = invoke.mock.calls.find(([cmd]) => cmd === 'ssh_connect')!
-    expect((connectCall[1] as { config: { kb_interactive: unknown } }).config.kb_interactive).toEqual({ enabled: true, password: 'main-secret' })
+    expect((connectCall[1]! as { config: { kb_interactive: unknown } }).config.kb_interactive).toEqual({ enabled: true, password: 'main-secret' })
     unmount()
   })
 
@@ -889,7 +889,7 @@ describe('SshTerminalOverlay', () => {
 
   it('covers kb-absent mfa, ssh_exec cwd, sentry sender catch and on_retract', async () => {
     const callbacks: Array<(event: unknown) => void> = []
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((command: string, _args?: Record<string, unknown>) => {
       if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'ssh_exec') return Promise.resolve('/srv/work') // pwd fallback → applyCwd
       if (command === 'ssh_write_binary') return Promise.reject(new Error('bin')) // sender catch
@@ -907,7 +907,7 @@ describe('SshTerminalOverlay', () => {
     const { unmount } = render(<SshTerminalOverlay asset={kbAsset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
     const connectCall = invoke.mock.calls.find(([cmd]) => cmd === 'ssh_connect')!
-    expect((connectCall[1] as { config: { kb_interactive: unknown } }).config.kb_interactive).toEqual({ enabled: true })
+    expect((connectCall[1]! as { config: { kb_interactive: unknown } }).config.kb_interactive).toEqual({ enabled: true })
     // ssh_exec pwd → applyCwd(254) ; sender catch
     act(() => { zmodemMock.options!.sender!([1]) })
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write_binary', { id: 'ssh-1', data: [1] }) })

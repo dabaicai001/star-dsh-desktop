@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.112.2-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.112.3-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,6 +47,9 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.112.3 (2026-09-01)
+- 🐛 **CI 构建修复(zmodem.js 类型声明 + noUncheckedIndexedAccess)**:`SshTerminalOverlay.tsx` 新增 `zmodem.js/src/zmodem_browser.js` 引入但缺类型声明(TS7016: Could not find a declaration file);新增 `src/zmodem-browser.d.ts` 环境声明,并在 `onZmodemFilesSelected` 中把 `files[0].name` 先收敛到非空局部变量再用于状态文案(TS2532: Object is possibly 'undefined' ×2);同步修掉测试桩 `vi.fn((command) => ...)` 无参元组导致 `mock.calls.find(...)[1]` 报 TS2352/TS2493 的三个用例
 
 ### v0.112.2 (2026-09-01)
 - 🐛 **堡垒机 MFA 验证码弹窗关闭后重开报 `[MFA_FAILED] Keyboard-interactive response channel dropped`**:关闭弹窗/窗口(或取消连接)时 `ssh_disconnect` 丢弃仍在等待的 keyboard-interactive 应答通道,不再让 in-flight connect 一直阻塞到 360s 超时;同时修掉旧任务醒来后盲目 `remove(session_id)` 误删重开连接新 sender 的竞态(新窗口第一次连接就弹验证码,不再复现报错)

@@ -14,6 +14,11 @@
 
 ---
 
+## [0.112.3] - 2026-09-01
+
+### 修复
+- **CI 构建修复(zmodem.js 类型声明 + noUncheckedIndexedAccess)**:`SshTerminalOverlay.tsx` 新增 `zmodem.js/src/zmodem_browser.js` 引入但缺类型声明(TS7016: Could not find a declaration file);新增 `src/zmodem-browser.d.ts` 环境声明,并在 `onZmodemFilesSelected` 中把 `files[0].name` 先收敛到非空局部变量再用于状态文案(TS2532: Object is possibly 'undefined' ×2);同步修掉测试桩 `vi.fn((command) => ...)` 无参元组导致 `mock.calls.find(...)[1]` 报 TS2352/TS2493 的三个用例
+
 ## [0.112.2] - 2026-09-01
 
 ### 修复
