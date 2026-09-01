@@ -14,6 +14,14 @@
 
 ---
 
+## [0.110.0] - 2026-09-01
+
+### 变更
+- **工作台独立窗口跟随 DSH 深浅色主题**:`App.tsx` 新增 `resolveWindowTheme`(opener 传 `dark` 参数命中则用,缺省按系统 `prefers-color-scheme` 解析),`mount` 显式落地 DSH 深浅色 token 切换并在 system 模式监听系统切换;`index.ts` 不再向工作台注入 StarHub 自有历史令牌(`--dsw-accent` / `--dsw-font-mono` / `--dsw-shadow-popover`),统一消费 ui-theme 的 `--dsw-alias-*` 语义别名,`openNewPage` 透传 `dark` 参数让窗口跟随主壳主题
+- **client-nav 样式迁移到设计令牌**:多个 `.module.css` 把硬编码十六进制颜色迁移到 `--dsw-alias-*` 语义别名(深浅色由 ui-theme 统一处理)
+- **新增 terminal-theme 终端配色**:`terminal-theme.ts` 与 `terminal-theme.client.spec.ts`(终端深浅色主题)
+- **es-service / es-service 单测调整**:Elasticsearch 元数据与 size 逻辑同步更新
+
 ## [0.109.1] - 2026-09-01
 
 ### 修复

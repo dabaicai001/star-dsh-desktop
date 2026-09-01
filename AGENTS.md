@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.109.1(**SFTP 文件列表过长时滚动条遮挡右侧(file size/末行点击区)**:`SftpPanel` 文件列表加 `scrollbar-gutter: stable` + `overflow-x: hidden`,滚动条始终预留槽位,不再盖住右侧列;末行点击区不再被遮) |
+| 当前版本 | v0.110.0(**工作台独立窗口跟随 DSH 深浅色主题**:`App.tsx` 新增 `resolveWindowTheme`(opener 传 `dark` 参数命中则用,缺省按系统 `prefers-color-scheme` 解析),`mount` 显式落地 DSH 深浅色 token 切换并在 system 模式监听系统切换;`index.ts` 不再向工作台注入 StarHub 自有历史令牌(`--dsw-accent` / `--dsw-font-mono` / `--dsw-shadow-popover`),统一消费 ui-theme 的 `--dsw-alias-*` 语义别名,`openNewPage` 透传 `dark` 参数让窗口跟随主壳主题) |
 
 ## 架构一句话
 

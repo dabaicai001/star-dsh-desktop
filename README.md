@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.109.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.110.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,6 +47,12 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.110.0 (2026-09-01)
+- 🔧 **工作台独立窗口跟随 DSH 深浅色主题**:`App.tsx` 新增 `resolveWindowTheme`(opener 传 `dark` 参数命中则用,缺省按系统 `prefers-color-scheme` 解析),`mount` 显式落地 DSH 深浅色 token 切换并在 system 模式监听系统切换;`index.ts` 不再向工作台注入 StarHub 自有历史令牌(`--dsw-accent` / `--dsw-font-mono` / `--dsw-shadow-popover`),统一消费 ui-theme 的 `--dsw-alias-*` 语义别名,`openNewPage` 透传 `dark` 参数让窗口跟随主壳主题
+- 🔧 **client-nav 样式迁移到设计令牌**:多个 `.module.css` 把硬编码十六进制颜色迁移到 `--dsw-alias-*` 语义别名(深浅色由 ui-theme 统一处理)
+- 🔧 **新增 terminal-theme 终端配色**:`terminal-theme.ts` 与 `terminal-theme.client.spec.ts`(终端深浅色主题)
+- 🔧 **es-service / es-service 单测调整**:Elasticsearch 元数据与 size 逻辑同步更新
 
 ### v0.109.1 (2026-09-01)
 - 🐛 **SFTP 文件列表过长时滚动条遮挡右侧(file size/末行点击区)**:`SftpPanel` 文件列表加 `scrollbar-gutter: stable` + `overflow-x: hidden`,滚动条始终预留槽位,不再盖住右侧列;末行点击区不再被遮
