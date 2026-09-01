@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.110.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.111.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,6 +47,11 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.111.0 (2026-09-01)
+- ✨ **恢复「已安装插件」列表与启停/卸载入口(设置 → 插件)**:按用户要求恢复此前下线的「已安装插件」段,列出所有已装 dsh 插件(名称/版本/来源/许可证/描述 + 已启用/禁用、UI/内置/缺失徽标),每项提供启用/禁用开关与卸载按钮(内置与缺失插件禁用这两个操作);首次启用弹风险确认卡(本机代码权限,按插件 id 经 localStorage 记一次确认 `starhub.plugins.enable-acknowledged`,UI 插件显示 `dsh.client` 文案),卸载同样弹确认;变更后经 `dsh_shutdown` 重启 runtime 生效。已装列表加载失败不再静默吞掉(在列表段露出错误,市场仍正常渲染)
+- 🐛 **SFTP 文件列表底部被裁切**:`SftpPanel` 文件列表滚动容器补 `padding-bottom: 8px`,最后一行内容不再与面板底边齐平/被裁,滚动到底时末尾几行完整可见
+- 🐛 **数据库表分页恒 1/1(row count 不回填)**:sidecar 的 `db.mysql.getRowCount` / `db.clickhouse.getRowCount` 此前返回 `{count: N}` 对象,而前端 `DbDataGrid`(以及测试桩)期望裸数字,导致 `baseCount` 永远不设置、无筛选时分页基数恒 0、页码恒显「1 / N」且表头不复位行数;两个 handler 改为直接返回 `count`(数字),前后端契约一致
 
 ### v0.110.0 (2026-09-01)
 - 🔧 **工作台独立窗口跟随 DSH 深浅色主题**:`App.tsx` 新增 `resolveWindowTheme`(opener 传 `dark` 参数命中则用,缺省按系统 `prefers-color-scheme` 解析),`mount` 显式落地 DSH 深浅色 token 切换并在 system 模式监听系统切换;`index.ts` 不再向工作台注入 StarHub 自有历史令牌(`--dsw-accent` / `--dsw-font-mono` / `--dsw-shadow-popover`),统一消费 ui-theme 的 `--dsw-alias-*` 语义别名,`openNewPage` 透传 `dark` 参数让窗口跟随主壳主题
