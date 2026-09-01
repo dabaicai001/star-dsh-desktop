@@ -1,24 +1,61 @@
 /**
- * Settings 插件 tab(React 壳内版):URL/本地导入三入口 + 市场(分类/搜索)。
- * 「已安装插件」列表按用户要求移除(启停/卸载入口随之下线);插件列表仍
- * 静默拉取一次,只用于市场项的「已安装」标记(installedByUrl)。
+ * Settings 插件 tab(React 壳内版):已装插件列表(启停/卸载)+ URL/本地导入三入口
+ * + 市场(分类/搜索,分页)。
+ * 「已安装插件」列表此前按用户要求移除,现恢复:启停/卸载入口一并回归;
+ * 首次启用弹风险确认卡(本机代码权限,按插件 id 记一次确认)。市场项「已安装」
+ * 标记仍复用已装列表(installedByUrl)。
  * afterPluginMutation 收尾(关 runtime 让变更下次对话生效)语义保留。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { tauriInvoke } from '../tauri.ts'
 import {
   fetchPluginMarket, installLocalPlugin, installPluginFromUrl, isTauriRuntime, listPlugins,
-  shutdownDshRuntime,
+  setPluginEnabled, shutdownDshRuntime, uninstallPlugin,
   type DshMarketCatalog, type DshPluginInfo,
 } from './services.ts'
 import s from './settings.module.css'
 
+/** 首次启用风险提示的确认记录(localStorage,按插件 id 记一次)。 */
+const PLUGIN_ACK_KEY = 'starhub.plugins.enable-acknowledged'
+
+/** 插件来源文案(builtin 为内置插件)。 */
+function pluginSourceLabel(kind: string): string {
+  switch (kind) {
+    case 'market': return '市场'
+    case 'url': return 'URL'
+    case 'local-dir': return '目录'
+    case 'local-zip': return 'Zip'
+    case 'builtin': return '内置'
+    default: return kind
+  }
+}
+
+/** 读启用确认集合(解析失败返回空集)。 */
+function pluginAckSet(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(PLUGIN_ACK_KEY) ?? '[]') as string[])
+  } catch {
+    return new Set()
+  }
+}
+
+/** 追加一条启用确认记录。 */
+function markPluginAcked(id: string): void {
+  try {
+    localStorage.setItem(PLUGIN_ACK_KEY, JSON.stringify([...pluginAckSet(), id]))
+  } catch {
+    // localStorage 不可用时静默降级
+  }
+}
+
 /**
- * 渲染插件管理:安装入口 + 市场。
+ * 渲染插件管理:已装列表(+) + 安装入口 + 市场。
  * @returns 插件 tab 内容。
  */
 export function PluginsTab() {
   const [pluginList, setPluginList] = useState<DshPluginInfo[]>([])
+  const [pluginLoading, setPluginLoading] = useState(false)
   const [pluginError, setPluginError] = useState('')
   const [pluginBusyId, setPluginBusyId] = useState('')
   const [pluginUrl, setPluginUrl] = useState('')
@@ -28,14 +65,20 @@ export function PluginsTab() {
   const [marketSearch, setMarketSearch] = useState('')
   const [marketPage, setMarketPage] = useState(0)
   const marketPageSize = 6
+  const [riskDialogPlugin, setRiskDialogPlugin] = useState<DshPluginInfo | null>(null)
+  const [uninstallDialogPlugin, setUninstallDialogPlugin] = useState<DshPluginInfo | null>(null)
 
-  // 静默拉取已装列表:只服务市场项的「已安装」标记,失败不打扰(空集即全可装)。
+  // 拉取已装列表(供「已安装插件」段与市场「已安装」标记;失败在列表段露出)。
   const loadPlugins = useCallback(async () => {
     if (!isTauriRuntime()) return
+    setPluginLoading(true)
+    setPluginError('')
     try {
       setPluginList(await listPlugins())
-    } catch {
-      // 列表只用于已安装标记,拉取失败按无已装处理
+    } catch (error) {
+      setPluginError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPluginLoading(false)
     }
   }, [])
 
@@ -87,7 +130,7 @@ export function PluginsTab() {
     if (marketPage >= marketPageCount) setMarketPage(marketPageCount - 1)
   }, [marketPage, marketPageCount])
 
-  /** 变更后收尾:关 runtime(下次对话重启生效)+ 刷新已装标记。 */
+  /** 变更后收尾:关 runtime(下次对话重启生效)+ 刷新已装列表。 */
   const afterPluginMutation = useCallback(async (message: string) => {
     try {
       await shutdownDshRuntime()
@@ -97,6 +140,59 @@ export function PluginsTab() {
     void loadPlugins()
     return message
   }, [loadPlugins])
+
+  const doSetPluginEnabled = useCallback(async (plugin: DshPluginInfo, enabled: boolean) => {
+    setPluginBusyId(plugin.id)
+    setPluginError('')
+    try {
+      await setPluginEnabled(plugin.id, enabled)
+      await afterPluginMutation(enabled ? '插件已启用' : '插件已禁用')
+    } catch (error) {
+      setPluginError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPluginBusyId('')
+    }
+  }, [afterPluginMutation])
+
+  /** 启停开关:禁用直接走;启用且首次时需先过风险提示确认卡。 */
+  const onTogglePlugin = (plugin: DshPluginInfo) => {
+    if (pluginBusyId !== '') return
+    if (plugin.enabled) {
+      void doSetPluginEnabled(plugin, false)
+      return
+    }
+    if (pluginAckSet().has(plugin.id)) {
+      void doSetPluginEnabled(plugin, true)
+      return
+    }
+    setRiskDialogPlugin(plugin)
+  }
+
+  const confirmRiskEnable = async () => {
+    const plugin = riskDialogPlugin
+    setRiskDialogPlugin(null)
+    // v8 ignore next -- 弹窗仅在 plugin 非空时渲染,确认函数先取再清
+    if (plugin === null) return
+    markPluginAcked(plugin.id)
+    await doSetPluginEnabled(plugin, true)
+  }
+
+  const confirmUninstall = async () => {
+    const plugin = uninstallDialogPlugin
+    setUninstallDialogPlugin(null)
+    // v8 ignore next -- 弹窗仅在 plugin 非空时渲染,确认函数先取再清
+    if (plugin === null) return
+    setPluginBusyId(plugin.id)
+    setPluginError('')
+    try {
+      await uninstallPlugin(plugin.id)
+      await afterPluginMutation('插件已卸载')
+    } catch (error) {
+      setPluginError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPluginBusyId('')
+    }
+  }
 
   const onInstallUrl = async () => {
     const url = pluginUrl.trim()
@@ -151,9 +247,67 @@ export function PluginsTab() {
     <div className={s.panel}>
       <div className={s.section}>
         <div className={s.sectionHeader}>
-          <span className={s.sectionTitle}>安装插件</span>
+          <span className={s.sectionTitle}>已安装插件</span>
+          <span className={s.spacer} />
+          <button
+            type="button" className={s.btnSecondary} title="刷新" aria-label="刷新"
+            disabled={pluginLoading} onClick={() => void loadPlugins()}
+          >
+            {pluginLoading ? '…' : '刷新'}
+          </button>
         </div>
         {pluginError !== '' && <div className={s.errorText}>{pluginError}</div>}
+        {pluginList.length === 0 ? (
+          <div className={s.empty}>暂无已安装插件。</div>
+        ) : (
+          <div className={s.cardList}>
+            {pluginList.map(plugin => (
+              <div key={plugin.id} className={`${s.card} ${plugin.enabled ? '' : s.disabled}`}>
+                <div className={s.cardHead}>
+                  <span className={s.cardName}>{plugin.name}</span>
+                  <span className={plugin.enabled ? s.badge : s.badgeOff}>
+                    {plugin.enabled ? '已启用' : '已禁用'}
+                  </span>
+                  {plugin.dshClient === true && <span className={s.badge}>UI</span>}
+                  {plugin.builtin === true && <span className={s.badgeOff}>内置</span>}
+                  <span className={s.badgeOff}>未验证</span>
+                  {plugin.missing === true && <span className={s.badgeOff}>缺失</span>}
+                  <span className={s.cardActions}>
+                    <button
+                      type="button" className={s.iconButton}
+                      title={plugin.enabled ? '禁用' : '启用'}
+                      aria-label={plugin.enabled ? '禁用' : '启用'}
+                      disabled={pluginBusyId === plugin.id || plugin.missing === true || plugin.builtin === true}
+                      onClick={() => onTogglePlugin(plugin)}
+                    >
+                      {pluginBusyId === plugin.id ? '…' : plugin.enabled ? '⏻' : '○'}
+                    </button>
+                    <button
+                      type="button" className={s.iconButton}
+                      title="卸载" aria-label="卸载"
+                      disabled={pluginBusyId === plugin.id || plugin.builtin === true}
+                      onClick={() => setUninstallDialogPlugin(plugin)}
+                    >
+                      <IconCloseOutline16 size={13} />
+                    </button>
+                  </span>
+                </div>
+                <div className={s.cardMeta}>
+                  <span>v{plugin.version}</span>
+                  {plugin.license !== undefined && <span>{plugin.license}</span>}
+                  <span>{pluginSourceLabel(plugin.source.kind)}</span>
+                  {plugin.description !== undefined && <span>{plugin.description}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className={s.section}>
+        <div className={s.sectionHeader}>
+          <span className={s.sectionTitle}>安装插件</span>
+        </div>
         <div className={s.toolbar}>
           <input
             className={s.input} placeholder="GitHub 仓库 URL 或 zip 直链"
@@ -239,6 +393,29 @@ export function PluginsTab() {
           </>
         )}
       </div>
+
+      {riskDialogPlugin !== null && (
+        <ConfirmActionDialog
+          title="启用插件"
+          message={riskDialogPlugin.dshClient === true
+            ? `${riskDialogPlugin.name}\n\n该插件声明了浏览器端 UI(dsh.client),启用后其前端代码将在本机应用界面内加载。请确认来源可信。`
+            : `${riskDialogPlugin.name}\n\n该插件来自第三方,启用后其代码将在本机执行。请确认来源可信。`}
+          confirmText="启用"
+          danger
+          onCancel={() => setRiskDialogPlugin(null)}
+          onConfirm={() => void confirmRiskEnable()}
+        />
+      )}
+      {uninstallDialogPlugin !== null && (
+        <ConfirmActionDialog
+          title="卸载插件"
+          message={`确定卸载插件「${uninstallDialogPlugin.name}」?`}
+          confirmText="卸载"
+          danger
+          onCancel={() => setUninstallDialogPlugin(null)}
+          onConfirm={() => void confirmUninstall()}
+        />
+      )}
     </div>
   )
 }
@@ -260,4 +437,39 @@ async function onInstallUrlFromMarket(
   } finally {
     setInstalling(false)
   }
+}
+
+/** 确认弹窗(风险提示 / 卸载共用)。 */
+export function ConfirmActionDialog(props: {
+  title: string
+  message: string
+  confirmText: string
+  danger?: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className={s.dialogBackdrop} role="presentation" onMouseDown={props.onCancel}>
+      <div
+        className={s.dialogPanel}
+        role="dialog"
+        aria-label={props.title}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className={s.dialogHead}>
+          <span className={s.dialogTitle}>{props.title}</span>
+          <button type="button" className={s.iconButton} aria-label="关闭" onClick={props.onCancel}>
+            <IconCloseOutline16 size={14} />
+          </button>
+        </div>
+        <pre className={`${s.hint} ${s.confirmMessage}`}>{props.message}</pre>
+        <div className={s.actionRow}>
+          <button type="button" className={s.btnSecondary} onClick={props.onCancel}>取消</button>
+          <button type="button" className={props.danger === true ? s.btnDanger : s.btn} onClick={props.onConfirm}>
+            {props.confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }

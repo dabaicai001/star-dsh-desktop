@@ -10,11 +10,11 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import { AuditTab, formatAuditDetail } from '../src/client/settings/audit.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
-import { PluginsTab } from '../src/client/settings/plugins.tsx'
+import { PluginsTab, ConfirmActionDialog } from '../src/client/settings/plugins.tsx'
 import { AboutTab } from '../src/client/settings/about.tsx'
 import { AiTab } from '../src/client/settings/ai.tsx'
 import {
-  checkForUpdates, logAudit,
+  checkForUpdates, logAudit, type DshPluginInfo,
 } from '../src/client/settings/services.ts'
 import { AI_STORAGE_KEY, loadAiSettings, normalizeAiSettings, saveAiSettings, type AiSettings } from '../src/client/settings/aiSettings.ts'
 
@@ -397,8 +397,8 @@ describe('plugins extra branches', () => {
       // 市场安装(Fresh 未装 → 走 onInstallUrlFromMarket)
       fireEvent.click(screen.getByText('安装'))
       await vi.waitFor(() =>{  expect(installUrl).toHaveBeenCalledWith({ url: 'https://x/fresh' }) })
-      // 市场刷新按钮
-      fireEvent.click(screen.getByText('刷新'))
+      // 市场刷新按钮(已装段 + 市场段各有一个「刷新」,取最后一个即市场)
+      fireEvent.click(screen.getAllByText('刷新').at(-1)!)
       await act(async () => { await Promise.resolve() })
     } finally {
       restore()
@@ -482,7 +482,7 @@ describe('plugins extra branches', () => {
     }
   })
 
-  it('silently ignores installed-list failures (markers only)', async () => {
+  it('surfaces installed-list failures in the list section while the market still renders', async () => {
     const restore = stubTauriInternals({
       dsh_plugin_list: () => { throw 'list raw failure' },
       dsh_plugin_market_fetch: () => ({
@@ -492,9 +492,10 @@ describe('plugins extra branches', () => {
     })
     try {
       render(<PluginsTab />)
-      // 列表失败不打扰:市场仍渲染,无错误文案
-      expect(await screen.findByText('A')).toBeTruthy()
-      expect(screen.queryByText('list raw failure')).toBeNull()
+      // 列表失败在已装段露出,市场仍渲染,不崩
+      expect(await screen.findByText('list raw failure')).toBeTruthy()
+      expect(screen.getByText('A')).toBeTruthy()
+      expect(screen.getByText('暂无已安装插件。')).toBeTruthy()
     } finally {
       restore()
     }
@@ -652,6 +653,323 @@ describe('ai extra branches', () => {
       // 关闭按钮关弹窗
       fireEvent.click(screen.getByLabelText('关闭'))
       expect(screen.queryByRole('dialog', { name: '长期记忆管理' })).toBeNull()
+    } finally {
+      restore()
+    }
+  })
+})
+
+describe('plugins installed list', () => {
+  const ackKey = 'starhub.plugins.enable-acknowledged'
+
+  /** 便捷构造一个已装插件记录(默认 url 来源、未启用、非内置)。 */
+  function plugin(over: Partial<DshPluginInfo> = {}): DshPluginInfo {
+    return {
+      id: 'p1', name: 'P1', version: '1.0.0', source: { kind: 'url' },
+      entry: 'index.js', enabled: false, ...over,
+    }
+  }
+
+  it('renders installed cards with source labels and badges', async () => {
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => ([
+        plugin({ id: 'market', name: 'MarketP', version: '1.0.0', source: { kind: 'market' }, enabled: true }),
+        plugin({ id: 'url', name: 'UrlP', version: '2.0.0', description: 'desc' }),
+        plugin({ id: 'dir', name: 'DirP', version: '3.0.0', source: { kind: 'local-dir' }, enabled: true, license: 'MIT', dshClient: true }),
+        plugin({ id: 'zip', name: 'ZipP', version: '4.0.0', source: { kind: 'local-zip' } }),
+        plugin({ id: 'builtin', name: 'BuiltinP', version: '5.0.0', source: { kind: 'builtin' }, enabled: true, builtin: true }),
+        plugin({ id: 'other', name: 'OtherP', version: '6.0.0', source: { kind: 'weird' }, missing: true }),
+      ]),
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+    })
+    try {
+      render(<PluginsTab />)
+      expect(await screen.findByText('MarketP')).toBeTruthy()
+      expect(screen.getAllByText('已启用').length).toBe(3)
+      expect(screen.getAllByText('已禁用').length).toBe(3)
+      expect(screen.getByText('UI')).toBeTruthy() // dshClient 徽标
+      expect(screen.getAllByText('内置').length).toBe(2) // 徽标 + 来源标签
+      expect(screen.getByText('缺失')).toBeTruthy()
+      expect(screen.getByText('v1.0.0')).toBeTruthy()
+      expect(screen.getByText('MIT')).toBeTruthy()
+      expect(screen.getByText('市场')).toBeTruthy()
+      expect(screen.getByText('URL')).toBeTruthy()
+      expect(screen.getByText('目录')).toBeTruthy()
+      expect(screen.getByText('Zip')).toBeTruthy()
+      expect(screen.getByText('weird')).toBeTruthy()
+    } finally {
+      restore()
+    }
+  })
+
+  it('enables a plugin via the risk dialog after cancel, then confirm', async () => {
+    const setEnabled = vi.fn((..._a: unknown[]) => null)
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => [plugin()],
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+      dsh_plugin_set_enabled: args => setEnabled(args),
+      dsh_shutdown: () => null,
+    })
+    try {
+      render(<PluginsTab />)
+      // 首次启用 → 风险确认(非 UI 类文案)
+      fireEvent.click(await screen.findByLabelText('启用'))
+      const dialog = () => screen.getByRole('dialog', { name: '启用插件' })
+      expect(within(dialog()).getByText(/该插件来自第三方/)).toBeTruthy()
+      // 取消 → 不启用、弹窗关闭
+      fireEvent.click(within(dialog()).getByText('取消'))
+      expect(screen.queryByRole('dialog', { name: '启用插件' })).toBeNull()
+      expect(setEnabled).not.toHaveBeenCalled()
+      // 再次开启 → 确认 → 启用并记 ack
+      fireEvent.click(screen.getByLabelText('启用'))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '启用插件' })).getByText('启用'))
+      await vi.waitFor(() =>{  expect(setEnabled).toHaveBeenCalledWith({ id: 'p1', enabled: true }) })
+      expect(JSON.parse(localStorage.getItem(ackKey) ?? '[]')).toContain('p1')
+    } finally {
+      restore()
+    }
+  })
+
+  it('enables a plugin directly when already acknowledged', async () => {
+    localStorage.setItem(ackKey, JSON.stringify(['p1']))
+    const setEnabled = vi.fn((..._a: unknown[]) => null)
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => [plugin()],
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+      dsh_plugin_set_enabled: args => setEnabled(args),
+      dsh_shutdown: () => null,
+    })
+    try {
+      render(<PluginsTab />)
+      fireEvent.click(await screen.findByLabelText('启用'))
+      expect(screen.queryByRole('dialog', { name: '启用插件' })).toBeNull()
+      await vi.waitFor(() =>{  expect(setEnabled).toHaveBeenCalledWith({ id: 'p1', enabled: true }) })
+    } finally {
+      restore()
+    }
+  })
+
+  it('disables an installed plugin', async () => {
+    const setEnabled = vi.fn((..._a: unknown[]) => null)
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => [plugin({ enabled: true })],
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+      dsh_plugin_set_enabled: args => setEnabled(args),
+      dsh_shutdown: () => null,
+    })
+    try {
+      render(<PluginsTab />)
+      fireEvent.click(await screen.findByLabelText('禁用'))
+      await vi.waitFor(() =>{  expect(setEnabled).toHaveBeenCalledWith({ id: 'p1', enabled: false }) })
+    } finally {
+      restore()
+    }
+  })
+
+  it('surfaces enable failures (Error then string)', async () => {
+    localStorage.setItem(ackKey, JSON.stringify(['p1']))
+    let calls = 0
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => [plugin()],
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+      dsh_plugin_set_enabled: () => {
+        calls += 1
+        if (calls === 1) throw new Error('enable boom')
+        throw 'enable raw'
+      },
+    })
+    try {
+      render(<PluginsTab />)
+      fireEvent.click(await screen.findByLabelText('启用'))
+      expect(await screen.findByText('enable boom')).toBeTruthy()
+      fireEvent.click(screen.getByLabelText('启用'))
+      expect(await screen.findByText('enable raw')).toBeTruthy()
+    } finally {
+      restore()
+    }
+  })
+
+  it('shows the dsh.client risk warning for a UI plugin', async () => {
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => [plugin({ dshClient: true })],
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+    })
+    try {
+      render(<PluginsTab />)
+      fireEvent.click(await screen.findByLabelText('启用'))
+      expect(within(screen.getByRole('dialog', { name: '启用插件' })).getByText(/浏览器端 UI\(dsh\.client\)/)).toBeTruthy()
+    } finally {
+      restore()
+    }
+  })
+
+  it('uninstalls a plugin after confirm, cancels before', async () => {
+    const uninstall = vi.fn((..._a: unknown[]) => null)
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => [plugin()],
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+      dsh_plugin_uninstall: args => uninstall(args),
+      dsh_shutdown: () => null,
+    })
+    try {
+      render(<PluginsTab />)
+      fireEvent.click(await screen.findByLabelText('卸载'))
+      const dialog = () => screen.getByRole('dialog', { name: '卸载插件' })
+      expect(within(dialog()).getByText(/确定卸载插件「P1」/)).toBeTruthy()
+      fireEvent.click(within(dialog()).getByText('取消'))
+      expect(screen.queryByRole('dialog', { name: '卸载插件' })).toBeNull()
+      expect(uninstall).not.toHaveBeenCalled()
+      // 卸载按钮在 busy 时整体禁用;此处无 busy → 正常打开再确认
+      fireEvent.click(screen.getByLabelText('卸载'))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '卸载插件' })).getByText('卸载'))
+      await vi.waitFor(() =>{  expect(uninstall).toHaveBeenCalledWith({ id: 'p1' }) })
+    } finally {
+      restore()
+    }
+  })
+
+  it('surfaces uninstall failures (Error then string)', async () => {
+    let calls = 0
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => [plugin()],
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+      dsh_plugin_uninstall: () => {
+        calls += 1
+        if (calls === 1) throw new Error('uninstall boom')
+        throw 'uninstall raw'
+      },
+    })
+    try {
+      render(<PluginsTab />)
+      fireEvent.click(await screen.findByLabelText('卸载'))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '卸载插件' })).getByText('卸载'))
+      expect(await screen.findByText('uninstall boom')).toBeTruthy()
+      fireEvent.click(screen.getByLabelText('卸载'))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '卸载插件' })).getByText('卸载'))
+      expect(await screen.findByText('uninstall raw')).toBeTruthy()
+    } finally {
+      restore()
+    }
+  })
+
+  it('continues when the ack write fails', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('full') })
+    const setEnabled = vi.fn((..._a: unknown[]) => null)
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => [plugin()],
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+      dsh_plugin_set_enabled: args => setEnabled(args),
+      dsh_shutdown: () => null,
+    })
+    try {
+      render(<PluginsTab />)
+      fireEvent.click(await screen.findByLabelText('启用'))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '启用插件' })).getByText('启用'))
+      // ack 写入失败被吞掉,启用仍照常执行
+      await vi.waitFor(() =>{  expect(setEnabled).toHaveBeenCalledWith({ id: 'p1', enabled: true }) })
+    } finally {
+      setItem.mockRestore()
+      restore()
+    }
+  })
+
+  it('ignores toggling a second plugin while another is busy', async () => {
+    const setEnabled = vi.fn((args?: unknown) => {
+      const id = (args as { id?: string } | undefined)?.id
+      return id === 'A' ? new Promise(() => {}) : null
+    })
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => [plugin({ id: 'A', name: 'A', enabled: true }), plugin({ id: 'B', name: 'B', enabled: true })],
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+      dsh_plugin_set_enabled: args => setEnabled(args),
+      dsh_shutdown: () => null,
+    })
+    try {
+      render(<PluginsTab />)
+      // 触发 A 的禁用,其后端命令永不 resolve → pluginBusyId 保持 'A'
+      fireEvent.click((await screen.findAllByLabelText('禁用'))[0]!)
+      // 再点 B 的禁用 → busy 守卫直接返回,不触发命令
+      fireEvent.click(screen.getAllByLabelText('禁用')[1]!)
+      await vi.waitFor(() =>{  expect(setEnabled).toHaveBeenCalledTimes(1) })
+    } finally {
+      restore()
+    }
+  })
+
+  it('treats a corrupt ack record as unacknowledged (enables via the risk dialog)', async () => {
+    localStorage.setItem(ackKey, 'not-json')
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => [plugin()],
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+    })
+    try {
+      render(<PluginsTab />)
+      fireEvent.click(await screen.findByLabelText('启用'))
+      expect(screen.getByRole('dialog', { name: '启用插件' })).toBeTruthy()
+    } finally {
+      restore()
+    }
+  })
+
+  it('refreshes the installed list from its section header', async () => {
+    let listCalls = 0
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => { listCalls += 1; return [plugin()] },
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [] }),
+    })
+    try {
+      render(<PluginsTab />)
+      await screen.findByText('P1')
+      // 已装段(第一个「刷新」)按钮触发重新拉取
+      fireEvent.click(screen.getAllByText('刷新').at(0)!)
+      await vi.waitFor(() =>{  expect(listCalls).toBeGreaterThanOrEqual(2) })
+    } finally {
+      restore()
+    }
+  })
+
+  it('renders a non-danger confirm, closes on backdrop/close/cancel and stops panel mousedown', async () => {
+    const onCancel = vi.fn()
+    const onConfirm = vi.fn()
+    render(
+      <ConfirmActionDialog title="确认" message="msg" confirmText="确定" onCancel={onCancel} onConfirm={onConfirm} />,
+    )
+    const dialog = screen.getByRole('dialog', { name: '确认' })
+    const backdrop = dialog.parentElement as HTMLElement
+    // 面板内 mousedown 阻止冒泡 → 不触发 backdrop 的 onCancel
+    fireEvent.mouseDown(dialog)
+    expect(onCancel).not.toHaveBeenCalled()
+    // 确认按钮(non-danger → s.btn)
+    fireEvent.click(within(dialog).getByText('确定'))
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+    // 取消 / 关闭按钮
+    fireEvent.click(within(dialog).getByText('取消'))
+    fireEvent.click(within(dialog).getByLabelText('关闭'))
+    expect(onCancel).toHaveBeenCalledTimes(2)
+    // backdrop mousedown → onCancel
+    fireEvent.mouseDown(backdrop)
+    expect(onCancel).toHaveBeenCalledTimes(3)
+  })
+
+  it('pages the market list and clamps an oversized page after a narrower search', async () => {
+    const plugins = Array.from({ length: 7 }, (_, i) =>
+      ({ name: `P${i}`, url: `https://x/p${i}`, description: 'd' }))
+    const restore = stubTauriInternals({
+      dsh_plugin_list: () => [],
+      dsh_plugin_market_fetch: () => ({ stale: false, categories: [{ name: '工具', plugins }] }),
+    })
+    try {
+      render(<PluginsTab />)
+      expect(await screen.findByText('第 1 / 2 页 · 共 7 个插件')).toBeTruthy()
+      fireEvent.click(screen.getByText('下一页'))
+      expect(await screen.findByText('第 2 / 2 页 · 共 7 个插件')).toBeTruthy()
+      fireEvent.click(screen.getByText('上一页'))
+      expect(await screen.findByText('第 1 / 2 页 · 共 7 个插件')).toBeTruthy()
+      // 回到第 2 页后搜索收窄到 1 页 → 页数收敛(覆盖 clamp + search 复位)
+      fireEvent.click(screen.getByText('下一页'))
+      expect(await screen.findByText('第 2 / 2 页 · 共 7 个插件')).toBeTruthy()
+      fireEvent.change(screen.getByPlaceholderText('搜索插件…'), { target: { value: 'P0' } })
+      expect(await screen.findByText('第 1 / 1 页 · 共 1 个插件')).toBeTruthy()
     } finally {
       restore()
     }

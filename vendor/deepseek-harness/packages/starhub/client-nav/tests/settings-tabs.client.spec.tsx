@@ -179,11 +179,12 @@ describe('AlertTab', () => {
 })
 
 describe('PluginsTab', () => {
-  it('shows install entry and empty market in browser preview (no installed-list section)', async () => {
+  it('shows install entry and empty market in browser preview (installed-list empty)', async () => {
     render(<PluginsTab />)
+    expect(screen.getByText('已安装插件')).toBeTruthy()
+    expect(screen.getByText('暂无已安装插件。')).toBeTruthy()
     expect(screen.getByText('安装插件')).toBeTruthy()
     expect(screen.getByText('暂无市场插件。')).toBeTruthy()
-    expect(screen.queryByText('已安装插件')).toBeNull()
   })
 
   it('installs by URL, filters the market and marks installed entries', async () => {
