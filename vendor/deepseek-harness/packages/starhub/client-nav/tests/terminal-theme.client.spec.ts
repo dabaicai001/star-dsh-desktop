@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, afterEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { dshTerminalTheme } from '../src/client/terminal/terminal-theme.ts'
 
 describe('dshTerminalTheme', () => {
