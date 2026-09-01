@@ -715,7 +715,7 @@ func handleMySQLGetRowCount(mgr *pool.Manager) Handler {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]interface{}{"count": count}, nil
+		return count, nil
 	}
 }
 
@@ -1208,7 +1208,7 @@ func handleClickHouseGetRowCount(mgr *pool.Manager) Handler {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]interface{}{"count": count}, nil
+		return count, nil
 	}
 }
 
