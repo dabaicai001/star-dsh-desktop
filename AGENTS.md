@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.112.0(**侧栏品牌 Logo 换成 StarHub**:侧栏顶部的品牌区改为 StarHub 资产——`brandMark`(原 FishLogo)换成 `apps/web/public/starhub-logo.png`(03 字标,边框白边已去除),标题+commit hash 徽标换成 `starhub-badge.png`(04 横版字标,背景已去透明);两图在 DSH web 的 `public/` 静态目录,重建 dsh web 后生效) |
+| 当前版本 | v0.112.2(**堡垒机 MFA 验证码弹窗关闭后重开报 `[MFA_FAILED] Keyboard-interactive response channel dropped`**:关闭弹窗/窗口(或取消连接)时 `ssh_disconnect` 丢弃仍在等待的 keyboard-interactive 应答通道,不再让 in-flight connect 一直阻塞到 360s 超时;同时修掉旧任务醒来后盲目 `remove(session_id)` 误删重开连接新 sender 的竞态(新窗口第一次连接就弹验证码,不再复现报错)) |
 
 ## 架构一句话
 
@@ -127,4 +127,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-01 (v0.112.0)*
+*最后更新: 2026-09-01 (v0.112.2)*

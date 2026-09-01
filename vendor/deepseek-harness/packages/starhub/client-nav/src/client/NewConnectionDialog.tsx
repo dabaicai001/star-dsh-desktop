@@ -775,7 +775,13 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
           </div>
         )}
         {kbPrompt !== null && (
-          <div className={s.kbPanel}>
+          <div className={s.kbPanel} onKeyDown={(event) => {
+            // Enter 在验证码输入框提交(等价点击「提交验证码」)。
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              onKbSubmit()
+            }
+          }}>
             {kbPrompt.instructions !== '' && <div className={s.fieldHint}>{kbPrompt.instructions}</div>}
             {kbPrompt.prompts.map((prompt, index) => (
               <div className={s.formField} key={`${index}-${prompt.prompt}`}>

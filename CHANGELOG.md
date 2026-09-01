@@ -14,6 +14,12 @@
 
 ---
 
+## [0.112.2] - 2026-09-01
+
+### 修复
+- **堡垒机 MFA 验证码弹窗关闭后重开报 `[MFA_FAILED] Keyboard-interactive response channel dropped`**:关闭弹窗/窗口(或取消连接)时 `ssh_disconnect` 丢弃仍在等待的 keyboard-interactive 应答通道,不再让 in-flight connect 一直阻塞到 360s 超时;同时修掉旧任务醒来后盲目 `remove(session_id)` 误删重开连接新 sender 的竞态(新窗口第一次连接就弹验证码,不再复现报错)
+- **堡垒机 MFA 验证码弹窗支持 Enter 快捷提交**:在验证码输入框按 Enter 等价点击「提交验证码」,不再需要移动鼠标点按钮;Esc 可关闭弹窗并断开当前会话
+
 ## [0.112.0] - 2026-09-01
 
 ### 变更

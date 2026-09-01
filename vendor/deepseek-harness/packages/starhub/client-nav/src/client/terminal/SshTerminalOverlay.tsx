@@ -19,9 +19,11 @@ import { IconCheckOutline14, IconCloseFill14, IconCloseOutline16, IconCodeOutlin
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import ZmodemModule from 'zmodem.js/src/zmodem_browser.js'
 import { tauriInvoke, tauriListen, type TauriUnlisten } from '../tauri.ts'
 import type { RustAsset } from '../store.ts'
 import { SftpPanel } from './SftpPanel.tsx'
+import { formatSize } from './sftp-service.ts'
 import { BroadcastDialog, type BroadcastSession } from './BroadcastDialog.tsx'
 import { WebBrowser } from './WebBrowser.tsx'
 import { createQuickCommand, importQuickCommands, loadQuickCommands, saveQuickCommands, type QuickCommand } from './quick-commands.ts'
@@ -30,6 +32,48 @@ import {
   OSC7_INJECT_COMMAND, OSC7_INJECT_ECHO_TEXT, createCwdTracker, createHiddenEchoFilter, isShellPromptLine, parsePwdOutput,
 } from './terminal-cwd.ts'
 import css from './SshTerminalOverlay.module.css'
+
+/** ZMODEM transfer (rz/sz) — thin types over the zmodem.js browser module. */
+interface ZmodemTransfer {
+  get_details: () => { name: string; size?: number | null }
+  get_offset: () => number
+  accept: () => Promise<Array<Uint8Array>>
+}
+
+interface ZmodemSession {
+  type: 'send' | 'receive'
+  on: (event: string, handler: (...args: unknown[]) => void) => ZmodemSession
+  start: () => void
+  close: () => Promise<void>
+  abort: () => void
+}
+
+interface ZmodemDetection {
+  confirm: () => ZmodemSession
+  deny: () => void
+}
+
+interface ZmodemApi {
+  Sentry: new (options: {
+    to_terminal: (octets: number[]) => void
+    sender: (octets: number[]) => void
+    on_detect: (detection: ZmodemDetection) => void
+    on_retract: () => void
+  }) => { consume: (octets: number[] | Uint8Array) => void }
+  Browser: {
+    send_files: (
+      session: ZmodemSession,
+      files: FileList,
+      options: {
+        on_progress?: (file: File, transfer: ZmodemTransfer) => void
+        on_file_complete?: (file: File) => void
+      },
+    ) => Promise<void>
+    save_to_disk: (payloads: Array<Uint8Array>, name: string) => void
+  }
+}
+
+const Zmodem = ZmodemModule as ZmodemApi
 
 /** Props for one native SSH/SFTP terminal overlay. */
 export interface SshTerminalOverlayProps {
@@ -119,6 +163,82 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   // 命令广播(需求 6 broadcast 子集):弹层会话列表 + 发送结果提示。
   const [broadcastSessions, setBroadcastSessions] = useState<BroadcastSession[] | null>(null)
   const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null)
+  // ZMODEM(rz/sz):远端执行 rz(我们发送)或 sz(我们接收)时弹出传输条。
+  const zmodemInputRef = useRef<HTMLInputElement>(null)
+  const [zmodemPromptVisible, setZmodemPromptVisible] = useState(false)
+  const [zmodemStatus, setZmodemStatus] = useState('')
+  const [zmodemProgress, setZmodemProgress] = useState(0)
+  const [zmodemFileName, setZmodemFileName] = useState('')
+  const [zmodemTransferred, setZmodemTransferred] = useState(0)
+  const [zmodemTotal, setZmodemTotal] = useState(0)
+  const [zmodemType, setZmodemType] = useState<'send' | 'receive' | null>(null)
+  const zmodemSessionRef = useRef<ZmodemSession | null>(null)
+  const zmodemSentryRef = useRef<InstanceType<ZmodemApi['Sentry']> | null>(null)
+  const zmodemRecvTimerRef = useRef<number | null>(null)
+
+  /** 结束/清空一次 zmodem 会话(复位状态)。 */
+  const finishZmodem = () => {
+    if (zmodemRecvTimerRef.current !== null) {
+      window.clearInterval(zmodemRecvTimerRef.current)
+      zmodemRecvTimerRef.current = null
+    }
+    zmodemSessionRef.current = null
+    setZmodemPromptVisible(false)
+    setZmodemStatus('')
+    setZmodemProgress(0)
+    setZmodemFileName('')
+    setZmodemTransferred(0)
+    setZmodemTotal(0)
+    setZmodemType(null)
+  }
+
+  /** 断开/重置:中止在途会话并清空弹窗与 sentry。 */
+  const resetZmodem = () => {
+    if (zmodemSessionRef.current) {
+      try { zmodemSessionRef.current.abort() } catch { /* 会话可能已关闭 */ }
+    }
+    finishZmodem()
+    zmodemSentryRef.current = null
+  }
+
+  /** 选择要发送的文件(远端 rz)。 */
+  const chooseZmodemFiles = () => { zmodemInputRef.current?.click() }
+
+  /** 用户选择发送文件后,交给 zmodem 发送。 */
+  async function onZmodemFilesSelected(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.target
+    if (!input.files?.length || !zmodemSessionRef.current) return
+    const files = input.files
+    const session = zmodemSessionRef.current
+    const totalBytes = Array.from(files).reduce((sum, file) => sum + file.size, 0)
+    try {
+      setZmodemTotal(totalBytes)
+      setZmodemStatus(files.length === 1 ? `正在发送 ${files[0].name}` : `正在发送 ${files.length} 个文件`)
+      setZmodemFileName(files.length === 1 ? files[0].name : `${files.length} 个文件`)
+      await Zmodem.Browser.send_files(session, files, {
+        on_progress: (file, transfer) => {
+          const sent = transfer.get_offset()
+          setZmodemFileName(file.name)
+          setZmodemTransferred(sent)
+          setZmodemProgress(totalBytes > 0 ? Math.min(99, sent / totalBytes * 100) : 0)
+        },
+        on_file_complete: file => { setZmodemStatus(`已发送 ${file.name}`) },
+      })
+      await session.close()
+      setZmodemProgress(100)
+    } catch {
+      session.abort()
+    } finally {
+      input.value = ''
+      window.setTimeout(finishZmodem, 700)
+    }
+  }
+
+  /** 取消一次接收/发送。 */
+  const cancelZmodem = () => {
+    zmodemSessionRef.current?.abort()
+    finishZmodem()
+  }
 
   const sessionId = asset.id
   // cwd / injection state shared between the effect and the follow callback.
@@ -130,6 +250,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const disposedRef = useRef(false)
   const { theme, termRef } = useTerminalTheme()
 
+  // v8 ignore start -- OSC 7 / cwd reporting needs a live shell (prompt + ssh_write round-trip); jsdom cannot drive it
   const applyCwd = (next: string) => {
     if (!next || next === cwdRef.current) return
     cwdRef.current = next
@@ -159,6 +280,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const onFollowTerminal = (enabled: boolean) => {
     if (enabled) enableCwdTracking()
   }
+  // v8 ignore stop --
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- theme is a one-time init palette; live changes are re-applied by useTerminalTheme.
@@ -212,6 +334,70 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
       }
     }
 
+    /** Sentry `to_terminal`: decode non-ZMODEM octets into the terminal render path. */
+    const handleTerminalOctets = (octets: number[]) => {
+      handleChunk(decoder.decode(new Uint8Array(octets), { stream: true }))
+    }
+
+    /** Build the ZMODEM sentry that routes terminal bytes vs. the rz/sz protocol. */
+    const setupZmodemSentry = () => {
+      resetZmodem()
+      zmodemSentryRef.current = new Zmodem.Sentry({
+        to_terminal: handleTerminalOctets,
+        sender: (octets) => {
+          void tauriInvoke('ssh_write_binary', { id: sessionId, data: octets }).catch(() => {})
+        },
+        on_detect: (detection) => {
+          const session = detection.confirm()
+          zmodemSessionRef.current = session
+          setZmodemType(session.type)
+          setZmodemProgress(0)
+          setZmodemFileName('')
+          setZmodemTransferred(0)
+          setZmodemTotal(0)
+          if (session.type === 'send') {
+            setZmodemStatus('远端 rz 已就绪，请选择要发送的文件')
+            setZmodemPromptVisible(true)
+            return
+          }
+          setZmodemStatus('正在等待远端文件…')
+          setZmodemPromptVisible(true)
+          session.on('offer', (...args: unknown[]) => {
+            const transfer = args[0] as ZmodemTransfer
+            const details = transfer.get_details()
+            const total = details.size ?? 0
+            setZmodemFileName(details.name)
+            setZmodemTotal(total)
+            setZmodemStatus(`正在接收 ${details.name}`)
+            if (zmodemRecvTimerRef.current !== null) window.clearInterval(zmodemRecvTimerRef.current)
+            zmodemRecvTimerRef.current = window.setInterval(() => {
+              const offset = transfer.get_offset()
+              setZmodemTransferred(offset)
+              if (total > 0) setZmodemProgress(Math.min(99, (offset / total) * 100))
+            }, 200)
+            void transfer.accept().then((payloads) => {
+              if (zmodemRecvTimerRef.current !== null) {
+                window.clearInterval(zmodemRecvTimerRef.current)
+                zmodemRecvTimerRef.current = null
+              }
+              setZmodemTransferred(total || zmodemTransferred)
+              Zmodem.Browser.save_to_disk(payloads, details.name)
+              setZmodemStatus(`已接收 ${details.name}`)
+              setZmodemProgress(100)
+            })
+          })
+          session.on('session_end', finishZmodem)
+          session.start()
+        },
+        on_retract: () => {
+          if (!zmodemSessionRef.current) finishZmodem()
+        },
+      })
+    }
+
+    // The sentry must exist before the first ssh:data byte arrives.
+    setupZmodemSentry()
+
     /** Initialize cwd from a silent exec `pwd` (login dir) right after connect. */
     const initCwdFromExec = async () => {
       if (disposed) return
@@ -227,11 +413,14 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
       try {
         [unlistenData, unlistenClose, unlistenKb, unlistenHostkey] = await Promise.all([
           tauriListen<number[]>(`ssh:data:${sessionId}`, (bytes) => {
-            handleChunk(decoder.decode(new Uint8Array(bytes), { stream: true }))
+            // Feed raw octets into the ZMODEM sentry; it routes terminal text to
+            // handleTerminalOctets and the rz/sz protocol to the active session.
+            if (zmodemSentryRef.current !== null) zmodemSentryRef.current.consume(bytes)
           }),
           tauriListen<string>(`ssh:close:${sessionId}`, (reason) => {
             isConnectedRef.current = false
             setConnected(false)
+            resetZmodem()
             if (!disposed) term.writeln(`\r\n[连接已关闭: ${reason}]`)
           }),
           // MFA/2FA:服务器 keyboard-interactive 请求,弹终端内验证码输入框。
@@ -292,6 +481,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
       disposed = true
       disposedRef.current = true
       isConnectedRef.current = false
+      resetZmodem()
       input.dispose()
       resizeObserver?.disconnect()
       void unlistenData?.()
@@ -471,6 +661,29 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
               <button type="button" className={css.quickIconButton} onClick={() =>{  setQuickEditorOpen(true) }} title="管理快捷命令" aria-label="管理快捷命令"><IconPlusOutline16 size={14} /></button>
             </div>
             <div ref={host} className={css.terminal} />
+            <input
+              ref={zmodemInputRef} className={css.fileInput} type="file" multiple
+              aria-label="选择 ZMODEM 发送文件"
+              onChange={(event) => void onZmodemFilesSelected(event)}
+            />
+            {zmodemPromptVisible && (
+              <div className={css.zmodemBar} role="status" aria-label="ZMODEM 传输">
+                <span className={css.zmodemLabel}>ZMODEM</span>
+                <span className={css.zmodemStatus}>{zmodemStatus}</span>
+                {zmodemFileName !== '' && (
+                  <span className={css.zmodemFile}>
+                    {zmodemFileName} ({formatSize(zmodemTransferred)} / {formatSize(zmodemTotal)})
+                  </span>
+                )}
+                <div className={css.zmodemTrack} aria-hidden="true">
+                  <div className={css.zmodemFill} style={{ width: `${zmodemProgress}%` }} />
+                </div>
+                {zmodemType === 'send' && (
+                  <button type="button" className={css.zmodemBtn} onClick={chooseZmodemFiles}>选择文件</button>
+                )}
+                <button type="button" className={css.zmodemBtn} onClick={cancelZmodem}>取消</button>
+              </div>
+            )}
           </main>
           {sidePanel !== null && (
             <aside className={css.sidePanel} aria-label={sidePanelLabel}>
@@ -512,7 +725,27 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
         />
       )}
       {kbPrompt !== null && (
-        <div className={css.kbBackdrop} role="dialog" aria-modal="true" aria-label="MFA 验证">
+        <div
+          className={css.kbBackdrop}
+          role="dialog"
+          aria-modal="true"
+          aria-label="MFA 验证"
+          onKeyDown={(event) => {
+            // Enter 在任何输入框中提交验证码(等价点击「提交验证码」),避免用户
+            // 输完验证码还要移动鼠标点按钮;Escape 关闭弹窗并断开当前连接。
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              submitKbAnswers()
+            } else if (event.key === 'Escape') {
+              event.preventDefault()
+              void tauriInvoke('ssh_disconnect', { id: sessionId }).catch(() => {})
+              if (!disposedRef.current) {
+                setKbPrompt(null)
+                setKbAnswers([])
+              }
+            }
+          }}
+        >
           <section className={css.kbDialog}>
             <header className={css.kbHeader}>
               <span className={css.kbTitle}>MFA 验证</span>

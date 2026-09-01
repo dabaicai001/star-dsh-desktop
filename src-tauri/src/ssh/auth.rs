@@ -108,8 +108,9 @@ impl client::Handler for SshHandler {
             match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
                 Ok(Ok(v)) => v,
                 Ok(Err(_)) => {
-                    let mut pending = self.pending_hostkey.lock().await;
-                    pending.remove(&self.session_id);
+                    // 通道被丢弃(disconnect 清理或新 connect 顶掉本条):不能盲目
+                    // remove(session_id),否则会误删仍在等待的新 sender。让清理交给
+                    // disconnect / 超时 / 新 connect 的 insert 覆盖。
                     return Err(anyhow::anyhow!(
                         "[HOSTKEY_REJECTED] Host key prompt channel dropped"
                     ));

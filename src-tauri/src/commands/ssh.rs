@@ -576,6 +576,14 @@ pub async fn ssh_disconnect(
         .remove_channel_for_attempt(&id, invalidated_generation.wrapping_sub(1))
         .await;
 
+    // 主动断开(关闭窗口/取消连接)时,丢弃仍在等待前端输入的 MFA / 主机密钥
+    // 应答通道。否则 in-flight connect 会一直阻塞到 360s 超时;期间用户重开
+    // 同一资产的窗口会触发新的 connect,其 insert 会顶掉旧 sender,而旧任务
+    // 醒来后盲目 remove(session_id) 会误删新 connect 的 sender,导致新窗口
+    // 报 [MFA_FAILED] Keyboard-interactive response channel dropped(见图片2)。
+    manager.pending_kb.lock().await.remove(&id);
+    manager.pending_hostkey.lock().await.remove(&id);
+
     // 联动 M1(契约 §2.1「断线」):断开的是受跟踪会话时,注册表条目一并移除,
     // 并向 dsh 补发 registry.sync 全量快照(无 runtime 静默跳过)。
     if registry.remove_session(&id).is_some() {

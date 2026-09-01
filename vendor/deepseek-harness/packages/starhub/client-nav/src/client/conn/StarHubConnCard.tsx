@@ -275,7 +275,25 @@ export function StarHubConnCard() {
 
   const assetName = state.sessionId.replace(/^dsh:/, '').replace(/:ssh$/, '')
   return (
-    <div className={css.backdrop} role="dialog" aria-modal="true" aria-label="MFA 验证">
+    <div
+      className={css.backdrop}
+      role="dialog"
+      aria-modal="true"
+      aria-label="MFA 验证"
+      onKeyDown={(event) => {
+        // Enter 提交验证码;连接成功态下 Enter 等价「完成」。Escape 取消连接卡并
+        // 断开当前 AI 会话,避免无输入时一直挂到 360s 超时。
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          if (state.connected) closeMfa()
+          else submitMfa()
+        } else if (event.key === 'Escape') {
+          event.preventDefault()
+          void tauriInvoke('ssh_disconnect', { id: state.sessionId }).catch(() => {})
+          closeMfa()
+        }
+      }}
+    >
       <section className={css.card}>
         <header className={css.head}>
           <span className={css.title}>MFA 验证</span>

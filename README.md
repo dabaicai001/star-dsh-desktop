@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.112.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.112.2-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,40 +48,12 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
+### v0.112.2 (2026-09-01)
+- 🐛 **堡垒机 MFA 验证码弹窗关闭后重开报 `[MFA_FAILED] Keyboard-interactive response channel dropped`**:关闭弹窗/窗口(或取消连接)时 `ssh_disconnect` 丢弃仍在等待的 keyboard-interactive 应答通道,不再让 in-flight connect 一直阻塞到 360s 超时;同时修掉旧任务醒来后盲目 `remove(session_id)` 误删重开连接新 sender 的竞态(新窗口第一次连接就弹验证码,不再复现报错)
+- 🐛 **堡垒机 MFA 验证码弹窗支持 Enter 快捷提交**:在验证码输入框按 Enter 等价点击「提交验证码」,不再需要移动鼠标点按钮;Esc 可关闭弹窗并断开当前会话
+
 ### v0.112.0 (2026-09-01)
 - 🔧 **侧栏品牌 Logo 换成 StarHub**:侧栏顶部的品牌区改为 StarHub 资产——`brandMark`(原 FishLogo)换成 `apps/web/public/starhub-logo.png`(03 字标,边框白边已去除),标题+commit hash 徽标换成 `starhub-badge.png`(04 横版字标,背景已去透明);两图在 DSH web 的 `public/` 静态目录,重建 dsh web 后生效
-
-### v0.111.0 (2026-09-01)
-- ✨ **恢复「已安装插件」列表与启停/卸载入口(设置 → 插件)**:按用户要求恢复此前下线的「已安装插件」段,列出所有已装 dsh 插件(名称/版本/来源/许可证/描述 + 已启用/禁用、UI/内置/缺失徽标),每项提供启用/禁用开关与卸载按钮(内置与缺失插件禁用这两个操作);首次启用弹风险确认卡(本机代码权限,按插件 id 经 localStorage 记一次确认 `starhub.plugins.enable-acknowledged`,UI 插件显示 `dsh.client` 文案),卸载同样弹确认;变更后经 `dsh_shutdown` 重启 runtime 生效。已装列表加载失败不再静默吞掉(在列表段露出错误,市场仍正常渲染)
-- 🐛 **SFTP 文件列表底部被裁切**:`SftpPanel` 文件列表滚动容器补 `padding-bottom: 8px`,最后一行内容不再与面板底边齐平/被裁,滚动到底时末尾几行完整可见
-- 🐛 **数据库表分页恒 1/1(row count 不回填)**:sidecar 的 `db.mysql.getRowCount` / `db.clickhouse.getRowCount` 此前返回 `{count: N}` 对象,而前端 `DbDataGrid`(以及测试桩)期望裸数字,导致 `baseCount` 永远不设置、无筛选时分页基数恒 0、页码恒显「1 / N」且表头不复位行数;两个 handler 改为直接返回 `count`(数字),前后端契约一致
-
-### v0.110.0 (2026-09-01)
-- 🔧 **工作台独立窗口跟随 DSH 深浅色主题**:`App.tsx` 新增 `resolveWindowTheme`(opener 传 `dark` 参数命中则用,缺省按系统 `prefers-color-scheme` 解析),`mount` 显式落地 DSH 深浅色 token 切换并在 system 模式监听系统切换;`index.ts` 不再向工作台注入 StarHub 自有历史令牌(`--dsw-accent` / `--dsw-font-mono` / `--dsw-shadow-popover`),统一消费 ui-theme 的 `--dsw-alias-*` 语义别名,`openNewPage` 透传 `dark` 参数让窗口跟随主壳主题
-- 🔧 **client-nav 样式迁移到设计令牌**:多个 `.module.css` 把硬编码十六进制颜色迁移到 `--dsw-alias-*` 语义别名(深浅色由 ui-theme 统一处理)
-- 🔧 **新增 terminal-theme 终端配色**:`terminal-theme.ts` 与 `terminal-theme.client.spec.ts`(终端深浅色主题)
-- 🔧 **es-service / es-service 单测调整**:Elasticsearch 元数据与 size 逻辑同步更新
-
-### v0.109.1 (2026-09-01)
-- 🐛 **SFTP 文件列表过长时滚动条遮挡右侧(file size/末行点击区)**:`SftpPanel` 文件列表加 `scrollbar-gutter: stable` + `overflow-x: hidden`,滚动条始终预留槽位,不再盖住右侧列;末行点击区不再被遮
-- 🐛 **DB 表切换后残留排序/筛选导致 SQL 1054「Unknown column 'xxx' in 'order clause'」**:`DbDataGrid` 切表时一并重置排序(orderBy/orderDir)、列筛选(columnFilters)与分页(page)(此前只重置 WHERE 条件,切换表后沿用上一张表的列会报 Unknown column);并给数据网格加 `key={selected.table}` 在切表时干净重挂载
-- 🐛 **Redis 结构类型保存报「HSET requires key field value [field value ...]」**:sidecar `parseRedisCommand` 此前用 `current.Len()>0` 判断 token 结束,把 `redisQuote("")` 生成的空引用串 `""` 丢弃成空 token,HSET/LSET 等命令参数不足;改 `inToken` 标志保留空 token。另修 HSET 校验 `(len(parts)-1)%2` 的 off-by-one(单对 field/value 恒被拒),对齐 ZADD 的 `(len(parts)-2)%2`
-- 🔧 **数据库左侧树侧边栏美化**:库行加数据图标、表行加表图标,展开箭头用真实 chevron SVG(替换 `▾/▸`),选中表行加左侧 accent 条与图标高亮,行距/圆角/间距对齐设计令牌
-- 🔧 **SSH / 数据库 / Redis 页面文字充当的图标替换为真实 SVG 图标**:SSH 终端标签 `›_`→代码图标、通知 `✓`/`×`→Check/Close 图标、快捷命令删除 `×`;DB 查询标签 `×`、`＋ 新建查询`、树箭头;Redis 值编辑器删除 `✕`/撤销 `↩`/新增 `＋`/清除筛选 `×`;Redis 工作台重命名 `⟳`、删除 `✕`、文件夹箭头 `▾▸`、清空 DB `⌀`、CLI `⌨`、新建 Key `＋`
-
-### v0.109.0 (2026-08-31)
-- ✨ **新增 AI 工具 `android_ui_tree`(结构化坐标来源,根治读图估坐标误差)**:导出当前界面无障碍节点树(`uiautomator dump` 落 `/data/local/tmp/starhub/` 后 base64 回传,免疫旧版 adb exec-out 的 CRLF 损坏),解析出可点击/有文字节点清单——每项含中心点坐标(设备物理像素,可直接传 `android_tap`)、文字、desc、resource-id、类名;点击定位从「截图估像素」变「查表取精确坐标」(此前观测到把顶部横幅误当列表首行、整列 y 偏移一个行高的纯视觉误差)。shell 权限走 UiAutomation,不需要手机开无障碍服务;锁屏/FLAG_SECURE 安全页/游戏等自绘画面返回空并提示回退截图;`maxNodes` 参数控制返回上限(默认 200,上限 500)
-
-### v0.108.0 (2026-08-31)
-- ✨ **工具面板新增「Android」子类(adb 设备列表)**:侧栏工具面板此前只有 终端/数据库/Docker/沙箱桌面,Android 实体机无处可看;新增 Android 子类(无资产概念,与沙箱桌面同姿势特判),展开渲染设备卡片列表(型号/serial/状态徽标,unauthorized 提示「请在手机上允许 USB 调试」、offline 提示拔插重试),就绪设备带「打开直播」按钮(独立窗口围观,窗口内可切接管);新增 UI 命令 `android_ui_list_devices`(只读免授权)与 `android_ui_open_live`(用户点击 = 审批表达,分辨率现场探测,与 AI 路径共用 `open_live_window`),并同步 `permissions/commands.toml` ACL
-- 🐛 **Android 截图坐标反复点偏(AI 把缩略图坐标当物理像素直传)**:截图落盘是设备物理分辨率 PNG,但 read_image 回灌给模型的是缩小图(如 1200x2670 → 920x2047),工具描述只说「物理像素」没提换算,模型把显示图坐标直接当点击坐标,落点整体偏左上约 1.3 倍。修复:`android_screenshot` 结果直读 PNG IHDR 注明当次真实分辨率(不信任 connect 时缓存的 `wm size`,任意机型/横竖屏/改分辨率都免疫),并写明「坐标 = 截图原始文件像素;read_image 注明 multiply coordinates by k 时先把图上坐标乘 k」;`android_tap`/`android_double_tap`/`android_swipe`/`android_scroll` 工具描述同步写明换算规则,不写死任何分辨率数值
-
-### v0.107.0 (2026-08-31)
-- ✨ **Android 实体机直连(adb,设计见 `docs/superpowers/specs/2026-08-30-android-device-design.md`)**:AI 经 adb 直接操作用户真实的 Android 手机(开发者模式 → USB 调试 / 无线调试),与沙箱桌面并列、互不影响
-- ✨ **直播窗口(围观/接管,对齐沙箱语义)**:`android_open_live` 打开独立窗口,画面经 `android-live://` custom protocol 供给——scrcpy 模式(bundled scrcpy-server v2.7,SHA256 钉死,H.264 经 adb forward 回本机,直播页 WebCodecs 增量解码)不可用时自动降级截图轮询;接管期间 AI 写操作一律拒绝;窗口销毁自动回收
-- ✨ **安全模型**:任务级授权由 Rust 宿主在执行点强制(serial 匹配/过期);`android_exec` 恒确认 hard(never 预设也不静默);pull/push/wireless 恒确认软档;每次写操作前自动截屏留档(`android_replay` 可查);`android_type` 文本不进审计(只记长度)
-- ✨ **adb 二进制供给**:设置(设置 → Android 设备 tab)→ STARHUB_ADB_PATH → PATH → 平台常见位置四级解析;全部缺失时报错带三平台安装引导,AI 可用本机工具代装;旧版 adb exec-out 的 CRLF 二进制损坏自动修复
-- ✨ **配套**:Rust 新增 `android` 模块(19 工具 + custom protocol + scrcpy 通道,纯函数单测覆盖);前端新增设置「Android 设备」tab;19 个 AI 工具进审批风险门(android_exec hard / 传输与无线软档 / connect=任务级授权)
 
 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

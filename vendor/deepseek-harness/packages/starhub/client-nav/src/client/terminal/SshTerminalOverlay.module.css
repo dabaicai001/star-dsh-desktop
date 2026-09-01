@@ -100,5 +100,15 @@
 .hkBtnSecondary:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
 .hkBtnPrimary { border: 1px solid var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-label-primary); }
 .hkBtnPrimary:hover { background: var(--dsw-alias-state-business-primary); }
+
+/* ZMODEM (rz/sz) transfer bar: sits under the terminal while a transfer is live. */
+.zmodemBar { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 7px 12px; border-top: 1px solid var(--dsw-alias-state-business-primary); background: var(--dsw-alias-bg-layer-3); }
+.zmodemLabel { color: var(--dsw-alias-state-business-primary); font-size: 11px; font-weight: 750; font-family: var(--ds-font-family-code); }
+.zmodemStatus { min-width: 0; color: var(--dsw-alias-label-primary); font-size: 12px; }
+.zmodemFile { color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code); font-size: 10px; white-space: nowrap; }
+.zmodemTrack { min-width: 60px; flex: 1; height: 4px; border-radius: 2px; overflow: hidden; background: var(--dsw-alias-border-l1); }
+.zmodemFill { height: 100%; background: var(--dsw-alias-state-business-primary); }
+.zmodemBtn { border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 3px 9px; background: var(--dsw-alias-button-floating-hover); color: var(--dsw-alias-label-primary); cursor: pointer; font-size: 11px; }
+.zmodemBtn:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
 @media (max-width: 840px) { .sidePanel { width: 42%; min-width: 290px; } .connectionState { display: none; } }
 @media (max-width: 680px) { .workspace { flex-direction: column; } .sidePanel { width: auto; min-width: 0; min-height: 42%; flex: 1 1 42%; border-top: 1px solid var(--dsw-alias-border-l2); border-left: 0; } .workspaceTabs { min-height: 38px; padding-inline: 4px; } .terminalTab, .workspaceTab, .workspaceTabActive { padding-inline: 8px; } .broadcastAction { padding: 6px 8px; } }

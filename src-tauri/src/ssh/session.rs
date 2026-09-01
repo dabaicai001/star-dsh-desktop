@@ -2507,7 +2507,13 @@ async fn authenticate_keyboard_interactive(
                 {
                     Ok(Ok(r)) => r,
                     Ok(Err(_)) => {
-                        pending_kb.lock().await.remove(session_id);
+                        // 通道被丢弃:要么 ssh_disconnect 已清理本条(entry 已不在),
+                        // 要么重开窗口的新 connect 已用新 sender 顶掉本条。两种情况下
+                        // 都不能再 remove(session_id)——旧任务盲目删除会误删新 connect
+                        // 仍在等待的 sender,使新窗口报 [MFA_FAILED] Keyboard-interactive
+                        // response channel dropped。让清理交给 disconnect / 超时 / 新 connect
+                        // 的 insert 覆盖。超时路径(Err)仍安全删除:超时意味着本条 sender
+                        // 仍在 map 里(否则早就换走 Ok(Err) 分支),删除不会误伤他人。
                         return Err("[MFA_FAILED] Keyboard-interactive response channel dropped"
                             .to_string());
                     }
