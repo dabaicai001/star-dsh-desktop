@@ -362,6 +362,9 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      - name: Check out source (for CHANGELOG at the tag)
+        uses: actions/checkout@v4
+
       - name: Download installers
         uses: actions/download-artifact@v4
         with:
@@ -369,11 +372,42 @@ jobs:
           path: release-artifacts
           merge-multiple: true
 
+      - name: Extract release notes from CHANGELOG.md
+        # 从 CHANGELOG.md 生成 Release 正文(升级变更日志)。
+        # 优先提取当前版本节 `## [<version>]`(发版时改动会从 [未发布] 移到
+        # 版本节);找不到版本节才回退 `## [未发布]`。
+        # 提取范围:命中的 `## [` 到下一个 `---` 分隔符;剔除「### 计划中」块
+        # (未发布计划,不该进已发布版本的 notes)。发版约定见 AGENTS.md 版本纪律。
+        shell: bash
+        env:
+          REL_VERSION: ${{ github.ref_name }}   # 形如 v0.114.1
+        run: |
+          VER="${REL_VERSION#v}"
+          if grep -q "^## \[$VER\]" CHANGELOG.md; then
+            SECTION="$VER"
+          else
+            SECTION="未发布"
+            echo "::warning::CHANGELOG.md 没有版本节 '## [$VER]',回退到 '## [未发布]' 提取"
+          fi
+          awk -v sec="$SECTION" '
+            /^## \[/ { if (active) exit; if ($0 == "## [" sec "]") active = 1; next }
+            active && /^---/ { exit }
+            active && /^### 计划中/ { planned = 1 }
+            active && !planned { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "::warning::未提取到可用变更日志,Release 将不带正文"
+          else
+            echo "---- extracted release notes ----"
+            cat RELEASE_NOTES.md
+          fi
+
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
           name: StarHub ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: false
           fail_on_unmatched_files: true
           files: |
             release-artifacts/**/*.exe
