@@ -13,6 +13,7 @@
 - **SFTP 文件列表底部留空 + 右键菜单防遮挡**:`.fileList` 底部 padding 8px→36px,滑到底部不再紧贴面板边缘;右键菜单位置钳制到视口内(底部/右侧留 8px 边距),避免菜单被裁切
 
 ### 修复
+- **文件信息弹窗内容区不撑满、底部大面积留白**:`.body`(FileInfoDialog)只设了 flex-column 无常高,内部 `.editor` 的 `flex:1` 无确定高度可拉伸,内容只撑到 `min-height` 就停下。给 `.body` 补 `flex:1; min-height:0`(与 FileViewerOverlay `.columns` 同模式),编辑/预览区占满剩余高度,弹窗底部不再留白
 - **dsh-status-rotator 一类 UI 插件「装了但用不了」——patch 追加粘连致 YAML 失败**:`rewrite_patch_port` 用 `template.lines().join("\n")` 重写 `cordis.patch.yml`,`lines()` 会吞掉末行换行;随后 `sync_user_client_plugins` 用 `push_str` 在末尾追加用户插件的 `- id:` entry,与最后一行(如 commit-message 的 `timeoutMs`)粘连成非法 YAML(`timeoutMs: 30000    - id: 'dsh-status-rotator'`)→ dsh web 组合 boot 报 `YAMLException: bad indentation of a mapping entry`、就绪探测 60s 超时 → 触发「坏插件自救」把插件误禁(启停后重启死循环),正是 dsh-status-rotator 这类 UI 插件「启用了但用不了」的根因。修复:① `rewrite_patch_port` 在模板以换行结尾时补回末行换行;② `sync_user_client_plugins` 追加前强制以换行开头(任何输入都不破坏 yml 结构)。补回归单测;坏插件自救保留为兜底,不再误伤正常插件
 - **SSH 终端「等待终端连接…」状态文字为白色**:`SftpPanel` 状态栏 `.waiting` 由 `--dsw-alias-state-warn-primary`(琥珀色,浅色主题下读作近白)改为近黑色的 `--dsw-alias-label-primary`
 - **插件「重启 dsh web」按钮报 `Command dsh_web_restart not allowed by ACL`**:新增的 `dsh_web_restart` Tauri command 已注册进 `generate_handler!` 与前端按钮,但漏在 `src-tauri/permissions/commands.toml` 的 `starhub-commands` ACL 清单中登记——tauri 2.x 对 remote origin(127.0.0.1 dsh 主壳)的 app command 也走 ACL,未登记的 command 直接被拒,插件增删/启停后点「重启 dsh web」永远失败,新启用的 `dsh.client` 插件无法重新注入 web 运行时(这正是 dsh-status-rotator 一类 UI 插件「装了但用不了」的成因)。补上 ACL 登记,重启按钮恢复可用

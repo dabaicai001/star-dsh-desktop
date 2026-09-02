@@ -25,6 +25,11 @@
   min-width: 0;
   flex-direction: column;
   gap: 10px;
+  /* 让本层 body 占满 Modal .body(已是 flex:1 + overflow:auto)的剩余高度,
+     否则 .editor 的 flex:1 无确定高度可拉伸,内容区只撑到 min-height 就停下,
+     底部大面积留白(与 FileViewerOverlay .columns 同模式)。 */
+  flex: 1;
+  min-height: 0;
 }
 
 .banner {
