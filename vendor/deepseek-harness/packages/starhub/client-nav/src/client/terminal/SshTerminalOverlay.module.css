@@ -57,7 +57,11 @@
 .quickAdd, .quickDone { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 6px 10px; background: var(--dsw-alias-button-floating-hover); color: var(--dsw-alias-label-primary); cursor: pointer; font-size: 12px; }
 .quickAdd:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
 .quickDone { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-label-primary); font-weight: 700; }
-.sidePanel { display: flex; width: min(44vw, 560px); min-width: 340px; min-height: 0; flex: 0 1 500px; flex-direction: column; border-left: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); }
+.sidePanel { display: flex; width: min(44vw, 560px); min-width: 340px; min-height: 0; flex: 0 1 var(--side-panel-width, 500px); flex-direction: column; border-left: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); }
+
+/* SFTP / 网页面板左边框拖拽把手:细分隔条,横向拖动调整面板宽度。 */
+.sidePanelResize { flex: none; width: 6px; margin-left: -6px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
+.sidePanelResize:hover, .sidePanelResize:active { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent); }
 .sidePanelHeader { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 10px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-3); }
 .sidePanelHeader > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .sidePanelTitle { color: var(--dsw-alias-label-primary); font-size: 12px; font-weight: 750; }
@@ -111,4 +115,4 @@
 .zmodemBtn { border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 3px 9px; background: var(--dsw-alias-button-floating-hover); color: var(--dsw-alias-label-primary); cursor: pointer; font-size: 11px; }
 .zmodemBtn:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
 @media (max-width: 840px) { .sidePanel { width: 42%; min-width: 290px; } .connectionState { display: none; } }
-@media (max-width: 680px) { .workspace { flex-direction: column; } .sidePanel { width: auto; min-width: 0; min-height: 42%; flex: 1 1 42%; border-top: 1px solid var(--dsw-alias-border-l2); border-left: 0; } .workspaceTabs { min-height: 38px; padding-inline: 4px; } .terminalTab, .workspaceTab, .workspaceTabActive { padding-inline: 8px; } .broadcastAction { padding: 6px 8px; } }
+@media (max-width: 680px) { .workspace { flex-direction: column; } .sidePanel { width: auto; min-width: 0; min-height: 42%; flex: 1 1 42%; border-top: 1px solid var(--dsw-alias-border-l2); border-left: 0; } .sidePanelResize { display: none; } .workspaceTabs { min-height: 38px; padding-inline: 4px; } .terminalTab, .workspaceTab, .workspaceTabActive { padding-inline: 8px; } .broadcastAction { padding: 6px 8px; } }

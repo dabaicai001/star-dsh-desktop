@@ -60,9 +60,13 @@
 .contentDetail { margin-left: 4px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .monitorActive { border-color: var(--dsw-alias-border-l3); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-state-business-primary); }
 
-/* 监控右栏:固定宽度侧边栏,独立纵向滚动(深色滚动条)。 */
+/* 监控右栏:侧边栏,独立纵向滚动(深色滚动条);宽度可由左边框拖拽调整。 */
 .monitor { width: 340px; min-width: 280px; max-width: 420px; overflow: hidden; display: flex; flex-direction: column; border-left: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); }
 .monitor > * { flex: 1; min-height: 0; }
+
+/* 监控右栏左边框拖拽把手:细分隔条,横向拖动调整面板宽度。 */
+.monitorResize { flex: none; width: 6px; margin-left: -6px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
+.monitorResize:hover, .monitorResize:active { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent); }
 
 .dbSelect { height: 26px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 0 6px; max-width: 180px; }
 .dbSelect:focus { border-color: var(--dsw-alias-state-business-primary); outline: none; }

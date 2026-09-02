@@ -119,6 +119,43 @@
   cursor: pointer;
 }
 
-.referenceBtn:hover {
+.referenceBtn:hover:not(:disabled) {
   background: var(--dsw-alias-button-primary-hover);
+}
+
+.referenceBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.runningHint {
+  font-size: 12px;
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.editor {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 120px;
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 18px;
+  resize: none;
+  outline: none;
+  white-space: pre;
+  overflow: auto;
+}
+
+.editor:focus {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.editor:read-only {
+  color: var(--dsw-alias-label-secondary);
 }

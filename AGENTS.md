@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.113.2(**插件「重启 dsh web」按钮报 `Command dsh_web_restart not allowed by ACL`**:新增的 `dsh_web_restart` Tauri command 已注册进 `generate_handler!` 与前端按钮,但漏在 `src-tauri/permissions/commands.toml` 的 `starhub-commands` ACL 清单中登记——tauri 2.x 对 remote origin(127.0.0.1 dsh 主壳)的 app command 也走 ACL,未登记的 command 直接被拒,插件增删/启停后点「重启 dsh web」永远失败,新启用的 `dsh.client` 插件无法重新注入 web 运行时(这正是 dsh-status-rotator 一类 UI 插件「装了但用不了」的成因)。补上 ACL 登记,重启按钮恢复可用) |
+| 当前版本 | v0.114.0(**文件信息弹窗支持就地编辑保存 + 右侧边栏可拖拽调宽 + SFTP 右键菜单防遮挡**:① 右侧边栏「文件详情」弹窗去掉「@ 引用到对话框」按钮,内容改成可编辑 textarea 并加「保存」按钮,编辑门禁与 Read 卡一致(AI 运行中只读、AI 空闲可编辑,保存经 `local_write_text_file` 覆盖写回);② 数据库监控右栏与终端(SFTP/网页)右栏支持拖动左边框调整宽度;③ SFTP 文件列表底部增加留空并钳制右键菜单位置,避免滑到底后菜单被遮挡;④ SSH 终端「等待终端连接…」状态文字由琥珀色改为近黑色语义标签) |
 
 ## 架构一句话
 
@@ -129,4 +129,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-01 (v0.113.2)*
+*最后更新: 2026-09-01 (v0.114.0)*

@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.113.2-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.114.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,6 +47,12 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.114.0 (2026-09-01)
+- ✨ **文件信息弹窗支持就地编辑保存**:右侧边栏「文件详情」弹窗去掉「@ 引用到对话框」按钮,内容预览改成可编辑 textarea 并新增「保存」按钮,编辑门禁与 Read 卡一致(AI 运行中只读、AI 空闲可编辑,保存经 `local_write_text_file` 覆盖写回)。
+- ✨ **数据库/终端右侧边栏支持左右拖拽调宽**:数据库监控右栏、SSH 终端右栏(SFTP/网页)拖动左边框分隔条即可调整宽度。
+- 🐛 **SFTP 文件列表底部留空 + 右键菜单防遮挡**:列表底部 padding 加大,右键菜单位置钳制到视口内,滑到底后不再被遮挡。
+- 🐛 **SSH 终端「等待终端连接…」状态文字为白色**:由琥珀色改为近黑色语义标签。
 
 ### v0.113.2 (2026-09-01)
 - 🐛 **插件「重启 dsh web」按钮报 `Command dsh_web_restart not allowed by ACL`**:新增的 `dsh_web_restart` Tauri command 已注册进 `generate_handler!` 与前端按钮,但漏在 `src-tauri/permissions/commands.toml` 的 `starhub-commands` ACL 清单中登记——tauri 2.x 对 remote origin(127.0.0.1 dsh 主壳)的 app command 也走 ACL,未登记的 command 直接被拒,插件增删/启停后点「重启 dsh web」永远失败,新启用的 `dsh.client` 插件无法重新注入 web 运行时(这正是 dsh-status-rotator 一类 UI 插件「装了但用不了」的成因)。补上 ACL 登记,重启按钮恢复可用。

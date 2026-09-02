@@ -16,7 +16,7 @@
  * @module StarHub DB workbench (client)
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { RustAsset } from './store.ts'
 import { tauriInvoke } from './tauri.ts'
@@ -211,6 +211,10 @@ interface SelectedTable { table: string; database?: string }
 /** 左侧树记忆持久化形态(localStorage JSON)。 */
 interface TreeMemory { expanded?: string[]; selected?: SelectedTable | null; currentDb?: string; monitor?: boolean }
 
+/** 监控右栏可拖拽宽度边界(px)。 */
+const MONITOR_MIN_WIDTH = 280
+const MONITOR_MAX_WIDTH = 420
+
 /** DB 类型 → connect 命令名(与 Vue services/db.ts 对齐;各型有独立 connect)。 */
 function connectCommand(dbType: string): string {
   switch (dbType) {
@@ -298,6 +302,28 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
   // 监控右栏开关(MySQL / PG / Redis 有 Dashboard;默认关闭,选择持久化进树记忆)。
   const monitorSupported = ['mysql', 'postgresql', 'redis'].includes(typeof asset.config.dbType === 'string' ? asset.config.dbType : 'mysql')
   const [showMonitor, setShowMonitor] = useState(false)
+  // 监控右栏宽度(px):拖拽左边框调整,夹在 min 与 max 之间;内存态即可。
+  const [monitorWidth, setMonitorWidth] = useState(340)
+  const monitorResizeRef = useRef(false)
+  const onMonitorResizeStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    monitorResizeRef.current = true
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }, [])
+  const onMonitorResizeMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!monitorResizeRef.current) return
+    // 拖动左边框:向左收窄、向右加宽。以容器右缘为基准反推宽度。
+    const container = event.currentTarget.parentElement
+    if (container === null) return
+    const rect = container.getBoundingClientRect()
+    const next = Math.round(rect.right - event.clientX)
+    setMonitorWidth(Math.max(MONITOR_MIN_WIDTH, Math.min(MONITOR_MAX_WIDTH, next)))
+  }, [])
+  const onMonitorResizeEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!monitorResizeRef.current) return
+    monitorResizeRef.current = false
+    event.currentTarget.releasePointerCapture(event.pointerId)
+  }, [])
   // 执行 SQL 的当前库:默认取资产配置的 database,点表/手选后跟随;参与持久化记忆。
   const [currentDb, setCurrentDb] = useState<string>(() =>
     typeof asset.config.database === 'string' ? asset.config.database : '')
@@ -877,7 +903,19 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
             {exportError !== null && !exporting && <div className={css.error}>{exportError}</div>}
           </section>
           {monitorSupported && showMonitor && (
-            <aside className={css.monitor}>
+            <div
+              className={css.monitorResize}
+              onPointerDown={onMonitorResizeStart}
+              onPointerMove={onMonitorResizeMove}
+              onPointerUp={onMonitorResizeEnd}
+              onPointerCancel={onMonitorResizeEnd}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整监控面板宽度"
+            />
+          )}
+          {monitorSupported && showMonitor && (
+            <aside className={css.monitor} style={{ width: monitorWidth }}>
               <DbDashboard
                 connId={connId}
                 dbType={dbType}

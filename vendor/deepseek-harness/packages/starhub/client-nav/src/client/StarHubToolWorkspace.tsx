@@ -197,6 +197,8 @@ export function StarHubToolWorkspace({
   // 当前会话 cwd 经 root-scope 的 useSessions 响应式读取(shell.overlay 无
   // 框架注入 sessionId;注入期快照会过期,故此处订阅全局当前会话)。
   const sessionCwd = useSessions?.(s => (s.current !== undefined ? s.byId[s.current]?.cwd : undefined))
+  // 当前会话是否运行中(AI 运行中文件详情只读禁改,与 Read 卡门禁一致)。
+  const aiRunning = useSessions?.(s => (s.current !== undefined ? s.byId[s.current]?.running ?? false : false)) ?? false
 
   // 打开时(以及切换子类时)重新拉取(回调内部对并发拉取去重)。
   useEffect(() => { if (open) refreshAssets() }, [open, activeSubcategory, refreshAssets])
@@ -219,6 +221,7 @@ export function StarHubToolWorkspace({
             cwd={sessionCwd}
             onClose={closeFileTree}
             insertReference={insertFileReference}
+            aiRunning={aiRunning}
           />
         ) : (
           <>

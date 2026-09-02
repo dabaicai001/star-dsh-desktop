@@ -44,6 +44,12 @@ export interface SftpPanelProps {
 
 const FOLLOW_TERMINAL_KEY = 'starhub.sftp.followTerminal'
 
+// Context menu is positioned at the cursor via `fixed`; keep it inside the viewport
+// so a menu opened near the bottom/right of the file list is not clipped.
+const MENU_ESTIMATED_HEIGHT = 220
+const MENU_ESTIMATED_WIDTH = 174
+const MENU_VIEWPORT_MARGIN = 8
+
 /** Small right-click menu model. */
 interface MenuState {
   x: number
@@ -509,7 +515,11 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
           onMouseDown={() =>{  setMenu(null) }}
           onContextMenu={(e) => { e.preventDefault(); setMenu(null) }}
         >
-          <div className={css.contextMenu} style={{ left: menu.x, top: menu.y }} onMouseDown={(e) =>{  e.stopPropagation() }}>
+          <div
+            className={css.contextMenu}
+            style={{ left: Math.min(menu.x, window.innerWidth - MENU_ESTIMATED_WIDTH - MENU_VIEWPORT_MARGIN), top: Math.min(menu.y, window.innerHeight - MENU_ESTIMATED_HEIGHT - MENU_VIEWPORT_MARGIN) }}
+            onMouseDown={(e) =>{  e.stopPropagation() }}
+          >
             {menu.entry !== null && menu.entry.isDir && (
               <button type="button" className={css.menuItem} onClick={() => { const e = menu.entry; setMenu(null); if (e) navigateTo(e) }}>打开</button>
             )}

@@ -75,57 +75,82 @@ describe('formatters', () => {
 })
 
 describe('FileInfoDialog', () => {
+  const statFile = { ...STAT, kind: 'file' as const }
+  function renderDialog(overrides: Parameters<typeof FileInfoDialog>[0] = {}) {
+    return render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} {...overrides} />)
+  }
+
   it('renders nothing when path is null', () => {
-    const { container } = render(<FileInfoDialog path={null} onClose={vi.fn()} onReference={vi.fn()} />)
+    const { container } = render(<FileInfoDialog path={null} onClose={vi.fn()} />)
     expect(container.querySelector('[role="dialog"]')).toBeNull()
   })
 
-  it('shows metadata and a ReadBlock line-numbered preview, and 引用到对话框 fires onReference', async () => {
+  it('shows metadata and an editable textarea with the file content', async () => {
     restore = stubInvoke({
-      local_stat_path: () => Promise.resolve(STAT),
+      local_stat_path: () => Promise.resolve(statFile),
       local_read_text_file: () => Promise.resolve({ path: STAT.path, content: 'hello\nworld', offset: 0, bytesRead: 11, totalBytes: 11, truncated: false }),
     })
-    const onReference = vi.fn()
     const onClose = vi.fn()
-    render(<FileInfoDialog path={STAT.path} onClose={onClose} onReference={onReference} />)
+    render(<FileInfoDialog path={STAT.path} onClose={onClose} />)
     await screen.findByText(/文件信息 — main\.ts/)
-    // 路径出现两处:元信息表 + ReadBlock 横幅
-    expect(screen.getAllByText('C:\\ws\\proj\\main.ts').length).toBeGreaterThanOrEqual(2)
+    // 元信息表展示路径/大小
+    expect(screen.getByText('C:\\ws\\proj\\main.ts')).toBeTruthy()
     expect(screen.getByText('2.0 KB')).toBeTruthy()
-    // ReadBlock 行号预览:内容按行拆成 gutter + 行文本
-    expect(screen.getByText('hello')).toBeTruthy()
-    expect(screen.getByText('world')).toBeTruthy()
-    expect(screen.getByText('1')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /@ 引用到对话框/ }))
-    expect(onReference).toHaveBeenCalledWith('@main.ts (C:\\ws\\proj\\main.ts)')
+    // 编辑区(textarea)可编辑并含文件内容
+    const editor = screen.getByLabelText('文件内容') as HTMLTextAreaElement
+    expect(editor.value).toBe('hello\nworld')
+    expect(editor.readOnly).toBe(false)
+    // 无「@ 引用到对话框」按钮
+    expect(screen.queryByRole('button', { name: /@ 引用到对话框/ })).toBeNull()
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('saves the edited content via local_write_text_file', async () => {
+    const onSaved = vi.fn()
+    restore = stubInvoke({
+      local_stat_path: () => Promise.resolve(statFile),
+      local_read_text_file: () => Promise.resolve({ path: STAT.path, content: 'hello\nworld', offset: 0, bytesRead: 11, totalBytes: 11, truncated: false }),
+      local_write_text_file: (_args: Record<string, unknown>) => Promise.resolve(20),
+    })
+    renderDialog({ onSaved })
+    const editor = await screen.findByLabelText('文件内容') as HTMLTextAreaElement
+    fireEvent.change(editor, { target: { value: 'hello\nWORLD' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await screen.findByText('已保存')
+    expect(onSaved).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables editing and save while AI is running', async () => {
+    restore = stubInvoke({
+      local_stat_path: () => Promise.resolve(statFile),
+      local_read_text_file: () => Promise.resolve({ path: STAT.path, content: 'hello\nworld', offset: 0, bytesRead: 11, totalBytes: 11, truncated: false }),
+    })
+    renderDialog({ aiRunning: true })
+    const editor = await screen.findByLabelText('文件内容') as HTMLTextAreaElement
+    expect(editor.readOnly).toBe(true)
+    // 与 Read 卡门禁一致:AI 运行中保存按钮禁用(而非隐藏)。
+    const save = screen.getByRole('button', { name: '保存' }) as HTMLButtonElement
+    expect(save).toBeTruthy()
+    expect(save.disabled).toBe(true)
+    expect(screen.getByText('AI 运行中只能查看')).toBeTruthy()
   })
 
   it('marks the preview as truncated when the file is larger than the read window', { timeout: 15_000 }, async () => {
     restore = stubInvoke({
-      local_stat_path: () => Promise.resolve({ ...STAT, size: 1024 * 1024 }),
+      local_stat_path: () => Promise.resolve({ ...statFile, size: 1024 * 1024 }),
       local_read_text_file: () => Promise.resolve({ path: STAT.path, content: 'x'.repeat(5000), offset: 0, bytesRead: 5000, totalBytes: 1024 * 1024, truncated: true }),
     })
-    render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} onReference={vi.fn()} />)
-    await screen.findByText(/内容预览\(仅开头 8KB\)/)
+    renderDialog()
+    await screen.findByText(/仅加载并保存开头 8KB/)
   })
 
   it('marks the preview as truncated when untruncated content exceeds the preview limit', { timeout: 15_000 }, async () => {
     restore = stubInvoke({
-      local_stat_path: () => Promise.resolve(STAT),
+      local_stat_path: () => Promise.resolve(statFile),
       local_read_text_file: () => Promise.resolve({ path: STAT.path, content: 'x'.repeat(9000), offset: 0, bytesRead: 9000, totalBytes: 9000, truncated: false }),
     })
-    render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} onReference={vi.fn()} />)
-    await screen.findByText(/内容预览\(仅开头 8KB\)/)
-  })
-
-  it('shows 空文件 when the file reads empty without error', async () => {
-    restore = stubInvoke({
-      local_stat_path: () => Promise.resolve(STAT),
-      local_read_text_file: () => Promise.resolve({ path: STAT.path, content: '', offset: 0, bytesRead: 0, totalBytes: 0, truncated: false }),
-    })
-    render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} onReference={vi.fn()} />)
-    await screen.findByText('空文件')
+    renderDialog()
+    await screen.findByText(/仅加载并保存开头 8KB/)
   })
 
   it('renders directory and other kinds and the readonly badge', async () => {
@@ -133,7 +158,7 @@ describe('FileInfoDialog', () => {
       local_stat_path: () => Promise.resolve({ ...STAT, kind: 'directory', readonly: true }),
       local_read_text_file: () => Promise.reject(new Error('directory')),
     })
-    render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} onReference={vi.fn()} />)
+    render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} />)
     await screen.findByText('文件夹')
     expect(screen.getByText('只读')).toBeTruthy()
 
@@ -148,29 +173,17 @@ describe('FileInfoDialog', () => {
         return Promise.reject(new Error('directory'))
       },
     }
-    render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} onReference={vi.fn()} />)
+    render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} />)
     await screen.findByText('symlink')
     delete w.__TAURI_INTERNALS__
   })
 
-  it('references a directory target through the dialog button', async () => {
-    restore = stubInvoke({
-      local_stat_path: () => Promise.resolve({ ...STAT, name: 'src', kind: 'directory' }),
-      local_read_text_file: () => Promise.reject(new Error('directory')),
-    })
-    const onReference = vi.fn()
-    render(<FileInfoDialog path={'C:\\ws\\proj\\src'} onClose={vi.fn()} onReference={onReference} />)
-    await screen.findByText('文件夹')
-    fireEvent.click(screen.getByRole('button', { name: /@ 引用到对话框/ }))
-    expect(onReference).toHaveBeenCalledWith('@src/ (C:\\ws\\proj\\src)')
-  })
-
   it('shows the read error and still renders metadata when content read fails', async () => {
     restore = stubInvoke({
-      local_stat_path: () => Promise.resolve(STAT),
+      local_stat_path: () => Promise.resolve(statFile),
       local_read_text_file: () => Promise.reject(new Error('binary or unreadable')),
     })
-    render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} onReference={vi.fn()} />)
+    renderDialog()
     await screen.findByRole('alert')
     expect(screen.getByText('binary or unreadable')).toBeTruthy()
     // 元信息仍展示
@@ -179,10 +192,10 @@ describe('FileInfoDialog', () => {
 
   it('renders a plain-string read failure verbatim', async () => {
     restore = stubInvoke({
-      local_stat_path: () => Promise.resolve(STAT),
+      local_stat_path: () => Promise.resolve(statFile),
       local_read_text_file: () => Promise.reject('plain failure'),
     })
-    render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} onReference={vi.fn()} />)
+    renderDialog()
     await screen.findByRole('alert')
     expect(screen.getByText('plain failure')).toBeTruthy()
   })
@@ -192,17 +205,17 @@ describe('FileInfoDialog', () => {
       local_stat_path: () => Promise.reject(new Error('not found')),
       local_read_text_file: () => Promise.resolve({ path: STAT.path, content: '', offset: 0, bytesRead: 0, totalBytes: 0, truncated: false }),
     })
-    render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} onReference={vi.fn()} />)
+    renderDialog()
     await screen.findByText('无法读取文件信息')
   })
 
   it('closes via the 关闭 button', async () => {
     restore = stubInvoke({
-      local_stat_path: () => Promise.resolve(STAT),
+      local_stat_path: () => Promise.resolve(statFile),
       local_read_text_file: () => Promise.resolve({ path: STAT.path, content: '', offset: 0, bytesRead: 0, totalBytes: 0, truncated: false }),
     })
     const onClose = vi.fn()
-    render(<FileInfoDialog path={STAT.path} onClose={onClose} onReference={vi.fn()} />)
+    render(<FileInfoDialog path={STAT.path} onClose={onClose} />)
     await screen.findByRole('dialog')
     // footer 的「关闭」按钮与 Modal 头部关闭钮同名,取最后一个(footer)。
     const buttons = screen.getAllByRole('button', { name: '关闭' })
@@ -212,11 +225,11 @@ describe('FileInfoDialog', () => {
 
   it('closes via Escape', async () => {
     restore = stubInvoke({
-      local_stat_path: () => Promise.resolve(STAT),
+      local_stat_path: () => Promise.resolve(statFile),
       local_read_text_file: () => Promise.resolve({ path: STAT.path, content: '', offset: 0, bytesRead: 0, totalBytes: 0, truncated: false }),
     })
     const onClose = vi.fn()
-    render(<FileInfoDialog path={STAT.path} onClose={onClose} onReference={vi.fn()} />)
+    render(<FileInfoDialog path={STAT.path} onClose={onClose} />)
     await screen.findByRole('dialog')
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(1)

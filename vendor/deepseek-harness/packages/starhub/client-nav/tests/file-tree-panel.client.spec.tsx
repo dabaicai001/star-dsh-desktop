@@ -223,11 +223,13 @@ describe('FileTreePanel', () => {
     const row = await screen.findByRole('button', { name: /main\.ts/ })
     fireEvent.click(row)
     await screen.findByText(/文件信息 — main\.ts/)
-    // 路径出现两处(元信息表 + ReadBlock 横幅);预览按行拆分展示
-    expect(screen.getAllByText('C:\\ws\\proj\\main.ts').length).toBeGreaterThanOrEqual(2)
+    // 元信息表展示路径与大小
+    expect(screen.getByText('C:\\ws\\proj\\main.ts')).toBeTruthy()
     expect(screen.getByText('42 B')).toBeTruthy()
-    expect(screen.getByText('line1')).toBeTruthy()
-    expect(screen.getByText('line2')).toBeTruthy()
+    // 内容进入可编辑 textarea(与 Read 卡一致,不再是只读行号预览)
+    const editor = screen.getByLabelText('文件内容') as HTMLTextAreaElement
+    expect(editor.value).toContain('line1')
+    expect(editor.value).toContain('line2')
   })
 
   it('关闭按钮 in the info dialog closes it', async () => {

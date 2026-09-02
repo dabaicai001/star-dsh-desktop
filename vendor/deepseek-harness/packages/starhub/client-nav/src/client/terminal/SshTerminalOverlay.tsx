@@ -14,7 +14,7 @@
  *
  * @module StarHub SSH/SFTP overlay (client)
  */
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { IconCheckOutline14, IconCloseFill14, IconCloseOutline16, IconCodeOutline16, IconFolderOpenOutline16, IconLinkOutline16, IconPaperclipOutline16, IconPlusOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -150,6 +150,30 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const [error, setError] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
   const [sidePanel, setSidePanel] = useState<SidePanel>(null)
+  // SFTP / 网页右栏宽度(px):拖左边框调整,夹在 min 与 max 之间;内存态即可。
+  const [sidePanelWidth, setSidePanelWidth] = useState(500)
+  const sidePanelMinWidth = 340
+  const sidePanelMaxWidth = 560
+  const sidePanelResizeRef = useRef(false)
+  const onSidePanelResizeStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    sidePanelResizeRef.current = true
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }, [])
+  const onSidePanelResizeMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!sidePanelResizeRef.current) return
+    // 拖动左边框:向左收窄、向右加宽。以容器右缘为基准反推宽度。
+    const container = event.currentTarget.parentElement
+    if (container === null) return
+    const rect = container.getBoundingClientRect()
+    const next = Math.round(rect.right - event.clientX)
+    setSidePanelWidth(Math.max(sidePanelMinWidth, Math.min(sidePanelMaxWidth, next)))
+  }, [])
+  const onSidePanelResizeEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!sidePanelResizeRef.current) return
+    sidePanelResizeRef.current = false
+    event.currentTarget.releasePointerCapture(event.pointerId)
+  }, [])
   const [sshCwd, setSshCwd] = useState('')
   const [quickCommands, setQuickCommands] = useState<QuickCommand[]>(loadQuickCommands)
   const [quickEditorOpen, setQuickEditorOpen] = useState(false)
@@ -689,7 +713,19 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
             )}
           </main>
           {sidePanel !== null && (
-            <aside className={css.sidePanel} aria-label={sidePanelLabel}>
+            <div
+              className={css.sidePanelResize}
+              onPointerDown={onSidePanelResizeStart}
+              onPointerMove={onSidePanelResizeMove}
+              onPointerUp={onSidePanelResizeEnd}
+              onPointerCancel={onSidePanelResizeEnd}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整侧边栏宽度"
+            />
+          )}
+          {sidePanel !== null && (
+            <aside className={css.sidePanel} style={{ '--side-panel-width': `${sidePanelWidth}px` } as CSSProperties} aria-label={sidePanelLabel}>
               <header className={css.sidePanelHeader}>
                 <div>
                   <span className={css.sidePanelTitle}>{sidePanelLabel}</span>

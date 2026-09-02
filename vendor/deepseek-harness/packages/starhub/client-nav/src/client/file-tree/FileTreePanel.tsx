@@ -52,12 +52,14 @@ function normalizedQuery(query: string): string {
  * @param props.cwd - 会话工作区绝对路径(树的根)。
  * @param props.onClose - 返回资产列表(关闭文件树视图)。
  * @param props.insertReference - 把引用文本追加进当前会话对话框输入框。
+ * @param props.aiRunning - AI 是否运行中(传给文件信息窗,true 时只读禁改)。
  * @returns 目录树面板(含文件信息弹窗与搜索)。
  */
-export function FileTreePanel({ cwd, onClose, insertReference }: {
+export function FileTreePanel({ cwd, onClose, insertReference, aiRunning = false }: {
   cwd: string
   onClose: () => void
   insertReference: (text: string) => void
+  aiRunning?: boolean
 }) {
   const menu = useContextMenu()
   /** 展开中的目录路径(懒加载;关闭目录不丢弃缓存)。 */
@@ -293,7 +295,7 @@ export function FileTreePanel({ cwd, onClose, insertReference }: {
       <FileInfoDialog
         path={infoPath}
         onClose={() => { setInfoPath(null) }}
-        onReference={insertReference}
+        aiRunning={aiRunning}
       />
     </div>
   )

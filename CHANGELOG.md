@@ -7,7 +7,13 @@
 
 ## [未发布]
 
+### 新增
+- **文件信息弹窗支持就地编辑保存**:右侧边栏「文件详情」弹窗去掉「@ 引用到对话框」按钮,内容预览改成可编辑 textarea 并新增「保存」按钮(保存经 `local_write_text_file` 覆盖写回,超 8KB 只加载/写回开头并提示谨慎);编辑门禁与 Read 卡一致——AI 运行中只读并显示「AI 运行中只能查看」,AI 空闲可编辑。`aiRunning` 状态经 `StarHubToolWorkspace`(当前会话 `running`)→ `FileTreePanel` → `FileInfoDialog` 下传
+- **数据库/终端右侧边栏支持左右拖拽调宽**:数据库工作台监控右栏(`DbWorkbench` `.monitor`)、SSH 终端右栏(SFTP/网页,`SshTerminalOverlay` `.sidePanel`)拖动左边框分隔条即可调整宽度,夹在 min/max 间,`Pointer Events` + `setPointerCapture` 实现
+- **SFTP 文件列表底部留空 + 右键菜单防遮挡**:`.fileList` 底部 padding 8px→36px,滑到底部不再紧贴面板边缘;右键菜单位置钳制到视口内(底部/右侧留 8px 边距),避免菜单被裁切
+
 ### 修复
+- **SSH 终端「等待终端连接…」状态文字为白色**:`SftpPanel` 状态栏 `.waiting` 由 `--dsw-alias-state-warn-primary`(琥珀色,浅色主题下读作近白)改为近黑色的 `--dsw-alias-label-primary`
 - **插件「重启 dsh web」按钮报 `Command dsh_web_restart not allowed by ACL`**:新增的 `dsh_web_restart` Tauri command 已注册进 `generate_handler!` 与前端按钮,但漏在 `src-tauri/permissions/commands.toml` 的 `starhub-commands` ACL 清单中登记——tauri 2.x 对 remote origin(127.0.0.1 dsh 主壳)的 app command 也走 ACL,未登记的 command 直接被拒,插件增删/启停后点「重启 dsh web」永远失败,新启用的 `dsh.client` 插件无法重新注入 web 运行时(这正是 dsh-status-rotator 一类 UI 插件「装了但用不了」的成因)。补上 ACL 登记,重启按钮恢复可用
 - **坏插件导致 dsh web / runtime 启动超时无法恢复(坏插件自救落地)**:user 装了个 `apply()` 抛错的插件(如 dsh-status-rotator 等)并启用后,web 组合 boot 时 fail-loud 使整个进程退出,就绪探测永不 200 → 60s 报「就绪探测超时」;plugin 一直 `enabled`,重启死循环,连设置页都进不去。本次实现 B-4 遗留的「坏插件自救」自动禁用:
   - `web.rs`:`spawn` 就绪探测现在**提前感知子进程退出**(不再空等满 60s),失败时自动禁用**全部启用的用户插件**(保留目录与 registry),重新生成 patch/junction 后**重试一次**;重试成功后应用回到可用状态,坏插件在设置页显示为已禁用、可重新启用。
