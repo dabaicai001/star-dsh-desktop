@@ -76,8 +76,10 @@ describe('formatters', () => {
 
 describe('FileInfoDialog', () => {
   const statFile = { ...STAT, kind: 'file' as const }
-  function renderDialog(overrides: Parameters<typeof FileInfoDialog>[0] = {}) {
-    return render(<FileInfoDialog path={STAT.path} onClose={vi.fn()} {...overrides} />)
+  type DialogProps = Parameters<typeof FileInfoDialog>[0]
+  function renderDialog(overrides: Partial<DialogProps> = {}) {
+    const props: DialogProps = { path: STAT.path, onClose: vi.fn(), ...overrides }
+    return render(<FileInfoDialog {...props} />)
   }
 
   it('renders nothing when path is null', () => {
