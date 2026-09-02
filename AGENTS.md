@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.113.1(**坏插件导致 dsh web / runtime 启动超时无法恢复**:装了个 `apply()` 抛错的插件并启用后,web/runtime boot fail-loud 使进程退出,60s 就绪探测报超时,且 plugin 一直 `enabled`、重启死循环;本次实现 B-4 遗留的「坏插件自救」——web 就绪探测提前感知子进程退出,失败时自动禁用全部启用的用户插件(保留目录与 registry)并重试一次;`HarnessManager::initialize` 失败时同策略。任何坏插件不再阻塞启动,下个版本开机即自动恢复正常状态) |
+| 当前版本 | v0.113.2(**插件「重启 dsh web」按钮报 `Command dsh_web_restart not allowed by ACL`**:新增的 `dsh_web_restart` Tauri command 已注册进 `generate_handler!` 与前端按钮,但漏在 `src-tauri/permissions/commands.toml` 的 `starhub-commands` ACL 清单中登记——tauri 2.x 对 remote origin(127.0.0.1 dsh 主壳)的 app command 也走 ACL,未登记的 command 直接被拒,插件增删/启停后点「重启 dsh web」永远失败,新启用的 `dsh.client` 插件无法重新注入 web 运行时(这正是 dsh-status-rotator 一类 UI 插件「装了但用不了」的成因)。补上 ACL 登记,重启按钮恢复可用) |
 
 ## 架构一句话
 
@@ -96,6 +96,8 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 **代码风格**:TS `strict`、禁 `any`(用 `unknown`);Rust 过 `cargo fmt` + `clippy`;Go 过 `gofmt`;公共 API 写文档注释;面向用户文案走 i18n,禁硬编码;全仓库 UTF-8 无 BOM。
 
+**新增 Tauri command 三道同步(反复踩坑,勿再犯)**:tauri 2.x 对 remote origin(127.0.0.1 dsh 主壳)的 app command 也走 ACL,新增/重命名 command 必须同时改三处 `generate_handler!`(`src-tauri/src/main.rs`)、`permissions/commands.toml` 的 `starhub-commands` 白名单、前端调用方。`tauri-build` **不会**因白名单缺 command 报错(构建/单测全绿),只有从 dsh 主壳真实点按钮才暴露「Command xxx not allowed by ACL」。曾两次踩坑:v0.106.2(`desktop_ui_open_live_window`)、v0.113.2(`dsh_web_restart`)。详见 [docs/踩坑记录.md §38](docs/踩坑记录.md)。
+
 ## 版本与提交纪律(强制)
 
 1. **改完立即 commit + push**:工作区不允许长期挂未提交改动;不把自己的改动和用户已有的未提交改动塞进同一个 commit(diff 不干净时只 commit 自己审过的部分,其余明确告知用户)。
@@ -127,4 +129,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-01 (v0.113.0)*
+*最后更新: 2026-09-01 (v0.113.2)*

@@ -189,6 +189,7 @@ commands.allow = [
   "dsh_prompt",
   "dsh_settings_path",
   "dsh_shutdown",
+  "dsh_web_restart",
   "dsh_web_url",
   "get_ai_api_key",
   "get_ai_model_api_key",
