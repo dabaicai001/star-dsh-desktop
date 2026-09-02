@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.114.0(**文件信息弹窗支持就地编辑保存 + 右侧边栏可拖拽调宽 + SFTP 右键菜单防遮挡**:① 右侧边栏「文件详情」弹窗去掉「@ 引用到对话框」按钮,内容改成可编辑 textarea 并加「保存」按钮,编辑门禁与 Read 卡一致(AI 运行中只读、AI 空闲可编辑,保存经 `local_write_text_file` 覆盖写回);② 数据库监控右栏与终端(SFTP/网页)右栏支持拖动左边框调整宽度;③ SFTP 文件列表底部增加留空并钳制右键菜单位置,避免滑到底后菜单被遮挡;④ SSH 终端「等待终端连接…」状态文字由琥珀色改为近黑色语义标签) |
+| 当前版本 | v0.114.1(**dsh-status-rotator 一类 UI 插件「装了但用不了」修复**:`rewrite_patch_port` 用 `lines().join("\n")` 重写 `cordis.patch.yml` 会吞掉末行换行,后续 `sync_user_client_plugins` 追加用户插件 `- id:` entry 时与上一行粘连成非法 YAML(`timeoutMs: 30000    - id: 'dsh-status-rotator'`),令 dsh web boot 报 `YAMLException: bad indentation of a mapping entry`、就绪探测超时并触发「坏插件自救」把正常插件误禁——正是 dsh-status-rotator 这类 UI 插件「启用但用不了」的根因。修复 rewrite 保留末行换行 + 追加前强制换行开头,补回归单测) |
 
 ## 架构一句话
 
@@ -129,4 +129,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-01 (v0.114.0)*
+*最后更新: 2026-09-02 (v0.114.1)*

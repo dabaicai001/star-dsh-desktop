@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.114.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.114.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,6 +47,9 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 **其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
+
+### v0.114.1 (2026-09-02)
+- 🐛 **dsh-status-rotator 一类 UI 插件「装了但用不了」——patch 追加粘连致 YAML 失败**:`rewrite_patch_port` 用 `lines().join("\n")` 重写 `cordis.patch.yml`,`lines()` 吞掉末行换行;随后 `sync_user_client_plugins` 在末尾追加 `- id:` entry 时与上一行粘连成非法 YAML(`timeoutMs: 30000    - id: 'dsh-status-rotator'`)→ dsh web boot 报 `YAMLException: bad indentation of a mapping entry` → 就绪探测超时 → 触发「坏插件自救」把插件误禁(启停后重启死循环)。修复:① rewrite 保留末行换行;② 追加前强制以换行开头。dsh-status-rotator 等正常 UI 插件不再被误禁。
 
 ### v0.114.0 (2026-09-01)
 - ✨ **文件信息弹窗支持就地编辑保存**:右侧边栏「文件详情」弹窗去掉「@ 引用到对话框」按钮,内容预览改成可编辑 textarea 并新增「保存」按钮,编辑门禁与 Read 卡一致(AI 运行中只读、AI 空闲可编辑,保存经 `local_write_text_file` 覆盖写回)。

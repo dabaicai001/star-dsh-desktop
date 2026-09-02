@@ -157,7 +157,14 @@ fn rewrite_patch_port(template: &str, port: u16) -> Result<String, DshWebError> 
             "cordis.patch.yml 模板缺少 webserver 端口行".into(),
         ));
     }
-    Ok(out.join("\n"))
+    // `lines()` 会吞掉末行换行,若模板以换行结尾应补回——否则后续
+    // sync_user_client_plugins 在其后 push_str 追加 entry 时,首个 `- id:`
+    // 会与最后一行(如 commit-message 的 timeoutMs)粘连成非法 YAML。
+    let mut out = out.join("\n");
+    if template.ends_with('\n') && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    Ok(out)
 }
 
 /// StarHub 独立 React 窗口 app dist(starhub-window 构建,base /starhub-react/)。
@@ -757,6 +764,13 @@ fn sync_user_client_plugins(
                 tracing::warn!("用户 UI 插件依赖解析失败(可忽略): {error}");
             }
         }
+        // 追加 entry 行到 patch 的 insert 块末尾。此前 rewrite_patch_port 用
+        // `lines().join("\n")` 会吞掉末行换行,导致首行 `- id:` 与上一行粘连成
+        // 非法 YAML(表现为 plugin 启停后 web 启动报 YAMLException、联动坏插件
+        // 自救禁用)。这里强制以换行开头,任何输入都不破坏 yml 结构。
+        if !patch.is_empty() && !patch.ends_with('\n') {
+            patch.push('\n');
+        }
         patch.push_str(&format!(
             "    - id: {}\n      name: {}\n",
             yaml_single_quoted(&record.id),
@@ -843,6 +857,36 @@ mod tests {
     fn rewrite_patch_port_missing_webserver_fails() {
         let template = "- id: other\n  config:\n    port: 1\n";
         assert!(rewrite_patch_port(template, 3185).is_err());
+    }
+
+    /// 回归:v0.114.x 之前 `rewrite_patch_port` 用 `lines().join("\n")` 会吞掉
+    /// 模板末行换行,随后 `sync_user_client_plugins` 在其后 push_str 追加首个
+    /// `- id:` 时与最后一行(如 commit-message 的 timeoutMs)粘连成非法 YAML,
+    /// 令 dsh web 组合 boot 报 YAMLException、启动超时,进而触发坏插件自救把
+    /// 插件误禁(表现为 dsh-status-rotator 等 UI 插件「装了但用不了」)。
+    #[test]
+    fn rewrite_patch_preserves_trailing_newline_for_append() {
+        // 模板末尾有换行(真实模板即如此)
+        let template = "- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 3085\n";
+        let rewritten = rewrite_patch_port(template, 3187).unwrap();
+        assert!(
+            rewritten.ends_with('\n'),
+            "改写后应保留末行换行,后续追加不会粘连:\n{rewritten:?}"
+        );
+
+        // 模板末尾无换行(防御):append 前也应能安全追加
+        let template_no_nl = "- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 3085";
+        let rewritten_no_nl = rewrite_patch_port(template_no_nl, 3187).unwrap();
+        let mut patch = rewritten_no_nl;
+        if !patch.is_empty() && !patch.ends_with('\n') {
+            patch.push('\n');
+        }
+        patch.push_str("    - id: 'dsh-status-rotator'\n      name: 'dsh-status-rotator'\n");
+        assert!(
+            !patch.contains("30000    - id"),
+            "末尾换行缺失时应在追加前补换行(非粘连):\n{patch}"
+        );
+        assert!(patch.contains("config:\n    host: 127.0.0.1\n    port: 3187\n    - id: 'dsh-status-rotator'"));
     }
 
     /// 动态基准端口:让 OS 分一个空闲端口后立刻释放,作为测试的 base。
