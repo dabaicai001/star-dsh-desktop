@@ -102,6 +102,26 @@ export function assetSubtitle(asset: { config: Record<string, unknown> }): strin
   return typeof c.database === 'string' ? c.database : ''
 }
 
+/**
+ * 资产行徽标:数据库行显示具体类型(MySQL / PostgreSQL / ClickHouse / Redis / ES),
+ * 不再全子类共用「数据库」;其余子类回落传入的子类名。标签过长时由 CSS 截断。
+ * @param asset - 目标资产(只需 type + config 派生路由名)。
+ * @param fallback - 无更具体类型时使用的子类标签。
+ * @returns 资产行徽标文本。
+ */
+export function assetRowBadge(asset: StarHubAsset, fallback: string): string {
+  switch (routeNameForAsset(asset)) {
+    case 'db-mysql': return 'MySQL'
+    case 'db-postgresql': return 'PostgreSQL'
+    case 'db-clickhouse': return 'ClickHouse'
+    case 'db-redis': return 'Redis'
+    case 'db-elasticsearch': return 'ES'
+    // Broker 资产归终端子类,行徽标标识消息队列类型。
+    case 'db-broker': return 'Broker'
+    default: return fallback
+  }
+}
+
 /** 子类清单(展示顺序即数组顺序)。终端含 SSH/SFTP/Broker,数据库合并 MySQL / PG / CH / Redis / ES(方案 2.1)。 */
 export const STARHUB_SUBCATEGORIES: readonly StarHubSubcategory[] = [
   {

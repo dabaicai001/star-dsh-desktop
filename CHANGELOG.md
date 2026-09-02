@@ -5,7 +5,7 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
-## [未发布]
+## [0.114.1] - 2026-09-02
 
 ### 新增
 - **文件信息弹窗支持就地编辑保存**:右侧边栏「文件详情」弹窗去掉「@ 引用到对话框」按钮,内容预览改成可编辑 textarea 并新增「保存」按钮(保存经 `local_write_text_file` 覆盖写回,超 8KB 只加载/写回开头并提示谨慎);编辑门禁与 Read 卡一致——AI 运行中只读并显示「AI 运行中只能查看」,AI 空闲可编辑。`aiRunning` 状态经 `StarHubToolWorkspace`(当前会话 `running`)→ `FileTreePanel` → `FileInfoDialog` 下传
@@ -21,6 +21,19 @@
   - `web.rs`:`spawn` 就绪探测现在**提前感知子进程退出**(不再空等满 60s),失败时自动禁用**全部启用的用户插件**(保留目录与 registry),重新生成 patch/junction 后**重试一次**;重试成功后应用回到可用状态,坏插件在设置页显示为已禁用、可重新启用。
   - `mod.rs`:`HarnessManager::initialize` 失败(运行时插件 fail-loud 导致 RPC 超时/断开)时同样禁用用户插件并重试一次。
   - `plugins.rs`:新增 `disable_user_plugins`(仅禁用非内置且已启用的用户插件,幂等)并补单测。—— 任何坏插件不再阻塞启动,下个版本开机即自动恢复正常状态。
+
+### 计划中
+- Settings 补「代理」「安全」2 个 tab
+- SQL 查询结果可编辑及无主键报错提示（转 K3）
+- 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
+
+---
+
+## [未发布]
+
+### 修复
+- **SSH 终端浅色主题下白色光标块看不清**:xterm 未设 `theme.cursor` 时回落白色光标(`#ffffff`),而浅色主题终端背景为近白 `#f5f6f7`,光标块几乎不可见。`dshTerminalTheme` 现按主题钉死光标色(浅色 `#1f2329` + `#f5f6f7` 反色 accent;深色 `#f9fafb` + `#1b1b1c`,行为不变),SSH / Docker exec / 堡垒机三处经 `useTerminalTheme` 一并生效
+- **数据库资产行徽标只显示笼统「数据库」**:工具面板资产行徽标此前直接用子类名(数据库),混排的 MySQL / PostgreSQL / ClickHouse / Redis / ES 无从区分。新增 `assetRowBadge` 按 `config.dbType` 显示具体类型(MySQL / PostgreSQL / ClickHouse / Redis / ES / Broker),过长由 CSS 截断(ellipsis)
 
 ### 计划中
 - Settings 补「代理」「安全」2 个 tab

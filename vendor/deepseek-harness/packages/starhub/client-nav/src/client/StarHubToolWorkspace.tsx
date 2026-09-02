@@ -30,7 +30,7 @@ import {
   IconRefreshOutline14, IconRightUpOutline16, IconTrashOutline16,
   writeClipboard, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { STARHUB_SUBCATEGORIES, assetSubtitle, type StarHubAsset, type StarHubSubcategory } from './sections.ts'
+import { STARHUB_SUBCATEGORIES, assetRowBadge, assetSubtitle, type StarHubAsset, type StarHubSubcategory } from './sections.ts'
 import type { RustAsset, StarHubAssetListState, ToolSelection, ToolsPanelState } from './store.ts'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
 import { FileTreePanel } from './file-tree/FileTreePanel.tsx'
@@ -349,7 +349,7 @@ function renderSubcategory(
                 <AssetRow
                   key={asset.id}
                   asset={asset}
-                  badgeLabel={subcategory.label}
+                  badgeLabel={assetRowBadge(asset, subcategory.label)}
                   active={activeAssetId === asset.id}
                   onOpen={() =>{  handlers.openAsset(asset) }}
                   onReference={() =>{  handlers.insertAssetReference(asset) }}

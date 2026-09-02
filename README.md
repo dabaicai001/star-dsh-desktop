@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.114.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.114.2-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,9 +48,9 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.114.1 (2026-09-02)
-- 🐛 **dsh-status-rotator 一类 UI 插件「装了但用不了」——patch 追加粘连致 YAML 失败**:`rewrite_patch_port` 用 `lines().join("\n")` 重写 `cordis.patch.yml`,`lines()` 吞掉末行换行;随后 `sync_user_client_plugins` 在末尾追加 `- id:` entry 时与上一行粘连成非法 YAML(`timeoutMs: 30000    - id: 'dsh-status-rotator'`)→ dsh web boot 报 `YAMLException: bad indentation of a mapping entry` → 就绪探测超时 → 触发「坏插件自救」把插件误禁(启停后重启死循环)。修复:① rewrite 保留末行换行;② 追加前强制以换行开头。dsh-status-rotator 等正常 UI 插件不再被误禁。
-- 🐛 **文件信息弹窗内容区不撑满、底部大面积留白**:`.body`(FileInfoDialog)缺 `flex:1; min-height:0`,内部 `.editor` 的 `flex:1` 无高度可拉伸。补齐后编辑/预览区占满剩余高度。
+### v0.114.2 (2026-09-02)
+- 🐛 **SSH 终端浅色主题下白色光标块看不清**:xterm 未设 `theme.cursor` 时回落白色光标,而浅色主题终端背景为近白,光标块几乎不可见。`dshTerminalTheme` 现按主题钉死光标色,SSH / Docker exec / 堡垒机三处一并生效。
+- 🐛 **数据库资产行徽标只显示笼统「数据库」**:工具面板资产行徽标此前直接用子类名,混排的 MySQL / PostgreSQL / ClickHouse / Redis / ES 无从区分。新增 `assetRowBadge` 按 `config.dbType` 显示具体类型,过长由 CSS 截断。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
@@ -110,7 +110,7 @@ npm run tauri:dev        # 完整开发:构建 sidecar + React 工作台,启动�
 
 | 项 | 值 |
 |---|---|
-| 当前版本 | v0.114.1 |
+| 当前版本 | v0.114.2 |
 | 官网 | [starthub.waouzzz.cc](https://starthub.waouzzz.cc/) |
 | 仓库 | [github.com/dabaicai001/star-dsh-desktop](https://github.com/dabaicai001/star-dsh-desktop) |
 | 问题反馈 | [GitHub Issues](https://github.com/dabaicai001/star-dsh-desktop/issues) |

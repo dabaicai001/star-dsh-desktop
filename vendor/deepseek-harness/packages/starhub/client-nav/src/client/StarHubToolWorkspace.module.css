@@ -209,6 +209,10 @@
 }
 
 .badge {
+  flex: none;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 11px;
   padding: 1px 8px;
   border-radius: 999px;

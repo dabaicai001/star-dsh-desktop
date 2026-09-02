@@ -206,6 +206,22 @@ describe('StarHubToolWorkspace', () => {
     expect(screen.getByText('orders')).toBeTruthy()
   })
 
+  it('shows the concrete database type badge instead of the generic 数据库 label', () => {
+    const props = workspaceProps()
+    props.bridge.selectSubcategory('database')
+    props.assets.update((d) => {
+      d.assets = [
+        { ...sshAsset, id: 'm1', type: 'db', name: 'mysql-box', config: { dbType: 'mysql', host: '10.0.0.1' } },
+        { ...sshAsset, id: 'r1', type: 'db', name: 'redis-box', config: { dbType: 'redis', host: '10.0.0.2' } },
+        { ...sshAsset, id: 'e1', type: 'db', name: 'es-box', config: { dbType: 'elasticsearch', host: '10.0.0.3' } },
+      ]
+    })
+    render(<StarHubToolWorkspace {...props} />)
+    expect(screen.getByText('MySQL')).toBeTruthy()
+    expect(screen.getByText('Redis')).toBeTruthy()
+    expect(screen.getByText('ES')).toBeTruthy()
+  })
+
   it('skips the settings sync when the api face is absent', () => {
     const props = workspaceProps()
     props.bridge.selectSubcategory('terminal')
