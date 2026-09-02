@@ -52,32 +52,7 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 - 🐛 **dsh-status-rotator 一类 UI 插件「装了但用不了」——patch 追加粘连致 YAML 失败**:`rewrite_patch_port` 用 `lines().join("\n")` 重写 `cordis.patch.yml`,`lines()` 吞掉末行换行;随后 `sync_user_client_plugins` 在末尾追加 `- id:` entry 时与上一行粘连成非法 YAML(`timeoutMs: 30000    - id: 'dsh-status-rotator'`)→ dsh web boot 报 `YAMLException: bad indentation of a mapping entry` → 就绪探测超时 → 触发「坏插件自救」把插件误禁(启停后重启死循环)。修复:① rewrite 保留末行换行;② 追加前强制以换行开头。dsh-status-rotator 等正常 UI 插件不再被误禁。
 - 🐛 **文件信息弹窗内容区不撑满、底部大面积留白**:`.body`(FileInfoDialog)缺 `flex:1; min-height:0`,内部 `.editor` 的 `flex:1` 无高度可拉伸。补齐后编辑/预览区占满剩余高度。
 
-### v0.114.0 (2026-09-01)
-- ✨ **文件信息弹窗支持就地编辑保存**:右侧边栏「文件详情」弹窗去掉「@ 引用到对话框」按钮,内容预览改成可编辑 textarea 并新增「保存」按钮,编辑门禁与 Read 卡一致(AI 运行中只读、AI 空闲可编辑,保存经 `local_write_text_file` 覆盖写回)。
-- ✨ **数据库/终端右侧边栏支持左右拖拽调宽**:数据库监控右栏、SSH 终端右栏(SFTP/网页)拖动左边框分隔条即可调整宽度。
-- 🐛 **SFTP 文件列表底部留空 + 右键菜单防遮挡**:列表底部 padding 加大,右键菜单位置钳制到视口内,滑到底后不再被遮挡。
-- 🐛 **SSH 终端「等待终端连接…」状态文字为白色**:由琥珀色改为近黑色语义标签。
-
-### v0.113.2 (2026-09-01)
-- 🐛 **插件「重启 dsh web」按钮报 `Command dsh_web_restart not allowed by ACL`**:新增的 `dsh_web_restart` Tauri command 已注册进 `generate_handler!` 与前端按钮,但漏在 `src-tauri/permissions/commands.toml` 的 `starhub-commands` ACL 清单中登记——tauri 2.x 对 remote origin(127.0.0.1 dsh 主壳)的 app command 也走 ACL,未登记的 command 直接被拒,插件增删/启停后点「重启 dsh web」永远失败,新启用的 `dsh.client` 插件无法重新注入 web 运行时(这正是 dsh-status-rotator 一类 UI 插件「装了但用不了」的成因)。补上 ACL 登记,重启按钮恢复可用。
-
-### v0.113.1 (2026-09-01)
-- 🐛 **坏插件导致 dsh web / runtime 启动超时无法恢复(坏插件自救落地)**:装了个 `apply()` 抛错的插件(如 dsh-status-rotator 等)并启用后,web 组合 boot 时 fail-loud 使整个进程退出,就绪探测永不 200 → 60s 报「就绪探测超时」;plugin 一直 `enabled`,重启死循环,连设置页都进不去。本次实现 B-4 遗留的「坏插件自救」自动禁用——`web.rs` 就绪探测提前感知子进程退出(不再空等 60s),失败时自动禁用全部启用的用户插件(保留目录与 registry)并重试一次;`HarnessManager::initialize` 失败时同策略。应用回到可用状态,坏插件在设置页显示为已禁用、可重新启用,下个版本开机即自动恢复正常状态。
-
-### v0.113.0 (2026-09-01)
-- ✨ **dsh 插件「重启 dsh web」按钮(设置 → 插件)**:插件增删/启停后,web 运行时的「插件列表」读的是当前 Loader 快照,而将 `dsh.client` 插件接进运行时的动作(`sync_user_client_plugins`)仅在 dsh web 进程 spawn 时执行一次——此前 `dsh_shutdown` 只关 agent runtime,从不重启 web 进程,导致新启用的 UI 插件在「插件列表」查不到。新增 `dsh_web_restart` Tauri command(内部复用 `DshWebManager::shutdown` + `ensure_started`,kill 旧进程后重新 spawn),插件管理页「已安装插件」头部新增「重启 dsh web」按钮,点击后重新注入插件并返回重启后的 URL(Rust `cargo check` 与前端 `tsc --noEmit` 均通过)
-
-### v0.112.3 (2026-09-01)
-- 🐛 **CI 构建修复(zmodem.js 类型声明 + noUncheckedIndexedAccess)**:`SshTerminalOverlay.tsx` 新增 `zmodem.js/src/zmodem_browser.js` 引入但缺类型声明(TS7016: Could not find a declaration file);新增 `src/zmodem-browser.d.ts` 环境声明,并在 `onZmodemFilesSelected` 中把 `files[0].name` 先收敛到非空局部变量再用于状态文案(TS2532: Object is possibly 'undefined' ×2);同步修掉测试桩 `vi.fn((command) => ...)` 无参元组导致 `mock.calls.find(...)[1]` 报 TS2352/TS2493 的三个用例
-
-### v0.112.2 (2026-09-01)
-- 🐛 **堡垒机 MFA 验证码弹窗关闭后重开报 `[MFA_FAILED] Keyboard-interactive response channel dropped`**:关闭弹窗/窗口(或取消连接)时 `ssh_disconnect` 丢弃仍在等待的 keyboard-interactive 应答通道,不再让 in-flight connect 一直阻塞到 360s 超时;同时修掉旧任务醒来后盲目 `remove(session_id)` 误删重开连接新 sender 的竞态(新窗口第一次连接就弹验证码,不再复现报错)
-- 🐛 **堡垒机 MFA 验证码弹窗支持 Enter 快捷提交**:在验证码输入框按 Enter 等价点击「提交验证码」,不再需要移动鼠标点按钮;Esc 可关闭弹窗并断开当前会话
-
-### v0.112.0 (2026-09-01)
-- 🔧 **侧栏品牌 Logo 换成 StarHub**:侧栏顶部的品牌区改为 StarHub 资产——`brandMark`(原 FishLogo)换成 `apps/web/public/starhub-logo.png`(03 字标,边框白边已去除),标题+commit hash 徽标换成 `starhub-badge.png`(04 横版字标,背景已去透明);两图在 DSH web 的 `public/` 静态目录,重建 dsh web 后生效
-
-历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
+> 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 下载
 
@@ -135,7 +110,7 @@ npm run tauri:dev        # 完整开发:构建 sidecar + React 工作台,启动�
 
 | 项 | 值 |
 |---|---|
-| 当前版本 | v0.107.0 |
+| 当前版本 | v0.114.1 |
 | 官网 | [starthub.waouzzz.cc](https://starthub.waouzzz.cc/) |
 | 仓库 | [github.com/dabaicai001/star-dsh-desktop](https://github.com/dabaicai001/star-dsh-desktop) |
 | 问题反馈 | [GitHub Issues](https://github.com/dabaicai001/star-dsh-desktop/issues) |

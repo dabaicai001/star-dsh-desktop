@@ -103,6 +103,7 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 1. **改完立即 commit + push**:工作区不允许长期挂未提交改动;不把自己的改动和用户已有的未提交改动塞进同一个 commit(diff 不干净时只 commit 自己审过的部分,其余明确告知用户)。
 2. **代码或构建链改动必须升版**,纯文档改动(docs/、README 正文、注释)免升版。判断标准:会不会改变打包产物或用户可感知行为?不会 → 免升版;拿不准 → 升。
 3. **升版同步七处**:`package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/tauri.conf.json`、`CHANGELOG.md`、`AGENTS.md`(本节「当前版本」)、`README.md`(版本 badge)。七处必须一致。
+   - **README「当前版本」只保留最新一条**:`README.md` 顶部的「当前版本」章节只写**当前发布版**那一节,其余历史版本一律不写(历史版本只在 `CHANGELOG.md` 里,README 用一行「历史版本见 CHANGELOG.md」替代)。新增/升版时把这一节整体替换为最新版本,避免 README 越积越长。
 4. **版本号规则**:主版本 = 架构不兼容变更;次版本 = 新功能;修订版 = bug 修复 / 小改进 / 构建脚本调整。
 5. **CHANGELOG**:改动在 `[未发布]` 下补条目,发布时移到 `[x.y.z] - YYYY-MM-DD` 下。
 6. **tag 与 Release**:`release.yml` 由 `v*.*.*` tag 触发;一次 push 最多触发 3 个 tag,超出静默丢弃;多版本只在最后推最新 tag,单个推(`git tag vX.Y.Z && git push origin vX.Y.Z`);纯文档修订版不打 tag。
