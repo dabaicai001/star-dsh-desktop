@@ -40,6 +40,10 @@ export interface StarHubToolContextValue {
   assetName?: string
   /** 子类段路由前缀(如 /ssh),供 AI 建议打开时拼实例 URL。 */
   routePrefix?: string
+  /** 资产大类 id(db / ssh / docker / local);空 = 未标注。 */
+  assetType?: string
+  /** 数据库子类型(redis / mysql / clickhouse / …);非 DB 资产缺省。 */
+  dbType?: string
 }
 
 /** Schemastery validation for the namespace value. */
@@ -49,6 +53,8 @@ export const ToolContextSchema: z<StarHubToolContextValue> = z.object({
   assetId: z.string(),
   assetName: z.string(),
   routePrefix: z.string(),
+  assetType: z.string(),
+  dbType: z.string(),
 })
 
 /**
@@ -68,6 +74,16 @@ export function renderToolContext(value: StarHubToolContextValue): string | null
       ? [`- Route: ${value.routePrefix}`]
       : []),
   ]
+  // 资产类型提示:让模型准确选择工具族(DB 资产绝不调 SSH 工具)。
+  if ((value.assetType !== undefined && value.assetType !== '') || (value.dbType !== undefined && value.dbType !== '')) {
+    const assetType = value.assetType ?? ''
+    const dbType = value.dbType ?? ''
+    lines.push(`- Asset type: ${dbType !== '' ? `database (${dbType})` : assetType}`)
+  }
+  const toolHint = toolHintFor(value)
+  if (toolHint !== null) {
+    lines.push(toolHint)
+  }
   // Docker 资产硬约束(死规定):任何删除类操作必须先征得用户明确确认。
   // 与 @ 引用标注、approval-bridge 风险门三层一致,不允许模型自行删除。
   if (tool === 'docker') {
@@ -79,6 +95,19 @@ export function renderToolContext(value: StarHubToolContextValue): string | null
     )
   }
   return lines.join('\n')
+}
+
+/** 按资产类型给出「该用什么工具族」的一行提示(DB 资产明确禁止 SSH 工具)。 */
+function toolHintFor(value: StarHubToolContextValue): string | null {
+  const dbType = value.dbType ?? ''
+  const assetType = value.assetType ?? ''
+  if (dbType !== '') {
+    if (dbType === 'redis') return '- Preferred tool: redis_exec (Redis commands) — NOT ssh_exec/sftp_*.'
+    if (dbType === 'elasticsearch') return '- Preferred tool: es_* (Elasticsearch) — NOT ssh_exec/sftp_*.'
+    return '- Preferred tool: db_query (SQL) — NOT ssh_exec/sftp_*.'
+  }
+  if (assetType === 'db') return '- Preferred tool: db_query (SQL) — NOT ssh_exec/sftp_*.'
+  return null
 }
 
 /**

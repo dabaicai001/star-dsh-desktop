@@ -38,9 +38,20 @@
 .treeRow > :not(.chevron):not(.nodeIcon) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .treeRow:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 
-.tableRow { padding-left: 30px; color: var(--dsw-alias-label-tertiary); }
+.tableRow { padding-left: 8px; color: var(--dsw-alias-label-tertiary); }
 .tableRow.selected { background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-state-business-primary); box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary); }
 .tableRow.selected .nodeIcon { color: var(--dsw-alias-state-business-primary); }
+/* 表行内嵌字段树切换钮(独立于行选中)。 */
+.tableRowWrap { display: flex; flex-direction: column; }
+.tableRow { display: flex; min-width: 0; align-items: center; gap: 5px; width: 100%; border: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; text-align: left; padding: 5px 8px; border-radius: 6px; cursor: pointer; overflow: hidden; }
+.tableRow:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+.treeChevron { display: inline-flex; width: 16px; height: 16px; flex: none; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; padding: 0; line-height: 1; }
+.treeChevron:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-state-business-primary); }
+/* 字段树列:类型标签 + 列名(主键标注)。 */
+.columnRow { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 40px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.columnType { flex: none; min-width: 16px; text-align: right; color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code); font-size: 10px; }
+.columnName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-primary); }
+.columnPk { margin-left: 2px; color: var(--dsw-alias-state-warn-primary); font-size: 9px; font-weight: 650; }
 
 .chevron { width: 12px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--dsw-alias-label-tertiary); }
 .nodeIcon { width: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--dsw-alias-state-business-primary); }
@@ -71,7 +82,13 @@
 .dbSelect { height: 26px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 0 6px; max-width: 180px; }
 .dbSelect:focus { border-color: var(--dsw-alias-state-business-primary); outline: none; }
 
-.sqlPane { display: flex; flex-direction: column; gap: 5px; flex: none; max-height: 280px; min-height: 140px; }
+.sqlMode { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 0; }
+.sqlPane { display: flex; flex-direction: column; gap: 5px; flex: none; min-height: 160px; overflow: hidden; }
+/* SQL 编辑区与结果区之间的横向可拖拽分隔条。 */
+.sqlResize { flex: none; height: 6px; cursor: row-resize; user-select: none; touch-action: none; margin: 0 -10px; }
+.sqlResize:hover, .sqlResize:active { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent); }
+/* SQL 模式结果区:撑满剩余高度,内部滚动。 */
+.sqlResultArea { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .sqlBar { display: flex; min-height: 34px; align-items: center; gap: 7px; padding: 0 2px; }
 .sqlBarBtn, .sqlRunBtn { border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 5px 10px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 11px; cursor: pointer; }
 .sqlBarBtn:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }

@@ -10,7 +10,7 @@ import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import type {
   ClientSessionContext, InputTriggerCandidate, InputTriggerSource,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import { assetSubtitle, routeNameForAsset } from './sections.ts'
+import { STARHUB_SUBCATEGORIES, assetSubtitle, routeNameForAsset, routePrefixForAsset, type StarHubAsset } from './sections.ts'
 import type { RustAsset, StarHubAssets, ToolSelectionBridge } from './store.ts'
 import { bindAssetContext } from './tool-context.ts'
 
@@ -115,9 +115,13 @@ export function createStarHubAssetSource(deps: StarHubAssetSourceDeps): InputTri
         // 非本 source 产出的候选(防御路径):退回普通文本引用。
         return { text: `@${candidate.name} ` }
       }
-      // 轻绑定:只写 settings 上下文,不切窗口、不打断输入。附会话 id,
-      // host 侧 tool-context 只对触发绑定的会话注入(会话级作用域)。
-      bindAssetContext(deps.api, deps.selection.source.getSnapshot(), asset, session.sessionId)
+      // 轻绑定:以「被引用的资产」为准派生 subcategory 与 routePrefix(经
+      // STARHUB_SUBCATEGORIES 的 matches 反查所属工具大类),不读取侧栏当前
+      // 打开的工具——否则 @ 一个数据库资产却带着「终端」工具上下文,会误导
+      // 模型去调 ssh_exec。附会话 id,host 侧 tool-context 只对触发绑定的会话注入。
+      const subcategory = STARHUB_SUBCATEGORIES.find(s => s.matches(asset as StarHubAsset))?.key ?? ''
+      const routePrefix = routePrefixForAsset(asset as StarHubAsset) ?? ''
+      bindAssetContext(deps.api, { subcategory, routePrefix }, asset, session.sessionId)
       const sub = assetSubtitle(asset)
       // Docker 资产管理标签也带 ⚠ 标注(候选行与输入框里的引用都醒目)。
       const dockerMark = asset.type === 'docker' ? ` ${DOCKER_REFERENCE_TAG}` : ''

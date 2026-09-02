@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.114.2(**SSH 终端浅色主题下白色光标块看不清**:xterm 未设 `theme.cursor` 时回落白色光标,而浅色主题终端背景为近白,光标块几乎不可见。`dshTerminalTheme` 现按主题钉死光标色,SSH / Docker exec / 堡垒机三处一并生效;另修数据库资产行徽标只显示笼统「数据库」,新增 `assetRowBadge` 按 `config.dbType` 显示 MySQL / PostgreSQL / ClickHouse / Redis / ES 等具体类型,过长由 CSS 截断) |
+| 当前版本 | v0.115.0(**SQL 编辑器内容区重构:「SQL 查询 / 表数据」双模式切换 + 可拖拽编辑区**:数据库工作台内容头部从「SQL 编辑器」单一标签改为「SQL 查询 / 表数据」两个模式页签——点左侧表自动切到「表数据」模式(网格拿满全高),新建查询 / 执行 / 切查询标签自动回到「SQL 查询」模式;SQL 模式内编辑区与结果区之间加横向可拖拽分隔条(高度 160–560px 可调)。SQL 编辑区不再被 `max-height:280px` 钉死,与下方结果网格彻底分离,消除「查询与表数据挤在一起」的观感。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-02 (v0.114.2)*
+*最后更新: 2026-09-02 (v0.115.0)*

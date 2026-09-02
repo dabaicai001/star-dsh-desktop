@@ -15,6 +15,14 @@ export interface ToolContextSelection {
   routePrefix: string | null
 }
 
+/** 绑定资产的类型元数据(key 命名与资产 config 一致)。 */
+export interface ToolContextAssetMeta {
+  /** 资产大类 id / name(如 db / ssh / docker / local)。 */
+  assetType: string
+  /** 数据库子类型(redis / mysql / clickhouse / …);非 DB 资产为空。 */
+  dbType?: string
+}
+
 /**
  * 轻绑定一个资产到工具上下文:写全量五字段补丁(空选择字段写空串,与
  * 工作区列的同步语义一致),失败静默——上下文是尽力而为的提示,不打断
@@ -31,9 +39,16 @@ export interface ToolContextSelection {
 export function bindAssetContext(
   api: IApiClient,
   selection: ToolContextSelection,
-  asset: { id: string; name: string },
+  asset: { id: string; name: string; type?: string; config?: Record<string, unknown> },
   sessionId: string,
 ): void {
+  const config = asset.config ?? {}
+  const meta: ToolContextAssetMeta = {
+    assetType: asset.type ?? '',
+    ...(typeof config.dbType === 'string' && config.dbType !== ''
+      ? { dbType: config.dbType }
+      : {}),
+  }
   void api.settings.update({
     ns: TOOL_CONTEXT_NAMESPACE,
     patch: {
@@ -42,6 +57,8 @@ export function bindAssetContext(
       assetId: asset.id,
       assetName: asset.name,
       routePrefix: selection.routePrefix ?? '',
+      assetType: meta.assetType,
+      ...(meta.dbType !== undefined ? { dbType: meta.dbType } : {}),
     },
   }).catch(() => {})
 }

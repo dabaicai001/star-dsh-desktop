@@ -39,6 +39,27 @@ describe('renderToolContext', () => {
     expect(terminal).not.toContain('Docker delete guard')
   })
 
+  it('carries the asset type and a tool-family guidance for db assets', () => {
+    const text = renderToolContext({
+      subcategory: 'database', assetId: 'a1', assetName: 'mydb', routePrefix: '/db/mysql', assetType: 'db', dbType: 'mysql',
+    })
+    expect(text).toContain('Asset type: database (mysql)')
+    expect(text).toContain('Preferred tool: db_query')
+    expect(text).toContain('NOT ssh_exec')
+  })
+
+  it('guides redis assets to redis_exec and es assets to es_*', () => {
+    const redis = renderToolContext({ subcategory: 'database', assetName: 'r', assetType: 'db', dbType: 'redis' })
+    expect(redis).toContain('Preferred tool: redis_exec')
+    const es = renderToolContext({ subcategory: 'database', assetName: 'e', assetType: 'db', dbType: 'elasticsearch' })
+    expect(es).toContain('Preferred tool: es_*')
+  })
+
+  it('omits the tool-family hint when assetType is absent', () => {
+    const text = renderToolContext({ subcategory: 'terminal', assetName: 's1' })
+    expect(text).not.toContain('Preferred tool')
+  })
+
   it('falls back to the asset id when the display name is absent', () => {
     const text = renderToolContext({ subcategory: 'database', assetId: 'a9' })
     expect(text).toContain('Asset: a9')

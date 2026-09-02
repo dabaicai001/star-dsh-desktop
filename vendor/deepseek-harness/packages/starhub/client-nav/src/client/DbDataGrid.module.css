@@ -5,9 +5,10 @@
 .metaTable { color: var(--dsw-alias-label-primary); font-weight: 650; font-family: var(--ds-font-family-code); font-size: 12px; }
 .hint { color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .spacer { flex: 1; }
-.exportBtn { border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent); border-radius: 6px; padding: 3px 10px; background: transparent; color: var(--dsw-alias-state-business-primary); font-size: 11px; cursor: pointer; transition: background 0.12s, filter 0.12s; }
+.exportBtn { border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent); border-radius: 6px; padding: 3px 10px; background: transparent; color: var(--dsw-alias-state-business-primary); font-size: 11px; cursor: pointer; transition: background 0.12s, filter 0.12s; display: inline-flex; align-items: center; gap: 4px; }
 .exportBtn:hover { background: var(--dsw-alias-state-business-tertiary); }
 .exportBtn:disabled { opacity: 0.5; cursor: default; }
+.refreshBtnInner { display: inline-flex; align-items: center; gap: 4px; }
 .filterBadge { border-radius: 8px; padding: 1px 8px; background: var(--dsw-alias-state-business-tertiary); color: var(--dsw-alias-state-business-primary); font-size: 11px; }
 
 /* ─── WHERE 条件栏(带字段提示) ─── */
@@ -48,6 +49,9 @@
 .thSort:hover { color: var(--dsw-alias-label-primary); }
 .th:first-child { cursor: default; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .thLabel { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 列宽拖拽手柄:表头右缘的细分隔条,横向拖动调列宽。 */
+.colResize { flex: none; width: 6px; height: 100%; margin-left: 2px; cursor: col-resize; user-select: none; touch-action: none; border-left: 1px solid transparent; }
+.colResize:hover, .colResize:active { border-left-color: var(--dsw-alias-state-business-primary); background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 20%, transparent); }
 .sortMark { flex: none; color: var(--dsw-alias-state-business-primary); }
 .filterBtn { flex: none; width: 18px; height: 18px; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 10px; cursor: pointer; padding: 0; line-height: 1; }
 .filterBtn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-state-business-primary); }

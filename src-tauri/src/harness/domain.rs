@@ -1008,6 +1008,50 @@ fn resolve_asset(bridge: &HostBridgeState, session_id: &str) -> Option<(String, 
     bridge.resolve_asset(session_id)
 }
 
+/// 工具族 → 允许的资产类型(按工具名前缀/名称判定)。返回 None 表示该工具
+/// 与资产类型匹配,或该工具不需要资产类型约束(如 ssh_session_status)。
+/// 不匹配返回一段软错误引导(原样作文本回给模型,不 throw)。
+fn check_tool_asset_type(asset_type: &str, db_type: &str, name: &str) -> Result<(), String> {
+    // SSH / SFTP 工具族:只允许 ssh 资产。
+    if name.starts_with("ssh_") || name.starts_with("sftp_") {
+        if asset_type == "ssh" {
+            return Ok(());
+        }
+        return Err(format!(
+            "绑定资产是 {asset_type}({db_type}),不是 SSH 资产,不能执行 {name}。请改用该资产对应的工具(db_query / redis_exec / es_* / docker_*),或先绑定一个 SSH 资产。"
+        ));
+    }
+    // DB / Redis / ES 工具族:只允许 db 资产,且子类型与工具匹配。
+    if name == "db_query" || name == "redis_exec" || name.starts_with("es_") {
+        if asset_type != "db" {
+            return Err(format!(
+                "绑定资产是 {asset_type}({db_type}),不是数据库资产,不能执行 {name}。请改用该资产对应的工具,或先绑定一个数据库资产。"
+            ));
+        }
+        let subtype_ok = match name {
+            "db_query" => matches!(db_type, "mysql" | "postgresql" | "clickhouse" | "sqlite" | "mssql" | ""),
+            "redis_exec" => db_type == "redis",
+            _ => name.starts_with("es_") && db_type == "elasticsearch",
+        };
+        if !subtype_ok {
+            return Err(format!(
+                "绑定资产是数据库({db_type}),不能执行 {name}(请改用与该资产类型匹配的工具,如 db_query 用于关系库 / redis_exec 用于 Redis / es_* 用于 Elasticsearch)。"
+            ));
+        }
+        return Ok(());
+    }
+    // Docker 工具族:只允许 docker 资产。
+    if name.starts_with("docker_") {
+        if asset_type == "docker" {
+            return Ok(());
+        }
+        return Err(format!(
+            "绑定资产是 {asset_type}({db_type}),不是 Docker 资产,不能执行 {name}。请改用该资产对应的工具,或先绑定一个 Docker 资产。"
+        ));
+    }
+    Ok(())
+}
+
 /// 进程内执行一个域工具(方案1)。返回模型可读文本;Err 为硬错误。
 /// 调用方(tools.rs)负责成功事件的 on_ai_tool_success 回写。
 pub(crate) async fn execute_domain_tool(
@@ -1037,20 +1081,27 @@ pub(crate) async fn execute_domain_tool(
         // 状态查询不触发连接,单独处理(不调 execute_ssh 的 ensure_ssh_session)。
         return execute_ssh_status(bridge, &asset_id).await;
     }
-    if name.starts_with("ssh_") {
-        return execute_ssh(bridge, name, &merged_args).await;
-    }
-    if name.starts_with("sftp_") {
-        return execute_sftp(bridge, name, &merged_args).await;
-    }
 
-    // DB / Redis / ES / Docker 需要资产连接配置
+    // DB / Redis / ES / Docker 需要资产连接配置(先加载,供工具族校验与执行)。
     let (_asset_type, config) = load_asset_config(&asset_id).await?;
     let kind = if asset_type == "db" {
         as_str(config.get("dbType").unwrap_or(&Value::Null))
     } else {
         asset_type.clone()
     };
+
+    // 资产类型 → 工具族校验:防止「@ 数据库资产却调 ssh_exec」这类误路由。
+    // 不匹配返回软错误(原样作文本回给模型),引导改用正确的工具族。
+    if let Err(hint) = check_tool_asset_type(&asset_type, &kind, name) {
+        return Ok(hint);
+    }
+
+    if name.starts_with("ssh_") {
+        return execute_ssh(bridge, name, &merged_args).await;
+    }
+    if name.starts_with("sftp_") {
+        return execute_sftp(bridge, name, &merged_args).await;
+    }
 
     if name == "db_query" {
         return execute_relational_db(bridge, &kind, &config, &merged_args).await;
@@ -1073,6 +1124,35 @@ mod tests {
     use super::*;
 
     // ---------- 纯函数:base64 / 后台任务命令 / sleep 检测 ----------
+
+    // ---------- 纯函数:资产类型 → 工具族校验 ----------
+
+    #[test]
+    fn check_tool_asset_type_rejects_db_to_ssh() {
+        // @ 数据库资产却调 ssh_exec:必须拦下并给软错误引导。
+        let err = check_tool_asset_type("db", "mysql", "ssh_exec").unwrap_err();
+        assert!(err.contains("不是 SSH 资产"), "{err}");
+        assert!(err.contains("db_query"), "{err}");
+    }
+
+    #[test]
+    fn check_tool_asset_type_allows_matching_family() {
+        assert!(check_tool_asset_type("ssh", "ssh", "ssh_exec").is_ok());
+        assert!(check_tool_asset_type("db", "mysql", "db_query").is_ok());
+        assert!(check_tool_asset_type("db", "redis", "redis_exec").is_ok());
+        assert!(check_tool_asset_type("db", "elasticsearch", "es_search").is_ok());
+        assert!(check_tool_asset_type("docker", "docker", "docker_exec").is_ok());
+    }
+
+    #[test]
+    fn check_tool_asset_type_rejects_mismatched_db_type() {
+        // redis 资产上执行 es_*:资产类型同为 db 但子类型不符,仍应拦下。
+        let err = check_tool_asset_type("db", "redis", "es_search").unwrap_err();
+        assert!(err.contains("Redis") || err.contains("es_"), "{err}");
+        // mysql 资产上执行 redis_exec:同样拦下。
+        let err2 = check_tool_asset_type("db", "mysql", "redis_exec").unwrap_err();
+        assert!(err2.contains("db_query") || err2.contains("Redis"), "{err2}");
+    }
 
     #[test]
     fn base64_roundtrip_matches_standard() {

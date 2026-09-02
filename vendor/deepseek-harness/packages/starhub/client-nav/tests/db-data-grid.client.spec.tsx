@@ -200,6 +200,29 @@ describe('DbDataGrid', () => {
     expect(screen.getByText('1 个筛选')).toBeTruthy()
   })
 
+  it('resizes a column by dragging its header separator', async () => {
+    stubInvoke()
+    render(<DbDataGrid connId="c1" table="users" />)
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    const handle = screen.getByRole('separator', { name: '调整 name 列宽' })
+    // 起拖:初始宽 160,向右拖 80px → 240。
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 })
+    fireEvent.pointerMove(handle, { clientX: 180, pointerId: 1 })
+    fireEvent.pointerUp(handle, { pointerId: 1 })
+    const nameHeader = screen.getByRole('columnheader', { name: /name/ })
+    await waitFor(() =>{  expect(nameHeader.getAttribute('style')).toContain('240px') })
+  })
+
+  it('refreshes a single table via the 刷新 button', async () => {
+    const { calls } = stubInvoke()
+    render(<DbDataGrid connId="c1" table="users" />)
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    const before = calls.filter(([c]) => c === 'db_mysql_get_table_data').length
+    fireEvent.click(screen.getByRole('button', { name: '刷新当前表' }))
+    // 刷新:重新拉取表数据(总数增长)。
+    await waitFor(() =>{  expect(calls.filter(([c]) => c === 'db_mysql_get_table_data').length).toBeGreaterThan(before) })
+  })
+
   it('applies a WHERE filter via Enter and passes filter server-side', async () => {
     const { calls } = stubInvoke()
     render(<DbDataGrid connId="c1" table="users" />)
@@ -317,7 +340,7 @@ describe('DbDataGrid', () => {
     await waitFor(() =>{  expect(calls.some(([cmd, a]) => cmd === 'db_mysql_update_rows' && (a.sets as Record<string, unknown>).name === 'alicia')).toBe(true) })
     // WHERE 用主键定位第一行。
     const upd = calls.find(([cmd]) => cmd === 'db_mysql_update_rows')
-    expect(upd?.[1].where).toContain('`id` = 1')
+    expect(upd?.[1].whereClause).toContain('`id` = 1')
   })
 
   it('shows an error when saving without primary keys', async () => {
@@ -649,7 +672,7 @@ describe('DbDataGrid', () => {
     fireEvent.keyDown(editInput, { key: 'Enter' })
     await waitFor(() =>{  expect(screen.getByText(/保存 1/)).toBeTruthy() })
     fireEvent.click(screen.getByText(/保存 1/))
-    await waitFor(() =>{  expect(calls.some(([cmd, a]) => cmd === 'db_mysql_update_rows' && (a.where as string).includes('`org` = 7'))).toBe(true) })
+    await waitFor(() =>{  expect(calls.some(([cmd, a]) => cmd === 'db_mysql_update_rows' && (a.whereClause as string).includes('`org` = 7'))).toBe(true) })
   })
 
   it('tolerates a clipboard write failure', async () => {

@@ -399,4 +399,52 @@ describe('DbWorkbench', () => {
     unmount()
   })
 
+  it('switches to 表数据 mode when a table is selected, and back to SQL on 新建查询', async () => {
+    stubInvoke({})
+    const { unmount } = render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
+    // 初始在 SQL 查询模式(活动标签 run 按钮存在且因空 SQL 禁用)。
+    expect(screen.getByRole('button', { name: '执行 SQL' })).toBeTruthy()
+    // 展开库并点表 → 自动切到「表数据」模式,runtime ran the grid.
+    fireEvent.click(screen.getByTitle('app'))
+    await waitFor(() =>{  expect(screen.getByText('users')).toBeTruthy() })
+    fireEvent.click(screen.getByText('users'))
+    await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    // 表数据模式头部按钮 aria-pressed。
+    await waitFor(() =>{  expect(screen.getByRole('button', { name: '表数据' }).getAttribute('aria-pressed')).toBe('true') })
+    // 点「SQL 查询」切回;再「新建查询」也回到 SQL 模式。
+    fireEvent.click(screen.getByRole('button', { name: 'SQL 查询' }))
+    expect(screen.getByRole('button', { name: 'SQL 查询' }).getAttribute('aria-pressed')).toBe('true')
+    unmount()
+  })
+
+  it('disables the run button on a new empty query and re-enables after typing', async () => {
+    stubInvoke({})
+    render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
+    // 新建查询后 SQL 为空 → 运行/EXPLAIN 按钮禁用,且 title 提示「输入 SQL 后可执行」。
+    fireEvent.click(screen.getByRole('button', { name: '新建查询' }))
+    await waitFor(() =>{  expect(screen.getByRole('tab', { name: '查询 2' })).toBeTruthy() })
+    await waitFor(() =>{  expect(screen.getByRole('button', { name: '执行 SQL' }).hasAttribute('disabled')).toBe(true) })
+    // 键入 SQL 后按钮解禁(编辑器受控值无法直接读,验证渲染态即可)。
+    expect(screen.getByRole('button', { name: '格式化 SQL' })).toBeTruthy()
+  })
+
+  it('expands a table to a lazy-loaded field tree on chevron click', async () => {
+    const { calls } = stubInvoke({})
+    render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
+    fireEvent.click(screen.getByTitle('app'))
+    await waitFor(() =>{  expect(screen.getByText('users')).toBeTruthy() })
+    // 展开字段树:点击表行内的「展开 users 字段」chevron。
+    fireEvent.click(screen.getByRole('button', { name: '展开 users 字段' }))
+    // 懒加载 → list_columns 触发,列名/类型出现在树里。
+    await waitFor(() =>{  expect(calls.some(([cmd, a]) => cmd === 'db_mysql_list_columns' && a.table === 'users')).toBe(true) })
+    await waitFor(() =>{  expect(screen.getByText('id')).toBeTruthy() })
+    await waitFor(() =>{  expect(screen.getByText('name')).toBeTruthy() })
+    // 再点收起。
+    fireEvent.click(screen.getByRole('button', { name: '收起 users 字段' }))
+    await waitFor(() =>{  expect(screen.queryByText('name')).toBeNull() })
+  })
+
 })

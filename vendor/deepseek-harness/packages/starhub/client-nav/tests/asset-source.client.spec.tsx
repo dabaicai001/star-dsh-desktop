@@ -173,7 +173,8 @@ describe('createStarHubAssetSource', () => {
     })
     const update = vi.fn(() => Promise.resolve({ result: { ok: true } }))
     const { selection, source } = makeHarness(assets, update)
-    selection.selectSubcategory('terminal')
+    // 侧栏当前打开别的工具不影响 @ 绑定:绑定以「被引用资产」为准。
+    selection.selectSubcategory('database')
     const [candidate] = await source.candidates(proj(), req(''))
     const outcome = source.onPick(pickOf(candidate!))
     expect(outcome).toEqual({
@@ -184,18 +185,19 @@ describe('createStarHubAssetSource', () => {
         clipboardText: '@web-1',
       },
     })
-    // 轻绑定:settings.update 写 starhub-tool-context 全量五字段补丁
+    // 轻绑定:settings.update 写 starhub-tool-context 补丁——subcategory/routePrefix
+    // 由被引用资产派生(此处为 SSH),不再读侧栏当前打开的工具;并携带 assetType。
     expect(update).toHaveBeenCalledWith({
       ns: TOOL_CONTEXT_NAMESPACE,
-      patch: { sessionId: 's1', subcategory: 'terminal', assetId: 'a1', assetName: 'web-1', routePrefix: '' },
+      patch: { sessionId: 's1', subcategory: 'terminal', assetId: 'a1', assetName: 'web-1', routePrefix: '/ssh', assetType: 'ssh' },
     })
   })
 
   it.each([
-    ['ssh', 'terminal', 'ssh-1'],
-    ['db', 'database', 'db-1'],
-    ['docker', 'docker', 'docker-1'],
-  ])('onPick binds a %s asset without opening a workbench', async (type, subcategory, id) => {
+    ['ssh', 'terminal', 'ssh-1', '/ssh', 'ssh'],
+    ['db', 'database', 'db-1', '/db/mysql', 'db'],
+    ['docker', 'docker', 'docker-1', '/docker', 'docker'],
+  ])('onPick binds a %s asset without opening a workbench (derived from the asset)', async (type, subcategory, id, routePrefix, assetType) => {
     const assets = createStarHubAssets()
     assets.source.set({
       assets: [{ ...rustAsset(id, `${type}-asset`), type }],
@@ -203,7 +205,8 @@ describe('createStarHubAssetSource', () => {
     })
     const update = vi.fn(() => Promise.resolve({ result: { ok: true } }))
     const { selection, source } = makeHarness(assets, update)
-    selection.selectSubcategory(subcategory)
+    // 侧栏选中无关工具:@ 绑定必须按被引用资产派生,不被侧栏误导。
+    selection.selectSubcategory('database')
     const [candidate] = await source.candidates(proj(), req(''))
     source.onPick(pickOf(candidate!))
     expect(update).toHaveBeenCalledWith({
@@ -213,8 +216,25 @@ describe('createStarHubAssetSource', () => {
         subcategory,
         assetId: id,
         assetName: `${type}-asset`,
-        routePrefix: '',
+        routePrefix,
+        assetType,
       },
+    })
+  })
+
+  it('onPick binds a db asset with its dbType into the tool context', async () => {
+    const assets = createStarHubAssets()
+    assets.source.set({
+      assets: [{ ...rustAsset('r1', 'redis-1', { dbType: 'redis' }), type: 'db' }],
+      loading: false, error: null, preview: false,
+    })
+    const update = vi.fn(() => Promise.resolve({ result: { ok: true } }))
+    const { source } = makeHarness(assets, update)
+    const [candidate] = await source.candidates(proj(), req(''))
+    source.onPick(pickOf(candidate!))
+    expect(update).toHaveBeenCalledWith({
+      ns: TOOL_CONTEXT_NAMESPACE,
+      patch: { sessionId: 's1', subcategory: 'database', assetId: 'r1', assetName: 'redis-1', routePrefix: '/db/redis', assetType: 'db', dbType: 'redis' },
     })
   })
 

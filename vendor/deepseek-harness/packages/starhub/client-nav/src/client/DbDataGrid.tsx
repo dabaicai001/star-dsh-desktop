@@ -36,7 +36,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { tauriInvoke } from './tauri.ts'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
-import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutline14, IconChevronUpOutline14, IconRefreshOutline14, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './DbDataGrid.module.css'
 
 /** QueryResult 列信息(C 节数据形态;与 Vue src/types/db.ts ColumnInfo 同构)。 */
@@ -196,6 +196,9 @@ export function DbDataGrid({
   const [filterPos, setFilterPos] = useState({ top: 0, left: 0 })
   // 主键列(list_columns 的 key==='PRI'),用于构造 UPDATE WHERE。
   const [pkCols, setPkCols] = useState<string[]>([])
+  // 列宽(px):列名 → 宽度,缺省 160;表头分隔条拖拽调整,夹在 min/max 间。
+  const [colWidths, setColWidths] = useState<Record<string, number>>({})
+  const resizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null)
   // 全量列清单(list_columns 的 name/type),喂 WHERE 自动补全(v0.102.0)。
   const [tableCols, setTableCols] = useState<QueryColumn[]>([])
   // 表总行数(get_row_count,仅在无列筛选时作为分页基数;有筛选时用结果里的
@@ -319,6 +322,32 @@ export function DbDataGrid({
       setOrderDir('asc')
     }
     setPage(0)
+  }
+
+  const colWidth = (name: string): number => colWidths[name] ?? 160
+  /** 起拖:记录列名、起始 X 与起始宽(只在表头分隔条上触发)。 */
+  const onResizeStart = (e: React.PointerEvent, col: QueryColumn): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    resizeRef.current = { col: col.name, startX: e.clientX, startWidth: colWidth(col.name) }
+    if (typeof (e.currentTarget as HTMLElement).setPointerCapture === 'function') {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    }
+  }
+  /** 拖拽中:按 X 位移更新列宽,夹在 80–600px 间。 */
+  const onResizeMove = (e: React.PointerEvent): void => {
+    const r = resizeRef.current
+    if (r === null) return
+    const next = Math.max(80, Math.min(600, r.startWidth + (e.clientX - r.startX)))
+    setColWidths(prev => ({ ...prev, [r.col]: next }))
+  }
+  /** 松开:结束拖拽并释放指针捕获。 */
+  const onResizeEnd = (e: React.PointerEvent): void => {
+    if (resizeRef.current === null) return
+    resizeRef.current = null
+    if (typeof (e.currentTarget as HTMLElement).releasePointerCapture === 'function') {
+      ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
+    }
   }
 
   const visibleStart = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
@@ -457,7 +486,7 @@ export function DbDataGrid({
         }
         const sets: Record<string, unknown> = {}
         for (const c of changes) sets[c.col] = c.newValue
-        const args: Record<string, unknown> = { connId, table, sets, where: pkWhere }
+        const args: Record<string, unknown> = { connId, table, sets, whereClause: pkWhere }
         if (database !== undefined && database !== '') args.database = database
         const res = await tauriInvoke<{ rowsAffected?: number; error?: string }>(`${cmdPrefix}_update_rows`, args)
         if (res.error !== undefined && res.error !== '') {
@@ -501,6 +530,17 @@ export function DbDataGrid({
     /* v8 ignore next -- 防御:按钮在无数据时 disabled,点击路径恒有行列 */
     if (columns.length === 0 || rows.length === 0) return
     downloadTextFile(`${table}_page${page + 1}.csv`, rowsToCsv(columns, rows))
+  }
+
+  /** 刷新当前表:回到第一页并重新拉取数据/列/行数(单个表刷新)。 */
+  const refreshTable = (): void => {
+    setPage(0)
+    setWhereFilter('')
+    setWhereDraft('')
+    setOrderBy(null)
+    setOrderDir('asc')
+    setColumnFilters({})
+    setDirty(new Map())
   }
 
   const filteredCount = useMemo(() => Object.values(columnFilters).filter(v => v !== '').length, [columnFilters])
@@ -610,6 +650,9 @@ export function DbDataGrid({
           <span className={css.filterBadge}>{filteredCount + (whereFilter !== '' ? 1 : 0)} 个筛选</span>
         )}
         <span className={css.spacer} />
+        <button type="button" className={css.exportBtn} onClick={refreshTable} disabled={loading} title="刷新当前表数据" aria-label="刷新当前表">
+          <span className={css.refreshBtnInner}><IconRefreshOutline14 size={12} /> 刷新</span>
+        </button>
         {onExport !== undefined && (
           <button type="button" className={css.exportBtn} onClick={() =>{  onExport(orderBy, orderDir, whereFilter !== '' ? whereFilter : null) }} title="全量导出该表到 Excel(后端执行,含当前筛选)">
             导出 Excel
@@ -681,7 +724,7 @@ export function DbDataGrid({
           <div className={css.theadRow}>
             <div className={css.th} style={{ width: 60 }}>#</div>
             {columns.map(col => (
-              <div key={col.name} className={css.th} style={{ width: 160 }} role="columnheader">
+              <div key={col.name} className={css.th} style={{ width: colWidth(col.name) }} role="columnheader">
                 <button
                   type="button"
                   className={css.thSort}
@@ -689,7 +732,7 @@ export function DbDataGrid({
                   title={col.type ?? ''}
                 >
                   <span className={css.thLabel}>{col.name}</span>
-                  {orderBy === col.name && <span className={css.sortMark}>{orderDir === 'asc' ? '▲' : '▼'}</span>}
+                  {orderBy === col.name && <span className={css.sortMark} aria-hidden="true">{orderDir === 'asc' ? <IconChevronUpOutline14 size={12} /> : <IconChevronDownOutline14 size={12} />}</span>}
                 </button>
                 <button
                   type="button"
@@ -698,8 +741,18 @@ export function DbDataGrid({
                   title="列筛选"
                   aria-label={`筛选 ${col.name}`}
                 >
-                  ⌄
+                  <IconChevronDownOutline14 size={12} />
                 </button>
+                <span
+                  className={css.colResize}
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label={`调整 ${col.name} 列宽`}
+                  onPointerDown={(e) =>{  onResizeStart(e, col) }}
+                  onPointerMove={onResizeMove}
+                  onPointerUp={onResizeEnd}
+                  onPointerCancel={onResizeEnd}
+                />
               </div>
             ))}
           </div>
@@ -738,7 +791,7 @@ export function DbDataGrid({
                     <div
                       key={colIndex}
                       className={`${css.td} ${isNull ? css.null : ''} ${!isNull && col?.type?.toLowerCase().includes('int') ? css.num : ''} ${dirtyCell !== undefined ? css.dirty : ''}`}
-                      style={{ width: 160 }}
+                      style={{ width: colWidth(col?.name ?? '') }}
                       title={cellText(displayed)}
                       onDoubleClick={() =>{  startEdit(absoluteRow, colIndex) }}
                     >

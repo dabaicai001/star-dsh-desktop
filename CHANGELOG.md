@@ -31,16 +31,28 @@
 
 ## [未发布]
 
-### 修复
-- **SSH 终端浅色主题下白色光标块看不清**:xterm 未设 `theme.cursor` 时回落白色光标(`#ffffff`),而浅色主题终端背景为近白 `#f5f6f7`,光标块几乎不可见。`dshTerminalTheme` 现按主题钉死光标色(浅色 `#1f2329` + `#f5f6f7` 反色 accent;深色 `#f9fafb` + `#1b1b1c`,行为不变),SSH / Docker exec / 堡垒机三处经 `useTerminalTheme` 一并生效
-- **数据库资产行徽标只显示笼统「数据库」**:工具面板资产行徽标此前直接用子类名(数据库),混排的 MySQL / PostgreSQL / ClickHouse / Redis / ES 无从区分。新增 `assetRowBadge` 按 `config.dbType` 显示具体类型(MySQL / PostgreSQL / ClickHouse / Redis / ES / Broker),过长由 CSS 截断(ellipsis)
-
 ### 计划中
 - Settings 补「代理」「安全」2 个 tab
 - SQL 查询结果可编辑及无主键报错提示（转 K3）
 - 左侧 dsh 会话列表右键「删除」待 dsh host 侧 session.delete RPC 落地后启用(当前置灰,仅归档)
 
 ---
+
+## [0.115.0] - 2026-09-02
+
+### 新增
+- **SQL 编辑器内容区重构:「SQL 查询 / 表数据」双模式切换 + 可拖拽编辑区**:数据库工作台内容头部从「SQL 编辑器」单一标签改为「SQL 查询 / 表数据」两个模式页签——点左侧表自动切到「表数据」模式(网格拿满全高),新建查询 / 执行 / 切查询标签自动回到「SQL 查询」模式;SQL 模式内编辑区与结果区之间加横向可拖拽分隔条(高度 160–560px 可调)。SQL 编辑区不再被 `max-height:280px` 钉死,与下方结果网格彻底分离,消除「查询与表数据挤在一起」的观感。
+- **数据库左侧树新增字段树(懒加载)**:表行前加展开/收起 chevron,首次展开经 `db_mysql_list_columns` 懒加载该表列清单并以「类型 + 列名(主键标注)」展示;点表行本身仍切换到表数据视图,两者互不影响。
+- **表数据网格新增「刷新」按钮(刷新单个表)**:工具栏「刷新」一键回到第一页并重载当前表数据/列/行数,配合已有的导出/筛选/编辑使用。
+
+### 变更
+- **数据库网格列头图标化 + 列宽可拖拽**:排序标记 `▲/▼`、列筛选 `⌄` 文字替换为真实 SVG 图标(`IconChevronUp/DownOutline14`);列头右缘新增横向拖拽分隔条调整列宽(80–600px 可调),表头与数据行宽度同步。默认 160px 不变。
+
+### 修复
+- **SSH 终端浅色主题下白色光标块看不清**:xterm 未设 `theme.cursor` 时回落白色光标(`#ffffff`),而浅色主题终端背景为近白 `#f5f6f7`,光标块几乎不可见。`dshTerminalTheme` 现按主题钉死光标色(浅色 `#1f2329` + `#f5f6f7` 反色 accent;深色 `#f9fafb` + `#1b1b1c`,行为不变),SSH / Docker exec / 堡垒机三处经 `useTerminalTheme` 一并生效
+- **数据库资产行徽标只显示笼统「数据库」**:工具面板资产行徽标此前直接用子类名(数据库),混排的 MySQL / PostgreSQL / ClickHouse / Redis / ES 无从区分。新增 `assetRowBadge` 按 `config.dbType` 显示具体类型(MySQL / PostgreSQL / ClickHouse / Redis / ES / Broker),过长由 CSS 截断(ellipsis)
+- **AI @ 数据库资产却调用 `ssh_exec`(工具误路由)**:三层加固。① `@` 引用绑定改为以「被引用资产」为准——`asset-source` 的 `onPick` 不再读侧栏当前打开的工具,而是按资产自身反查子类并派生路由前缀,避免「@数据库却带 SSH 上下文」;② 工具上下文携带 `assetType`/`dbType`,宿主 `tool-context` 在注入文本里显式标出资产类型与「Preferred tool: db_query — NOT ssh_exec/sftp_*」指引,引用文本也带明确类型;③ 进程内域工具分派前加资产类型→工具族校验,`ssh_exec` 绑定在数据库资产上、`redis_exec` 绑在关系库上等一律拦截并返回软错误引导,绝不静默执行。
+- **表数据「保存」报 `db_mysql_update_rows missing required key whereClause`**:前端单元格批量保存把主键 WHERE 传成了 `where`,而 Tauri 命令参数名是 `where_clause`(→ `whereClause`),导致参数缺失被拒;改为传 `whereClause`,MySQL / ClickHouse 一并修正。
 
 ## [0.113.0] - 2026-09-01
 
