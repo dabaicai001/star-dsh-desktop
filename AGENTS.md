@@ -96,7 +96,7 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 **代码风格**:TS `strict`、禁 `any`(用 `unknown`);Rust 过 `cargo fmt` + `clippy`;Go 过 `gofmt`;公共 API 写文档注释;面向用户文案走 i18n,禁硬编码;全仓库 UTF-8 无 BOM。
 
-**新增 Tauri command 三道同步(反复踩坑,勿再犯)**:tauri 2.x 对 remote origin(127.0.0.1 dsh 主壳)的 app command 也走 ACL,新增/重命名 command 必须同时改三处 `generate_handler!`(`src-tauri/src/main.rs`)、`permissions/commands.toml` 的 `starhub-commands` 白名单、前端调用方。`tauri-build` **不会**因白名单缺 command 报错(构建/单测全绿),只有从 dsh 主壳真实点按钮才暴露「Command xxx not allowed by ACL」。曾两次踩坑:v0.106.2(`desktop_ui_open_live_window`)、v0.113.2(`dsh_web_restart`)。详见 [docs/踩坑记录.md §38](docs/踩坑记录.md)。
+**新增 Tauri command 三道同步(反复踩坑,勿再犯)**:tauri 2.x 对 remote origin(127.0.0.1 dsh 主壳)的 app command 也走 ACL,新增/重命名 command 必须同时改三处 `generate_handler!`(`src-tauri/src/main.rs`)、`permissions/commands.toml` 的 `starhub-commands` 白名单、前端调用方。`tauri-build` **不会**因白名单缺 command 报错(构建/单测全绿),只有从 dsh 主壳真实点按钮才暴露「Command xxx not allowed by ACL」。曾多次踩坑(如 v0.106.2 `desktop_ui_open_live_window`、v0.113.2 `dsh_web_restart`)。
 
 ## 版本与提交纪律(强制)
 
