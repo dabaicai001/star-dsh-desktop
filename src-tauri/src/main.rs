@@ -115,6 +115,8 @@ fn main() {
         .manage(harness::HarnessManager::new())
         .manage(harness::web::DshWebManager::new())
         .manage(browser::BrowserManager::new())
+        // AI 浏览器 obscura 无头引擎(进程/CDP/页面会话/直播查看器状态)
+        .manage(browser::obscura::ObscuraManager::new())
         // 沙箱桌面:任务级授权 / 平台连接缓存 / 接管互斥状态
         .manage(desktop::DesktopManager::new())
         // Android 实体机:任务级授权 / adb 路径缓存 / 直播帧与 scrcpy 会话
@@ -122,6 +124,10 @@ fn main() {
         // Android 直播窗口内容:android-live://localhost/<serial>/(页面/帧/视频/接管输入)
         .register_uri_scheme_protocol("android-live", |ctx, request| {
             android::live_protocol_handler(ctx.app_handle(), request)
+        })
+        // Obscura 直播查看器窗口内容:obscura-live://localhost/<page_key>/(页面/帧/输入)
+        .register_uri_scheme_protocol("obscura-live", |ctx, request| {
+            browser::obscura::live_protocol_handler(ctx.app_handle(), request)
         })
         // 联动 M1:会话附着注册表(ssh_attach/ssh_detach + live.snapshot 快照源)
         .manage(registry::SessionRegistry::new())
@@ -143,12 +149,15 @@ fn main() {
                     }
                 }
                 tauri::WindowEvent::Destroyed if window.label() == "main" => {
+                    let app_for_shutdown = app_handle.clone();
                     tauri::async_runtime::spawn(async move {
                         app_handle
                             .state::<harness::web::DshWebManager>()
                             .shutdown()
                             .await;
                     });
+                    // 回收 obscura 无头引擎进程(CDP 客户端随之退出,进程 kill)。
+                    browser::obscura::shutdown(&app_for_shutdown);
                 }
                 tauri::WindowEvent::Destroyed
                     if window.label() == browser::BROWSER_WINDOW_LABEL =>
@@ -243,6 +252,7 @@ fn main() {
             commands::ssh::open_external_url,
             commands::ssh::ssh_stop_web_gateway,
             commands::ssh::ssh_web_gateway_port,
+            commands::ssh::ssh_open_web_window,
             commands::ssh::ssh_parse_config_file,
             commands::sftp::sftp_list,
             commands::sftp::sftp_home_dir,
@@ -416,6 +426,9 @@ fn main() {
             // AI 浏览器(无痕独立窗口):页面 eval 结果回传,仅此一条命令对
             // ai-browser 窗口开放(capabilities/browser.json 收窄)
             commands::browser::browser_internal_result,
+            // AI 浏览器引擎设置(webview | obscura,由设置页/宿主 UI 读写)
+            commands::browser::browser_get_engine,
+            commands::browser::browser_set_engine,
             // 沙箱桌面(UI 状态读写;容器生命周期只走 AI 工具路径与 UI 生命周期命令)
             commands::android::android_ui_get_config,
             commands::android::android_ui_set_adb_path,

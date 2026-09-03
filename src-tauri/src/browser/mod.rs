@@ -1,23 +1,17 @@
-//! AI 浏览器(M1+M2+M3):无痕独立 Tauri 窗口,AI 经 Function Calling 全权操作,
-//! 用户全程可见。
+//! AI 浏览器双引擎:webview(无痕独立窗口)与 obscura(无头浏览器 + 直播查看器)。
 //!
-//! 架构(调研见 docs/AI浏览器插件调研.md,窗口形态按需求调整为独立无痕窗口):
-//! - 窗口:label = [`BROWSER_WINDOW_LABEL`],`WebviewWindowBuilder::incognito(true)`
-//!   —— Windows WebView2 InPrivate / macOS WKWebView nonPersistent DataStore /
-//!   Linux WebKitGTK ephemeral WebContext,三平台均由 wry 0.55 原生支持;
-//! - 控制通道双层:Windows 走 [`cdp`](CDP,可信输入/截图/awaitPromise eval),
-//!   其余平台(及 CDP 失败回退)走 [`script`] 注入 + `browser_internal_result`
-//!   IPC oneshot 桥;
-//! - 截图:Windows CDP Page.captureScreenshot / macOS WKWebView takeSnapshot
-//!   (snapshot_macos.rs)/ Linux WebKitGTK get_snapshot(snapshot_linux.rs);
-//! - 工具分发:harness/tools.rs 把 [`BROWSER_TOOLS`] 内的调用路由到
-//!   [`execute_from_bridge`];风险分级在 dsh 侧 starhub-approval-bridge。
+//! 14 个 `browser_*` 工具经 harness/tools.rs 路由到 [`execute_from_bridge`]。
+//! 实际执行后端由设置 `browser.engine`(`webview`|`obscura`)决定;JSON 参数解析
+//! (`parse_action`)与页面侧注入层(`script::HELPERS_JS`)两后端共用。
 //!
-//! 安全边界:浏览器窗口加载任意外部网页,capabilities/browser.json 只授予
-//! `browser-eval-result` 一条命令权限(外部 origin 经 remote.urls 匹配),
-//! 页面拿不到任何其它 app command;导航协议白名单见 script::normalize_url。
+//! 安全边界(webview 后端):浏览器窗口加载任意外部网页,capabilities/browser.json
+//! 只授予 `browser-eval-result` 一条命令权限,页面拿不到任何其它 app command;
+//! 导航协议白名单见 [`script::normalize_url`]。obscura 后端为无头引擎,页面不经过
+//! Tauri IPC,由 CDP 触发,风险面由 CDP 命令白名单收窄。
 
+pub mod obscura;
 pub mod script;
+pub mod webview;
 
 #[cfg(windows)]
 mod cdp;
@@ -28,16 +22,17 @@ mod snapshot;
 #[path = "snapshot_linux.rs"]
 mod snapshot;
 
+mod keymap;
+
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Duration;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
 
 use super::harness::HostBridgeState;
 
-/// AI 浏览器窗口 label(capabilities/browser.json 按此收窄权限)。
+/// AI 浏览器 webview 窗口 label(capabilities/browser.json 按此收窄权限)。
 pub const BROWSER_WINDOW_LABEL: &str = "ai-browser";
 
 /// 浏览器域工具名全集(与 vendor packages/starhub/tools/src/index.ts 的
@@ -59,17 +54,14 @@ pub const BROWSER_TOOLS: &[&str] = &[
     "browser_eval",
 ];
 
-/// eval 桥超时(页面导航中途的在途请求随之超时收口)。
-const EVAL_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// 导航后等待文档就绪的轮询参数。
-const NAV_READY_TIMEOUT: Duration = Duration::from_secs(10);
-const NAV_READY_POLL: Duration = Duration::from_millis(300);
+/// 引擎选择(持久化到 settings 表。webview 为默认)。
+pub const ENGINE_SETTING_KEY: &str = "browser.engine";
 
 /// 页面 eval 的一次应答:ok + JSON 字符串载荷(页面侧已 JSON.stringify)。
 type EvalOutcome = (bool, Option<String>);
 
 /// 在途 eval 请求登记表(browser_internal_result 命令按 id 应答)。
+/// 仅 webview 后端使用;obscura 后端经 CDP Runtime.evaluate 直取结果。
 #[derive(Default)]
 pub struct BrowserManager {
     pending: Mutex<HashMap<String, oneshot::Sender<EvalOutcome>>>,
@@ -117,7 +109,7 @@ impl BrowserManager {
 }
 
 // ============================================================
-// 工具参数 → 动作(纯解析层,无 GUI 依赖,单测覆盖)
+// 工具参数 → 动作(纯解析层,无 GUI 依赖,单测覆盖;两后端共用)
 // ============================================================
 
 /// 校验后的浏览器动作。执行层只认这个枚举,模型传入的原始 JSON 在此收口。
@@ -226,163 +218,54 @@ pub fn parse_action(name: &str, args: &Value) -> Result<BrowserAction, String> {
 }
 
 // ============================================================
-// 窗口生命周期
+// 引擎设置(settings 表持久化)
 // ============================================================
 
-/// 确保浏览器窗口存在:已存在则聚焦复用;不存在则以无痕模式创建。
-/// `url` 非空时创建即导航(复用已有窗口时不强制跳页,交给 browser_navigate)。
-pub async fn ensure_window(
-    app: &AppHandle,
-    url: Option<&str>,
-) -> Result<(WebviewWindow, bool), String> {
-    if let Some(window) = app.get_webview_window(BROWSER_WINDOW_LABEL) {
-        window
-            .set_focus()
-            .map_err(|e| format!("聚焦 AI 浏览器窗口失败:{e}"))?;
-        return Ok((window, false));
+/// 读取当前引擎设置;缺省 webview。读取失败(库未就绪)回退默认并告警。
+pub async fn engine_setting(_app: &AppHandle) -> obscura::Engine {
+    match crate::db::get_pool() {
+        Ok(pool) => match sqlx::query_scalar::<_, String>(
+            "SELECT value FROM settings WHERE key = ?",
+        )
+        .bind(ENGINE_SETTING_KEY)
+        .fetch_optional(pool)
+        .await
+        {
+            Ok(Some(value)) => match value.as_str() {
+                "obscura" => obscura::Engine::Obscura,
+                _ => obscura::Engine::Webview,
+            },
+            Ok(None) => obscura::Engine::Webview,
+            Err(e) => {
+                tracing::warn!("读取浏览器引擎设置失败,回退 webview:{e}");
+                obscura::Engine::Webview
+            }
+        },
+        Err(_) => obscura::Engine::Webview,
     }
-    let initial = match url {
-        Some(u) => script::normalize_url(u)?,
-        None => "about:blank".to_string(),
+}
+
+/// 写入引擎设置;返回是否成功。
+pub async fn save_engine_setting(_app: &AppHandle, engine: obscura::Engine) -> Result<(), String> {
+    let pool = crate::db::get_pool().map_err(|e| e.to_string())?;
+    let value = match engine {
+        obscura::Engine::Webview => "webview",
+        obscura::Engine::Obscura => "obscura",
     };
-    let parsed = tauri::Url::parse(&initial).map_err(|e| format!("初始 URL 非法:{e}"))?;
-    let window = WebviewWindowBuilder::new(
-        app,
-        BROWSER_WINDOW_LABEL,
-        WebviewUrl::External(parsed),
+    sqlx::query(
+        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, strftime('%s','now')) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
     )
-    .title("StarHub AI 浏览器(无痕)")
-    .inner_size(1100.0, 760.0)
-    .incognito(true)
-    .build()
-    .map_err(|e| format!("创建 AI 浏览器窗口失败:{e}"))?;
-    Ok((window, true))
-}
-
-fn current_window(app: &AppHandle) -> Result<WebviewWindow, String> {
-    app.get_webview_window(BROWSER_WINDOW_LABEL)
-        .ok_or_else(|| "AI 浏览器窗口未打开,请先 browser_open".to_string())
+    .bind(ENGINE_SETTING_KEY)
+    .bind(value)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("保存引擎设置失败:{e}"))?;
+    Ok(())
 }
 
 // ============================================================
-// eval 通道:Windows CDP 优先,失败/非 Windows 回退 IPC 桥
-// ============================================================
-
-/// 在页面执行一段 JS 函数体,拿 JSON 结果。
-/// `body` 语义见 script::wrap_eval(内部调用恒带 return;browser_eval 同约定)。
-async fn eval_in_page(app: &AppHandle, window: &WebviewWindow, body: &str) -> Result<Value, String> {
-    #[cfg(windows)]
-    {
-        match cdp::runtime_evaluate(window, body).await {
-            Ok(value) => return Ok(value),
-            Err(error) => {
-                tracing::debug!("CDP Runtime.evaluate 回退 IPC 桥:{error}");
-            }
-        }
-    }
-    eval_via_ipc(app, window, body).await
-}
-
-/// IPC 桥 eval:注入脚本 → 页面 `browser_internal_result` 回传 → oneshot 收口。
-async fn eval_via_ipc(
-    app: &AppHandle,
-    window: &WebviewWindow,
-    body: &str,
-) -> Result<Value, String> {
-    let manager = app.state::<BrowserManager>();
-    let id = uuid::Uuid::new_v4().to_string();
-    let (tx, rx) = oneshot::channel::<EvalOutcome>();
-    manager
-        .pending
-        .lock()
-        .expect("browser pending map")
-        .insert(id.clone(), tx);
-    if let Err(e) = window.eval(&script::wrap_eval(&id, body)) {
-        manager
-            .pending
-            .lock()
-            .expect("browser pending map")
-            .remove(&id);
-        return Err(format!("注入脚本失败:{e}"));
-    }
-    let outcome = match tokio::time::timeout(EVAL_TIMEOUT, rx).await {
-        Ok(Ok(outcome)) => outcome,
-        Ok(Err(_)) => return Err("eval 应答通道已关闭".to_string()),
-        Err(_) => {
-            manager
-                .pending
-                .lock()
-                .expect("browser pending map")
-                .remove(&id);
-            return Err(format!(
-                "eval 超时({}s):页面可能正在导航或未注入 IPC,稍后重试",
-                EVAL_TIMEOUT.as_secs()
-            ));
-        }
-    };
-    let (ok, payload) = outcome;
-    if !ok {
-        return Err(format!(
-            "页面脚本异常:{}",
-            payload.unwrap_or_else(|| "未知错误".to_string())
-        ));
-    }
-    match payload.as_deref() {
-        None | Some("") | Some("null") => Ok(Value::Null),
-        Some(text) => serde_json::from_str(text)
-            .map_err(|e| format!("eval 结果不是合法 JSON:{e};原文:{text}"))
-    }
-}
-
-/// eval 出字符串结果的便捷封装(页面侧返回 JSON string)。
-async fn eval_text(app: &AppHandle, window: &WebviewWindow, body: &str) -> Result<String, String> {
-    match eval_in_page(app, window, body).await? {
-        Value::String(s) => Ok(s),
-        Value::Null => Ok(String::new()),
-        other => Ok(other.to_string()),
-    }
-}
-
-/// 页面状态(url/title/readyState/scrollY),经 `__shb.state()` 取回。
-async fn page_state(app: &AppHandle, window: &WebviewWindow) -> Result<Value, String> {
-    let raw = eval_text(app, window, "return window.__shb.state();").await?;
-    serde_json::from_str(&raw).map_err(|e| format!("页面状态解析失败:{e}"))
-}
-
-/// 导航后等文档就绪(轮询 readyState,超时静默放行——慢站点不阻塞工具结果)。
-async fn wait_document_ready(app: &AppHandle, window: &WebviewWindow) {
-    let deadline = std::time::Instant::now() + NAV_READY_TIMEOUT;
-    loop {
-        if let Ok(state) = page_state(app, window).await {
-            if state.get("readyState").and_then(Value::as_str) == Some("complete") {
-                return;
-            }
-        }
-        if std::time::Instant::now() >= deadline {
-            return;
-        }
-        tokio::time::sleep(NAV_READY_POLL).await;
-    }
-}
-
-/// 动作后回报:动作结果文本 + 最新页面状态(模型无需再补 browser_state)。
-async fn with_state_suffix(
-    app: &AppHandle,
-    window: &WebviewWindow,
-    action_text: String,
-) -> String {
-    match page_state(app, window).await {
-        Ok(state) => {
-            let url = state.get("url").and_then(Value::as_str).unwrap_or("");
-            let title = state.get("title").and_then(Value::as_str).unwrap_or("");
-            format!("{action_text}\n当前页面:{title} ({url})")
-        }
-        Err(_) => action_text,
-    }
-}
-
-// ============================================================
-// 工具执行(桥入口)
+// 工具执行(桥入口,按引擎路由)
 // ============================================================
 
 /// harness 桥入口:browser_* 工具在此分发执行,返回模型可读文本。
@@ -395,235 +278,14 @@ pub async fn execute_from_bridge(
         .app()
         .ok_or_else(|| "应用句柄未就绪(启动序列未完成)".to_string())?;
     let action = parse_action(name, args)?;
-    execute_action(&app, action).await
-}
-
-async fn execute_action(app: &AppHandle, action: BrowserAction) -> Result<String, String> {
-    match action {
-        BrowserAction::Open { url } => {
-            let (_window, created) = ensure_window(app, url.as_deref()).await?;
-            let window = current_window(app)?;
-            wait_document_ready(app, &window).await;
-            let verb = if created { "已打开" } else { "已聚焦" };
-            let state = page_state(app, &window).await.unwrap_or(Value::Null);
-            let current = state.get("url").and_then(Value::as_str).unwrap_or("about:blank");
-            Ok(format!(
-                "{verb}无痕 AI 浏览器窗口(独立窗口,用户可见 AI 的全部操作)。当前:{current}"
-            ))
-        }
-        BrowserAction::Navigate { url } => {
-            let (window, _) = ensure_window(app, None).await?;
-            window
-                .navigate(
-                    tauri::Url::parse(&url).map_err(|e| format!("URL 解析失败:{e}"))?,
-                )
-                .map_err(|e| format!("导航失败:{e}"))?;
-            wait_document_ready(app, &window).await;
-            let state = page_state(app, &window).await.unwrap_or(Value::Null);
-            let title = state.get("title").and_then(Value::as_str).unwrap_or("");
-            Ok(format!("已导航到 {url}。页面标题:{title}"))
-        }
-        BrowserAction::Back | BrowserAction::Forward | BrowserAction::Reload => {
-            let window = current_window(app)?;
-            let call = match action {
-                BrowserAction::Back => "history.back(); return 'back';",
-                BrowserAction::Forward => "history.forward(); return 'forward';",
-                _ => "location.reload(); return 'reload';",
-            };
-            let _ = eval_in_page(app, &window, call).await;
-            wait_document_ready(app, &window).await;
-            let label = match action {
-                BrowserAction::Back => "后退",
-                BrowserAction::Forward => "前进",
-                _ => "刷新",
-            };
-            Ok(with_state_suffix(app, &window, format!("已{label}")).await)
-        }
-        BrowserAction::State => {
-            let window = current_window(app)?;
-            let state = page_state(app, &window).await?;
-            Ok(serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?)
-        }
-        BrowserAction::Extract { max_chars } => {
-            let window = current_window(app)?;
-            eval_text(
-                app,
-                &window,
-                &format!("return window.__shb.extract({max_chars});"),
-            )
-            .await
-        }
-        BrowserAction::Click { id } => {
-            let window = current_window(app)?;
-            // Windows:元素矩形 → CDP 可信点击;其余/失败:JS 分发 + el.click()。
-            #[cfg(windows)]
-            {
-                let rect = eval_text(
-                    app,
-                    &window,
-                    &format!("return window.__shb.rectOf({});", json_str(&id)),
-                )
-                .await
-                .unwrap_or_default();
-                if let Ok(point) = serde_json::from_str::<Value>(&rect) {
-                    let x = point.get("x").and_then(Value::as_f64).unwrap_or(0.0);
-                    let y = point.get("y").and_then(Value::as_f64).unwrap_or(0.0);
-                    if x > 0.0 || y > 0.0 {
-                        if let Err(e) = cdp::click_at(&window, x, y).await {
-                            tracing::debug!("CDP 可信点击失败,回退 JS 点击:{e}");
-                        } else {
-                            return Ok(with_state_suffix(
-                                app,
-                                &window,
-                                format!("已点击元素 [{id}](可信输入,坐标 {x:.0},{y:.0})"),
-                            )
-                            .await);
-                        }
-                    }
-                }
-            }
-            let text = eval_text(
-                app,
-                &window,
-                &format!("return window.__shb.click({});", json_str(&id)),
-            )
-            .await?;
-            Ok(with_state_suffix(app, &window, text).await)
-        }
-        BrowserAction::Type { id, text, clear } => {
-            let window = current_window(app)?;
-            // 先聚焦(必要时清空);Windows 再走 CDP insertText 可信输入。
-            let focus = eval_text(
-                app,
-                &window,
-                &format!(
-                    "return window.__shb.focusEl({}, {});",
-                    json_str(&id),
-                    if clear { "true" } else { "false" }
-                ),
-            )
-            .await?;
-            if focus.starts_with("[Error]") {
-                return Ok(focus);
-            }
-            #[cfg(windows)]
-            {
-                if let Err(e) = cdp::insert_text(&window, &text).await {
-                    tracing::debug!("CDP insertText 失败,回退 JS 赋值:{e}");
-                } else {
-                    return Ok(with_state_suffix(
-                        app,
-                        &window,
-                        format!("已向元素 [{id}] 输入 {} 字符(可信输入)", text.chars().count()),
-                    )
-                    .await);
-                }
-            }
-            let result = eval_text(
-                app,
-                &window,
-                &format!(
-                    "return window.__shb.typeText({}, {}, {});",
-                    json_str(&id),
-                    json_str(&text),
-                    if clear { "true" } else { "false" }
-                ),
-            )
-            .await?;
-            Ok(with_state_suffix(app, &window, result).await)
-        }
-        BrowserAction::PressKey { key } => {
-            let window = current_window(app)?;
-            #[cfg(windows)]
-            {
-                match cdp::press_key(&window, &key).await {
-                    Ok(Some(())) => {
-                        return Ok(format!("已按键 {key}(可信输入)"));
-                    }
-                    Ok(None) => {}
-                    Err(e) => tracing::debug!("CDP 按键失败,回退 JS:{e}"),
-                }
-            }
-            eval_text(
-                app,
-                &window,
-                &format!("return window.__shb.pressKey({});", json_str(&key)),
-            )
-            .await
-        }
-        BrowserAction::SelectOption { id, value } => {
-            let window = current_window(app)?;
-            eval_text(
-                app,
-                &window,
-                &format!(
-                    "return window.__shb.selectOption({}, {});",
-                    json_str(&id),
-                    json_str(&value)
-                ),
-            )
-            .await
-        }
-        BrowserAction::Scroll { direction, amount } => {
-            let window = current_window(app)?;
-            eval_text(
-                app,
-                &window,
-                &format!("return window.__shb.scrollPage({}, {amount});", json_str(&direction)),
-            )
-            .await
-        }
-        BrowserAction::Screenshot => {
-            let window = current_window(app)?;
-            capture_screenshot_to_file(app, &window).await
-        }
-        BrowserAction::Eval { expression } => {
-            let window = current_window(app)?;
-            let value = eval_in_page(app, &window, &expression).await?;
-            let text = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
-            const MAX_EVAL_OUTPUT: usize = 8000;
-            if text.chars().count() > MAX_EVAL_OUTPUT {
-                let kept: String = text.chars().take(MAX_EVAL_OUTPUT).collect();
-                Ok(format!("{kept}\n…(输出已截断至 {MAX_EVAL_OUTPUT} 字符)"))
-            } else {
-                Ok(text)
-            }
-        }
+    // 运行时决定后端:每次查询设置(轻量 SQLite),避免引擎与设置脱节。
+    let engine = engine_setting(&app).await;
+    let manager = app.state::<obscura::ObscuraManager>();
+    manager.set_engine(engine); // 同步到缓存,供注入协议/查看器使用
+    match engine {
+        obscura::Engine::Webview => webview::execute_action(&app, action).await,
+        obscura::Engine::Obscura => obscura::execute_action(&app, action).await,
     }
-}
-
-/// JS 字符串字面量(嵌入注入脚本用,serde_json 转义)。
-fn json_str(raw: &str) -> String {
-    serde_json::to_string(raw).unwrap_or_else(|_| "\"\"".to_string())
-}
-
-/// 截图 → PNG 落盘(应用缓存目录 browser-shots/),返回模型可读路径与大小。
-/// 图像内容暂不回灌模型上下文(dsh 工具结果为文本通道;视觉接入见调研文档 M3 备注)。
-async fn capture_screenshot_to_file(
-    app: &AppHandle,
-    window: &WebviewWindow,
-) -> Result<String, String> {
-    #[cfg(windows)]
-    let png = cdp::capture_screenshot(window).await;
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    let png = snapshot::capture_png(window).await;
-    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-    let png: Result<Vec<u8>, String> = Err("当前平台不支持浏览器截图".to_string());
-
-    let bytes = png?;
-    let dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| format!("缓存目录不可用:{e}"))?
-        .join("browser-shots");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建截图目录失败:{e}"))?;
-    let path = dir.join(format!("shot-{}.png", chrono::Local::now().format("%Y%m%d-%H%M%S-%3f")));
-    std::fs::write(&path, &bytes).map_err(|e| format!("写入截图失败:{e}"))?;
-    Ok(format!(
-        "已截图(可视区域 PNG,{} 字节),保存于:{}",
-        bytes.len(),
-        path.display()
-    ))
 }
 
 #[cfg(test)]
@@ -771,7 +433,6 @@ mod tests {
     #[test]
     fn browser_tools_table_covers_every_parseable_name() {
         for name in BROWSER_TOOLS {
-            // 无参或最小参也应能解析(带必填参数的工具允许 Err,但不允许 unknown 报错)
             let probe = match parse_action(name, &json!({"id": "1", "text": "x", "key": "Enter", "value": "v", "url": "https://a.b", "expression": "return 1;"})) {
                 Ok(_) => true,
                 Err(e) => !e.starts_with("unsupported browser tool"),
@@ -796,7 +457,6 @@ mod tests {
         let (ok, payload) = rx.await.expect("delivered");
         assert!(ok);
         assert_eq!(payload.as_deref(), Some("42"));
-        // 重复应答 / 未知 id 一律丢弃
         assert!(!manager.resolve_pending("r1", true, None));
         assert!(!manager.resolve_pending("unknown", false, None));
         assert_eq!(manager.pending_count(), 0);
@@ -819,7 +479,6 @@ mod tests {
             assert!(!ok);
             assert_eq!(payload.as_deref(), Some("浏览器窗口已关闭"));
         }
-        // 空表再次收口是 no-op
         assert_eq!(manager.fail_all_pending("再次"), 0);
     }
 }

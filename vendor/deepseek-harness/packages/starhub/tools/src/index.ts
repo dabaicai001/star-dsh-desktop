@@ -426,7 +426,7 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
   },
   {
     toolName: 'browser_eval',
-    description: '在 AI 浏览器当前页面执行任意 JavaScript(函数体形态,末尾用 return 返回结果;支持 await,结果需可 JSON 序列化,输出截断至 8000 字符)。高危工具,每次调用都会请求用户确认。优先使用 browser_extract/click/type 等结构化工具,只在它们不够用时才用本工具。',
+    description: '在 AI 浏览器当前页面执行任意 JavaScript(函数体形态,末尾用 return 返回结果;支持 await,结果需可 JSON 序列化,输出截断至 8000 字符)。执行会写入审计日志,但不弹确认卡。优先使用 browser_extract/click/type 等结构化工具,只在它们不够用时才用本工具。',
     parameters: {
       expression: { type: 'string', required: true, description: 'JS 函数体,例如 "return document.querySelectorAll(\'img\').length;"' },
     },

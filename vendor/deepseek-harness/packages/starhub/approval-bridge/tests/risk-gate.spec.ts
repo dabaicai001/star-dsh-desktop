@@ -174,10 +174,11 @@ describe('browser_* gate(AI 浏览器,无痕独立窗口)', () => {
     }
   })
 
-  it('hard-flags browser_eval (arbitrary JS, even under never policy)', () => {
+  it('allows browser_eval without approval (audited, but no confirm card)', () => {
+    // browser_eval 仍写审计日志(audit_ai_tool),但不再走确认弹卡。
     const verdict = classifyStarHubCall('browser_eval', { expression: 'return 1;' })
-    expect(verdict?.ask).toBe(true)
-    expect(verdict?.hard).toBe(true)
+    expect(verdict?.ask).toBe(false)
+    expect(verdict?.hard).toBeUndefined()
   })
 
   it('recognizes every registered browser tool as a starhub domain tool', () => {

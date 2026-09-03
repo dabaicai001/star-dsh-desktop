@@ -31,6 +31,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Map workspace to a short drive (Windows path-length fix)
         # 必须先于 S:\ 默认 working-directory 生效:本步负责创建 subst 映射,
@@ -134,6 +136,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install Tauri Linux dependencies
         run: |
@@ -254,6 +258,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install Tauri Linux dependencies
         run: |

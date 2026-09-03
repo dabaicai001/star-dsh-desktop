@@ -135,32 +135,10 @@ pub async fn insert_text(window: &WebviewWindow, text: &str) -> Result<(), Strin
     Ok(())
 }
 
-/// 常见按键 → Windows 虚拟键码(与页面侧 script.rs 的 KEYCODES 表保持一致)。
-fn virtual_key(key: &str) -> Option<(i64, &'static str)> {
-    let pair = match key {
-        "Enter" => (13, "Enter"),
-        "Tab" => (9, "Tab"),
-        "Escape" => (27, "Escape"),
-        "Backspace" => (8, "Backspace"),
-        "Delete" => (46, "Delete"),
-        "ArrowUp" => (38, "ArrowUp"),
-        "ArrowDown" => (40, "ArrowDown"),
-        "ArrowLeft" => (37, "ArrowLeft"),
-        "ArrowRight" => (39, "ArrowRight"),
-        "Home" => (36, "Home"),
-        "End" => (35, "End"),
-        "PageUp" => (33, "PageUp"),
-        "PageDown" => (34, "PageDown"),
-        " " => (32, "Space"),
-        _ => return None,
-    };
-    Some(pair)
-}
-
 /// `Input.dispatchKeyEvent`:可信按键(rawKeyDown + keyUp);不认识的键返回 None
-/// 由调用方回退 JS 注入路径。
+/// 由调用方回退 JS 注入路径。按键表见 [`crate::browser::keymap`]。
 pub async fn press_key(window: &WebviewWindow, key: &str) -> Result<Option<()>, String> {
-    let Some((vk, code)) = virtual_key(key) else {
+    let Some((vk, code)) = crate::browser::keymap::virtual_key(key) else {
         return Ok(None);
     };
     for event_type in ["rawKeyDown", "keyUp"] {
@@ -178,25 +156,4 @@ pub async fn press_key(window: &WebviewWindow, key: &str) -> Result<Option<()>, 
         .await?;
     }
     Ok(Some(()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn virtual_key_covers_common_keys() {
-        for (key, vk) in [
-            ("Enter", 13),
-            ("Tab", 9),
-            ("Escape", 27),
-            ("Backspace", 8),
-            ("ArrowDown", 40),
-            (" ", 32),
-        ] {
-            let (code, _) = virtual_key(key).unwrap_or_else(|| panic!("缺按键 {key}"));
-            assert_eq!(code, vk);
-        }
-        assert!(virtual_key("F12").is_none(), "未映射键走 JS 兜底");
-    }
 }

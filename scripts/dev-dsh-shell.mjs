@@ -62,8 +62,9 @@ if (needHost || needClient || needWeb) {
   console.log('[dev-dsh-shell] vendor 构建产物齐全,跳过 vendor 构建')
 }
 
-// 2. sidecar + 3. React workbench dist
+// 2. sidecar + 3. obscura + React workbench dist
 run('sidecar:build', 'npm', ['run', 'sidecar:build'], { cwd: repoRoot })
+run('obscura:build', 'npm', ['run', 'obscura:build'], { cwd: repoRoot })
 run('build:window', 'npm', ['run', 'build:window'], { cwd: repoRoot })
 
 // 4. 占位等待页(前台常驻;tauri 等待 devUrl=3185 可访问后才启动应用)

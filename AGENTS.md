@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.115.0(**SQL 编辑器内容区重构:「SQL 查询 / 表数据」双模式切换 + 可拖拽编辑区**:数据库工作台内容头部从「SQL 编辑器」单一标签改为「SQL 查询 / 表数据」两个模式页签——点左侧表自动切到「表数据」模式(网格拿满全高),新建查询 / 执行 / 切查询标签自动回到「SQL 查询」模式;SQL 模式内编辑区与结果区之间加横向可拖拽分隔条(高度 160–560px 可调)。SQL 编辑区不再被 `max-height:280px` 钉死,与下方结果网格彻底分离,消除「查询与表数据挤在一起」的观感。) |
+| 当前版本 | v0.116.0(**AI 浏览器双引擎(webview / obscura)并存可切换**:14 个 `browser_*` 工具按设置 `browser.engine` 路由到两个后端。webview 后端(无痕独立 Tauri 窗口,wry 真实内核)保持默认,兼容性最好;obscura 后端为 Rust 无头浏览器引擎(V8 + 原生渲染,低内存/免 Chromium),新增 `scripts/build-obscura` 源码编译进构建链并以 externalBin 分发。设置页新增「AI 浏览器」tab,可随时切换引擎(改动后下一次 `browser_open` 生效)。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-02 (v0.115.0)*
+*最后更新: 2026-09-03 (v0.116.0)*

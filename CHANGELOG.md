@@ -5,6 +5,23 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
+## [未发布]
+
+---
+
+## [0.116.0] - 2026-09-03
+
+### 新增
+- **AI 浏览器双引擎(webview / obscura)并存可切换**:14 个 `browser_*` 工具按设置 `browser.engine` 路由到两个后端。webview 后端(无痕独立 Tauri 窗口,wry 真实内核)保持默认,兼容性最好;obscura 后端为 Rust 无头浏览器引擎(V8 + 原生渲染,低内存/免 Chromium),新增 `scripts/build-obscura` 源码编译进构建链并以 externalBin 分发。设置页新增「AI 浏览器」tab,可随时切换引擎(改动后下一次 `browser_open` 生效)。
+- **Ogscura 直播查看器窗口**:obscura 后端经 `Page.startScreencast` 把无头页面画面以 JPEG 帧推到 `obscura-live://` 自定义协议,查看器 Tauri 窗口轮询显示,用户全程可见 AI 操作;查看器内也可交互(点击/双击/按键/输入/滚动/地址栏导航)。
+- **SSH「网页访问」改独立 Tauri 窗口**:点终端栏「网页」不再弹出右侧 iframe 面板,而是新开一个 Tauri 窗口(obscura 渲染,经 SSH 网关代理访问内网)。新增 `ssh_open_web_window` 命令,复用现有网关,查看器地址栏输入的原始 URL 自动重写为网关代理 URL。
+- **`browser_eval` 不再强制确认弹卡**:执行 `browser_eval` 免审核(从 approval-bridge 的 ALWAYS_ASK/HARD 档移除),但仍经 `audit_ai_tool` 写入审计日志,保证可追溯。工具描述同步更新。
+
+### 文档与工程
+- 依赖新增 `tokio-tungstenite`(obscura CDP WebSocket 客户端,仅 loopback ws://,无 TLS)。
+- `src-tauri` 浏览器模块重构:`browser/mod.rs` 保留参数解析/引擎路由,`browser/webview.rs` 承载原窗口实现,新增 `browser/obscura/`(进程/CDP/直播)与 `browser/keymap.rs`(共享按键表)。
+- 构建链:`build-obscura.ps1`/`build-obscura.bat`/`build-obscura.sh` 编排遮蔽编译;`tauri.conf.json` externalBin 增 `../sidecar/bin/obscura`;`beforeBuildCommand` 与 dev 链路接入 `obscura:build`。
+
 ## [0.114.1] - 2026-09-02
 
 ### 新增

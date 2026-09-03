@@ -226,8 +226,6 @@ const ALWAYS_ASK_TOOLS: ReadonlySet<string> = new Set([
   'memory',
   'skill_save',
   'mcp_call',
-  // AI 浏览器:任意 JS 注入页面上下文,能力等同在 DevTools 里执行代码
-  'browser_eval',
   // 沙箱桌面:箱内任意命令是沙箱与「外界逻辑」的交换口,不在任务级授权内
   'desktop_exec',
   // Android 实体机:真实设备上的任意 shell 命令(实体机不可销毁,比沙箱更严)
@@ -242,7 +240,6 @@ const ALWAYS_ASK_TOOLS: ReadonlySet<string> = new Set([
 const ALWAYS_ASK_HARD_TOOLS: ReadonlySet<string> = new Set([
   'es_delete_document',
   'es_delete_index',
-  'browser_eval',
   'desktop_exec',
   'android_exec',
 ])
@@ -308,7 +305,7 @@ export function classifyStarHubCall(toolName: string, args: unknown): GateVerdic
         : { ask: true, reason: '写 Redis 命令,需要确认' }
     }
     // AI 浏览器:对网页产生真实副作用的动作(导航/点击/输入/按键/选项变更)恒 ask
-    // (软档,never 全访问策略可放行);browser_eval 在 ALWAYS_ASK + hard 档。
+    // (软档,never 全访问策略可放行);browser_eval 不走确认弹卡(仍写审计日志)。
     // 只读观察类(state/extract/screenshot/scroll/back/forward/reload)走 default 放行。
     case 'browser_open':
     case 'browser_navigate':

@@ -1181,6 +1181,29 @@ pub async fn ssh_web_gateway_port(
     Ok(session.web_gateway_port())
 }
 
+/// 在独立 Tauri 窗口打开 SSH 网页访问(obscura 渲染,经网关代理访问内网)。
+/// 替换原先「网页」tab 右侧栏 iframe 形态。首次打开会启动网关并创建查看器窗口。
+#[tauri::command]
+pub async fn ssh_open_web_window(
+    app: tauri::AppHandle,
+    session_id: String,
+    asset_name: String,
+    state: tauri::State<'_, crate::SshManager>,
+) -> Result<(), String> {
+    let session = {
+        let sessions = state.sessions.lock().await;
+        sessions
+            .get(&session_id)
+            .cloned()
+            .ok_or_else(|| "Session not found".to_string())?
+    };
+    let port = {
+        let mut session = session.lock().await;
+        session.start_web_gateway().await?
+    };
+    crate::browser::obscura::open_web_window(&app, &session_id, &asset_name, port).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

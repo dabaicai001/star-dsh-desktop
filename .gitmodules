@@ -1,0 +1,3 @@
+[submodule "vendor/obscura"]
+	path = vendor/obscura
+	url = https://github.com/h4ckf0r0day/obscura.git

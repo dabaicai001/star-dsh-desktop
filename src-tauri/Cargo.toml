@@ -1,6 +1,6 @@
 [package]
 name = "starhub"
-version = "0.115.0"
+version = "0.116.0"
 edition = "2021"
 
 [dependencies]
@@ -48,6 +48,9 @@ image = { version = "0.25.10", optional = true }
 base64 = "0.23"
 # 沙箱桌面:模板配方(*.starhub-sandbox.toml)解析
 toml = "0.8"
+# AI 浏览器 obscura 引擎:CDP WebSocket 客户端。只连本地 loopback ws://,
+# 无 TLS,关闭默认特征避免引入 native-tls/rustls 依赖。
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = "1.1.0"

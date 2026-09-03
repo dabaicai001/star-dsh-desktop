@@ -25,7 +25,6 @@ import type { RustAsset } from '../store.ts'
 import { SftpPanel } from './SftpPanel.tsx'
 import { formatSize } from './sftp-service.ts'
 import { BroadcastDialog, type BroadcastSession } from './BroadcastDialog.tsx'
-import { WebBrowser } from './WebBrowser.tsx'
 import { createQuickCommand, importQuickCommands, loadQuickCommands, saveQuickCommands, type QuickCommand } from './quick-commands.ts'
 import { useTerminalTheme } from './terminal-theme.ts'
 import {
@@ -98,7 +97,7 @@ export interface HostKeyConfirmEvent {
   sha256: string
 }
 
-type SidePanel = 'sftp' | 'web' | null
+type SidePanel = 'sftp' | null
 
 /**
  * Build the Rust `SshAuth` variant from an asset config, mirroring the Vue
@@ -619,7 +618,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     onClose()
   }
 
-  const sidePanelLabel = sidePanel === 'sftp' ? '文件传输' : '网页访问'
+  const sidePanelLabel = '文件传输'
   const toggleSidePanel = (panel: Exclude<SidePanel, null>): void => {
     setSidePanel(current => current === panel ? null : panel)
   }
@@ -669,10 +668,13 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
               ><IconFolderOpenOutline16 size={15} /> 文件</button>
               <button
                 type="button"
-                className={sidePanel === 'web' ? css.workspaceTabActive : css.workspaceTab}
-                onClick={() =>{  toggleSidePanel('web') }}
-                title={connected ? '显示或隐藏 SSH 网页面板' : '等待 SSH 连接后启用网页访问'}
-                aria-pressed={sidePanel === 'web'}
+                className={css.workspaceTab}
+                onClick={() => {
+                  if (!connected) return
+                  void tauriInvoke('ssh_open_web_window', { sessionId, assetName: asset.name }).catch((e) => setError(e instanceof Error ? e.message : String(e)))
+                }}
+                title={connected ? '在独立窗口打开网页访问(Obscura)' : '等待 SSH 连接后启用网页访问'}
+                aria-pressed={false}
               ><IconLinkOutline16 size={15} /> 网页</button>
               <span className={css.connectionState}><span className={connected ? css.connectionOnline : css.connectionPending} />{connected ? '已连接' : '连接中'}</span>
             </div>
@@ -729,21 +731,17 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
               <header className={css.sidePanelHeader}>
                 <div>
                   <span className={css.sidePanelTitle}>{sidePanelLabel}</span>
-                  <span className={css.sidePanelDetail}>{sidePanel === 'sftp' ? '与当前 SSH 会话共享连接' : '通过 SSH 安全网关访问'}</span>
+                  <span className={css.sidePanelDetail}>与当前 SSH 会话共享连接</span>
                 </div>
               </header>
               <div className={css.sidePanelBody}>
-                {sidePanel === 'web' ? (
-                  <WebBrowser sessionId={sessionId} assetName={asset.name} sshConnected={connected} />
-                ) : (
-                  <SftpPanel
-                    asset={asset}
-                    sessionId={sessionId}
-                    sshConnected={connected}
-                    sshCwd={sshCwd}
-                    onFollowTerminal={onFollowTerminal}
-                  />
-                )}
+                <SftpPanel
+                  asset={asset}
+                  sessionId={sessionId}
+                  sshConnected={connected}
+                  sshCwd={sshCwd}
+                  onFollowTerminal={onFollowTerminal}
+                />
               </div>
             </aside>
           )}
