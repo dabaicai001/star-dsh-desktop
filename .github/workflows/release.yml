@@ -104,6 +104,12 @@ jobs:
         # tauri_build can validate the resource path on a clean checkout.
         run: npm run build:window
 
+      - name: Build Obscura engine
+        # obscura 是 externalBin 资源;同样需在 cargo test 前构建,否则 tauri_build
+        # 的 build script 校验 `..\sidecar\bin\obscura-<triple>.exe` 资源路径失败
+        # (beforeBuildCommand 只在 `tauri build` 时触发,cargo test 不走它)。
+        run: npm run obscura:build
+
       - name: Test Tauri backend
         working-directory: 'S:\src-tauri'
         run: cargo test --locked
@@ -222,6 +228,10 @@ jobs:
         # build-script resource check behind `cargo test` below. Stage it here so
         # tauri_build can validate the resource path on a clean checkout.
         run: npm run build:window
+
+      - name: Build Obscura engine
+        # obscura 是 externalBin 资源,需在 cargo test 前构建供 tauri_build 校验。
+        run: npm run obscura:build
 
       - name: Test Tauri backend
         working-directory: src-tauri
