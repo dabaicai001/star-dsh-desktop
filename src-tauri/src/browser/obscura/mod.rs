@@ -145,6 +145,9 @@ async fn ensure_page(
         if key == "ai" {
             let _ = open_viewer(app, inner, key, "StarHub AI 浏览器(Obscura)").await;
         }
+        // 首次 startScreencast 可能因页面临时无 DOM 表面而失败(错误被忽略),
+        // 补一次,保证直播流已注册、能持续出帧。
+        let _ = ensure_screencast(&client, inner, key).await;
         return Ok(());
     }
     let url = initial.unwrap_or("about:blank");
@@ -173,25 +176,81 @@ async fn ensure_page(
     let _ = client
         .call_session(Some(&session_id), "Page.enable", serde_json::json!({}))
         .await;
-    let _ = client
-        .call_session(
-            Some(&session_id),
-            "Page.startScreencast",
-            serde_json::json!({ "format": "jpeg", "quality": 70, "everyNthFrame": 1 }),
-        )
-        .await;
+    // 先落页面会话,再启动 screencast(帧回调按 session_id 查找 state)。
     inner
         .pages
         .lock()
         .expect("pages")
         .insert(key.to_string(), PageState::new(&session_id, url));
+    // 等页面 ready,再启动 screencast:startScreencast 在页面尚无可见 DOM 表面
+    // 时会直接报错,导致后续无帧可推(直播窗停在「连接 Obscura…」)。
     wait_ready(inner, key).await;
+    if let Err(e) = ensure_screencast(&client, inner, key).await {
+        tracing::warn!(key, "启动 obscura screencast 失败(已重试):{e}");
+    }
     // AI 浏览器页面一旦创建(任意 browser_* 动作触发),自动开直播查看器窗口,
     // 用户全程可见 AI 在干什么。web: 会话由 open_web_window 单独开窗,不在此处。
     if key == "ai" {
         let _ = open_viewer(app, inner, key, "StarHub AI 浏览器(Obscura)").await;
     }
     Ok(())
+}
+
+/// 启动(或补启)screencast,直到收到首帧(seq>0)或有限次重试耗尽。
+/// startScreencast 返回 Ok 但页面无可见 DOM 表面时,obscura 会回滚注册,
+/// 调用方(旧实现)用 `let _ =` 吞掉错误 → 直播永远无帧。此处显式确认帧已到。
+async fn ensure_screencast(
+    client: &cdp::CdpClient,
+    inner: &Arc<ObscuraInner>,
+    key: &str,
+) -> Result<(), String> {
+    let session_id = {
+        let pages = inner.pages.lock().expect("pages");
+        pages
+            .get(key)
+            .ok_or_else(|| "浏览器页面未打开".to_string())?
+            .session_id
+            .clone()
+    };
+    let mut last_err = String::new();
+    for _ in 0..5 {
+        // 已收到帧 → 流在跑,无需重复注册。
+        {
+            let pages = inner.pages.lock().expect("pages");
+            if let Some(state) = pages.get(key) {
+                if state.seq > 0 {
+                    return Ok(());
+                }
+            }
+        }
+        if let Err(e) = client
+            .call_session(
+                Some(&session_id),
+                "Page.startScreencast",
+                serde_json::json!({ "format": "jpeg", "quality": 70, "everyNthFrame": 1 }),
+            )
+            .await
+        {
+            last_err = e;
+        }
+        // 等一帧;超时说明仍无 DOM 表面,下一轮再试(期间页面通常已加载完成)。
+        let deadline = std::time::Instant::now() + Duration::from_millis(600);
+        loop {
+            {
+                let pages = inner.pages.lock().expect("pages");
+                if let Some(state) = pages.get(key) {
+                    if state.seq > 0 {
+                        return Ok(());
+                    }
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(80)).await;
+        }
+    }
+    Err(last_err)
 }
 
 /// 轮询页面 readyState,超时静默放行。
@@ -249,7 +308,12 @@ async fn evaluate(
     session_id: &str,
     body: &str,
 ) -> Result<serde_json::Value, String> {
-    let expression = format!("{HELPERS}\n;(function() {{\n{body}\n}})()");
+    // 单个 IIFE 表达式:obscura 的 Runtime.evaluate 会把表达式包进 `await (...)`,
+    // 只接受单一表达式。直接拼 `HELPERS\nIIFE()` 是「多语句程序」,被 await(...)
+    // 包裹后 `...;}` 里的分号会抛 `Unexpected token ';'`(见 vendor/obscura
+    // runtime.rs wrap 逻辑)。把整个(助手 + body)包成一个函数表达式即可。
+    // 外层用 async,兼容 body 里 `return await ...` 的异步求值。
+    let expression = format!("(async function() {{\n{HELPERS}\n{body}\n}})()");
     let result = client
         .call_session(
             Some(session_id),

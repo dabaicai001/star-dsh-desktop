@@ -60,6 +60,14 @@ pub fn spawn_engine(binary: &PathBuf, port: u16) -> Result<tokio::process::Child
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
+    // Windows:GUI 进程 spawn 控制台子进程默认会弹出一个可见的黑色控制台窗口。
+    // 与 sidecar / harness / android 一致,加 CREATE_NO_WINDOW 隐藏它。
+    // tokio Command 自带 creation_flags 方法(无需 CommandExt import)。
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
     cmd.spawn()
         .map_err(|e| format!("启动 obscura 进程失败({}):{e}", binary.display()))
 }

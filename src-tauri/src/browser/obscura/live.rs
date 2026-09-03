@@ -140,8 +140,9 @@ const LIVE_PAGE: &str = r##"
  *{box-sizing:border-box}
  html,body{height:100%;margin:0;font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;background:#1e1f24;color:#e6e6e6}
  #bar{display:flex;align-items:center;gap:6px;padding:8px;border-bottom:1px solid #333;background:#24262b}
- #bar button{height:28px;min-width:28px;border:1px solid #4a4d55;background:#33363c;color:#e6e6e6;border-radius:5px;cursor:pointer;font-size:14px}
+ #bar button{height:28px;min-width:28px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;border:1px solid #4a4d55;background:#33363c;color:#e6e6e6;border-radius:5px;cursor:pointer;font-size:14px}
  #bar button:hover{background:#40434b}
+ #bar button:active{background:#33363c}
  #addr{flex:1;height:28px;padding:0 10px;border:1px solid #4a4d55;border-radius:5px;background:#1a1b1f;color:#e6e6e6;outline:none}
  #stage{position:relative;height:calc(100% - 45px);overflow:hidden;background:#111}
  #stage canvas{display:block;width:100%;height:100%;object-fit:contain}
@@ -149,9 +150,9 @@ const LIVE_PAGE: &str = r##"
 </style></head>
 <body>
 <div id="bar">
-  <button id="back" title="后退">←</button>
-  <button id="fwd" title="前进">→</button>
-  <button id="reload" title="刷新">⟳</button>
+  <button id="back" title="后退" aria-label="后退"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="10,3 5,8 10,13"/></svg></button>
+  <button id="fwd" title="前进" aria-label="前进"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,3 11,8 6,13"/></svg></button>
+  <button id="reload" title="刷新" aria-label="刷新"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><polyline points="12.5,1.5 12,4.5 9,4"/></svg></button>
   <input id="addr" placeholder="输入完整网址后按 Enter 访问" aria-label="地址栏">
 </div>
 <div id="stage"><canvas id="cv"></canvas><div id="status">连接 Obscura…</div></div>

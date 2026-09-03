@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.116.0(**AI 浏览器双引擎(webview / obscura)并存可切换**:14 个 `browser_*` 工具按设置 `browser.engine` 路由到两个后端。webview 后端(无痕独立 Tauri 窗口,wry 真实内核)保持默认,兼容性最好;obscura 后端为 Rust 无头浏览器引擎(V8 + 原生渲染,低内存/免 Chromium),新增 `scripts/build-obscura` 源码编译进构建链并以 externalBin 分发。设置页新增「AI 浏览器」tab,可随时切换引擎(改动后下一次 `browser_open` 生效)。) |
+| 当前版本 | v0.116.1(**Obscura 引擎直播与 eval 修复**:修复 screencastFrameAck 缺 id/流 id 放错层级、screencastFrame 无 metadata.seq 致不直播、startScreencast 静默失败不重试;spawn_engine 隐藏控制台窗口;Runtime.evaluate 多语句抛 `Unexpected token ';'` 改为单 IIFE 表达式;直播查看器按钮从文字 icon 换成内联 SVG 真 icon。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-03 (v0.116.0)*
+*最后更新: 2026-09-03 (v0.116.1)*

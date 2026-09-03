@@ -7,6 +7,12 @@
 
 ## [未发布]
 
+### 修复
+- **Obscura 引擎选中后不直播、查看器窗口停在「连接 Obscura…」**:三处根因——①`Page.screencastFrameAck` 缺少 `id` 且流 id 放错层级(应放 `params.sessionId`,原实现放到顶层 `sessionId`),server 反序列化/匹配失败,`frames_in_flight` 永不释放,流收到第 2 帧后停流;②vendored obscura 的 `screencastFrame` 不带 `metadata.seq`(StarHub 侧按 seq=0 判断无新帧),现改用「流号<<32|帧计数」生成单调伪 seq;③`ensure_page` 在页面尚无可见 DOM 表面时 `startScreencast` 静默失败且永不重试,现改为先等页面 ready、失败重试并确认收到首帧(seq>0)。
+- **Obscura 引擎弹黑色控制台窗口**:`spawn_engine` 未加 `CREATE_NO_WINDOW`(与 sidecar/harness/android 一致),GUI 进程 spawn 控制台子进程默认弹出可见黑窗;现已隐藏。
+- **`browser_extract`/`browser_scroll` 等报 `JS error: Unexpected token ';'`**:obscura 的 `Runtime.evaluate` 把表达式包进 `await (...)`,只接受单一表达式;原实现把「助手脚本 + IIFE」拼成多语句程序,被包裹后 `...;}` 抛 `Unexpected token ';'`。改为整个(助手 + body)包成一个 `(async function() { ... })()` 单表达式。
+- **Obscura 直播查看器后退/前进/刷新按钮用文字 icon(←/→/⟳)**:与设计风格(描边 outline SVG、`stroke=currentColor`)不符,改为内联 SVG 真 icon,并给按钮加 flex 居中与 hover/active 态。
+
 ---
 
 ## [0.116.0] - 2026-09-03

@@ -30,6 +30,8 @@ struct Inner {
     tx: Mutex<Option<mpsc::UnboundedSender<Value>>>,
     pending: Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>,
     next_id: AtomicU64,
+    /// 每个 screencast 流(by 流编号)的帧计数,用于生成伪 seq。
+    frame_seq: Mutex<HashMap<i64, u64>>,
 }
 
 /// 组织好的 CDP 客户端:发送 channel + 按 id 分发的应答表。
@@ -48,6 +50,7 @@ impl CdpClient {
                 tx: Mutex::new(None),
                 pending: Mutex::new(HashMap::new()),
                 next_id: AtomicU64::new(1),
+                frame_seq: Mutex::new(HashMap::new()),
             }),
             frame_sink,
         }
@@ -129,16 +132,38 @@ impl CdpClient {
                             .and_then(Value::as_str)
                             .unwrap_or("")
                             .to_string();
-                        let seq = params
-                            .pointer("/metadata/seq")
-                            .and_then(Value::as_u64)
-                            .unwrap_or(0);
-                        frame_sink.on_screencast_frame(session_id, seq, data);
-                        // 立即 ACK,否则帧不断堆积。
+                        // vendored obscura 的 screencastFrame 不带 metadata.seq(见
+                        // vendor/obscura domains/page.rs put frame),只带
+                        // params.sessionId(流 id)。若 seq 恒为 0,查看器/重试逻辑
+                        // 都以为没新帧 → 直播窗停在「连接 Obscura…」。这里用
+                        // stream_id(流编号)做一个单调递增的伪 seq:同一流内递增,
+                        // 换流也递增,保证帧变化能被下游感知。
+                        let stream_id = params.get("sessionId").cloned().unwrap_or(Value::Null);
+                        let stream_num = stream_id
+                            .as_i64()
+                            .unwrap_or(0)
+                            .max(0);
+                        let seq = params.pointer("/metadata/seq").and_then(Value::as_u64).unwrap_or(0);
+                        let seq_val = if seq > 0 { seq } else {
+                            // 用「流号 * 大基数 + 该流帧计数」构造单调伪 seq。
+                            let n = {
+                                let mut f = inner.frame_seq.lock().expect("frame_seq");
+                                let e = f.entry(stream_num).or_insert(0u64);
+                                *e += 1;
+                                (stream_num as u64) << 32 | *e
+                            };
+                            n
+                        };
+                        frame_sink.on_screencast_frame(session_id, seq_val, data);
+                        // 立即 ACK,否则帧窗口(frames_in_flight)不释放、流会停在第 2 帧。
+                        // 必须带 `id`(CdpRequest 强制)且 streamId 放 params.sessionId,
+                        // 缺一 server 反序列化/匹配失败,ack 被丢弃。
+                        let ack_id = inner.next_id.fetch_add(1, Ordering::Relaxed);
                         let ack = serde_json::json!({
+                            "id": ack_id,
                             "method": "Page.screencastFrameAck",
                             "sessionId": session_id,
-                            "params": {},
+                            "params": { "sessionId": stream_id },
                         });
                         let _ = tx.send(ack);
                     }

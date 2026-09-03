@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.116.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.116.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,24 +48,11 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.116.0 (2026-09-03)
-- ✨ **AI 浏览器双引擎(webview / obscura)并存可切换**:14 个 `browser_*` 工具按设置 `browser.engine` 路由到两个后端。webview 后端(无痕独立 Tauri 窗口,wry 真实内核)保持默认,兼容性最好;obscura 后端为 Rust 无头浏览器引擎(V8 + 原生渲染,低内存/免 Chromium),新增 `scripts/build-obscura` 源码编译进构建链并以 externalBin 分发。设置页新增「AI 浏览器」tab,可随时切换引擎(改动后下一次 `browser_open` 生效)。
-- ✨ **Ogscura 直播查看器窗口**:obscura 后端经 `Page.startScreencast` 把无头页面画面以 JPEG 帧推到 `obscura-live://` 自定义协议,查看器 Tauri 窗口轮询显示,用户全程可见 AI 操作;查看器内也可交互(点击/双击/按键/输入/滚动/地址栏导航)。
-- ✨ **SSH「网页访问」改独立 Tauri 窗口**:点终端栏「网页」不再弹出右侧 iframe 面板,而是新开一个 Tauri 窗口(obscura 渲染,经 SSH 网关代理访问内网)。新增 `ssh_open_web_window` 命令,复用现有网关,查看器地址栏输入的原始 URL 自动重写为网关代理 URL。
-- ✨ **`browser_eval` 不再强制确认弹卡**:执行 `browser_eval` 免审核(从 approval-bridge 的 ALWAYS_ASK/HARD 档移除),但仍经 `audit_ai_tool` 写入审计日志,保证可追溯。工具描述同步更新。
-- 🔧 依赖新增 `tokio-tungstenite`(obscura CDP WebSocket 客户端,仅 loopback ws://,无 TLS)。
-- 🔧 `src-tauri` 浏览器模块重构:`browser/mod.rs` 保留参数解析/引擎路由,`browser/webview.rs` 承载原窗口实现,新增 `browser/obscura/`(进程/CDP/直播)与 `browser/keymap.rs`(共享按键表)。
-- 🔧 构建链:`build-obscura.ps1`/`build-obscura.bat`/`build-obscura.sh` 编排遮蔽编译;`tauri.conf.json` externalBin 增 `../sidecar/bin/obscura`;`beforeBuildCommand` 与 dev 链路接入 `obscura:build`。
-
-### v0.115.0 (2026-09-02)
-- ✨ **SQL 编辑器内容区重构:「SQL 查询 / 表数据」双模式切换 + 可拖拽编辑区**:数据库工作台内容头部从「SQL 编辑器」单一标签改为「SQL 查询 / 表数据」两个模式页签——点左侧表自动切到「表数据」模式(网格拿满全高),新建查询 / 执行 / 切查询标签自动回到「SQL 查询」模式;SQL 模式内编辑区与结果区之间加横向可拖拽分隔条(高度 160–560px 可调)。SQL 编辑区不再被 `max-height:280px` 钉死,与下方结果网格彻底分离,消除「查询与表数据挤在一起」的观感。
-- ✨ **数据库左侧树新增字段树(懒加载)**:表行前加展开/收起 chevron,首次展开经 `db_mysql_list_columns` 懒加载该表列清单并以「类型 + 列名(主键标注)」展示;点表行本身仍切换到表数据视图,两者互不影响。
-- ✨ **表数据网格新增「刷新」按钮(刷新单个表)**:工具栏「刷新」一键回到第一页并重载当前表数据/列/行数,配合已有的导出/筛选/编辑使用。
-- 🔧 **数据库网格列头图标化 + 列宽可拖拽**:排序标记 `▲/▼`、列筛选 `⌄` 文字替换为真实 SVG 图标(`IconChevronUp/DownOutline14`);列头右缘新增横向拖拽分隔条调整列宽(80–600px 可调),表头与数据行宽度同步。默认 160px 不变。
-- 🐛 **SSH 终端浅色主题下白色光标块看不清**:xterm 未设 `theme.cursor` 时回落白色光标(`#ffffff`),而浅色主题终端背景为近白 `#f5f6f7`,光标块几乎不可见。`dshTerminalTheme` 现按主题钉死光标色(浅色 `#1f2329` + `#f5f6f7` 反色 accent;深色 `#f9fafb` + `#1b1b1c`,行为不变),SSH / Docker exec / 堡垒机三处经 `useTerminalTheme` 一并生效
-- 🐛 **数据库资产行徽标只显示笼统「数据库」**:工具面板资产行徽标此前直接用子类名(数据库),混排的 MySQL / PostgreSQL / ClickHouse / Redis / ES 无从区分。新增 `assetRowBadge` 按 `config.dbType` 显示具体类型(MySQL / PostgreSQL / ClickHouse / Redis / ES / Broker),过长由 CSS 截断(ellipsis)
-- 🐛 **AI @ 数据库资产却调用 `ssh_exec`(工具误路由)**:三层加固。① `@` 引用绑定改为以「被引用资产」为准——`asset-source` 的 `onPick` 不再读侧栏当前打开的工具,而是按资产自身反查子类并派生路由前缀,避免「@数据库却带 SSH 上下文」;② 工具上下文携带 `assetType`/`dbType`,宿主 `tool-context` 在注入文本里显式标出资产类型与「Preferred tool: db_query — NOT ssh_exec/sftp_*」指引,引用文本也带明确类型;③ 进程内域工具分派前加资产类型→工具族校验,`ssh_exec` 绑定在数据库资产上、`redis_exec` 绑在关系库上等一律拦截并返回软错误引导,绝不静默执行。
-- 🐛 **表数据「保存」报 `db_mysql_update_rows missing required key whereClause`**:前端单元格批量保存把主键 WHERE 传成了 `where`,而 Tauri 命令参数名是 `where_clause`(→ `whereClause`),导致参数缺失被拒;改为传 `whereClause`,MySQL / ClickHouse 一并修正。
+### v0.116.1 (2026-09-03)
+- 🐛 **Obscura 引擎选中后不直播、查看器窗口停在「连接 Obscura…」**:三处根因——①`Page.screencastFrameAck` 缺少 `id` 且流 id 放错层级(应放 `params.sessionId`,原实现放到顶层 `sessionId`),server 反序列化/匹配失败,`frames_in_flight` 永不释放,流收到第 2 帧后停流;②vendored obscura 的 `screencastFrame` 不带 `metadata.seq`(StarHub 侧按 seq=0 判断无新帧),现改用「流号<<32|帧计数」生成单调伪 seq;③`ensure_page` 在页面尚无可见 DOM 表面时 `startScreencast` 静默失败且永不重试,现改为先等页面 ready、失败重试并确认收到首帧(seq>0)。
+- 🐛 **Obscura 引擎弹黑色控制台窗口**:`spawn_engine` 未加 `CREATE_NO_WINDOW`(与 sidecar/harness/android 一致),GUI 进程 spawn 控制台子进程默认弹出可见黑窗;现已隐藏。
+- 🐛 **`browser_extract`/`browser_scroll` 等报 `JS error: Unexpected token ';'`**:obscura 的 `Runtime.evaluate` 把表达式包进 `await (...)`,只接受单一表达式;原实现把「助手脚本 + IIFE」拼成多语句程序,被包裹后 `...;}` 抛 `Unexpected token ';'`。改为整个(助手 + body)包成一个 `(async function() { ... })()` 单表达式。
+- 🎨 **Obscura 直播查看器按钮用文字 icon(←/→/⟳)**:与设计风格(描边 outline SVG、`stroke=currentColor`)不符,改为内联 SVG 真 icon,并给按钮加 flex 居中与 hover/active 态。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
