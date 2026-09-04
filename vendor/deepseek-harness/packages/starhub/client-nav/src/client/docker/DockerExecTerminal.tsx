@@ -15,6 +15,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import type { ContainerInfo } from './docker-service.ts'
 import { useTerminalTheme } from '../terminal/terminal-theme.ts'
+import { terminalOptions, useTerminalSettings } from '../terminal/terminal-settings.ts'
 import {
   dockerExecSessionClose, dockerExecSessionRead, dockerExecSessionResize,
   dockerExecSessionStart, dockerExecSessionWrite, decodeExecOutput,
@@ -32,17 +33,16 @@ export function DockerExecTerminal({ connId, container, onClose }: {
 }) {
   const host = useRef<HTMLDivElement | null>(null)
   const { theme, termRef } = useTerminalTheme()
+  const terminalSettings = useTerminalSettings()
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- theme is a one-time init palette; live changes are re-applied by useTerminalTheme.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- theme/settings 在挂载时按当时的显示设置创建终端;主题后续由 useTerminalTheme 动态重刷,字体/字号/光标在下次打开终端时生效。
     let disposed = false
     let sessionId: string | null = null
     let pollTimer: number | undefined
 
     const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 13,
-      fontFamily: 'SF Mono, JetBrains Mono, Fira Code, Consolas, Courier, PingFang SC, Microsoft YaHei',
+      ...terminalOptions(terminalSettings),
       theme,
     })
     termRef.current = term

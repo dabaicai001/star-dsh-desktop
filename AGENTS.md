@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.116.2(**SSH/SFTP 与 Obscura 浏览器修复**:`browser_open` 卡 Load 超时改为 about:blank + DomContentLoaded;SSH 终端浅色外观选中文字背景色改深色;ZMODEM 多文件发送进度累计 + Ctrl+C 中止 + 传输条移到终端上方;SFTP 面板打开即跟随终端 cwd。) |
+| 当前版本 | v0.116.3(**设置新增 SSH tab**:可配置 SSH/Docker exec 终端字体、字号、编码、光标闪烁,持久化到 localStorage 并同步给已打开终端。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-03 (v0.116.2)*
+*最后更新: 2026-09-04 (v0.116.3)*

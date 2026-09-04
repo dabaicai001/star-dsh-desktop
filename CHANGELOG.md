@@ -7,6 +7,13 @@
 
 ## [未发布]
 
+### 新增
+- **设置新增「SSH」tab(终端显示设置)**:可配置 SSH 终端与 Docker exec 终端的字体、字号、编码、光标闪烁。持久化到 localStorage(`starhub.terminal.settings`),保存后同步给已打开终端;字体/字号/光标影响 xterm 创建参数,编码影响 PTY octets 解码(TextDecoder label),下一次打开终端生效。
+
+---
+
+## [0.116.2] - 2026-09-04
+
 ### 修复
 - **Obscura `browser_open` 卡 Load 超时(内容已就位却等不到 CDP 响应)**:`Target.createTarget` 带真实 URL 时 vendored obscura 走 `page.navigate()`(默认 `WaitUntil::Load`——等全部子资源/脚本就绪才返回),慢页面会让 CDP 调用挂到超时,尽管内容早已渲染。改为统一在 `about:blank` 建页再 `Page.navigate`(默认 `DomContentLoaded`,快速返回),browser_open/browser_navigate 不再阻塞在整页 Load 上。
 - **SSH 终端浅色外观选中文字的背景色太浅不易辨别**:`dshTerminalTheme` 此前只设背景/前景/光标,未设 `selectionBackground`,xterm 回退到浅蓝选中色,在近白 `#f5f6f7` 上几乎看不清。补 `selectionBackground`/`selectionForeground`/`selectionInactiveBackground`:浅色用深色高对比选中、深色用半透明蓝,两类外观选中文本都清晰。

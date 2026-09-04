@@ -58,6 +58,7 @@ import { AboutTab } from './settings/about.tsx'
 import { AndroidSettingsTab } from './settings/android.tsx'
 import { BrowserSettingsTab } from './settings/browser.tsx'
 import { SandboxSettingsTab } from './settings/sandbox.tsx'
+import { SshSettingsTab } from './settings/ssh.tsx'
 import { SandboxUserActionBanner } from './sandbox/SandboxUserActionBanner.tsx'
 import { AiTab } from './settings/ai.tsx'
 import { AlertTab } from './settings/alert.tsx'
@@ -418,7 +419,8 @@ export function apply(ctx: Context): void {
     { id: 'starhub-sandbox', order: 34, label: '沙箱平台', component: SandboxSettingsTab },
     { id: 'starhub-android', order: 35, label: 'Android 设备', component: AndroidSettingsTab },
     { id: 'starhub-browser', order: 36, label: 'AI 浏览器', component: BrowserSettingsTab },
-    { id: 'starhub-about', order: 37, label: '关于', component: AboutTab },
+    { id: 'starhub-ssh', order: 37, label: 'SSH', component: SshSettingsTab },
+    { id: 'starhub-about', order: 38, label: '关于', component: AboutTab },
   ]
   for (const tab of starhubTabs) {
     ctx.slots.inject('settings.section', () => ctx.slots.register({

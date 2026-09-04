@@ -27,6 +27,7 @@ import { formatSize } from './sftp-service.ts'
 import { BroadcastDialog, type BroadcastSession } from './BroadcastDialog.tsx'
 import { createQuickCommand, importQuickCommands, loadQuickCommands, saveQuickCommands, type QuickCommand } from './quick-commands.ts'
 import { useTerminalTheme } from './terminal-theme.ts'
+import { terminalOptions, useTerminalSettings } from './terminal-settings.ts'
 import {
   OSC7_INJECT_COMMAND, OSC7_INJECT_ECHO_TEXT, createCwdTracker, createHiddenEchoFilter, isShellPromptLine, parsePwdOutput,
 } from './terminal-cwd.ts'
@@ -284,6 +285,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const cwdRef = useRef('')
   const disposedRef = useRef(false)
   const { theme, termRef } = useTerminalTheme()
+  const terminalSettings = useTerminalSettings()
 
   // v8 ignore start -- OSC 7 / cwd reporting needs a live shell (prompt + ssh_write round-trip); jsdom cannot drive it
   const applyCwd = (next: string) => {
@@ -319,11 +321,9 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   // v8 ignore stop --
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- theme is a one-time init palette; live changes are re-applied by useTerminalTheme.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- theme/settings 在挂载时按当时的显示设置创建终端;主题后续由 useTerminalTheme 动态重刷,字体/字号/编码在下次打开终端时生效。
     const term = new Terminal({
-      cursorBlink: true,
-      fontFamily: 'SF Mono, JetBrains Mono, Fira Code, Consolas, Courier, PingFang SC, Microsoft YaHei',
-      fontSize: 13,
+      ...terminalOptions(terminalSettings),
       theme,
     })
     termRef.current = term
@@ -343,7 +343,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     let unlistenHostkey: TauriUnlisten | undefined
 
     const cwdTracker = createCwdTracker()
-    const decoder = new TextDecoder()
+    const decoder = new TextDecoder(terminalSettings.encoding)
     const hiddenEcho = createHiddenEchoFilter([OSC7_INJECT_ECHO_TEXT])
 
     const input = term.onData((data) => {

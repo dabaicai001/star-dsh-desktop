@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.116.2-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.116.3-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,12 +48,8 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.116.2 (2026-09-03)
-- 🐛 **Obscura `browser_open` 卡 Load 超时(内容已就位却等不到 CDP 响应)**:`Target.createTarget` 带真实 URL 时 vendored obscura 走 `page.navigate()`(默认 `WaitUntil::Load`——等全部子资源/脚本就绪才返回),慢页面会让 CDP 调用挂到超时,尽管内容早已渲染。改为统一在 `about:blank` 建页再 `Page.navigate`(默认 `DomContentLoaded`,快速返回)。
-- 🎨 **SSH 终端浅色外观选中文字的背景色太浅不易辨别**:`dshTerminalTheme` 补 `selectionBackground`/`selectionForeground`/`selectionInactiveBackground`,浅色用深色高对比选中、深色用半透明蓝。
-- 🐛 **ZMODEM(rz/sz)发送进度不准 + 取消不退出**:多文件发送改成按文件累计算批总量;传输进行中按 Ctrl+C 现在会中止会话。
-- 🎨 **ZMODEM(rz/sz)传输条在终端底部不易看见**:把传输条移到终端上方,rz/sz 一检出即可见。
-- 🐛 **SFTP 面板打开后不跟随终端 cwd(不在 ~ 时尤甚)**:面板一次连接即让终端侧注入 OSC 7,`cd` 实时跟随。
+### v0.116.3 (2026-09-04)
+- ✨ **设置新增「SSH」tab(终端显示设置)**:可配置 SSH 终端与 Docker exec 终端的字体、字号、编码、光标闪烁。保存后同步给已打开终端,下一次打开终端生效。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
@@ -113,7 +109,7 @@ npm run tauri:dev        # 完整开发:构建 sidecar + React 工作台,启动�
 
 | 项 | 值 |
 |---|---|
-| 当前版本 | v0.116.2 |
+| 当前版本 | v0.116.3 |
 | 官网 | [starthub.waouzzz.cc](https://starthub.waouzzz.cc/) |
 | 仓库 | [github.com/dabaicai001/star-dsh-desktop](https://github.com/dabaicai001/star-dsh-desktop) |
 | 问题反馈 | [GitHub Issues](https://github.com/dabaicai001/star-dsh-desktop/issues) |

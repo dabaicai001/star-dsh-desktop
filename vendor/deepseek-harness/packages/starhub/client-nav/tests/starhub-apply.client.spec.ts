@@ -26,6 +26,8 @@ import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
 import { SandboxUserActionBanner } from '../src/client/sandbox/SandboxUserActionBanner.tsx'
 import { SandboxSettingsTab } from '../src/client/settings/sandbox.tsx'
 import { AndroidSettingsTab } from '../src/client/settings/android.tsx'
+import { BrowserSettingsTab } from '../src/client/settings/browser.tsx'
+import { SshSettingsTab } from '../src/client/settings/ssh.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
 import { STARHUB_FILE_SOURCE } from '../src/client/file-source.ts'
 import { AboutTab } from '../src/client/settings/about.tsx'
@@ -115,7 +117,7 @@ describe('client-nav apply (rc.2)', () => {
       'conversation.session.header.actions', 'conversation.session.header.actions',
       'conversation.session.header.actions',
       'conversation.input.left',
-      'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
+      'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
       'settings.action',
     ])
     const components = register.mock.calls.map(c => c[1])
@@ -125,7 +127,7 @@ describe('client-nav apply (rc.2)', () => {
       GitBranchPill, FileTreeButton, ExecDrawerButton,
       ScreenshotButton,
       // AiTab 经 () => createElement(AiTab, { api }) 包装,按函数断言。
-      expect.any(Function), PluginsTab, AuditTab, AlertTab, SandboxSettingsTab, AndroidSettingsTab, AboutTab,
+      expect.any(Function), PluginsTab, AuditTab, AlertTab, SandboxSettingsTab, AndroidSettingsTab, BrowserSettingsTab, SshSettingsTab, AboutTab,
       OpenConfigAction,
     ])
   })
