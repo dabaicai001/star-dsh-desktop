@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
   DEFAULT_TERMINAL_FONT, TERMINAL_ENCODINGS, normalizeTerminalSettings,
-  loadTerminalSettings, saveTerminalSettings, terminalOptions, updateTerminalSettings,
+  loadTerminalSettings, saveTerminalSettings, terminalOptions,
 } from '../src/client/terminal/terminal-settings.ts'
 import { SshSettingsTab } from '../src/client/settings/ssh.tsx'
 
