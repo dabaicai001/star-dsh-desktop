@@ -16,6 +16,29 @@ export const TERMINAL_SETTINGS_KEY = 'starhub.terminal.settings'
 /** 默认字体栈(与旧硬编码一致,保证升级后行为不变)。 */
 export const DEFAULT_TERMINAL_FONT = 'SF Mono, JetBrains Mono, Fira Code, Consolas, Courier, PingFang SC, Microsoft YaHei'
 
+/**
+ * 可选字体预设(下拉框):展示名 → 字体栈字符串(即持久化的 fontFamily 值)。
+ * 每个栈都以等宽/老牌等宽收尾,保证缺字体时仍可读;Windows/macOS/Linux 都覆盖。
+ */
+export const TERMINAL_FONTS: ReadonlyArray<{ label: string; value: string }> = [
+  {
+    label: '系统默认(SF Mono / JetBrains Mono / Fira Code / Consolas)',
+    value: DEFAULT_TERMINAL_FONT,
+  },
+  { label: 'JetBrains Mono', value: 'JetBrains Mono, SF Mono, Consolas, Menlo, monospace' },
+  { label: 'Fira Code', value: 'Fira Code, SF Mono, Consolas, Menlo, monospace' },
+  { label: 'Consolas', value: 'Consolas, SF Mono, Menlo, monospace' },
+  { label: 'Menlo', value: 'Menlo, Consolas, monospace' },
+  { label: 'Cascadia Code', value: 'Cascadia Code, Consolas, monospace' },
+  { label: 'Courier New', value: '"Courier New", Courier, monospace' },
+  { label: 'PingFang SC(苹方,需中英文混排)', value: 'PingFang SC, Microsoft YaHei, Consolas, monospace' },
+]
+
+/** 判断某个字体栈是否为预设之一(用于下拉框回显;自定义值时补一个当前项)。 */
+export function isTerminalFontPreset(fontFamily: string): boolean {
+  return TERMINAL_FONTS.some(option => option.value === fontFamily)
+}
+
 /** 支持的 PTY 解码编码(TextDecoder 的 label 参数)。 */
 export const TERMINAL_ENCODINGS = ['utf-8', 'gbk', 'gb18030', 'big5', 'shift_jis', 'euc-kr'] as const
 

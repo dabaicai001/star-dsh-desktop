@@ -7,6 +7,13 @@
 
 ## [未发布]
 
+### 改进
+- **设置「SSH」tab 字体改为下拉框**:`fontFamily` 不再用自由文本输入,改为从预设字体(系统默认 / JetBrains Mono / Fira Code / Consolas / Menlo / Cascadia Code / Courier New / PingFang SC)里选一个;若存的是自定义值,下拉框额外补一个「当前(自定义)」项避免丢失。
+
+---
+
+## [0.116.3] - 2026-09-04
+
 ### 新增
 - **设置新增「SSH」tab(终端显示设置)**:可配置 SSH 终端与 Docker exec 终端的字体、字号、编码、光标闪烁。持久化到 localStorage(`starhub.terminal.settings`),保存后同步给已打开终端;字体/字号/光标影响 xterm 创建参数,编码影响 PTY octets 解码(TextDecoder label),下一次打开终端生效。
 

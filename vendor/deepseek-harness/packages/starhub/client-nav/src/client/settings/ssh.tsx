@@ -6,7 +6,8 @@
  */
 import { useState } from 'react'
 import {
-  TERMINAL_ENCODINGS, updateTerminalSettings, useTerminalSettings,
+  TERMINAL_ENCODINGS, TERMINAL_FONTS, isTerminalFontPreset,
+  updateTerminalSettings, useTerminalSettings,
   type TerminalEncoding, type TerminalSettings,
 } from '../terminal/terminal-settings.ts'
 import s from './settings.module.css'
@@ -37,14 +38,19 @@ export function SshSettingsTab() {
       <div className={s.formGrid}>
         <label className={s.formField}>
           <span className={s.fieldLabel}>字体</span>
-          <input
-            className={s.input}
-            type="text"
+          <select
+            className={s.select}
             value={draft.fontFamily}
-            spellCheck={false}
             onChange={event => patch({ fontFamily: event.target.value })}
-            placeholder="SF Mono, JetBrains Mono, Fira Code, Consolas, Courier, PingFang SC, Microsoft YaHei"
-          />
+          >
+            {!isTerminalFontPreset(draft.fontFamily) && (
+              <option value={draft.fontFamily}>当前(自定义):{draft.fontFamily}</option>
+            )}
+            {TERMINAL_FONTS.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <span className={s.fieldHint}>下拉选择一个预设字体;字体在下一次打开终端时生效。</span>
         </label>
         <label className={s.formField}>
           <span className={s.fieldLabel}>字号(px)</span>

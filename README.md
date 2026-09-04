@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.116.3-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.116.4-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,8 +48,8 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.116.3 (2026-09-04)
-- ✨ **设置新增「SSH」tab(终端显示设置)**:可配置 SSH 终端与 Docker exec 终端的字体、字号、编码、光标闪烁。保存后同步给已打开终端,下一次打开终端生效。
+### v0.116.4 (2026-09-04)
+- 🎨 **设置「SSH」tab 字体改为下拉框**:字体从自由文本输入改为预设字体下拉框(系统默认 / JetBrains Mono / Fira Code / Consolas / Menlo / Cascadia Code / Courier New / PingFang SC),自定义值补「当前(自定义)」项避免丢失。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
@@ -109,7 +109,7 @@ npm run tauri:dev        # 完整开发:构建 sidecar + React 工作台,启动�
 
 | 项 | 值 |
 |---|---|
-| 当前版本 | v0.116.3 |
+| 当前版本 | v0.116.4 |
 | 官网 | [starthub.waouzzz.cc](https://starthub.waouzzz.cc/) |
 | 仓库 | [github.com/dabaicai001/star-dsh-desktop](https://github.com/dabaicai001/star-dsh-desktop) |
 | 问题反馈 | [GitHub Issues](https://github.com/dabaicai001/star-dsh-desktop/issues) |
