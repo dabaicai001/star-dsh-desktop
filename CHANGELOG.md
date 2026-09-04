@@ -7,6 +7,22 @@
 
 ## [未发布]
 
+---
+
+## [0.116.6] - 2026-09-04
+
+### 修复
+- **Obscura 直播查看器在 Windows 上永远停在「连接 Obscura…」**:查看器页面 JS 硬编码 `obscura-live://localhost/...` 绝对 URL 发 fetch;Windows WebView2 不认识自定义 scheme(wry 把自定义协议映射成 `http://obscura-live.localhost`,过滤器只匹配该形式),文档 URL 由 Tauri 自动改写所以页面能渲染,但页面内 fetch 全部 TypeError → 轮询永远进 catch,直播与查看器输入(地址栏/点击/按键 POST)整体失效。改为全部相对 URL(`meta`/`frame.jpg`/`input` 随文档地址解析),各平台行为一致;meta 404(页面会话未建立)时状态栏保持「连接 Obscura…」而不是「 · undefined」。
+- **Obscura 引擎崩溃/断连后所有 `browser_*` 永久失败,且僵尸 obscura 进程累积**:`ensure_engine` 快路径直接复用缓存 client 不探测,引擎死后所有动作报「发送通道已关闭」直到重启 App;启动失败分支不回收已 spawn 进程,且 `spawn_engine` 未设 `kill_on_drop`,每次重试/重启泄漏一个 obscura 进程。现快路径先 probe、失效则 `kill_engine`(杀进程 + 清 client/port/页面会话)后重启;启动失败同样回收;`spawn_engine` 补 `kill_on_drop(true)`。
+- **Obscura screencast 流中途死掉后直播永久定格**:`ensure_screencast` 以 `seq>0` 判活,流死时 seq 冻结在 >0,补启逻辑直接返回。改为按「重注册后 seq 增长」判活(startScreencast 成功必强制推一帧);同时帧 base64 解码失败不再用空数据覆盖上一帧(空帧会让 frame.jpg 变 204 黑屏)。
+- **Obscura 双击不触发页面 dblclick 处理器**:查看器双击原来发两次 clickCount=1 的完整单击;真双击第二次 press/release 需 clickCount=2,已修正。AI `browser_click` 可信输入路径补 mouseMoved(依赖 hover 态的元素此前点不中)。
+- **Obscura 引擎冷启动时并发调用方误报「等待 Obscura 引擎启动超时」**:等待方上限 7.5s 小于启动方最坏耗时(12s+),拉长到 15s。
+- **Obscura 直播帧 metadata 的视口尺寸未写回**:`deviceWidth/deviceHeight` 现在随帧更新 PageState.viewport,首帧到达前查看器坐标映射不再用假视口(1280×800)。
+- **Obscura 模块 Mutex 中毒级联**:live 协议处理器跑在 webview 同步线程,`lock().expect(...)` 会因任何持锁 panic 级联让查看器窗口线程崩溃;全模块改 `plock` 辅助(中毒时取回内层数据继续用)。
+- 小项:obscura 二进制用户级 target 路径在非 Windows 平台回退 `HOME`;查看器窗口聚焦失败不再让 `browser_open` 整体报错;CDP `call_session` 应答通道关闭时清理 pending 表。
+
+## [0.116.5] - 2026-09-04
+
 ### 新增
 - **SSH「网页访问」固定用原生 webview 壳(不再走 Obscura)**:点终端「网页」现在打开 `starhub-web://` 自定义协议直出的原生 webview 窗口(顶部地址栏 + 全视口 iframe,经 SSH 网关代理访问内网)。内网站点在复杂 JS / 登录页上兼容性更好,也不再依赖 Obscura 无头渲染引擎。相应移除 Obscura 侧 `open_web_window`/`web_page_key`/`proxy_url_for` 死代码与 `web_gateways` 状态。
 

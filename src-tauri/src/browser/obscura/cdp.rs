@@ -16,13 +16,22 @@ use std::sync::{
 };
 use tokio::sync::{mpsc, oneshot};
 
+use super::state::plock;
+
 /// 单次 CDP 调用等待应答的超时(页面脚本可能很慢,尤其 Runtime.evaluate)。
 const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// screencast 帧落点:由 ObscuraInner 提供;协议处理器(sync 上下文)只读帧存储。
 pub trait FrameSink: Send + Sync + 'static {
-    /// 收到一帧画布更新(JPEG base64)。
-    fn on_screencast_frame(&self, session_id: &str, seq: u64, data_base64: String);
+    /// 收到一帧画布更新(JPEG base64);viewport 取帧 metadata 的
+    /// deviceWidth/deviceHeight(有则更新页面视口,保持查看器坐标映射准确)。
+    fn on_screencast_frame(
+        &self,
+        session_id: &str,
+        seq: u64,
+        data_base64: String,
+        viewport: Option<(u32, u32)>,
+    );
 }
 
 /// 客户端内部可变状态,Arc 共享以同时在 connect 派生的读写任务与 call 方法中访问。
@@ -65,7 +74,7 @@ impl CdpClient {
         let (mut writer, mut reader) = ws.split();
 
         let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
-        *self.inner.tx.lock().expect("cdp tx") = Some(tx.clone());
+        *plock(&self.inner.tx) = Some(tx.clone());
 
         // 写循环:发送 JSON 文本。
         let write_task = tokio::spawn(async move {
@@ -104,7 +113,7 @@ impl CdpClient {
                     }
                 };
                 if let Some(id) = value.get("id").and_then(Value::as_u64) {
-                    if let Some(tx) = inner.pending.lock().expect("cdp pending").remove(&id) {
+                    if let Some(tx) = plock(&inner.pending).remove(&id) {
                         let outcome = if value.get("error").is_some() {
                             let err = value
                                 .get("error")
@@ -147,14 +156,23 @@ impl CdpClient {
                         let seq_val = if seq > 0 { seq } else {
                             // 用「流号 * 大基数 + 该流帧计数」构造单调伪 seq。
                             let n = {
-                                let mut f = inner.frame_seq.lock().expect("frame_seq");
+                                let mut f = plock(&inner.frame_seq);
                                 let e = f.entry(stream_num).or_insert(0u64);
                                 *e += 1;
                                 (stream_num as u64) << 32 | *e
                             };
                             n
                         };
-                        frame_sink.on_screencast_frame(session_id, seq_val, data);
+                        let viewport = params
+                            .pointer("/metadata/deviceWidth")
+                            .and_then(Value::as_u64)
+                            .zip(
+                                params
+                                    .pointer("/metadata/deviceHeight")
+                                    .and_then(Value::as_u64),
+                            )
+                            .map(|(w, h)| (w as u32, h as u32));
+                        frame_sink.on_screencast_frame(session_id, seq_val, data, viewport);
                         // 立即 ACK,否则帧窗口(frames_in_flight)不释放、流会停在第 2 帧。
                         // 必须带 `id`(CdpRequest 强制)且 streamId 放 params.sessionId,
                         // 缺一 server 反序列化/匹配失败,ack 被丢弃。
@@ -189,20 +207,12 @@ impl CdpClient {
         method: &str,
         params: Value,
     ) -> Result<Value, String> {
-        let sender = self
-            .inner
-            .tx
-            .lock()
-            .expect("cdp tx")
+        let sender = plock(&self.inner.tx)
             .clone()
             .ok_or_else(|| "Obscura CDP 未连接".to_string())?;
         let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
         let (resp_tx, resp_rx) = oneshot::channel::<Result<Value, String>>();
-        self.inner
-            .pending
-            .lock()
-            .expect("cdp pending")
-            .insert(id, resp_tx);
+        plock(&self.inner.pending).insert(id, resp_tx);
         let mut msg = serde_json::json!({
             "id": id,
             "method": method,
@@ -216,13 +226,12 @@ impl CdpClient {
             .map_err(|_| "Obscura CDP 发送通道已关闭".to_string())?;
         match tokio::time::timeout(CALL_TIMEOUT, resp_rx).await {
             Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err(format!("CDP {method} 应答通道已关闭")),
+            Ok(Err(_)) => {
+                plock(&self.inner.pending).remove(&id);
+                Err(format!("CDP {method} 应答通道已关闭"))
+            }
             Err(_) => {
-                self.inner
-                    .pending
-                    .lock()
-                    .expect("cdp pending")
-                    .remove(&id);
+                plock(&self.inner.pending).remove(&id);
                 Err(format!("CDP {method} 超时({}s)", CALL_TIMEOUT.as_secs()))
             }
         }

@@ -5,7 +5,14 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
+
+/// 取锁,中毒时取回内层数据继续用。live 协议处理器跑在 webview 同步线程,
+/// `lock().expect(...)` 会因任何一次持锁 panic 级联毒化、让查看器窗口线程
+/// 跟着 panic;这里宁可带病运行也不让 UI 线程崩。
+pub(crate) fn plock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// 共享内部状态(进程 + CDP 客户端 + 页面会话 + 输入泵 + 引擎设置)。
 pub struct ObscuraInner {
@@ -87,15 +94,27 @@ pub enum LiveCmd {
 }
 
 impl crate::browser::obscura::cdp::FrameSink for ObscuraInner {
-    fn on_screencast_frame(&self, session_id: &str, seq: u64, data_base64: String) {
+    fn on_screencast_frame(
+        &self,
+        session_id: &str,
+        seq: u64,
+        data_base64: String,
+        viewport: Option<(u32, u32)>,
+    ) {
         use base64::Engine as _;
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(data_base64.as_bytes())
-            .unwrap_or_default();
-        let mut pages = self.pages.lock().expect("pages");
+        // 解码失败直接丢帧,不用空数据覆盖上一帧(空帧会让 frame.jpg 变 204,
+        // 直播黑屏且 seq 还在涨,排查时误以为流正常)。
+        let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data_base64.as_bytes())
+        else {
+            return;
+        };
+        let mut pages = plock(&self.pages);
         if let Some(state) = pages.values_mut().find(|s| s.session_id == session_id) {
             state.seq = seq.max(state.seq + 1);
-            *state.frame.lock().expect("frame") = bytes;
+            if let Some(vp) = viewport {
+                *plock(&state.viewport) = vp;
+            }
+            *plock(&state.frame) = bytes;
         }
     }
 }

@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.116.5(**SSH「网页访问」固定用原生 webview 壳**:点终端「网页」改开 `starhub-web://` 自定义协议直出的原生 webview 窗口(地址栏 + 全视口 iframe,经 SSH 网关代理访问内网),不再用 Obscura 无头渲染;另给「SSH」tab 字体下拉框加实时预览。相应移除 Obscura 侧 `open_web_window`/`web_page_key`/`proxy_url_for` 死代码。) |
+| 当前版本 | v0.116.6(**Obscura 直播查看器在 Windows 上永远停在「连接 Obscura…」**:查看器页面 JS 硬编码 `obscura-live://localhost/...` 绝对 URL 发 fetch;Windows WebView2 不认识自定义 scheme(wry 把自定义协议映射成 `http://obscura-live.localhost`,过滤器只匹配该形式),文档 URL 由 Tauri 自动改写所以页面能渲染,但页面内 fetch 全部 TypeError → 轮询永远进 catch,直播与查看器输入(地址栏/点击/按键 POST)整体失效。改为全部相对 URL(`meta`/`frame.jpg`/`input` 随文档地址解析),各平台行为一致;meta 404(页面会话未建立)时状态栏保持「连接 Obscura…」而不是「 · undefined」。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-04 (v0.116.5)*
+*最后更新: 2026-09-04 (v0.116.6)*

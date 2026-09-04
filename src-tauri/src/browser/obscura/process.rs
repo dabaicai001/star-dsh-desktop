@@ -30,7 +30,9 @@ pub fn binary_path(app: &tauri::AppHandle) -> PathBuf {
         }
     }
     // 用户级 target(build-obscura.bat 固定到 USERPROFILE 盘,绕开 symlink 权限)。
-    if let Ok(home) = std::env::var("USERPROFILE") {
+    // USERPROFILE 仅 Windows 有,macOS/Linux 回退 HOME。
+    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME"));
+    if let Ok(home) = home {
         candidates.push(
             PathBuf::from(&home)
                 .join(".starhub")
@@ -59,7 +61,10 @@ pub fn spawn_engine(binary: &PathBuf, port: u16) -> Result<tokio::process::Child
         .arg("--allow-private-network")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+        .stderr(std::process::Stdio::null())
+        // Child 句柄被丢弃(重启覆盖、回收)时同步杀进程,否则僵尸 obscura
+        // 进程会随每次重试/重启累积(tokio 默认 kill_on_drop=false)。
+        .kill_on_drop(true);
     // Windows:GUI 进程 spawn 控制台子进程默认会弹出一个可见的黑色控制台窗口。
     // 与 sidecar / harness / android 一致,加 CREATE_NO_WINDOW 隐藏它。
     // tokio Command 自带 creation_flags 方法(无需 CommandExt import)。

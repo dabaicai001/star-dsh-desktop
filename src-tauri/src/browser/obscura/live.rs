@@ -50,12 +50,12 @@ pub fn live_protocol_handler(
             http_response(200, "text/html; charset=utf-8", page.into_bytes())
         }
         ("GET", "meta") => {
-            let pages = inner.pages.lock().expect("pages");
+            let pages = super::state::plock(&inner.pages);
             let state = match pages.get(key) {
                 Some(s) => s,
                 None => return json_response(404, "{\"error\":\"no page\"}".to_string()),
             };
-            let (w, h) = *state.viewport.lock().expect("viewport");
+            let (w, h) = *super::state::plock(&state.viewport);
             let body = serde_json::json!({
                 "url": state.url,
                 "title": state.title,
@@ -66,10 +66,10 @@ pub fn live_protocol_handler(
             json_response(200, body.to_string())
         }
         ("GET", "frame.jpg") => {
-            let pages = inner.pages.lock().expect("pages");
+            let pages = super::state::plock(&inner.pages);
             match pages.get(key) {
                 Some(state) => {
-                    let frame = state.frame.lock().expect("frame");
+                    let frame = super::state::plock(&state.frame);
                     if frame.is_empty() {
                         http_response(204, "image/jpeg", Vec::new())
                     } else {
@@ -83,10 +83,7 @@ pub fn live_protocol_handler(
             let cmd = parse_input(key, request.body());
             match cmd {
                 Some(cmd) => {
-                    let ok = inner
-                        .cmds
-                        .lock()
-                        .expect("cmds")
+                    let ok = super::state::plock(&inner.cmds)
                         .as_ref()
                         .map(|tx| tx.send(cmd).is_ok())
                         .unwrap_or(false);
@@ -127,9 +124,9 @@ fn parse_input(key: &str, body: &[u8]) -> Option<LiveCmd> {
     }
 }
 
-/// 生成查看器页面(把 key 占位符替换成实际 page_key)。
-fn live_page(key: &str) -> String {
-    LIVE_PAGE.replace("__PAGE_KEY__", key)
+/// 生成查看器页面(相对 URL 随文档地址解析,无需注入 page_key)。
+fn live_page(_key: &str) -> String {
+    LIVE_PAGE.to_string()
 }
 
 /// 查看器页面(内联 HTML/JS,无外部资源)。
@@ -157,12 +154,13 @@ const LIVE_PAGE: &str = r##"
 </div>
 <div id="stage"><canvas id="cv"></canvas><div id="status">连接 Obscura…</div></div>
 <script>
-var key='__PAGE_KEY__';
 var stage=document.getElementById('stage'),cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 var bar=document.getElementById('bar'),addr=document.getElementById('addr'),statusEl=document.getElementById('status');
 var lastSeq=0,intW=1280,intH=800;
-function base(){return 'obscura-live://localhost/'+key;}
-async function post(obj){try{await fetch(base()+'/input',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(obj)});}catch(e){}}
+// 全部用相对 URL:Windows WebView2 不认识自定义 scheme(wry 会把 obscura-live://
+// 映射成 http://obscura-live.localhost),绝对 URL 的 fetch 一律失败,直播窗会
+// 永远停在「连接 Obscura…」。相对路径随文档地址解析,各平台行为一致。
+async function post(obj){try{await fetch('input',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(obj)});}catch(e){}}
 function draw(dataUrl){
   var img=new Image();
   img.onload=function(){
@@ -186,14 +184,18 @@ function posOf(e){
 }
 async function poll(){
   try{
-    var m=await (await fetch(base()+'/meta')).json();
+    var r=await fetch('meta');
+    var m=r.ok?await r.json():null;
+    // 页面会话未建立(404)或应答异常:保持「连接中」状态并慢速重试,
+    // 避免状态栏显示「 · undefined」。
+    if(!m||m.error){statusEl.textContent='连接 Obscura…';setTimeout(poll,800);return;}
     if(m.width&&m.height){intW=m.width;intH=m.height;}
-    if(m.seq!==lastSeq){
+    if(typeof m.seq==='number'&&m.seq!==lastSeq){
       lastSeq=m.seq;
-      var f=await fetch(base()+'/frame.jpg?seq='+m.seq);
+      var f=await fetch('frame.jpg?seq='+m.seq);
       if(f.ok){var blob=await f.blob();var url=URL.createObjectURL(blob);draw(url);setTimeout(function(){URL.revokeObjectURL(url);},200);}
     }
-    statusEl.textContent=(m.title||'')+' · '+m.url;
+    statusEl.textContent=(m.title||'')+' · '+(m.url||'');
   }catch(e){setTimeout(poll,800);return;}
   setTimeout(poll,220);
 }

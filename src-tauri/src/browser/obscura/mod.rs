@@ -36,7 +36,7 @@ impl ObscuraManager {
     }
 
     pub fn set_engine(&self, engine: Engine) -> bool {
-        let mut cur = self.inner.engine.lock().expect("engine");
+        let mut cur = state::plock(&self.inner.engine);
         if *cur == engine {
             return false;
         }
@@ -65,23 +65,40 @@ async fn pick_free_port() -> Result<u16, String> {
     Ok(port)
 }
 
+/// 回收引擎进程并清空连接状态。页面会话属于旧引擎实例,重启后全部失效,
+/// 一并清掉,否则 ensure_page 会拿旧 session_id 在新引擎上空转。
+fn kill_engine(inner: &Arc<ObscuraInner>) {
+    if let Some(mut child) = state::plock(&inner.process).take() {
+        let _ = child.start_kill();
+    }
+    *state::plock(&inner.client) = None;
+    *state::plock(&inner.port) = None;
+    state::plock(&inner.pages).clear();
+}
+
 /// 确保引擎进程与 CDP 连接就绪,返回 (client, port)。
 async fn ensure_engine(
     app: &AppHandle,
     inner: &Arc<ObscuraInner>,
 ) -> Result<(Arc<cdp::CdpClient>, u16), String> {
-    if let (Some(client), Some(port)) = (
-        inner.client.lock().expect("client").clone(),
-        *inner.port.lock().expect("port"),
-    ) {
-        return Ok((client, port));
+    // 快路径:缓存的 client 必须先探测。引擎崩溃/WS 断开后若直接复用,
+    // 所有动作会永久报「发送通道已关闭」直到重启 App;探测失败则回收并重启。
+    let cached = (state::plock(&inner.client).clone(), *state::plock(&inner.port));
+    if let (Some(client), Some(port)) = cached {
+        if client_probe(&client).await {
+            return Ok((client, port));
+        }
+        tracing::warn!("Obscura 引擎连接已失效,回收并重启");
+        kill_engine(inner);
     }
     if inner.starting.swap(true, Ordering::AcqRel) {
-        for _ in 0..50 {
-            let client = inner.client.lock().expect("client").clone();
+        // 等待方上限必须超过启动方最坏耗时(60×200ms 连接重试 + spawn),
+        // 否则冷启动时会误报超时。
+        for _ in 0..100 {
+            let client = state::plock(&inner.client).clone();
             if let Some(client) = client {
                 if client_probe(&client).await {
-                    let port = inner.port.lock().expect("port").expect("port set with client");
+                    let port = state::plock(&inner.port).expect("port set with client");
                     return Ok((client, port));
                 }
             }
@@ -97,15 +114,15 @@ async fn ensure_engine(
         }
         let port = pick_free_port().await?;
         let child = process::spawn_engine(&binary, port)?;
-        *inner.process.lock().expect("process") = Some(child);
+        *state::plock(&inner.process) = Some(child);
         let client = Arc::new(cdp::CdpClient::new(inner.clone()));
         let ws_url = format!("ws://127.0.0.1:{port}/devtools/browser");
         let mut last_err = String::new();
         for _ in 0..60 {
             match client.connect(&ws_url).await {
                 Ok(()) => {
-                    *inner.client.lock().expect("client") = Some(client.clone());
-                    *inner.port.lock().expect("port") = Some(port);
+                    *state::plock(&inner.client) = Some(client.clone());
+                    *state::plock(&inner.port) = Some(port);
                     // 启动输入转发泵(viewer 窗口 POST input → CDP Input 域)。
                     spawn_pump(app);
                     return Ok((client, port));
@@ -116,6 +133,8 @@ async fn ensure_engine(
                 }
             }
         }
+        // 连接不上:回收引擎进程,否则每次失败重试都泄漏一个僵尸 obscura 进程。
+        kill_engine(inner);
         Err(format!("Obscura CDP 连接失败:{last_err}"))
     }
     .await;
@@ -140,7 +159,7 @@ async fn ensure_page(
     initial: Option<&str>,
 ) -> Result<(), String> {
     let (client, _port) = ensure_engine(app, inner).await?;
-    if inner.pages.lock().expect("pages").contains_key(key) {
+    if state::plock(&inner.pages).contains_key(key) {
         // 页面已存在;若是 AI 浏览器会话且用户曾关掉直播窗,重新拉起来。
         if key == "ai" {
             let _ = open_viewer(app, inner, key, "StarHub AI 浏览器(Obscura)").await;
@@ -181,11 +200,7 @@ async fn ensure_page(
         .call_session(Some(&session_id), "Page.enable", serde_json::json!({}))
         .await;
     // 先落页面会话,再启动 screencast(帧回调按 session_id 查找 state)。
-    inner
-        .pages
-        .lock()
-        .expect("pages")
-        .insert(key.to_string(), PageState::new(&session_id, url));
+    state::plock(&inner.pages).insert(key.to_string(), PageState::new(&session_id, url));
     // 有真实 URL:在 about:blank 会话上导航(默认 DomContentLoaded,快速返回),
     // 避免 createTarget 卡 Load 导致 browser_open 超时。
     if url != "about:blank" {
@@ -211,16 +226,19 @@ async fn ensure_page(
     Ok(())
 }
 
-/// 启动(或补启)screencast,直到收到首帧(seq>0)或有限次重试耗尽。
+/// 启动(或补启)screencast,直到确认收到新帧或有限次重试耗尽。
 /// startScreencast 返回 Ok 但页面无可见 DOM 表面时,obscura 会回滚注册,
 /// 调用方(旧实现)用 `let _ =` 吞掉错误 → 直播永远无帧。此处显式确认帧已到。
+/// 判据是「seq 增长」而非「seq>0」:流中途死掉时 seq 冻结在 >0,
+/// 旧判据会误以为流还活着,直播永久定格。startScreencast 成功会强制推一帧
+/// (vendor 侧 force=true),所以重注册后必然能观察到 seq 增长。
 async fn ensure_screencast(
     client: &cdp::CdpClient,
     inner: &Arc<ObscuraInner>,
     key: &str,
 ) -> Result<(), String> {
     let session_id = {
-        let pages = inner.pages.lock().expect("pages");
+        let pages = state::plock(&inner.pages);
         pages
             .get(key)
             .ok_or_else(|| "浏览器页面未打开".to_string())?
@@ -229,15 +247,7 @@ async fn ensure_screencast(
     };
     let mut last_err = String::new();
     for _ in 0..5 {
-        // 已收到帧 → 流在跑,无需重复注册。
-        {
-            let pages = inner.pages.lock().expect("pages");
-            if let Some(state) = pages.get(key) {
-                if state.seq > 0 {
-                    return Ok(());
-                }
-            }
-        }
+        let prev_seq = state::plock(&inner.pages).get(key).map(|s| s.seq).unwrap_or(0);
         if let Err(e) = client
             .call_session(
                 Some(&session_id),
@@ -248,13 +258,13 @@ async fn ensure_screencast(
         {
             last_err = e;
         }
-        // 等一帧;超时说明仍无 DOM 表面,下一轮再试(期间页面通常已加载完成)。
+        // 等新帧;超时说明仍无 DOM 表面,下一轮再试(期间页面通常已加载完成)。
         let deadline = std::time::Instant::now() + Duration::from_millis(600);
         loop {
             {
-                let pages = inner.pages.lock().expect("pages");
+                let pages = state::plock(&inner.pages);
                 if let Some(state) = pages.get(key) {
-                    if state.seq > 0 {
+                    if state.seq > prev_seq {
                         return Ok(());
                     }
                 }
@@ -264,6 +274,9 @@ async fn ensure_screencast(
             }
             tokio::time::sleep(Duration::from_millis(80)).await;
         }
+    }
+    if last_err.is_empty() {
+        last_err = "screencast 重注册后未收到新帧".to_string();
     }
     Err(last_err)
 }
@@ -285,14 +298,11 @@ async fn wait_ready(inner: &Arc<ObscuraInner>, key: &str) {
 /// 经 `evaluate` 读取页面状态并写回 page state。
 async fn current_state(inner: &Arc<ObscuraInner>, key: &str) -> Result<(), String> {
     let (client, session_id) = {
-        let pages = inner.pages.lock().expect("pages");
+        let pages = state::plock(&inner.pages);
         let state = pages
             .get(key)
             .ok_or_else(|| "浏览器页面未打开".to_string())?;
-        let client = inner
-            .client
-            .lock()
-            .expect("client")
+        let client = state::plock(&inner.client)
             .clone()
             .ok_or_else(|| "Engine 未连接".to_string())?;
         (client, state.session_id.clone())
@@ -304,7 +314,7 @@ async fn current_state(inner: &Arc<ObscuraInner>, key: &str) -> Result<(), Strin
             .unwrap_or(serde_json::Value::Null),
         other => other,
     };
-    let mut pages = inner.pages.lock().expect("pages");
+    let mut pages = state::plock(&inner.pages);
     if let Some(state) = pages.get_mut(key) {
         state.url = parsed.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
         state.title = parsed.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -373,14 +383,7 @@ pub async fn execute_action(app: &AppHandle, action: BrowserAction) -> Result<St
             let state = current_state(&inner, &key).await;
             let current = state
                 .ok()
-                .and_then(|_| {
-                    inner
-                        .pages
-                        .lock()
-                        .expect("pages")
-                        .get(&key)
-                        .map(|s| s.url.clone())
-                })
+                .and_then(|_| state::plock(&inner.pages).get(&key).map(|s| s.url.clone()))
                 .unwrap_or_else(|| "about:blank".to_string());
             Ok(format!(
                 "已启动 Obscura 无头浏览器(直播查看器窗口已打开,用户可见 AI 操作)。当前:{current}"
@@ -398,7 +401,7 @@ pub async fn execute_action(app: &AppHandle, action: BrowserAction) -> Result<St
                 .await?;
             // 更新 page state 的 url(导航后 evaluate 可能尚不可用)。
             {
-                let mut pages = inner.pages.lock().expect("pages");
+                let mut pages = state::plock(&inner.pages);
                 if let Some(state) = pages.get_mut(&key) {
                     state.url = url.clone();
                 }
@@ -407,14 +410,7 @@ pub async fn execute_action(app: &AppHandle, action: BrowserAction) -> Result<St
             let title = current_state(&inner, &key)
                 .await
                 .ok()
-                .and_then(|_| {
-                    inner
-                        .pages
-                        .lock()
-                        .expect("pages")
-                        .get(&key)
-                        .map(|s| s.title.clone())
-                })
+                .and_then(|_| state::plock(&inner.pages).get(&key).map(|s| s.title.clone()))
                 .unwrap_or_default();
             Ok(format!("已导航到 {url}。页面标题:{title}"))
         }
@@ -473,7 +469,7 @@ pub async fn execute_action(app: &AppHandle, action: BrowserAction) -> Result<St
             ensure_page(app, &inner, &key, None).await?;
             current_state(&inner, &key).await?;
             let state = {
-                let pages = inner.pages.lock().expect("pages");
+                let pages = state::plock(&inner.pages);
                 match pages.get(&key) {
                     Some(s) => serde_json::json!({
                         "url": s.url,
@@ -499,6 +495,15 @@ pub async fn execute_action(app: &AppHandle, action: BrowserAction) -> Result<St
             let x = rect.pointer("/x").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let y = rect.pointer("/y").and_then(|v| v.as_f64()).unwrap_or(0.0);
             if x > 0.0 || y > 0.0 {
+                // 先补 mouseMoved:依赖 hover 态(:hover 样式、悬浮才渲染的
+                // 元素)的页面在指针未移动过时点不中。
+                let _ = client
+                    .call_session(
+                        Some(&session_id),
+                        "Input.dispatchMouseEvent",
+                        serde_json::json!({ "type": "mouseMoved", "x": x, "y": y }),
+                    )
+                    .await;
                 if client
                     .call_session(
                         Some(&session_id),
@@ -645,16 +650,10 @@ pub async fn execute_action(app: &AppHandle, action: BrowserAction) -> Result<St
 }
 
 async fn session_ids(inner: &Arc<ObscuraInner>, key: &str) -> Result<(Arc<cdp::CdpClient>, String), String> {
-    let client = inner
-        .client
-        .lock()
-        .expect("client")
+    let client = state::plock(&inner.client)
         .clone()
         .ok_or_else(|| "Engine 未连接".to_string())?;
-    let session_id = inner
-        .pages
-        .lock()
-        .expect("pages")
+    let session_id = state::plock(&inner.pages)
         .get(key)
         .ok_or_else(|| "浏览器页面未打开,请先 browser_open".to_string())?
         .session_id
@@ -664,10 +663,7 @@ async fn session_ids(inner: &Arc<ObscuraInner>, key: &str) -> Result<(Arc<cdp::C
 
 async fn append_state(inner: &Arc<ObscuraInner>, key: &str, text: String) -> String {
     let _ = current_state(inner, key).await;
-    let state = inner
-        .pages
-        .lock()
-        .expect("pages")
+    let state = state::plock(&inner.pages)
         .get(key)
         .map(|s| (s.title.clone(), s.url.clone()));
     match state {
@@ -725,7 +721,8 @@ async fn open_viewer(
 ) -> Result<(), String> {
     let label = format!("obscura-live-{key}");
     if let Some(window) = app.get_webview_window(&label) {
-        window.set_focus().map_err(|e| format!("聚焦查看器失败:{e}"))?;
+        // 聚焦失败(窗口最小化等)不应让 browser_open 整体报错。
+        let _ = window.set_focus();
         return Ok(());
     }
     let url = format!("obscura-live://localhost/{key}/index.html");
@@ -744,7 +741,7 @@ async fn open_viewer(
 pub fn spawn_pump(app: &AppHandle) {
     let inner = app.state::<ObscuraManager>().inner.clone();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<LiveCmd>();
-    *inner.cmds.lock().expect("cmds") = Some(tx);
+    *state::plock(&inner.cmds) = Some(tx);
     tauri::async_runtime::spawn(async move {
         while let Some(cmd) = rx.recv().await {
             let inner = inner.clone();
@@ -756,7 +753,7 @@ pub fn spawn_pump(app: &AppHandle) {
 }
 
 async fn run_live_cmd(inner: &Arc<ObscuraInner>, cmd: LiveCmd) {
-    let client = match inner.client.lock().expect("client").clone() {
+    let client = match state::plock(&inner.client).clone() {
         Some(c) => c,
         None => return,
     };
@@ -766,7 +763,7 @@ async fn run_live_cmd(inner: &Arc<ObscuraInner>, cmd: LiveCmd) {
                 let _ = client
                     .call_session(Some(&sid), "Page.navigate", serde_json::json!({ "url": url }))
                     .await;
-                let mut pages = inner.pages.lock().expect("pages");
+                let mut pages = state::plock(&inner.pages);
                 if let Some(state) = pages.get_mut(&key) {
                     state.url = url.clone();
                 }
@@ -794,9 +791,7 @@ async fn run_live_cmd(inner: &Arc<ObscuraInner>, cmd: LiveCmd) {
         }
         LiveCmd::DblClick { key, x, y } => {
             if let Some(sid) = session_of_opt(inner, &key) {
-                for _ in 0..2 {
-                    dispatch_click(&client, &sid, x, y).await;
-                }
+                dispatch_dblclick(&client, &sid, x, y).await;
             }
         }
         LiveCmd::Key { key, kbd, text } => {
@@ -822,10 +817,7 @@ async fn run_live_cmd(inner: &Arc<ObscuraInner>, cmd: LiveCmd) {
 }
 
 fn session_of_opt(inner: &Arc<ObscuraInner>, key: &str) -> Option<String> {
-    inner
-        .pages
-        .lock()
-        .expect("pages")
+    state::plock(&inner.pages)
         .get(key)
         .map(|s| s.session_id.clone())
 }
@@ -869,6 +861,25 @@ async fn dispatch_click(client: &cdp::CdpClient, sid: &str, x: f64, y: f64) {
     }
 }
 
+/// 真双击:第二次 press/release 必须 clickCount=2,否则页面的 dblclick
+/// 处理器不触发(两次独立 clickCount=1 只是两下单击)。
+async fn dispatch_dblclick(client: &cdp::CdpClient, sid: &str, x: f64, y: f64) {
+    for (event_type, count) in [
+        ("mouseMoved", 0),
+        ("mousePressed", 1),
+        ("mouseReleased", 1),
+        ("mousePressed", 2),
+        ("mouseReleased", 2),
+    ] {
+        let mut params = serde_json::json!({ "type": event_type, "x": x, "y": y });
+        if event_type != "mouseMoved" {
+            params["button"] = serde_json::Value::String("left".to_string());
+            params["clickCount"] = serde_json::Value::from(count);
+        }
+        let _ = client.call_session(Some(sid), "Input.dispatchMouseEvent", params).await;
+    }
+}
+
 async fn dispatch_key(client: &cdp::CdpClient, sid: &str, key: &str, text: Option<&str>) {
     let code = super::keymap::virtual_key(key).map(|(_, c)| c.to_string()).unwrap_or_else(|| key.to_string());
     let vk = super::keymap::virtual_key(key).map(|(v, _)| v);
@@ -896,9 +907,5 @@ async fn dispatch_key(client: &cdp::CdpClient, sid: &str, key: &str, text: Optio
 /// 引擎进程回收(由 main.rs 主窗口 Destroyed 联动)。
 pub fn shutdown(app: &AppHandle) {
     let inner = app.state::<ObscuraManager>().inner.clone();
-    if let Some(mut child) = inner.process.lock().expect("process").take() {
-        let _ = child.start_kill();
-    }
-    // 关闭 CDP 客户端(触发写循环退出)。
-    *inner.client.lock().expect("client") = None;
+    kill_engine(&inner);
 }
