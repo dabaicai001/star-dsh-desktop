@@ -129,6 +129,10 @@ fn main() {
         .register_uri_scheme_protocol("obscura-live", |ctx, request| {
             browser::obscura::live_protocol_handler(ctx.app_handle(), request)
         })
+        // SSH「网页访问」原生 webview 壳:starhub-web://localhost/<sessionId>/
+        .register_uri_scheme_protocol("starhub-web", |ctx, request| {
+            browser::web_shell::web_shell_protocol_handler(ctx.app_handle(), request)
+        })
         // 联动 M1:会话附着注册表(ssh_attach/ssh_detach + live.snapshot 快照源)
         .manage(registry::SessionRegistry::new())
         // 主窗口关闭 = 应用退出:CloseRequested 阶段先销毁其余全部窗口

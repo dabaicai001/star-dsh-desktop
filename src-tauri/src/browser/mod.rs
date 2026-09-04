@@ -11,6 +11,7 @@
 
 pub mod obscura;
 pub mod script;
+pub mod web_shell;
 pub mod webview;
 
 #[cfg(windows)]

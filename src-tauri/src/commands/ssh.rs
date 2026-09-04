@@ -1201,7 +1201,9 @@ pub async fn ssh_open_web_window(
         let mut session = session.lock().await;
         session.start_web_gateway().await?
     };
-    crate::browser::obscura::open_web_window(&app, &session_id, &asset_name, port).await
+    // 固定用原生 webview 壳(真实内核 wry),不再用 Obscura 无头渲染:
+    // 内网站点在复杂 JS / 登录页上兼容性更好,也无需依赖 obscura 引擎。
+    crate::browser::web_shell::open_web_shell_window(&app, &session_id, &asset_name, port).await
 }
 
 #[cfg(test)]

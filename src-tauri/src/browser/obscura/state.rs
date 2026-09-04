@@ -23,8 +23,6 @@ pub struct ObscuraInner {
     pub cmds: Mutex<Option<tokio::sync::mpsc::UnboundedSender<LiveCmd>>>,
     /// 引擎设置缓存。
     pub engine: Mutex<Engine>,
-    /// SSH 网页访问:session_id → 网关端口(用于把原始 URL 重写成网关代理 URL)。
-    pub web_gateways: Mutex<HashMap<String, u16>>,
 }
 
 impl ObscuraInner {
@@ -37,7 +35,6 @@ impl ObscuraInner {
             pages: Mutex::new(HashMap::new()),
             cmds: Mutex::new(None),
             engine: Mutex::new(Engine::Webview),
-            web_gateways: Mutex::new(HashMap::new()),
         })
     }
 }

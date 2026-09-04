@@ -7,6 +7,16 @@
 
 ## [未发布]
 
+### 新增
+- **SSH「网页访问」固定用原生 webview 壳(不再走 Obscura)**:点终端「网页」现在打开 `starhub-web://` 自定义协议直出的原生 webview 窗口(顶部地址栏 + 全视口 iframe,经 SSH 网关代理访问内网)。内网站点在复杂 JS / 登录页上兼容性更好,也不再依赖 Obscura 无头渲染引擎。相应移除 Obscura 侧 `open_web_window`/`web_page_key`/`proxy_url_for` 死代码与 `web_gateways` 状态。
+
+### 改进
+- **设置「SSH」tab 字体下拉框增加实时预览**:字体选择下方新增一个终端风格预览框,用当前选中的字体/字号渲染示例文本,选字体时即时看到效果。
+
+---
+
+## [0.116.4] - 2026-09-04
+
 ### 改进
 - **设置「SSH」tab 字体改为下拉框**:`fontFamily` 不再用自由文本输入,改为从预设字体(系统默认 / JetBrains Mono / Fira Code / Consolas / Menlo / Cascadia Code / Courier New / PingFang SC)里选一个;若存的是自定义值,下拉框额外补一个「当前(自定义)」项避免丢失。
 

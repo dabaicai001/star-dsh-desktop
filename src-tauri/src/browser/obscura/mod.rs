@@ -204,7 +204,7 @@ async fn ensure_page(
         tracing::warn!(key, "启动 obscura screencast 失败(已重试):{e}");
     }
     // AI 浏览器页面一旦创建(任意 browser_* 动作触发),自动开直播查看器窗口,
-    // 用户全程可见 AI 在干什么。web: 会话由 open_web_window 单独开窗,不在此处。
+    // 用户全程可见 AI 在干什么。
     if key == "ai" {
         let _ = open_viewer(app, inner, key, "StarHub AI 浏览器(Obscura)").await;
     }
@@ -762,26 +762,13 @@ async fn run_live_cmd(inner: &Arc<ObscuraInner>, cmd: LiveCmd) {
     };
     match cmd {
         LiveCmd::Navigate { key, url } => {
-            // web 会话(经 SSH 网关)把原始 URL 重写成网关代理 URL。
-            let nav_url = if let Some(rest) = key.strip_prefix("web:") {
-                let port = inner.web_gateways.lock().expect("web_gateways").get(rest).copied();
-                match port {
-                    Some(p) => match proxy_url_for(p, &url) {
-                        Ok(proxy) => proxy,
-                        Err(_) => url,
-                    },
-                    None => url,
-                }
-            } else {
-                url
-            };
             if let Some(sid) = session_of_opt(inner, &key) {
                 let _ = client
-                    .call_session(Some(&sid), "Page.navigate", serde_json::json!({ "url": nav_url }))
+                    .call_session(Some(&sid), "Page.navigate", serde_json::json!({ "url": url }))
                     .await;
                 let mut pages = inner.pages.lock().expect("pages");
                 if let Some(state) = pages.get_mut(&key) {
-                    state.url = nav_url.clone();
+                    state.url = url.clone();
                 }
             }
         }
@@ -904,67 +891,6 @@ async fn dispatch_key(client: &cdp::CdpClient, sid: &str, key: &str, text: Optio
         }
         let _ = client.call_session(Some(sid), "Input.dispatchKeyEvent", params).await;
     }
-}
-
-/// 网页访问会话:`web:{sessionId}`,用于 SSH 网关代理渲染;返回 page key。
-pub fn web_page_key(session_id: &str) -> String {
-    format!("web:{session_id}")
-}
-
-/// 打开 SSH 网页访问的查看器窗口(obscura 渲染,经网关代理访问内网)。
-/// 页面会话 key = `web:{session_id}`;`gateway_port` 为 SSH web 网关端口,查看器
-/// 地址栏输入原始 URL 时经 [`proxy_url_for`] 重写为网关代理 URL。
-pub async fn open_web_window(
-    app: &AppHandle,
-    session_id: &str,
-    asset_name: &str,
-    gateway_port: u16,
-) -> Result<(), String> {
-    let inner = app.state::<ObscuraManager>().inner.clone();
-    let key = web_page_key(session_id);
-    ensure_page(app, &inner, &key, Some("about:blank")).await?;
-    // 记录网关端口,供 navigate 命令重写代理 URL。
-    inner
-        .web_gateways
-        .lock()
-        .expect("web_gateways")
-        .insert(session_id.to_string(), gateway_port);
-    let label = format!("obscura-live-{key}");
-    if let Some(window) = app.get_webview_window(&label) {
-        window.set_focus().map_err(|e| format!("聚焦查看器失败:{e}"))?;
-        return Ok(());
-    }
-    let url = format!("obscura-live://localhost/{key}/index.html");
-    let parsed = tauri::Url::parse(&url).map_err(|e| format!("查看器 URL 非法:{e}"))?;
-    WebviewWindowBuilder::new(app, &label, WebviewUrl::External(parsed))
-        .title(format!("{asset_name} · 网页访问(Obscura)"))
-        .inner_size(1200.0, 820.0)
-        .build()
-        .map_err(|e| format!("创建网页访问窗口失败:{e}"))?;
-    Ok(())
-}
-
-/// 把用户输入的原始 URL 转成网关代理 URL(经 SSH 出口访问内网)。
-/// 复用前端 web-browser-utils 的形态:`http://127.0.0.1:{port}/__proxy__/{scheme}/{hostport}{pathQuery}`。
-pub fn proxy_url_for(gateway_port: u16, raw: &str) -> Result<String, String> {
-    let normalized = script::normalize_url(raw)?;
-    let parsed = tauri::Url::parse(&normalized).map_err(|e| format!("URL 解析失败:{e}"))?;
-    let scheme = parsed.scheme().to_string();
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| "URL 缺少主机名".to_string())?
-        .to_string();
-    let port = parsed.port_or_known_default().unwrap_or(if scheme == "https" { 443 } else { 80 });
-    let default_port = if scheme == "https" { 443 } else { 80 };
-    let hostport = if port == default_port { host } else { format!("{host}:{port}") };
-    let path_query = {
-        let p = parsed.path();
-        let q = parsed.query().map(|q| format!("?{q}")).unwrap_or_default();
-        let f = parsed.fragment().map(|f| format!("#{f}")).unwrap_or_default();
-        format!("{p}{q}{f}")
-    };
-    let path_query = if path_query.is_empty() { "/".to_string() } else { path_query };
-    Ok(format!("http://127.0.0.1:{gateway_port}/__proxy__/{scheme}/{hostport}{path_query}"))
 }
 
 /// 引擎进程回收(由 main.rs 主窗口 Destroyed 联动)。

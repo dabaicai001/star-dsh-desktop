@@ -85,6 +85,15 @@ export function SshSettingsTab() {
           光标闪烁
         </label>
       </div>
+      <div className={s.fontPreview}>
+        <span className={s.fontPreviewCaption}>字体预览(随下拉选择实时更新)</span>
+        <span
+          className={s.fontPreviewText}
+          style={{ fontFamily: draft.fontFamily, fontSize: `${draft.fontSize}px` }}
+        >
+          {`$ cd ~/projects/starhub\n$ ls -la\nabc def ghi 0123456789 中文混排_underscore`}
+        </span>
+      </div>
       <div>
         <button className={s.btnPrimary} onClick={onSave}>保存</button>
       </div>

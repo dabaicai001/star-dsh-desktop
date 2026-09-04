@@ -244,6 +244,34 @@
   flex-direction: column;
 }
 
+/* SSH 字体实时预览:终端风格的小卡片,用当前选中的字体/字号渲染示例文本。 */
+.fontPreview {
+  box-sizing: border-box;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  white-space: pre;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.fontPreviewCaption {
+  display: block;
+  margin-bottom: 8px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.fontPreviewText {
+  display: block;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .checkboxRow {
   display: flex;
   align-items: center;

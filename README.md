@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.116.4-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.116.5-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,8 +48,9 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.116.4 (2026-09-04)
-- 🎨 **设置「SSH」tab 字体改为下拉框**:字体从自由文本输入改为预设字体下拉框(系统默认 / JetBrains Mono / Fira Code / Consolas / Menlo / Cascadia Code / Courier New / PingFang SC),自定义值补「当前(自定义)」项避免丢失。
+### v0.116.5 (2026-09-04)
+- ✨ **SSH「网页访问」固定用原生 webview 壳**:点终端「网页」改开 `starhub-web://` 自定义协议直出的原生 webview 窗口(地址栏 + 全视口 iframe,经 SSH 网关代理访问内网),不再用 Obscura 无头渲染;复杂内网站点兼容性更好。
+- 🎨 **设置「SSH」tab 字体下拉框增加实时预览**:字体选择下方新增终端风格预览框,选字体时即时看到效果。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
@@ -109,7 +110,7 @@ npm run tauri:dev        # 完整开发:构建 sidecar + React 工作台,启动�
 
 | 项 | 值 |
 |---|---|
-| 当前版本 | v0.116.4 |
+| 当前版本 | v0.116.5 |
 | 官网 | [starthub.waouzzz.cc](https://starthub.waouzzz.cc/) |
 | 仓库 | [github.com/dabaicai001/star-dsh-desktop](https://github.com/dabaicai001/star-dsh-desktop) |
 | 问题反馈 | [GitHub Issues](https://github.com/dabaicai001/star-dsh-desktop/issues) |

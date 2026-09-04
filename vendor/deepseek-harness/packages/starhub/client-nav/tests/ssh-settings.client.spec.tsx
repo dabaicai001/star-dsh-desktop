@@ -68,6 +68,26 @@ describe('SshSettingsTab', () => {
     expect(encoding.value).toBe('big5')
   })
 
+  it('shows a live font preview that follows the selected font and size', () => {
+    const consolas = TERMINAL_FONTS.find(option => option.label === 'Consolas')?.value ?? 'Consolas'
+    render(<SshSettingsTab />)
+    const preview = screen.getByText(/字体预览/)
+    expect(preview).toBeTruthy()
+    // 预览随下拉选择实时更新(保存前即可预览选中字体的效果)。
+    const combo = screen.getAllByRole('combobox')
+    const font = combo[0] as HTMLSelectElement
+    fireEvent.change(font, { target: { value: consolas } })
+    const size = screen.getByDisplayValue('13') as HTMLInputElement
+    fireEvent.change(size, { target: { value: '20' } })
+    // 示例行的父级 span 携带当前字体/字号。
+    const sample = screen.getByText(/projects\/starhub/)
+    expect(sample).toBeTruthy()
+    // jsdom 会把含空格的字体名转成带引号的 CSSOM 序列化("SF Mono" → "SF Mono"),
+    // 所以按「包含首个字体名」断言,而不是严格等值。
+    expect((sample as HTMLElement).style.fontFamily).toContain('Consolas')
+    expect((sample as HTMLElement).style.fontSize).toBe('20px')
+  })
+
   it('persists edits on 保存 and reflects the saved value', () => {
     const consolas = TERMINAL_FONTS.find(option => option.label === 'Consolas')?.value ?? 'Consolas'
     render(<SshSettingsTab />)

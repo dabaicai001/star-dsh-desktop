@@ -689,7 +689,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
                   if (!connected) return
                   void tauriInvoke('ssh_open_web_window', { sessionId, assetName: asset.name }).catch((e) => setError(e instanceof Error ? e.message : String(e)))
                 }}
-                title={connected ? '在独立窗口打开网页访问(Obscura)' : '等待 SSH 连接后启用网页访问'}
+                title={connected ? '在独立窗口打开网页访问(webview)' : '等待 SSH 连接后启用网页访问'}
                 aria-pressed={false}
               ><IconLinkOutline16 size={15} /> 网页</button>
               <span className={css.connectionState}><span className={connected ? css.connectionOnline : css.connectionPending} />{connected ? '已连接' : '连接中'}</span>
