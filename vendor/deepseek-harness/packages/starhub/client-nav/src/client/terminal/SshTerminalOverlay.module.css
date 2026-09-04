@@ -105,8 +105,9 @@
 .hkBtnPrimary { border: 1px solid var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-label-primary); }
 .hkBtnPrimary:hover { background: var(--dsw-alias-state-business-primary); }
 
-/* ZMODEM (rz/sz) transfer bar: sits under the terminal while a transfer is live. */
-.zmodemBar { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 7px 12px; border-top: 1px solid var(--dsw-alias-state-business-primary); background: var(--dsw-alias-bg-layer-3); }
+/* ZMODEM (rz/sz) transfer bar: sits above the terminal while a transfer is live,
+   so it's immediately visible when rz/sz is detected (not buried at the bottom). */
+.zmodemBar { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--dsw-alias-state-business-primary); background: var(--dsw-alias-bg-layer-3); }
 .zmodemLabel { color: var(--dsw-alias-state-business-primary); font-size: 11px; font-weight: 750; font-family: var(--ds-font-family-code); }
 .zmodemStatus { min-width: 0; color: var(--dsw-alias-label-primary); font-size: 12px; }
 .zmodemFile { color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code); font-size: 10px; white-space: nowrap; }

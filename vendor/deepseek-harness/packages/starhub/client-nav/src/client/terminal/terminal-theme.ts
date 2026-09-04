@@ -18,13 +18,30 @@ export interface TerminalTheme {
   // foreground for the cursor and background for the accent).
   cursor: string
   cursorAccent: string
+  // xterm falls back to a pale-blue selection on the light surface, which is
+  // nearly invisible against #f5f6f7 and makes copied text hard to read. Pin a
+  // high-contrast selection per theme: on light, darken the selection so the
+  // text stays legible; on dark, keep a translucent blue that reads on #1b1b1c.
+  selectionBackground: string
+  selectionForeground: string
+  selectionInactiveBackground: string
 }
 
 /** Resolve the terminal palette. Dark = DSH neutral code surface; light = near-white surface. */
 export function dshTerminalTheme(dark: boolean): TerminalTheme {
   return dark
-    ? { background: '#1b1b1c', foreground: '#f9fafb', cursor: '#f9fafb', cursorAccent: '#1b1b1c' }  // neutral-bluish-900 / -50
-    : { background: '#f5f6f7', foreground: '#1f2329', cursor: '#1f2329', cursorAccent: '#f5f6f7' }  // neutral-bluish-75 / near-black
+    ? {
+        background: '#1b1b1c', foreground: '#f9fafb', cursor: '#f9fafb', cursorAccent: '#1b1b1c',
+        selectionBackground: 'rgba(125, 162, 230, 0.38)', selectionForeground: '#f9fafb',
+        selectionInactiveBackground: 'rgba(125, 162, 230, 0.22)',
+      }  // neutral-bluish-900 / -50
+    : {
+        background: '#f5f6f7', foreground: '#1f2329', cursor: '#1f2329', cursorAccent: '#f5f6f7',
+        // Dark selection so selected text is clearly distinguishable on the
+        // near-white surface (the xterm default pale-blue reads as a wash).
+        selectionBackground: 'rgba(31, 35, 41, 0.88)', selectionForeground: '#f5f6f7',
+        selectionInactiveBackground: 'rgba(31, 35, 41, 0.55)',
+      }  // neutral-bluish-75 / near-black
 }
 
 /**

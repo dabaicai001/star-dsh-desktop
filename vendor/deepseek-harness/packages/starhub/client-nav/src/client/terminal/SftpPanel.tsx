@@ -118,6 +118,10 @@ export function SftpPanel({ asset, sessionId, sshConnected, sshCwd, onFollowTerm
     const isAborted = (): boolean => abort.signal.aborted
     setConnecting(true)
     setError(null)
+    // SFTP 面板默认 followTerminal=true。首次连接就通知终端侧注入 OSC 7,
+    // 让 shell 在每次 cd 后上报 cwd——否则只有在用户手动点「跟随终端路径」
+    // 时才注入,面板打开后 cd 不会触发跟随。
+    onFollowTerminal?.(true)
     void (async () => {
       try {
         const info = await sftpEnsureSession(sessionId)

@@ -8,6 +8,17 @@
 ## [未发布]
 
 ### 修复
+- **Obscura `browser_open` 卡 Load 超时(内容已就位却等不到 CDP 响应)**:`Target.createTarget` 带真实 URL 时 vendored obscura 走 `page.navigate()`(默认 `WaitUntil::Load`——等全部子资源/脚本就绪才返回),慢页面会让 CDP 调用挂到超时,尽管内容早已渲染。改为统一在 `about:blank` 建页再 `Page.navigate`(默认 `DomContentLoaded`,快速返回),browser_open/browser_navigate 不再阻塞在整页 Load 上。
+- **SSH 终端浅色外观选中文字的背景色太浅不易辨别**:`dshTerminalTheme` 此前只设背景/前景/光标,未设 `selectionBackground`,xterm 回退到浅蓝选中色,在近白 `#f5f6f7` 上几乎看不清。补 `selectionBackground`/`selectionForeground`/`selectionInactiveBackground`:浅色用深色高对比选中、深色用半透明蓝,两类外观选中文本都清晰。
+- **ZMODEM(rz/sz)发送进度不准**:多文件发送时 `Transfer.get_offset()` 是「当前文件」偏移、跨文件重置为 0,直接用 `sent/totalBytes` 会反复跳回小百分比。改为按文件累计(前序文件 size + 当前偏移)算批总量;并修取消后不退出——传输进行中按 Ctrl+C 现在会中止会话(原实现把 0x03 原样写给 shell,远端 rz/sz 继续等数据,终端卡在传输态)。
+- **ZMODEM(rz/sz)传输条在终端底部不易看见**:rz/sz 被检出时传输条「选择文件/取消」按钮原来在终端内容下方,用户不易发现。把 ZMODEM 传输条移到终端上方,传输一检出即可见。
+- **SFTP 面板打开后不跟随终端 cwd(不在 ~ 时尤甚)**:SFTP 面板默认 `followTerminal=true`,但只在该开关被点击时才注入 OSC 7 hook;面板一打开 shell 不持续上报 cwd,用户先 `cd` 到非家目录再开 SFTP 时不会跟随。现在面板一次连接即调用 `onFollowTerminal(true)` 让终端侧注入 OSC 7,`cd` 实时跟随。
+
+---
+
+## [0.116.1] - 2026-09-03
+
+### 修复
 - **Obscura 引擎选中后不直播、查看器窗口停在「连接 Obscura…」**:三处根因——①`Page.screencastFrameAck` 缺少 `id` 且流 id 放错层级(应放 `params.sessionId`,原实现放到顶层 `sessionId`),server 反序列化/匹配失败,`frames_in_flight` 永不释放,流收到第 2 帧后停流;②vendored obscura 的 `screencastFrame` 不带 `metadata.seq`(StarHub 侧按 seq=0 判断无新帧),现改用「流号<<32|帧计数」生成单调伪 seq;③`ensure_page` 在页面尚无可见 DOM 表面时 `startScreencast` 静默失败且永不重试,现改为先等页面 ready、失败重试并确认收到首帧(seq>0)。
 - **Obscura 引擎弹黑色控制台窗口**:`spawn_engine` 未加 `CREATE_NO_WINDOW`(与 sidecar/harness/android 一致),GUI 进程 spawn 控制台子进程默认弹出可见黑窗;现已隐藏。
 - **`browser_extract`/`browser_scroll` 等报 `JS error: Unexpected token ';'`**:obscura 的 `Runtime.evaluate` 把表达式包进 `await (...)`,只接受单一表达式;原实现把「助手脚本 + IIFE」拼成多语句程序,被包裹后 `...;}` 抛 `Unexpected token ';'`。改为整个(助手 + body)包成一个 `(async function() { ... })()` 单表达式。

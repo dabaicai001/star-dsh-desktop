@@ -237,6 +237,10 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     // The early return above guarantees files.length >= 1; noUncheckedIndexedAccess
     // still types files[0] as File | undefined, so narrow it once before use.
     const firstFileName = files[0]?.name ?? ''
+    // zmodem.js 的 Transfer.get_offset() 是「当前文件」的字节偏移,跨文件会重置为 0;
+    // 多文件发送时不能直接用它当总进度。用「前序文件累计 + 当前文件偏移」算出批总量,
+    // 并把进度映射到 0..100(完成后由 close() 收口到 100)。
+    const cumulative = new Map<File, number>()
     try {
       setZmodemTotal(totalBytes)
       setZmodemStatus(files.length === 1 ? `正在发送 ${firstFileName}` : `正在发送 ${files.length} 个文件`)
@@ -244,11 +248,16 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
       await Zmodem.Browser.send_files(session, files, {
         on_progress: (file, transfer) => {
           const sent = transfer.get_offset()
+          const prior = cumulative.get(file) ?? 0
           setZmodemFileName(file.name)
-          setZmodemTransferred(sent)
-          setZmodemProgress(totalBytes > 0 ? Math.min(99, sent / totalBytes * 100) : 0)
+          setZmodemTransferred(prior + sent)
+          setZmodemProgress(totalBytes > 0 ? Math.min(99, (prior + sent) / totalBytes * 100) : 0)
         },
-        on_file_complete: file => { setZmodemStatus(`已发送 ${file.name}`) },
+        on_file_complete: file => {
+          // 当前文件完成:把该文件偏移计入前序,下一文件从累计值继续。
+          cumulative.set(file, file.size)
+          setZmodemStatus(`已发送 ${file.name}`)
+        },
       })
       await session.close()
       setZmodemProgress(100)
@@ -306,6 +315,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const onFollowTerminal = (enabled: boolean) => {
     if (enabled) enableCwdTracking()
   }
+
   // v8 ignore stop --
 
   useEffect(() => {
@@ -337,6 +347,12 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     const hiddenEcho = createHiddenEchoFilter([OSC7_INJECT_ECHO_TEXT])
 
     const input = term.onData((data) => {
+      // ZMODEM 传输进行中:Ctrl+C(0x03)应中止会话,而不是把原始字节写到 shell。
+      // 否则远端 rz/sz 会继续等数据,终端卡在传输态,用户以为 ctrl+c 失效。
+      if (zmodemSessionRef.current !== null && data === '\x03') {
+        cancelZmodem()
+        return
+      }
       if (isConnectedRef.current) void tauriInvoke('ssh_write', { id: sessionId, data }).catch(() => {})
     })
 
@@ -689,7 +705,6 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
               <button type="button" className={css.quickIconButton} onClick={() => quickImportRef.current?.click()} title="导入 Xshell .qbl / .qblx" aria-label="导入 Xshell 快捷命令"><IconPaperclipOutline16 size={14} /></button>
               <button type="button" className={css.quickIconButton} onClick={() =>{  setQuickEditorOpen(true) }} title="管理快捷命令" aria-label="管理快捷命令"><IconPlusOutline16 size={14} /></button>
             </div>
-            <div ref={host} className={css.terminal} />
             <input
               ref={zmodemInputRef} className={css.fileInput} type="file" multiple
               aria-label="选择 ZMODEM 发送文件"
@@ -713,6 +728,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
                 <button type="button" className={css.zmodemBtn} onClick={cancelZmodem}>取消</button>
               </div>
             )}
+            <div ref={host} className={css.terminal} />
           </main>
           {sidePanel !== null && (
             <div

@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.116.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.116.2-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,11 +48,12 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.116.1 (2026-09-03)
-- 🐛 **Obscura 引擎选中后不直播、查看器窗口停在「连接 Obscura…」**:三处根因——①`Page.screencastFrameAck` 缺少 `id` 且流 id 放错层级(应放 `params.sessionId`,原实现放到顶层 `sessionId`),server 反序列化/匹配失败,`frames_in_flight` 永不释放,流收到第 2 帧后停流;②vendored obscura 的 `screencastFrame` 不带 `metadata.seq`(StarHub 侧按 seq=0 判断无新帧),现改用「流号<<32|帧计数」生成单调伪 seq;③`ensure_page` 在页面尚无可见 DOM 表面时 `startScreencast` 静默失败且永不重试,现改为先等页面 ready、失败重试并确认收到首帧(seq>0)。
-- 🐛 **Obscura 引擎弹黑色控制台窗口**:`spawn_engine` 未加 `CREATE_NO_WINDOW`(与 sidecar/harness/android 一致),GUI 进程 spawn 控制台子进程默认弹出可见黑窗;现已隐藏。
-- 🐛 **`browser_extract`/`browser_scroll` 等报 `JS error: Unexpected token ';'`**:obscura 的 `Runtime.evaluate` 把表达式包进 `await (...)`,只接受单一表达式;原实现把「助手脚本 + IIFE」拼成多语句程序,被包裹后 `...;}` 抛 `Unexpected token ';'`。改为整个(助手 + body)包成一个 `(async function() { ... })()` 单表达式。
-- 🎨 **Obscura 直播查看器按钮用文字 icon(←/→/⟳)**:与设计风格(描边 outline SVG、`stroke=currentColor`)不符,改为内联 SVG 真 icon,并给按钮加 flex 居中与 hover/active 态。
+### v0.116.2 (2026-09-03)
+- 🐛 **Obscura `browser_open` 卡 Load 超时(内容已就位却等不到 CDP 响应)**:`Target.createTarget` 带真实 URL 时 vendored obscura 走 `page.navigate()`(默认 `WaitUntil::Load`——等全部子资源/脚本就绪才返回),慢页面会让 CDP 调用挂到超时,尽管内容早已渲染。改为统一在 `about:blank` 建页再 `Page.navigate`(默认 `DomContentLoaded`,快速返回)。
+- 🎨 **SSH 终端浅色外观选中文字的背景色太浅不易辨别**:`dshTerminalTheme` 补 `selectionBackground`/`selectionForeground`/`selectionInactiveBackground`,浅色用深色高对比选中、深色用半透明蓝。
+- 🐛 **ZMODEM(rz/sz)发送进度不准 + 取消不退出**:多文件发送改成按文件累计算批总量;传输进行中按 Ctrl+C 现在会中止会话。
+- 🎨 **ZMODEM(rz/sz)传输条在终端底部不易看见**:把传输条移到终端上方,rz/sz 一检出即可见。
+- 🐛 **SFTP 面板打开后不跟随终端 cwd(不在 ~ 时尤甚)**:面板一次连接即让终端侧注入 OSC 7,`cd` 实时跟随。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
@@ -112,7 +113,7 @@ npm run tauri:dev        # 完整开发:构建 sidecar + React 工作台,启动�
 
 | 项 | 值 |
 |---|---|
-| 当前版本 | v0.115.0 |
+| 当前版本 | v0.116.2 |
 | 官网 | [starthub.waouzzz.cc](https://starthub.waouzzz.cc/) |
 | 仓库 | [github.com/dabaicai001/star-dsh-desktop](https://github.com/dabaicai001/star-dsh-desktop) |
 | 问题反馈 | [GitHub Issues](https://github.com/dabaicai001/star-dsh-desktop/issues) |

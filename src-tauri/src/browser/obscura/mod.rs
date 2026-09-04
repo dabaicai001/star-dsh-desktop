@@ -154,7 +154,11 @@ async fn ensure_page(
     let target = client
         .call(
             "Target.createTarget",
-            serde_json::json!({ "url": url }),
+            // 总是先在 about:blank 建页:obscura 的 createTarget 带真实 URL 时会
+            // 走 `page.navigate()`(默认 WaitUntil::Load——等全部子资源/脚本就绪才返回),
+            // 慢页面会让 CDP 调用挂到超时,尽管内容早已渲染。改为先落 about:blank,
+            // 后面统一用 Page.navigate(默认 DomContentLoaded,快速返回)加载真实 URL。
+            serde_json::json!({ "url": "about:blank" }),
         )
         .await?;
     let target_id = target
@@ -182,6 +186,17 @@ async fn ensure_page(
         .lock()
         .expect("pages")
         .insert(key.to_string(), PageState::new(&session_id, url));
+    // 有真实 URL:在 about:blank 会话上导航(默认 DomContentLoaded,快速返回),
+    // 避免 createTarget 卡 Load 导致 browser_open 超时。
+    if url != "about:blank" {
+        let _ = client
+            .call_session(
+                Some(&session_id),
+                "Page.navigate",
+                serde_json::json!({ "url": url }),
+            )
+            .await;
+    }
     // 等页面 ready,再启动 screencast:startScreencast 在页面尚无可见 DOM 表面
     // 时会直接报错,导致后续无帧可推(直播窗停在「连接 Obscura…」)。
     wait_ready(inner, key).await;

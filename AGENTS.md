@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.116.1(**Obscura 引擎直播与 eval 修复**:修复 screencastFrameAck 缺 id/流 id 放错层级、screencastFrame 无 metadata.seq 致不直播、startScreencast 静默失败不重试;spawn_engine 隐藏控制台窗口;Runtime.evaluate 多语句抛 `Unexpected token ';'` 改为单 IIFE 表达式;直播查看器按钮从文字 icon 换成内联 SVG 真 icon。) |
+| 当前版本 | v0.116.2(**SSH/SFTP 与 Obscura 浏览器修复**:`browser_open` 卡 Load 超时改为 about:blank + DomContentLoaded;SSH 终端浅色外观选中文字背景色改深色;ZMODEM 多文件发送进度累计 + Ctrl+C 中止 + 传输条移到终端上方;SFTP 面板打开即跟随终端 cwd。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-03 (v0.116.1)*
+*最后更新: 2026-09-03 (v0.116.2)*
