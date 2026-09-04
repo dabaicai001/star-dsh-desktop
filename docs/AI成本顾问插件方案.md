@@ -17,19 +17,74 @@ DeepSeek API 按「缓存命中 / 缓存未命中 / 输出」×「空闲 / 高�
 
 ## 2. 计费模型(输入数据)
 
-用户提供的价格表,三列对应三个不同模型:
+**价格数据不内置、不靠用户手填,由服务端爬虫聚合后通过 API 下发。**
 
-| 计费项 | 时段 | 模型A | 模型B | 模型C |
-|---|---|---|---|---|
-| 输入(缓存命中) | 空闲 | 0.05 | 0.15 | 0.05 |
-| | 高峰 | 0.10 | 0.30 | 0.10 |
-| 输入(缓存未命中) | 空闲 | 1.5 | 4.5 | 1.5 |
-| | 高峰 | 3.0 | 9.0 | 3.0 |
-| 输出 | 空闲 | 4.5 | 13.5 | 4.5 |
-| | 高峰 | 9.0 | 27.0 | 9.0 |
+```
+┌─ 阿里云服务器(39.97.231.97,nginx + HTTPS 已就绪)──────────┐
+│  爬虫脚本(Node 24, cron 每 6h)                            │
+│    ├─ 抓各厂商官方计费页(DeepSeek / 通义 / 智谱 / …)       │
+│    ├─ 解析 → 归一化为统一 JSON schema                     │
+│    └─ 原子写入 /var/www/starhub-website/api/pricing.json  │
+│         (失败保留上一份,绝不清空)                         │
+│                                                           │
+│  nginx: location = /api/pricing.json → 静态文件直出        │
+│         https://starthub.waouzzz.cc/api/pricing.json      │
+│         (Cache-Control: max-age=3600;无后端进程,零运维)  │
+└───────────────────────────────────────────────────────────┘
+            │ 插件启动时 + 每 cacheTtl 拉一次(进程内缓存)
+            ▼
+┌─ cost-advisor 插件 ───────────────────────────────────────┐
+│  拉取成功 → 用远端价格;拉取失败 → 回退 cordis.yml 里的    │
+│  fallback 静态表(可空,空则无价不注入);远端与 fallback    │
+│  都无匹配模型 → 不注入(沿用「不猜价」原则)               │
+└───────────────────────────────────────────────────────────┘
+```
 
-单位:元 / 百万 tokens。空闲/高峰时段由用户配置(可不填,缺省 DeepSeek 官方
-优惠窗口 UTC 00:30–08:30;最终以配置为准)。
+### 2.1 API 契约 `GET /api/pricing.json`
+
+```json
+{
+  "version": 1,
+  "updatedAt": "2026-09-04T22:00:00+08:00",
+  "currency": "CNY",
+  "unit": "per_million_tokens",
+  "models": [
+    {
+      "match": "deepseek-chat",
+      "provider": "deepseek",
+      "cacheHit":  { "idle": 0.05, "peak": 0.10 },
+      "cacheMiss": { "idle": 1.5,  "peak": 3.0 },
+      "output":    { "idle": 4.5,  "peak": 9.0 },
+      "source": "https://api-docs.deepseek.com/quick_start/pricing"
+    }
+  ]
+}
+```
+
+- `match` 规则同原方案(精确 + `*` 后缀通配);`idle`/`peak` 字段允许为
+  `null`(该厂商无分时计价 → 插件按 `peak` 单价全天候处理)。
+- 爬虫抓不到的厂商不进数组(不下发脏数据);解析失败记日志并保留旧文件。
+- 单位固定「元 / 百万 tokens」;`idleWindows`(时段窗口)仍是**客户端配置**
+  —— 各厂商优惠窗口不同,首版只服务 DeepSeek 系,窗口由 cordis.yml 配置。
+
+### 2.2 服务端部署(阿里云)
+
+- 爬虫脚本位置:`/opt/starhub-pricing/crawl.mjs`(Node 24,零依赖,fetch +
+  正则/cheerio 解析;厂商页面结构变了宁可报错也不输出错价)。
+- 调度:`cron` 每 6 小时一次,输出先写临时文件再 `mv` 原子替换
+  `/var/www/starhub-website/api/pricing.json`。
+- nginx 增量配置(`gateway.conf` 的 starthub server 块内加一条,不改现有
+  路由):
+
+```nginx
+location = /api/pricing.json {
+    add_header Cache-Control "public, max-age=3600";
+    add_header Access-Control-Allow-Origin *;   # dsh 进程 fetch,宽松即可
+    try_files $uri =404;
+}
+```
+
+- 价格表 schema 版本化(`version` 字段),将来加字段向后兼容。
 
 ## 3. 总体设计
 
@@ -76,6 +131,8 @@ DeepSeek API 按「缓存命中 / 缓存未命中 / 输出」×「空闲 / 高�
   全部在 dsh 进程内可得,无需回 Rust 主进程,pre-step 零 IPC 延迟。
 - **不注入 system prompt**:价格/时段是易变数据,放每步快照注入,改了配置
   立即生效,不污染 persona。
+- **价格拉取不过 Rust 主进程**:一次普通 HTTPS fetch(进程内缓存 + 节流点
+  顺带刷新),无需新增 Tauri command / ACL 白名单。
 
 ## 4. 插件规格
 
@@ -97,28 +154,31 @@ DeepSeek API 按「缓存命中 / 缓存未命中 / 输出」×「空闲 / 高�
   name: '@deepseek-ai/dsh-starhub-cost-advisor'
   config:
     enabled: true
-    models:                              # 必填,至少一条
+    pricingApi: https://starthub.waouzzz.cc/api/pricing.json  # 服务端聚合价格(见 §2)
+    cacheTtlMinutes: 360                  # 进程内缓存;到点下次 pre-step 顺带刷新
+    fetchTimeoutMs: 3000                  # 超时/失败 → fallback,绝不阻塞 agent
+    fallbackModels:                       # 可空;API 不可用时的静态兜底价格表
       - match: deepseek-chat             # 模型名匹配(精确;支持 * 后缀通配)
         cacheHit:  { idle: 0.05, peak: 0.10 }   # 元/百万 tokens
         cacheMiss: { idle: 1.5,  peak: 3.0 }
         output:    { idle: 4.5,  peak: 9.0 }
-      - match: deepseek-reasoner
-        cacheHit:  { idle: 0.15, peak: 0.30 }
-        cacheMiss: { idle: 4.5,  peak: 9.0 }
-        output:    { idle: 13.5, peak: 27.0 }
     idleWindows:                         # 可空;空 = 无空闲时段概念(全天高峰价)
       - { start: "00:30", end: "08:30", tz: "UTC" }
-    currency: 元                          # 仅展示用
+    currency: 元                          # 仅展示用(API 带 currency 时以 API 为准)
     typicalOutputTokens: 2000            # 估算「下一轮成本」用的典型输出量
     adviseIntervalSteps: 5               # 每 N 步注入一次(避免每步刷屏)
     maxChars: 800                        # 注入文本上限,截断保护
 ```
 
 约束:
-- `models[].match` 与当前会话模型无匹配时,插件整段不注入(不猜价,fail silent
-  但日志可查;模型名读不到同理)。
+- 价格来源优先级:**API(未过期缓存)> API(新拉)> fallbackModels**;两处
+  都与当前会话模型无匹配时,插件整段不注入(不猜价,fail silent 但日志可查;
+  模型名读不到同理)。
+- API 拉取只在 pre-step 的节流点上「顺带」做:缓存未过期直接用,过期则先发
+  请求、本轮仍用旧缓存,**永不在关键路径上等网络**。
 - `idleWindows` 跨午夜窗口(如 22:00–06:00)必须支持。
-- 所有数值正数校验在加载时 fail loud(对齐 live-context `validateConfig`)。
+- 所有数值正数校验在加载时 fail loud(对齐 live-context `validateConfig`);
+  API 返回数据过 schema 校验(version / 数值为正),脏数据整体丢弃走 fallback。
 
 ### 4.3 建议算法
 
@@ -164,8 +224,8 @@ DeepSeek API 按「缓存命中 / 缓存未命中 / 输出」×「空闲 / 高�
   计算结果(JSON),不依赖注入节流。
 - 成本累计统计:折叠全 session usage × 当时时段价格,给出「本会话已花费 ≈ X 元」。
   需要按事件时间戳还原当时 slot,首版先不做。
-- 设置面板 UI:经 settings 命名空间让用户在 GUI 里改价格表(首版只走
-  cordis.yml)。
+- 设置面板 UI:经 settings 命名空间让用户在 GUI 里改 `pricingApi` / `idleWindows`
+  / fallback 价格表(首版只走 cordis.yml)。
 
 ## 5. 注册与接线清单
 
@@ -181,7 +241,11 @@ DeepSeek API 按「缓存命中 / 缓存未命中 / 输出」×「空闲 / 高�
    composition 测试(Loader 启动测试 cordis.yml)+ keyless snapshot(对齐
    仓库 testing policy)。
 6. 文档:本文件 + `docs/技术方案.md` AI 章节补一段 + CHANGELOG。
-7. 升版:代码改动 → 按纪律升修订/次版本,同步七处。
+7. 服务端(先于插件上线,可独立交付):爬虫脚本 `/opt/starhub-pricing/crawl.mjs`
+   + cron 调度 + nginx `location = /api/pricing.json`(先改 `gateway.conf` 备份
+   再 `nginx -t && reload`);首版至少覆盖 DeepSeek 官方计费页,输出符合 §2.1
+   schema 的 `pricing.json`。
+8. 升版:代码改动 → 按纪律升修订/次版本,同步七处。
 
 ## 6. 风险与边界
 
@@ -191,4 +255,8 @@ DeepSeek API 按「缓存命中 / 缓存未命中 / 输出」×「空闲 / 高�
   800 字符 ≈ 数百 tokens,相对 486k 上下文可忽略,但小上下文场景要允许
   `enabled: false` 或加大间隔。
 - **时段判定时区**:以配置 `tz` 为准,用进程本地时钟换算;不引入网络授时。
-- **价格变动**:价格表在 cordis.yml,用户自行维护;插件不做联网拉价(首版)。
+- **价格变动**:由服务端爬虫自动跟进(§2),插件不内置价格;API 不可用时
+  回退 cordis.yml `fallbackModels` 并记日志,全链路断网也不阻塞 agent。
+- **爬虫失真**:厂商改价目页结构时解析必须 fail loud(报错 + 保留旧数据),
+  严禁输出猜测价格;`updatedAt` 超过 48h 视为陈旧,插件注入文案里标注
+  「价格数据更新于 X 小时前」。
