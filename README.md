@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.118.4-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.118.6-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,8 +48,8 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.118.4 (2026-09-14)
-- 🔧 **SFTP 点击下载/上传立即弹出传输任务弹框**:此前点击下载/上传后任务在后台运行,用户需手动点工具栏「传输任务」才能看到进度;现在传输一开始即自动弹出弹框,实时显示进度。
+### v0.118.6 (2026-09-14)
+- 🐛 **CI 构建失败**:SFTP 测试文件未使用参数 `args` 导致 TypeScript TS6133 错误(`noUnusedParameters`),改为 `_args`。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

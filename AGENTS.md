@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.118.4(**SFTP 点击下载/上传立即弹出传输任务弹框**:此前点击下载/上传后任务在后台运行,用户需手动点工具栏「传输任务」才能看到进度;现在传输一开始即自动弹出弹框,实时显示进度。) |
+| 当前版本 | v0.118.6(**CI 构建失败**:SFTP 测试文件未使用参数 `args` 导致 TypeScript TS6133 错误(`noUnusedParameters`),改为 `_args`。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-14 (v0.118.4)*
+*最后更新: 2026-09-14 (v0.118.6)*
