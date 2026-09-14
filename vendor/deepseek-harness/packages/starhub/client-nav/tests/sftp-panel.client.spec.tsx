@@ -203,7 +203,7 @@ describe('SftpPanel', () => {
 
     // 点击工具栏「上传文件」→ 选完文件后自动弹传输框
     // (pickPath 走 plugin:dialog|open,stub 返回一个假路径)
-    invoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
+    invoke.mockImplementation((command: string, _args?: Record<string, unknown>) => {
       if (command === 'plugin:dialog|open') return Promise.resolve(['C:/fake.txt'])
       if (command === 'sftp_start_upload') return Promise.resolve(null)
       if (command === 'sftp_start_download') return Promise.resolve(null)
