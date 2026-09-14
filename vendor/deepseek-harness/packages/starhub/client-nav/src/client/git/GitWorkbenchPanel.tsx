@@ -17,9 +17,9 @@ import { useCallback, useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { IconBranchOutline16, IconCloseOutline16, IconRefreshOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  gitCheckout, gitCheckoutRemote, gitCleanPath, gitCommitStaged, gitCurrentBranch,
+  gitAheadBehind, gitCheckout, gitCheckoutRemote, gitCleanPath, gitCommitStaged, gitCurrentBranch,
   gitDiffFile, gitDiscard, gitDraftCommitMessage, gitFetch, gitListBranches,
-  gitListRemoteBranches, gitLog, gitPull, gitPush, gitShowCommit, gitStage, gitStageAll,
+  gitListRemoteBranches, gitLog, gitMergeAbort, gitPull, gitPush, gitShowCommit, gitStage, gitStageAll,
   gitStatus, gitUnstage, type GitOutcome,
 } from './git-service.ts'
 import {
@@ -105,12 +105,15 @@ export function GitWorkbenchPanel({ cwd, initialTab, onClose }: GitWorkbenchPane
   const [branchFilter, setBranchFilter] = useState('')
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState<Notice | null>(null)
+  /** 当前分支与上游的 ahead/behind;null = 无上游或读取失败。 */
+  const [aheadBehind, setAheadBehind] = useState<readonly [number, number] | null>(null)
 
-  /** 读当前分支 + 状态(挂载 / cwd 变化 / 变更操作后刷新)。 */
+  /** 读当前分支 + 状态 + ahead/behind(挂载 / cwd 变化 / 变更操作后刷新)。 */
   const loadChanges = useCallback(async (dir: string) => {
-    const [branchName, entries] = await Promise.all([gitCurrentBranch(dir), gitStatus(dir)])
+    const [branchName, entries, ab] = await Promise.all([gitCurrentBranch(dir), gitStatus(dir), gitAheadBehind(dir)])
     setBranch(branchName)
     setStatus(entries !== null ? classifyGitStatus(entries) : null)
+    setAheadBehind(ab)
     setProbed(true)
   }, [])
 
@@ -136,6 +139,7 @@ export function GitWorkbenchPanel({ cwd, initialTab, onClose }: GitWorkbenchPane
     setProbed(false)
     setBranch(null)
     setStatus(null)
+    setAheadBehind(null)
     setTab(initialTab)
     void loadChanges(cwd)
     if (initialTab === 'history') void loadHistory(cwd)
@@ -298,6 +302,10 @@ export function GitWorkbenchPanel({ cwd, initialTab, onClose }: GitWorkbenchPane
     void run('推送', () => gitPush(cwd))
   }
 
+  const onMergeAbort = (): void => {
+    void run('中止合并', () => gitMergeAbort(cwd), reloadAfterChange)
+  }
+
   const dirty = status !== null
     && (status.staged.length > 0 || status.unstaged.length > 0 || status.untracked.length > 0)
 
@@ -308,6 +316,7 @@ export function GitWorkbenchPanel({ cwd, initialTab, onClose }: GitWorkbenchPane
         <PanelHeader
           branch={null}
           dirty={false}
+          aheadBehind={null}
           busy={busy}
           onRefresh={refresh}
           onFetch={onFetch}
@@ -337,6 +346,7 @@ export function GitWorkbenchPanel({ cwd, initialTab, onClose }: GitWorkbenchPane
       <PanelHeader
         branch={branch}
         dirty={dirty}
+        aheadBehind={aheadBehind}
         busy={busy}
         onRefresh={refresh}
         onFetch={onFetch}
@@ -381,6 +391,7 @@ export function GitWorkbenchPanel({ cwd, initialTab, onClose }: GitWorkbenchPane
                 onCommit={onCommit}
                 onAiDraft={onAiDraft}
                 onMessageChange={setCommitMessage}
+                onMergeAbort={onMergeAbort}
               />
             )}
             {tab === 'changes' && status === null && (
@@ -419,10 +430,11 @@ export function GitWorkbenchPanel({ cwd, initialTab, onClose }: GitWorkbenchPane
   )
 }
 
-/** 抽屉面板头:标题(分支 + 脏点)+ 操作行 + 关闭。 */
-function PanelHeader({ branch, dirty, busy, onRefresh, onFetch, onPull, onPush, onClose }: {
+/** 抽屉面板头:标题(分支 + 脏点 + ahead/behind)+ 操作行 + 关闭。 */
+function PanelHeader({ branch, dirty, aheadBehind, busy, onRefresh, onFetch, onPull, onPush, onClose }: {
   branch: string | null
   dirty: boolean
+  aheadBehind: readonly [number, number] | null
   busy: string
   onRefresh: () => void
   onFetch: () => void
@@ -430,25 +442,34 @@ function PanelHeader({ branch, dirty, busy, onRefresh, onFetch, onPull, onPush, 
   onPush: () => void
   onClose: () => void
 }) {
+  const ahead = aheadBehind?.[0] ?? 0
+  const behind = aheadBehind?.[1] ?? 0
+  const hasUpstream = aheadBehind !== null
   return (
     <header className={css.header}>
       <span className={css.title} title={branch ?? undefined}>
         <IconBranchOutline16 size={13} />
         {branch !== null && <span className={css.branchName}>{branch}</span>}
         {branch !== null && dirty && <span className={css.dirtyDot} title="有未提交改动" />}
+        {hasUpstream && (ahead > 0 || behind > 0) && (
+          <span className={css.abTag} title={`领先上游 ${ahead} 个提交,落后 ${behind} 个提交`}>
+            {ahead > 0 && `↑${ahead}`}
+            {behind > 0 && `↓${behind}`}
+          </span>
+        )}
       </span>
       <span className={css.spacer} />
       <button type="button" className={css.iconButton} title="刷新" aria-label="刷新" onClick={onRefresh}>
         <IconRefreshOutline14 size={13} />
       </button>
       <button type="button" className={css.actionBtn} disabled={busy !== ''} title="git fetch --all --prune:同步远程分支列表" onClick={onFetch}>
-        {busy === '同步远程' ? '同步中…' : '同步远程'}
+        {busy === '同步远程' ? '同步中…' : '同步'}
       </button>
-      <button type="button" className={css.actionBtn} disabled={busy !== ''} onClick={onPull}>
-        {busy === '拉取' ? '拉取中…' : '拉取(git pull)'}
+      <button type="button" className={css.actionBtn} disabled={busy !== '' || !hasUpstream || behind === 0} title="git pull:拉取当前分支" onClick={onPull}>
+        {busy === '拉取' ? '拉取中…' : '拉取'}
       </button>
-      <button type="button" className={css.actionBtn} disabled={busy !== ''} onClick={onPush}>
-        {busy === '推送' ? '推送中…' : '推送(git push)'}
+      <button type="button" className={css.actionBtn} disabled={busy !== '' || !hasUpstream || ahead === 0} title="git push:推送当前分支" onClick={onPush}>
+        {busy === '推送' ? '推送中…' : '推送'}
       </button>
       <button type="button" className={css.iconButton} title="关闭 Git 工作台" aria-label="关闭 Git 工作台" onClick={onClose}>
         <IconCloseOutline16 size={14} />
@@ -475,15 +496,17 @@ interface ChangesTabProps {
   onCommit: () => void
   onAiDraft: () => void
   onMessageChange: (message: string) => void
+  onMergeAbort: () => void
 }
 
-/** 变更 Tab:三段文件列表 + diff 查看 + 提交区。 */
+/** 变更 Tab:冲突区 + 三段文件列表(滚动) + 底部固定提交区。 */
 function ChangesTab({
   status, selected, confirmTarget, commitMessage, busy, stagedCount,
   onSelect, onStage, onStageAll, onUnstage, onAskConfirm, onCancelConfirm, onConfirm,
-  onCommit, onAiDraft, onMessageChange,
+  onCommit, onAiDraft, onMessageChange, onMergeAbort,
 }: ChangesTabProps) {
   const isEmpty = status.staged.length === 0 && status.unstaged.length === 0 && status.untracked.length === 0
+  const hasConflicts = status.conflicts.length > 0
   return (
     <>
       <div className={css.tabToolbar}>
@@ -497,55 +520,89 @@ function ChangesTab({
           {busy === '暂存全部' ? '暂存中…' : '暂存全部'}
         </button>
       </div>
-      {isEmpty && <div className={css.status}>工作区干净,没有未提交的改动。</div>}
-      {status.staged.length > 0 && (
-        <FileSection
-          title={`已暂存(${status.staged.length})`}
-          entries={status.staged}
-          group="staged"
-          selected={selected}
-          confirmTarget={confirmTarget}
-          busy={busy}
-          onSelect={onSelect}
-          onStage={onStage}
-          onUnstage={onUnstage}
-          onAskConfirm={onAskConfirm}
-          onCancelConfirm={onCancelConfirm}
-          onConfirm={onConfirm}
-        />
-      )}
-      {status.unstaged.length > 0 && (
-        <FileSection
-          title={`未暂存的变更(${status.unstaged.length})`}
-          entries={status.unstaged}
-          group="unstaged"
-          selected={selected}
-          confirmTarget={confirmTarget}
-          busy={busy}
-          onSelect={onSelect}
-          onStage={onStage}
-          onUnstage={onUnstage}
-          onAskConfirm={onAskConfirm}
-          onCancelConfirm={onCancelConfirm}
-          onConfirm={onConfirm}
-        />
-      )}
-      {status.untracked.length > 0 && (
-        <FileSection
-          title={`未跟踪(${status.untracked.length})`}
-          entries={status.untracked}
-          group="untracked"
-          selected={selected}
-          confirmTarget={confirmTarget}
-          busy={busy}
-          onSelect={onSelect}
-          onStage={onStage}
-          onUnstage={onUnstage}
-          onAskConfirm={onAskConfirm}
-          onCancelConfirm={onCancelConfirm}
-          onConfirm={onConfirm}
-        />
-      )}
+      <div className={css.changesScroll}>
+        {hasConflicts && (
+          <div className={css.conflictBanner} role="alert">
+            <span className={css.conflictText}>
+              {status.conflicts.length} 个文件存在合并冲突,请手动编辑解决后点「标记已解决」
+            </span>
+            <button
+              type="button"
+              className={css.dangerBtn}
+              disabled={busy !== ''}
+              title="git merge --abort:放弃合并,回到合并前状态"
+              onClick={onMergeAbort}
+            >
+              中止合并
+            </button>
+          </div>
+        )}
+        {hasConflicts && (
+          <FileSection
+            title={`冲突文件(${status.conflicts.length})`}
+            entries={status.conflicts}
+            group="conflicts"
+            selected={selected}
+            confirmTarget={confirmTarget}
+            busy={busy}
+            onSelect={onSelect}
+            onStage={onStage}
+            onUnstage={onUnstage}
+            onAskConfirm={onAskConfirm}
+            onCancelConfirm={onCancelConfirm}
+            onConfirm={onConfirm}
+          />
+        )}
+        {isEmpty && !hasConflicts && <div className={css.status}>工作区干净,没有未提交的改动。</div>}
+        {status.staged.length > 0 && (
+          <FileSection
+            title={`已暂存(${status.staged.length})`}
+            entries={status.staged}
+            group="staged"
+            selected={selected}
+            confirmTarget={confirmTarget}
+            busy={busy}
+            onSelect={onSelect}
+            onStage={onStage}
+            onUnstage={onUnstage}
+            onAskConfirm={onAskConfirm}
+            onCancelConfirm={onCancelConfirm}
+            onConfirm={onConfirm}
+          />
+        )}
+        {status.unstaged.length > 0 && (
+          <FileSection
+            title={`未暂存的变更(${status.unstaged.length})`}
+            entries={status.unstaged}
+            group="unstaged"
+            selected={selected}
+            confirmTarget={confirmTarget}
+            busy={busy}
+            onSelect={onSelect}
+            onStage={onStage}
+            onUnstage={onUnstage}
+            onAskConfirm={onAskConfirm}
+            onCancelConfirm={onCancelConfirm}
+            onConfirm={onConfirm}
+          />
+        )}
+        {status.untracked.length > 0 && (
+          <FileSection
+            title={`未跟踪(${status.untracked.length})`}
+            entries={status.untracked}
+            group="untracked"
+            selected={selected}
+            confirmTarget={confirmTarget}
+            busy={busy}
+            onSelect={onSelect}
+            onStage={onStage}
+            onUnstage={onUnstage}
+            onAskConfirm={onAskConfirm}
+            onCancelConfirm={onCancelConfirm}
+            onConfirm={onConfirm}
+          />
+        )}
+      </div>
       <div className={css.commitArea}>
         <textarea
           className={css.commitInput}
@@ -624,7 +681,18 @@ function FileSection({
                 </span>
               ) : (
                 <span className={css.rowActions}>
-                  {group !== 'staged' && (
+                  {group === 'conflicts' && (
+                    <button
+                      type="button"
+                      className={css.rowBtn}
+                      disabled={busy !== ''}
+                      title="git add -- <文件>:标记冲突已解决"
+                      onClick={() => { onStage(entry) }}
+                    >
+                      标记已解决
+                    </button>
+                  )}
+                  {group !== 'staged' && group !== 'conflicts' && (
                     <button type="button" className={css.rowBtn} disabled={busy !== ''} title="git add -- <文件>" onClick={() => { onStage(entry) }}>
                       暂存
                     </button>
@@ -675,7 +743,7 @@ function DiffView({ selected }: { selected: SelectedFile }) {
       <div className={css.sectionHead}>
         {selected.path}
         <span className={css.diffGroup}>
-          {selected.group === 'staged' ? '已暂存 diff' : selected.group === 'unstaged' ? '未暂存 diff' : '未跟踪'}
+          {selected.group === 'staged' ? '已暂存 diff' : selected.group === 'unstaged' ? '未暂存 diff' : selected.group === 'conflicts' ? '冲突 diff' : '未跟踪'}
         </span>
       </div>
       {selected.group === 'untracked' && (

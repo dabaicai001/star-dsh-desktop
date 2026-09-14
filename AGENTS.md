@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.118.1(**SSH 终端工作区视觉规范重写**:移除状态点发光阴影与赛博朋克效果;蓝色(business-primary)严格保留给交互强调(按钮、活跃 Tab、链接),非交互元素改用中性色;终端暗色前景从近纯白 `#f9fafb` 柔和化为 `#c4c9cf`(长时间使用不刺眼);所有交互元素统一 150ms ease 过渡(Tab 切换、hover、按钮、进度条);头部高度 58px→52px;对话框阴影 lv3→lv2;ZMODEM 进度条 4px→3px;SFTP 面板/传输弹框/广播对话框同步扁平化。修复 CI 三处 TypeScript 类型错误(transfer-dialog/use-transfer-tasks 测试 mock 类型)。) |
+| 当前版本 | v0.118.3(**Git 工作台变更列表丢失未暂存改动**:`git status --porcelain=v1 -z` 输出以空格开头的记录(未暂存修改)被 `trim()` 误删行首状态位,导致「变更」Tab 漏列未暂存文件;改为仅剥离尾随 NUL/换行,保留行首空格。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-11 (v0.118.1)*
+*最后更新: 2026-09-14 (v0.118.3)*

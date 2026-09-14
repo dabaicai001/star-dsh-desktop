@@ -61,6 +61,21 @@ describe('classifyGitStatus', () => {
     expect(groups.unstaged).toHaveLength(1)
     expect(groups.staged).toHaveLength(0)
   })
+
+  it('detects merge conflicts (UU/AA/DD) into the conflicts group', () => {
+    const entries = parseGitStatusZ(
+      'UU both-modified.ts\0AA both-added.ts\0DD both-deleted.ts\0AU added-by-us.ts\0UA added-by-them.ts\0UD deleted-by-us.ts\0DU deleted-by-them.ts\0',
+    )
+    const groups = classifyGitStatus(entries)
+    expect(groups.conflicts).toHaveLength(7)
+    expect(groups.conflicts.map(e => e.path)).toEqual([
+      'both-modified.ts', 'both-added.ts', 'both-deleted.ts',
+      'added-by-us.ts', 'added-by-them.ts', 'deleted-by-us.ts', 'deleted-by-them.ts',
+    ])
+    // 冲突文件不应再出现在 staged/unstaged 组
+    expect(groups.staged).toHaveLength(0)
+    expect(groups.unstaged).toHaveLength(0)
+  })
 })
 
 describe('parseGitLogPretty', () => {

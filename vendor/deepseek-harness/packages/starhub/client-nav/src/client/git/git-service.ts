@@ -37,6 +37,14 @@ function psQuote(value: string): string {
  * @param timeoutSec - 超时秒数(push 等网络操作给 120)。
  * @returns 简化结果;IPC/进程级失败转为 ok:false。
  */
+/**
+ * 去除尾随 NUL 与换行(不移除行首空白:porcelain 的 XY 状态位里,
+ * 行首空格是「未暂存」的合法状态位,trim 掉会导致解析丢记录)。
+ */
+function stripTrailingNul(text: string): string {
+  return text.replace(/[\0\r\n]+$/, '')
+}
+
 async function runGit(cwd: string, command: string, timeoutSec?: number): Promise<GitOutcome> {
   try {
     const result = await tauriInvoke<LocalShellResult>('local_shell_exec', {
@@ -46,7 +54,7 @@ async function runGit(cwd: string, command: string, timeoutSec?: number): Promis
     })
     return {
       ok: result.exitCode === 0,
-      stdout: result.stdout.trim(),
+      stdout: stripTrailingNul(result.stdout),
       stderr: result.stderr.trim(),
     }
   } catch (error) {
@@ -164,6 +172,19 @@ export function gitPull(cwd: string): Promise<GitOutcome> {
 }
 
 /**
+ * 读当前分支与上游的 ahead/behind 计数。
+ * @param cwd - 会话工作区绝对路径。
+ * @returns [ahead, behind];无上游/非 git 仓库/命令失败返回 null。
+ */
+export async function gitAheadBehind(cwd: string): Promise<readonly [number, number] | null> {
+  const result = await runGit(cwd, 'git rev-list --left-right --count HEAD...@{upstream}')
+  if (!result.ok) return null
+  const match = /^(\d+)\s+(\d+)$/.exec(result.stdout)
+  if (match === null) return null
+  return [Number(match[1]), Number(match[2])]
+}
+
+/**
  * 读工作区状态(porcelain v1 -z:路径含中文/空格不会被引号破坏)。
  * @param cwd - 会话工作区绝对路径。
  * @returns 状态记录;非 git 仓库/命令失败返回 null(调用方据以渲染空态)。
@@ -221,6 +242,15 @@ export function gitDiscard(cwd: string, paths: readonly string[]): Promise<GitOu
  */
 export function gitCleanPath(cwd: string, paths: readonly string[]): Promise<GitOutcome> {
   return runGit(cwd, `git clean -f -- ${paths.map(psQuote).join(' ')}`)
+}
+
+/**
+ * 中止进行中的合并(git merge --abort;回到合并前状态)。
+ * @param cwd - 会话工作区绝对路径。
+ * @returns 简化结果。
+ */
+export function gitMergeAbort(cwd: string): Promise<GitOutcome> {
+  return runGit(cwd, 'git merge --abort')
 }
 
 /**

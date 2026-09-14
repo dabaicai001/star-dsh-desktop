@@ -66,6 +66,7 @@ function probeCommands(status = ''): Record<string, ShellResult> {
     'git rev-parse --short HEAD': ok('abc1234'),
     'git status --porcelain=v1 -z': ok(status),
     'git status --porcelain': ok(status),
+    'git rev-list --left-right --count': ok('0\t0'),
   }
 }
 
@@ -304,19 +305,20 @@ describe('GitWorkbenchPanel', () => {
       ...probeCommands(),
       'git branch "--format=%(refname:short)"': ok('main'),
       'git branch -r "--format=%(refname:short)"': ok('origin/main'),
+      'git rev-list --left-right --count': ok('2\t1'),
       'git fetch --all --prune': ok('Fetching origin'),
       'git pull': ok('Already up to date.'),
       'git push': fail('no upstream'),
     })
     restore = stub.restore
     renderPanel()
-    fireEvent.click(await screen.findByRole('button', { name: /同步远程/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /同步/ }))
     await waitFor(() => expect(stub.calls).toContain(`${CWD}::git fetch --all --prune`))
     expect(await screen.findByText('Fetching origin')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /拉取\(git pull\)/ }))
+    fireEvent.click(screen.getByRole('button', { name: /拉取/ }))
     await waitFor(() => expect(stub.calls).toContain(`${CWD}::git pull`))
     expect(await screen.findByText('Already up to date.')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /推送\(git push\)/ }))
+    fireEvent.click(screen.getByRole('button', { name: /推送/ }))
     await waitFor(() => expect(stub.calls).toContain(`${CWD}::git push`))
     expect(await screen.findByText('no upstream')).toBeTruthy()
     expect(stub.argsLog.some(a => a.command === 'git push' && a.timeoutSec === 120)).toBe(true)

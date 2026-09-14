@@ -18,14 +18,17 @@
 
 .title {
   display: inline-flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 5px;
-  max-width: 220px;
+  min-width: 0;
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
 }
 
 .branchName {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -39,6 +42,38 @@
   background: var(--dsw-alias-state-warn-primary);
 }
 
+/* ahead/behind 徽标:与上游的差异计数,绿色领先 / 红色落后。 */
+.abTag {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-state-success-primary);
+  font-size: 10px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  white-space: nowrap;
+}
+
+/* 合并冲突横幅:置顶提示,引导用户解决冲突或中止合并。 */
+.conflictBanner {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-state-warn-primary);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, transparent);
+}
+
+.conflictText {
+  flex: 1;
+  min-width: 0;
+  color: var(--dsw-alias-state-warn-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .spacer {
   flex: 1 1 auto;
 }
@@ -48,8 +83,8 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 6px;
@@ -64,13 +99,13 @@
 
 .actionBtn {
   flex: none;
-  height: 26px;
-  padding: 0 10px;
+  height: 24px;
+  padding: 0 6px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  font-size: 11px;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -140,6 +175,18 @@
   min-height: 0;
   overflow-y: auto;
   /* Elevated surface scroll: rebind scrollbar indirection like the pill list. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* 变更 Tab 的滚动区:文件列表长时此处滚动,提交区固定在底部不被推走。 */
+.changesScroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
@@ -346,7 +393,6 @@
   flex: none;
   flex-direction: column;
   gap: 6px;
-  margin-top: auto;
   padding-top: 8px;
   border-top: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
 }

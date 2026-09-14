@@ -14,14 +14,24 @@ export interface GitStatusEntry {
   readonly origPath?: string
 }
 
-/** 状态三分类:已暂存 / 未暂存(已跟踪) / 未跟踪。 */
-export type GitChangeGroup = 'staged' | 'unstaged' | 'untracked'
+/** 状态四分类:已暂存 / 未暂存(已跟踪) / 未跟踪 / 合并冲突。 */
+export type GitChangeGroup = 'staged' | 'unstaged' | 'untracked' | 'conflicts'
+
+/** 合并冲突状态位组合(porcelain v1 XY 格式)。 */
+const CONFLICT_PAIRS = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'])
+
+/** 判断一条状态记录是否为合并冲突。 */
+export function isConflictEntry(entry: GitStatusEntry): boolean {
+  return CONFLICT_PAIRS.has(entry.x + entry.y)
+}
 
 /** 分类后的状态组(同一文件改动既未暂存又有已暂存部分时,同时出现在两组)。 */
 export interface GitStatusGroups {
   readonly staged: readonly GitStatusEntry[]
   readonly unstaged: readonly GitStatusEntry[]
   readonly untracked: readonly GitStatusEntry[]
+  /** 合并冲突文件(UU/AA/DD 等);处理完冲突 git add 后回到 staged 组。 */
+  readonly conflicts: readonly GitStatusEntry[]
 }
 
 /**
@@ -68,16 +78,21 @@ export function classifyGitStatus(entries: readonly GitStatusEntry[]): GitStatus
   const staged: GitStatusEntry[] = []
   const unstaged: GitStatusEntry[] = []
   const untracked: GitStatusEntry[] = []
+  const conflicts: GitStatusEntry[] = []
   for (const entry of entries) {
     if (entry.x === '?' && entry.y === '?') {
       untracked.push(entry)
       continue
     }
     if (entry.x === '!' && entry.y === '!') continue
+    if (isConflictEntry(entry)) {
+      conflicts.push(entry)
+      continue
+    }
     if (entry.x !== ' ' && entry.x !== '?') staged.push(entry)
     if (entry.y !== ' ' && entry.y !== '?') unstaged.push(entry)
   }
-  return { staged, unstaged, untracked }
+  return { staged, unstaged, untracked, conflicts }
 }
 
 /** 一条提交记录(git log 定制 pretty 的解析产物)。 */
