@@ -187,6 +187,41 @@ describe('SftpPanel', () => {
     expect(onOpenTransfers).toHaveBeenCalledTimes(1)
   })
 
+  it('opens the transfer dialog automatically after upload and download start', async () => {
+    ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver = ResizeObserverMock
+    const { invoke } = installTauri([
+      { name: 'README.md', path: '/home/deploy/README.md', isDir: false, size: 1234, permissions: 0o644, modified: 0 },
+    ])
+    const onOpenTransfers = vi.fn()
+    render(
+      <SftpPanel
+        asset={asset} sessionId="ssh-1" sshConnected={true}
+        onOpenTransfers={onOpenTransfers}
+      />,
+    )
+    await waitFor(() => { expect(screen.getByText('README.md')).toBeTruthy() })
+
+    // 点击工具栏「上传文件」→ 选完文件后自动弹传输框
+    // (pickPath 走 plugin:dialog|open,stub 返回一个假路径)
+    invoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
+      if (command === 'plugin:dialog|open') return Promise.resolve(['C:/fake.txt'])
+      if (command === 'sftp_start_upload') return Promise.resolve(null)
+      if (command === 'sftp_start_download') return Promise.resolve(null)
+      if (command === 'sftp_ensure_session') return Promise.resolve({ mode: 'subsystem' })
+      if (command === 'sftp_home_dir') return Promise.resolve('/home/deploy')
+      if (command === 'sftp_list') return Promise.resolve([{ name: 'README.md', path: '/home/deploy/README.md', isDir: false, size: 1234, permissions: 0o644, modified: 0 }])
+      if (command === 'sftp_list_transfers') return Promise.resolve([])
+      return Promise.resolve(null)
+    })
+    fireEvent.click(screen.getByRole('button', { name: '上传文件' }))
+    await waitFor(() => { expect(onOpenTransfers).toHaveBeenCalledTimes(1) })
+
+    // 选中文件后点击「下载」→ 选完目录后自动弹传输框
+    fireEvent.click(screen.getByText('README.md'))
+    fireEvent.click(screen.getByRole('button', { name: '下载' }))
+    await waitFor(() => { expect(onOpenTransfers).toHaveBeenCalledTimes(2) })
+  })
+
   it('reloads the current directory when an upload completes (done → refresh)', async () => {
     ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver = ResizeObserverMock
     const { invoke } = installTauri([])

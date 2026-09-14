@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.118.3-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.118.4-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,10 +48,8 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.118.3 (2026-09-14)
-- 🐛 **Git 工作台变更列表丢失未暂存改动**:`git status --porcelain=v1 -z` 输出以空格开头的记录(未暂存修改)被 `trim()` 误删行首状态位,导致「变更」Tab 漏列未暂存文件;改为仅剥离尾随 NUL/换行,保留行首空格。
-- ✨ **Git 工作台 ahead/behind 徽标与合并冲突支持**:标题栏显示当前分支与上游的领先/落后计数(↑2 ↓1);检测到合并冲突(UU/AA/DD 等)时置顶红色横幅提示,冲突文件独立分组展示,提供「标记已解决」(git add)与「中止合并」(git merge --abort)操作;提交区固定在面板底部,长文件列表不再把提交区推走。
-- 🔧 **Git 工作台标题栏防溢出**:分支名改为 flex 收缩(超长省略号),操作按钮缩短为「同步/拉取/推送」并缩小尺寸,320px 抽屉宽度下不再溢出。
+### v0.118.4 (2026-09-14)
+- 🔧 **SFTP 点击下载/上传立即弹出传输任务弹框**:此前点击下载/上传后任务在后台运行,用户需手动点工具栏「传输任务」才能看到进度;现在传输一开始即自动弹出弹框,实时显示进度。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

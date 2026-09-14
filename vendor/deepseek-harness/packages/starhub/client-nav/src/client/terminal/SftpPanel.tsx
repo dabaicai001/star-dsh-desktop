@@ -309,6 +309,8 @@ export function SftpPanel({
     try {
       await sftpStartUpload(sessionId, localPaths, dest)
       // 目录刷新由 uploadDoneNonce 效应在上传真正完成时触发
+      // 立即弹出传输任务弹框,让用户实时看到进度(此前需手动点工具栏「传输任务」)
+      onOpenTransfers?.()
     } catch (caught) {
       failWith(`上传失败: ${caught instanceof Error ? caught.message : String(caught)}`, () => { void startUpload(localPaths, dest) })
     }
@@ -339,6 +341,8 @@ export function SftpPanel({
       const dir = await pickPath('folder')
       if (dir === null || dir[0] === undefined) return
       await sftpStartDownload(sessionId, paths, dir[0])
+      // 立即弹出传输任务弹框,让用户实时看到进度(此前需手动点工具栏「传输任务」)
+      onOpenTransfers?.()
     } catch (caught) {
       failWith(`无法开始下载: ${caught instanceof Error ? caught.message : String(caught)}`, () => { void download(pick, entry) })
     }
