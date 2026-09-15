@@ -95,11 +95,45 @@ const EMPTY_DB_LOADABLE: DbLoadable = { keys: [], cursor: 0, complete: true, loa
 /** 无展开文件夹的占位集(toggleKeyFolder 从不原地改动,可安全共享)。 */
 const EMPTY_FOLDER_PATHS: ReadonlySet<string> = new Set()
 
+/** 新建 key 支持的类型。 */
+export const NEW_KEY_TYPES = ['string', 'hash', 'list', 'set', 'zset'] as const
+
 /** 新建 key 对话框输入。 */
 interface NewKeyDraft {
   key: string
   type: string
   value: string
+  /** 目标 db(打开弹窗时默认当前展开/所在库,可改)。 */
+  db: number
+  /** hash 的字段名。 */
+  field: string
+  /** zset 的分值。 */
+  score: string
+}
+
+/**
+ * 组装新建 key 的 Redis 命令:按类型分派(hash 用 field+value,zset 用 score+member,
+ * list/set 以 value 作首个成员——Redis 不允许创建空集合,必须先写一个元素)。
+ * @param draft - 对话框输入(key 已 trim)。
+ * @returns 命令文本;hash 缺 field / zset score 非数字时返回 null(调用方提示)。
+ */
+export function buildCreateKeyCommand(draft: NewKeyDraft): string | null {
+  const key = redisQuote(draft.key)
+  const value = redisQuote(draft.value)
+  switch (draft.type) {
+    case 'hash': {
+      if (draft.field.trim() === '') return null
+      return `HSET ${key} ${redisQuote(draft.field)} ${value}`
+    }
+    case 'list': return `RPUSH ${key} ${value}`
+    case 'set': return `SADD ${key} ${value}`
+    case 'zset': {
+      const score = Number(draft.score)
+      if (draft.score.trim() === '' || !Number.isFinite(score)) return null
+      return `ZADD ${key} ${score} ${value}`
+    }
+    default: return `SET ${key} ${value}`
+  }
 }
 
 /** 树行渲染入参:节点 + 深度 + 展开态与操作回调。 */
@@ -189,7 +223,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameTo, setRenameTo] = useState('')
   const [newKeyOpen, setNewKeyOpen] = useState(false)
-  const [newKeyDraft, setNewKeyDraft] = useState<NewKeyDraft>({ key: '', type: 'string', value: '' })
+  const [newKeyDraft, setNewKeyDraft] = useState<NewKeyDraft>({ key: '', type: 'string', value: '', db: 0, field: '', score: '' })
   /** FLUSHDB 二次确认:目标 db(打开弹窗时锁定)与用户输入的确认序号。 */
   const [flushConfirm, setFlushConfirm] = useState<number | null>(null)
   const [flushInput, setFlushInput] = useState('')
@@ -434,6 +468,12 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     }
   }
 
+  /** 打开新建 key 弹窗:目标 db 默认当前展开库(未展开则连接所在库),可改。 */
+  const openNewKey = () => {
+    setNewKeyDraft({ key: '', type: 'string', value: '', db: expandedDb ?? activeDb, field: '', score: '' })
+    setNewKeyOpen(true)
+  }
+
   const createKey = async () => {
     const connId = connRef.current
     /* v8 ignore next -- 仅连接建立后触发 */
@@ -441,12 +481,23 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     const key = newKeyDraft.key.trim()
     /* v8 ignore next -- 空 key 时创建按钮 disabled,守卫生不可达 */
     if (key === '') return
+    const command = buildCreateKeyCommand({ ...newKeyDraft, key })
+    if (command === null) {
+      notify(newKeyDraft.type === 'hash' ? 'hash 需要填写字段名' : 'zset 需要合法的数字分值')
+      return
+    }
+    const target = newKeyDraft.db
     try {
-      await redisExecute(connId, `SET ${redisQuote(key)} ${redisQuote(newKeyDraft.value)}`)
+      // 目标库与连接所在库不一致时先切库(与 FLUSHDB 同款防库漂移),并同步 UI 状态。
+      if (target !== activeDb) {
+        await redisSelect(connId, target)
+        setActiveDb(target)
+      }
+      await redisExecute(connId, command)
       setNewKeyOpen(false)
-      setNewKeyDraft({ key: '', type: 'string', value: '' })
       notify('Key 已创建')
-      await syncAfterMutation(connId)
+      if (expandedDb === target) await refreshExpanded(connId)
+      else await refreshSizeForDb(connId, target)
     } catch (e: unknown) {
       notify(`创建失败:${e instanceof Error ? e.message : String(e)}`)
     }
@@ -562,7 +613,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                   disabled={!connected} onClick={() =>{  setCliOpen(v => !v) }}><IconCodeOutline16 size={15} /></button>
                 <span className={css.toolbarSpacer} />
                 <button type="button" className={css.primaryButton} title="新建 Key" aria-label="新建 Key"
-                  disabled={!connected} onClick={() =>{  setNewKeyOpen(true) }}><IconPlusOutline16 size={14} /> 新建 Key</button>
+                  disabled={!connected} onClick={() =>{  openNewKey() }}><IconPlusOutline16 size={14} /> 新建 Key</button>
               </div>
 
               <div className={css.dbTree} role="tree" aria-label="DB 列表">
@@ -682,13 +733,35 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
           <div className={css.modalBackdrop}>
             <div className={css.modal}>
               <div className={css.modalTitle}>新建 Key</div>
+              <div className={css.modalFieldRow}>
+                <select className={css.modalSelect} aria-label="目标 DB" title="目标 DB"
+                  value={newKeyDraft.db} onChange={(e) =>{  setNewKeyDraft(d => ({ ...d, db: Number(e.target.value) })) }}>
+                  {DB_INDEXES.map(db => <option key={db} value={db}>db{db}</option>)}
+                </select>
+                <select className={css.modalSelect} aria-label="类型" title="类型"
+                  value={newKeyDraft.type} onChange={(e) =>{  setNewKeyDraft(d => ({ ...d, type: e.target.value })) }}>
+                  {NEW_KEY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
               <input className={css.searchInput} placeholder="key 名" aria-label="key 名"
                 value={newKeyDraft.key} onChange={(e) =>{  setNewKeyDraft(d => ({ ...d, key: e.target.value })) }} />
-              <input className={css.searchInput} placeholder="值(string)" aria-label="值(string)"
+              {newKeyDraft.type === 'hash' && (
+                <input className={css.searchInput} placeholder="字段名" aria-label="字段名"
+                  value={newKeyDraft.field} onChange={(e) =>{  setNewKeyDraft(d => ({ ...d, field: e.target.value })) }} />
+              )}
+              {newKeyDraft.type === 'zset' && (
+                <input className={css.searchInput} placeholder="分值(数字)" aria-label="分值"
+                  spellCheck={false} value={newKeyDraft.score} onChange={(e) =>{  setNewKeyDraft(d => ({ ...d, score: e.target.value })) }} />
+              )}
+              <input className={css.searchInput}
+                placeholder={newKeyDraft.type === 'string' ? '值(string)' : newKeyDraft.type === 'hash' ? '值(hash)' : '首个成员'}
+                aria-label={newKeyDraft.type === 'string' ? '值(string)' : newKeyDraft.type === 'hash' ? '值(hash)' : '首个成员'}
                 value={newKeyDraft.value} onChange={(e) =>{  setNewKeyDraft(d => ({ ...d, value: e.target.value })) }} />
               <div className={css.modalActions}>
                 <button type="button" className={css.secondaryButton} onClick={() =>{  setNewKeyOpen(false) }}>取消</button>
-                <button type="button" className={css.primaryButton} disabled={newKeyDraft.key.trim() === ''} onClick={() => void createKey()}>创建</button>
+                <button type="button" className={css.primaryButton}
+                  disabled={newKeyDraft.key.trim() === '' || (newKeyDraft.type === 'hash' && newKeyDraft.field.trim() === '')}
+                  onClick={() => void createKey()}>创建</button>
               </div>
             </div>
           </div>

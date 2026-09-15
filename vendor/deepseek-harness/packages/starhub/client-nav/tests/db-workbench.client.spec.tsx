@@ -5,7 +5,7 @@
  * (list_tables);卸载断连(disconnect)。覆盖连接成功/缺 host / 树交互。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { DbWorkbench, collectStatementResults } from '../src/client/DbWorkbench.tsx'
 import type { RustAsset } from '../src/client/store.ts'
 
@@ -402,22 +402,52 @@ describe('DbWorkbench', () => {
     unmount()
   })
 
-  it('switches to 表数据 mode when a table is selected, and back to SQL on 新建查询', async () => {
+  it('点表在 tab 条开一个表数据标签,可切换可关闭;新建查询切回查询标签', async () => {
     stubInvoke({})
     const { unmount } = render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
-    // 初始在 SQL 查询模式(活动标签 run 按钮存在且因空 SQL 禁用)。
+    // 初始活动项为查询标签(run 按钮存在且因空 SQL 禁用)。
     expect(screen.getByRole('button', { name: '执行 SQL' })).toBeTruthy()
-    // 展开库并点表 → 自动切到「表数据」模式,runtime ran the grid.
+    // 展开库并点表 → tab 条开一个「users」表数据标签并激活,网格加载。
     fireEvent.click(screen.getByTitle('app'))
     await waitFor(() =>{  expect(screen.getByText('users')).toBeTruthy() })
     fireEvent.click(screen.getByText('users'))
     await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
-    // 表数据模式头部按钮 aria-pressed。
-    await waitFor(() =>{  expect(screen.getByRole('button', { name: '表数据' }).getAttribute('aria-pressed')).toBe('true') })
-    // 点「SQL 查询」切回;再「新建查询」也回到 SQL 模式。
-    fireEvent.click(screen.getByRole('button', { name: 'SQL 查询' }))
-    expect(screen.getByRole('button', { name: 'SQL 查询' }).getAttribute('aria-pressed')).toBe('true')
+    await waitFor(() =>{  expect(screen.getByRole('tab', { name: 'users' }).getAttribute('aria-selected')).toBe('true') })
+    expect(screen.getByRole('tab', { name: '查询 1' }).getAttribute('aria-selected')).toBe('false')
+    // 点查询标签切回 SQL;再点表标签切回表数据(标签保留,不重开)。
+    fireEvent.click(screen.getByRole('tab', { name: '查询 1' }))
+    expect(screen.getByRole('tab', { name: '查询 1' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('tab', { name: 'users' }))
+    expect(screen.getByRole('tab', { name: 'users' }).getAttribute('aria-selected')).toBe('true')
+    // 关闭表标签 → 活动项回查询标签。
+    fireEvent.click(screen.getByRole('button', { name: '关闭 users' }))
+    await waitFor(() =>{  expect(screen.queryByRole('tab', { name: 'users' })).toBeNull() })
+    expect(screen.getByRole('tab', { name: '查询 1' }).getAttribute('aria-selected')).toBe('true')
+    // 新建查询仍追加查询标签并激活。
+    fireEvent.click(screen.getByRole('button', { name: '新建查询' }))
+    await waitFor(() =>{  expect(screen.getByRole('tab', { name: '查询 2' }).getAttribute('aria-selected')).toBe('true') })
+    unmount()
+  })
+
+  it('点开多个表各开一个 tab,重复点同表只激活不重复开', async () => {
+    stubInvoke({ tables: [{ name: 'users' }, { name: 'orders' }] })
+    const { container, unmount } = render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
+    fireEvent.click(screen.getByTitle('app'))
+    await waitFor(() =>{  expect(screen.getByText('orders')).toBeTruthy() })
+    fireEvent.click(screen.getByText('users'))
+    await waitFor(() =>{  expect(screen.getByRole('tab', { name: 'users' })).toBeTruthy() })
+    fireEvent.click(screen.getByText('orders'))
+    await waitFor(() =>{  expect(screen.getByRole('tab', { name: 'orders' }).getAttribute('aria-selected')).toBe('true') })
+    // 两个表标签共存,另一个不再激活。
+    expect(screen.getByRole('tab', { name: 'users' }).getAttribute('aria-selected')).toBe('false')
+    // 再点树里的 users(左侧树范围内定位,避开同名 tab)→ 复用激活,不产生重复 tab。
+    const tree = container.querySelector('aside')
+    expect(tree).not.toBeNull()
+    fireEvent.click(within(tree!).getByText('users'))
+    await waitFor(() =>{  expect(screen.getByRole('tab', { name: 'users' }).getAttribute('aria-selected')).toBe('true') })
+    expect(screen.getAllByRole('tab', { name: 'users' })).toHaveLength(1)
     unmount()
   })
 

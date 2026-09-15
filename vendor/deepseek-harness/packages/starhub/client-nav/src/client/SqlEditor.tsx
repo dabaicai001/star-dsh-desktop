@@ -193,21 +193,23 @@ export function tableCompletion(getSchema: () => SqlCompletionSchema | undefined
 /** 构造 CM6 extensions(在组件外缓存纯函数,避免每次渲染重建)。 */
 function buildExtensions(opts: {
   value: string
-  onChange: (v: string) => void
+  /** 惰性取最新 onChange:view 只建一次,props 闭包若直捕会停在首次挂载的
+   *  activeQueryId,切标签后输入/受控同步全写回旧标签(覆盖其草稿)。 */
+  getOnChange: () => (v: string) => void
   /** 惰性取最新补全 schema(表树异步展开,schema 持续增长)。 */
   getSchema: () => SqlCompletionSchema | undefined
+  /** 惰性取最新执行回调(同 getOnChange:Mod-Enter 必须落到当前活动标签)。 */
+  getOnExecute: () => ((sql: string, explain: boolean) => void) | undefined
   dialect?: SqlDialect
-  onExecute?: (sql: string, explain: boolean) => void
   placeholder?: string
   viewRef: { current: EditorView | null }
 }): Extension[] {
   const dialect = dialectOf(opts.dialect ?? 'mysql')
   const language = dialect
   const keywords = keywordsOf(dialect)
-  const onExecute = opts.onExecute
-  const executeKeymap = onExecute === undefined ? [] : [
-    { key: 'Mod-Enter', run: () => { onExecute(viewValue(opts.viewRef), false); return true } },
-    { key: 'Shift-Mod-e', run: () => { onExecute(viewValue(opts.viewRef), true); return true } },
+  const executeKeymap = [
+    { key: 'Mod-Enter', run: () => { const fn = opts.getOnExecute(); if (fn === undefined) return false; fn(viewValue(opts.viewRef), false); return true } },
+    { key: 'Shift-Mod-e', run: () => { const fn = opts.getOnExecute(); if (fn === undefined) return false; fn(viewValue(opts.viewRef), true); return true } },
   ]
   // 空格后自动弹出补全:光标前刚敲完 WHERE/AND/OR 等子句关键字时,立即提示可用列
   // (跳过行注释与未闭合字符串,避免在注释/字面量里误弹)。
@@ -243,7 +245,7 @@ function buildExtensions(opts: {
     EditorView.lineWrapping,
     cmPlaceholder(opts.placeholder ?? '输入 SQL,Mod-Enter 执行'),
     EditorView.updateListener.of((update) => {
-      if (update.docChanged) opts.onChange(update.state.doc.toString())
+      if (update.docChanged) opts.getOnChange()(update.state.doc.toString())
     }),
   ]
 }
@@ -265,6 +267,12 @@ export function SqlEditor({ value, onChange, schema, dialect = 'mysql', onExecut
   // 补全 schema 走 ref:extensions 只建一次,树展开后新表/列也要能补全。
   const schemaRef = useRef(schema)
   schemaRef.current = schema
+  // onChange/onExecute 同样走 ref:view 只建一次,直捕 props 会把输入/执行
+  // 路由到首次挂载时的活动查询标签,切标签后覆盖旧标签草稿。
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const onExecuteRef = useRef(onExecute)
+  onExecuteRef.current = onExecute
 
   // 建一次 view(严格模式双跑由 dispose 抵消)。
   useEffect(() => {
@@ -274,9 +282,10 @@ export function SqlEditor({ value, onChange, schema, dialect = 'mysql', onExecut
       state: EditorState.create({
         doc: value,
         extensions: buildExtensions({
-          value, onChange, dialect, viewRef,
+          value, dialect, viewRef,
+          getOnChange: () => onChangeRef.current,
           getSchema: () => schemaRef.current,
-          ...(onExecute !== undefined ? { onExecute } : {}),
+          getOnExecute: () => onExecuteRef.current,
           ...(placeholder !== undefined ? { placeholder } : {}),
         }),
       }),

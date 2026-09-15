@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.118.6-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.119.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,8 +48,10 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.118.6 (2026-09-14)
-- 🐛 **CI 构建失败**:SFTP 测试文件未使用参数 `args` 导致 TypeScript TS6133 错误(`noUnusedParameters`),改为 `_args`。
+### v0.119.0 (2026-09-15)
+- ✨ **DB 工作台内容区统一 tab 条**:点开一个表即在 tab 条开一个独立的表数据标签(Navicat 风格),查询标签与表标签混排、可随意切换/关闭,同表重复点击只激活不重复开;原「SQL 查询 / 表数据」双模式切换按钮移除,查询标签条从 SQL 面板内上移到内容区头部。
+- ✨ **Redis 新建 Key 可选目标 DB 与类型**:新建弹窗新增目标 db 选择器(默认当前展开库,跨库创建先 SELECT 再写入,防库漂移)与类型选择器(string/hash/list/set/zset);hash 需填字段名、zset 需填数字分值(校验拦截),list/set 以输入值作首个成员。
+- 🐛 **SQL 多标签文本互相覆盖**:SqlEditor 的 CodeMirror view 只建一次,而 `onChange`/`onExecute` 闭包直捕首次挂载时的活动标签,开第二个查询标签后输入与受控同步全部写回第一个标签(覆盖其草稿),Mod-Enter 执行结果也落错标签;改为经 ref 惰性取最新回调。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

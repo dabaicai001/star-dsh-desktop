@@ -75,6 +75,20 @@ function makeQueryTab(id: number): QueryTab {
   return { id, name: `查询 ${id}`, sql: '', results: [], resultIndex: 0, error: null }
 }
 
+/** 一个表数据标签页(点表在内容区 tab 条开一个,同表复用激活)。 */
+interface TableTab {
+  /** 稳定 key:`库.表`(无库时仅表名),同表重复点击只激活不重复开。 */
+  key: string
+  table: string
+  database?: string
+}
+
+/** 组一个表数据标签(库名为空/缺省时退化为表名 key)。 */
+function makeTableTab(table: string, database?: string): TableTab {
+  const key = database !== undefined && database !== '' ? `${database}.${table}` : table
+  return { key, table, ...(database !== undefined && database !== '' ? { database } : {}) }
+}
+
 /**
  * 逐条执行语句并保留**每条**结果:首次失败即停止(不继续下发后续语句),
  * 但此前成功的语句结果仍留在返回数组里可查——旧实现只保留最后一条,
@@ -379,10 +393,11 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
   const [activeQueryId, setActiveQueryId] = useState(1)
   const nextQueryIdRef = useRef(2)
   const [sqlLoading, setSqlLoading] = useState(false)
-  // 内容区模式:「SQL 查询」编辑器模式(SQL 编辑区 + 可拖拽结果区)或
-  // 「表数据」浏览模式(DbDataGrid 拿满全高)。点表自动切表数据,新建/执行/
-  // 切查询标签自动切回 SQL 查询,也可用头部按钮手动切换。
-  const [mode, setMode] = useState<'sql' | 'table'>('sql')
+  // 内容区统一 tab 条:查询标签 + 表数据标签混排(仿 Navicat/HubHex)。点表在
+  // tab 条开一个表数据标签(同表复用激活);activeTableKey 非 null = 活动项为
+  // 表数据标签,null = 活动项为 activeQueryId 指向的查询标签。
+  const [tableTabs, setTableTabs] = useState<TableTab[]>([])
+  const [activeTableKey, setActiveTableKey] = useState<string | null>(null)
   // SQL 编辑区高度(px):SQL 模式内可拖拽分隔条调整,夹在 min/max 间,内存态。
   const [sqlPaneHeight, setSqlPaneHeight] = useState(300)
   const sqlResizeRef = useRef(false)
@@ -592,7 +607,9 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     if (typeof saved.monitor === 'boolean') setShowMonitor(saved.monitor)
     if (saved.selected !== null && saved.selected !== undefined && typeof saved.selected.table === 'string') {
       setSelected(saved.selected)
-      setMode('table')
+      const tab = makeTableTab(saved.selected.table, saved.selected.database)
+      setTableTabs(prev => (prev.some(t => t.key === tab.key) ? prev : [...prev, tab]))
+      setActiveTableKey(tab.key)
     }
     // 默认展开上次展开的库;选中表所在库即使不在 expanded 里也一并展开。
     const selectedDb = typeof saved.selected?.database === 'string' && saved.selected.database !== '' ? [saved.selected.database] : []
@@ -622,8 +639,28 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     nextQueryIdRef.current += 1
     setQueryTabs(prev => [...prev, makeQueryTab(id)])
     setActiveQueryId(id)
-    setMode('sql')
+    setActiveTableKey(null)
   }, [])
+
+  /** 点表:在内容区 tab 条开一个表数据标签(同表已开则只激活),并跟随当前库。 */
+  const openTableTab = useCallback((table: string, database?: string) => {
+    const tab = makeTableTab(table, database)
+    setTableTabs(prev => (prev.some(t => t.key === tab.key) ? prev : [...prev, tab]))
+    setActiveTableKey(tab.key)
+    setSelected({ table, ...(database !== undefined && database !== '' ? { database } : {}) })
+    if (database !== undefined && database !== '') setCurrentDb(database)
+  }, [])
+
+  /** 关闭表数据标签:关闭活动标签时激活相邻标签(无表标签剩则回最近查询标签)。 */
+  const closeTableTab = useCallback((key: string) => {
+    const idx = tableTabs.findIndex(t => t.key === key)
+    const remaining = tableTabs.filter(t => t.key !== key)
+    setTableTabs(remaining)
+    if (activeTableKey === key) {
+      const neighbor = remaining[Math.min(Math.max(idx, 0), remaining.length - 1)]
+      setActiveTableKey(neighbor !== undefined ? neighbor.key : null)
+    }
+  }, [tableTabs, activeTableKey])
 
   /** 展开表字段树;首次展开时懒加载列详情(name/type/key)。 */
   const toggleTableColumns = useCallback(async (table: string, database?: string) => {
@@ -932,12 +969,12 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                             table={t}
                             database={node.name}
                             supportsAlter={supportsAlter}
-                            selected={selected !== null && selected.table === t}
+                            selected={activeTableKey === makeTableTab(t, node.name).key}
                             expanded={expandedTables.has(t)}
                             columns={tableColumns[t] ?? []}
                             loading={tableColumnsLoading[t] === true}
                             actions={{
-                              onSelect: () => { setSelected({ table: t, database: node.name }); setCurrentDb(node.name); setMode('table') },
+                              onSelect: () =>{  openTableTab(t, node.name) },
                               onToggleColumns: () => void toggleTableColumns(t, node.name),
                               onShowDdl: () => void showTableDdl(t, node.name),
                               onColumns: () =>{  setDialog({ kind: 'columns', database: node.name, table: t }) },
@@ -956,19 +993,54 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
           </aside>
           <section className={css.contentGrid}>
             <div className={css.contentHeader}>
-              <button
-                type="button"
-                className={`${css.contentTab} ${mode === 'sql' ? css.contentTabActive : ''}`}
-                onClick={() =>{  setMode('sql') }}
-                aria-pressed={mode === 'sql'}
-              >SQL 查询</button>
-              <button
-                type="button"
-                className={`${css.contentTab} ${mode === 'table' ? css.contentTabActive : ''}`}
-                onClick={() =>{  setMode('table') }}
-                aria-pressed={mode === 'table'}
-              >表数据</button>
-              <span className={css.contentDetail}>{mode === 'sql' ? '执行查询、浏览数据和导出结果' : '浏览表数据(排序 / 分页 / WHERE 筛选 / 编辑 / 导出)'}</span>
+              {/* 统一 tab 条:查询标签 + 表数据标签混排;点表在左侧树开一个表标签。 */}
+              <div className={css.queryTabsRow} role="tablist" aria-label="工作台标签">
+                {queryTabs.map(tab => (
+                  <div key={`q-${tab.id}`} className={`${css.queryTab} ${activeTableKey === null && tab.id === activeQueryId ? css.queryTabActive : ''}`}>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeTableKey === null && tab.id === activeQueryId}
+                      className={css.queryTabName}
+                      onClick={() =>{  setActiveQueryId(tab.id); setActiveTableKey(null) }}
+                      title={tab.sql !== '' ? tab.sql : tab.name}
+                    >
+                      {tab.name}{tab.results.length > 0 ? ' ●' : ''}
+                    </button>
+                    {queryTabs.length > 1 && (
+                      <button
+                        type="button"
+                        className={css.queryTabClose}
+                        onClick={() =>{  closeQuery(tab.id) }}
+                        title={`关闭 ${tab.name}`}
+                        aria-label={`关闭 ${tab.name}`}
+                      ><IconCloseFill14 size={11} /></button>
+                    )}
+                  </div>
+                ))}
+                {tableTabs.map(tab => (
+                  <div key={`t-${tab.key}`} className={`${css.queryTab} ${activeTableKey === tab.key ? css.queryTabActive : ''}`}>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeTableKey === tab.key}
+                      className={css.queryTabName}
+                      onClick={() =>{  setActiveTableKey(tab.key) }}
+                      title={tab.database !== undefined ? `${tab.database}.${tab.table}` : tab.table}
+                    >
+                      {tab.table}
+                    </button>
+                    <button
+                      type="button"
+                      className={css.queryTabClose}
+                      onClick={() =>{  closeTableTab(tab.key) }}
+                      title={`关闭 ${tab.table}`}
+                      aria-label={`关闭 ${tab.table}`}
+                    ><IconCloseFill14 size={11} /></button>
+                  </div>
+                ))}
+                <button type="button" className={css.queryTabNew} onClick={newQuery} title="新建查询标签" aria-label="新建查询"><IconPlusOutline16 size={12} /> 新建查询</button>
+              </div>
               <span className={css.spacer} />
               {monitorSupported && (
                 <button
@@ -982,7 +1054,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
               )}
             </div>
             {connected ? (
-              mode === 'sql' ? (
+              activeTableKey === null ? (
                 <div className={css.sqlMode}>
                   <div className={css.sqlPane} style={{ height: sqlPaneHeight }}>
                     <div className={css.sqlBar}>
@@ -1007,33 +1079,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                       <button type="button" className={css.sqlBarBtn} onClick={formatCurrentSql} title="格式化 SQL" aria-label="格式化 SQL"><IconCodeOutline16 size={13} /></button>
                       <button type="button" className={`${css.sqlBarBtn} ${historyOpen ? css.sqlBarBtnActive : ''}`} onClick={toggleHistory} title="查询历史" aria-label="查询历史"><MetricIcon name="clock" size={13} /></button>
                     </div>
-                    {/* 查询标签条:仿 HubHex 多查询标签,「新建查询」追加空白标签。 */}
-                    <div className={css.queryTabsRow} role="tablist" aria-label="查询标签">
-                      {queryTabs.map(tab => (
-                        <div key={tab.id} className={`${css.queryTab} ${tab.id === activeQueryId ? css.queryTabActive : ''}`}>
-                          <button
-                            type="button"
-                            role="tab"
-                            aria-selected={tab.id === activeQueryId}
-                            className={css.queryTabName}
-                            onClick={() =>{  setActiveQueryId(tab.id); setMode('sql') }}
-                            title={tab.sql !== '' ? tab.sql : tab.name}
-                          >
-                            {tab.name}{tab.results.length > 0 ? ' ●' : ''}
-                          </button>
-                          {queryTabs.length > 1 && (
-                            <button
-                              type="button"
-                              className={css.queryTabClose}
-                              onClick={() =>{  closeQuery(tab.id) }}
-                              title={`关闭 ${tab.name}`}
-                              aria-label={`关闭 ${tab.name}`}
-                            ><IconCloseFill14 size={11} /></button>
-                          )}
-                        </div>
-                      ))}
-                      <button type="button" className={css.queryTabNew} onClick={newQuery} title="新建查询标签" aria-label="新建查询"><IconPlusOutline16 size={12} /> 新建查询</button>
-                    </div>
+                    {/* 查询/表标签条已上移到内容区头部(统一 tab 条)。 */}
                     {historyOpen && (
                       <div className={css.historyPanel}>
                         <div className={css.historyHeader}>
@@ -1116,19 +1162,22 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                   </div>
                 </div>
               ) : (
-                selected === null ? (
-                  <div className={css.placeholder}>选择左侧一个表查看数据(排序 / 分页 / WHERE 筛选 / NULL 高亮已就位)</div>
-                ) : (
-                  <DbDataGrid
-                    key={selected.table}
-                    connId={connId}
-                    table={selected.table}
-                    cmdPrefix={cmdPrefix}
-                    {...(selected.database !== undefined ? { database: selected.database } : {})}
-                    onExport={(orderBy, orderDir, whereFilter) =>
-                      void exportTableExcel(selected.table, selected.database, orderBy, orderDir, whereFilter)}
-                  />
-                )
+                (() => {
+                  const activeTable = tableTabs.find(t => t.key === activeTableKey)
+                  /* v8 ignore next -- activeTableKey 非 null 时必有对应标签,取不到为不可达防御 */
+                  if (activeTable === undefined) return null
+                  return (
+                    <DbDataGrid
+                      key={activeTable.key}
+                      connId={connId}
+                      table={activeTable.table}
+                      cmdPrefix={cmdPrefix}
+                      {...(activeTable.database !== undefined ? { database: activeTable.database } : {})}
+                      onExport={(orderBy, orderDir, whereFilter) =>
+                        void exportTableExcel(activeTable.table, activeTable.database, orderBy, orderDir, whereFilter)}
+                    />
+                  )
+                })()
               )
             ) : (
               <div className={css.placeholder}>连接数据库后将在此显示 SQL 编辑器</div>

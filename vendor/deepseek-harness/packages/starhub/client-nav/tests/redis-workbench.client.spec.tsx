@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { RedisWorkbench } from '../src/client/redis/RedisWorkbench.tsx'
+import { buildCreateKeyCommand, RedisWorkbench } from '../src/client/redis/RedisWorkbench.tsx'
 import type { RustAsset } from '../src/client/store.ts'
 
 type InvokeHandler = (cmd: string, args?: Record<string, unknown>) => unknown
@@ -695,6 +695,95 @@ describe('RedisWorkbench actions', () => {
     } finally {
       restoreErr()
     }
+  })
+
+  it('creates a hash key with field/value through the type selector', async () => {
+    const invoke = installTauri()
+    const restore = stubInvoke(invoke)
+    try {
+      renderWorkbench()
+      await expandDb0WithKeys()
+      fireEvent.click(screen.getByRole('button', { name: '新建 Key' }))
+      await waitFor(() =>{  expect(screen.getByLabelText('key 名')).toBeTruthy() })
+      // 选类型 hash → 出现字段名输入;值输入标签随类型变化。
+      fireEvent.change(screen.getByLabelText('类型'), { target: { value: 'hash' } })
+      await waitFor(() =>{  expect(screen.getByLabelText('字段名')).toBeTruthy() })
+      fireEvent.change(screen.getByLabelText('key 名'), { target: { value: 'h1' } })
+      fireEvent.change(screen.getByLabelText('字段名'), { target: { value: 'f1' } })
+      fireEvent.change(screen.getByLabelText('值(hash)'), { target: { value: 'v1' } })
+      fireEvent.click(screen.getByText('创建'))
+      await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_execute', { connId: 'c1', command: 'HSET h1 f1 v1' }) })
+      await waitFor(() =>{  expect(screen.getByText('Key 已创建')).toBeTruthy() })
+    } finally {
+      restore()
+    }
+  })
+
+  it('creates a key into the chosen db, selecting it first when it differs', async () => {
+    const invoke = installTauri()
+    const restore = stubInvoke(invoke)
+    try {
+      renderWorkbench()
+      await expandDb0WithKeys()
+      fireEvent.click(screen.getByRole('button', { name: '新建 Key' }))
+      await waitFor(() =>{  expect(screen.getByLabelText('目标 DB')).toBeTruthy() })
+      // 默认目标 = 当前展开库 db0;改选 db3 → 先 select 再 SET,并刷新 db3 计数。
+      fireEvent.change(screen.getByLabelText('目标 DB'), { target: { value: '3' } })
+      fireEvent.change(screen.getByLabelText('key 名'), { target: { value: 'k3' } })
+      fireEvent.click(screen.getByText('创建'))
+      await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_select', { connId: 'c1', db: 3 }) })
+      await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_execute', { connId: 'c1', command: 'SET k3 ""' }) })
+      await waitFor(() =>{  expect(screen.getByText('Key 已创建')).toBeTruthy() })
+    } finally {
+      restore()
+    }
+  })
+
+  it('blocks hash creation without a field and zset creation without a numeric score', async () => {
+    const invoke = installTauri()
+    const restore = stubInvoke(invoke)
+    try {
+      renderWorkbench()
+      await expandDb0WithKeys()
+      fireEvent.click(screen.getByRole('button', { name: '新建 Key' }))
+      await waitFor(() =>{  expect(screen.getByLabelText('key 名')).toBeTruthy() })
+      fireEvent.change(screen.getByLabelText('key 名'), { target: { value: 'k' } })
+      // hash 缺字段名:创建按钮禁用。
+      fireEvent.change(screen.getByLabelText('类型'), { target: { value: 'hash' } })
+      await waitFor(() =>{  expect(screen.getByLabelText('字段名')).toBeTruthy() })
+      expect((screen.getByText<HTMLButtonElement>('创建')).disabled).toBe(true)
+      // zset 分值非法:按钮可用但 createKey 拦截并提示,不下发命令。
+      fireEvent.change(screen.getByLabelText('类型'), { target: { value: 'zset' } })
+      await waitFor(() =>{  expect(screen.getByLabelText('分值')).toBeTruthy() })
+      fireEvent.change(screen.getByLabelText('分值'), { target: { value: 'abc' } })
+      fireEvent.click(screen.getByText('创建'))
+      await waitFor(() =>{  expect(screen.getByText('zset 需要合法的数字分值')).toBeTruthy() })
+      expect(invoke).not.toHaveBeenCalledWith('db_redis_execute', expect.anything())
+    } finally {
+      restore()
+    }
+  })
+
+  describe('buildCreateKeyCommand(新建 key 按类型组命令)', () => {
+    const base = { key: 'k', type: 'string', value: 'v', db: 0, field: '', score: '' }
+
+    it('string → SET,list → RPUSH,set → SADD', () => {
+      expect(buildCreateKeyCommand(base)).toBe('SET k v')
+      expect(buildCreateKeyCommand({ ...base, type: 'list' })).toBe('RPUSH k v')
+      expect(buildCreateKeyCommand({ ...base, type: 'set' })).toBe('SADD k v')
+    })
+
+    it('hash → HSET(缺字段名返回 null),zset → ZADD(非法分值返回 null)', () => {
+      expect(buildCreateKeyCommand({ ...base, type: 'hash', field: 'f' })).toBe('HSET k f v')
+      expect(buildCreateKeyCommand({ ...base, type: 'hash' })).toBeNull()
+      expect(buildCreateKeyCommand({ ...base, type: 'zset', score: '1.5' })).toBe('ZADD k 1.5 v')
+      expect(buildCreateKeyCommand({ ...base, type: 'zset', score: 'x' })).toBeNull()
+      expect(buildCreateKeyCommand({ ...base, type: 'zset' })).toBeNull()
+    })
+
+    it('特殊字符 key/值走 redisQuote 转义', () => {
+      expect(buildCreateKeyCommand({ ...base, key: 'my key', value: "it's" })).toBe('SET "my key" "it\'s"')
+    })
   })
 
   it('runs a CLI command on Enter and via the execute button, refreshing the expanded DB', async () => {

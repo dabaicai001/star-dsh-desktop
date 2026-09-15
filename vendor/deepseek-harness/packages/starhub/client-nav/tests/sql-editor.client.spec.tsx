@@ -59,6 +59,18 @@ describe('SqlEditor', () => {
     const { unmount } = render(<SqlEditor value="" onChange={vi.fn()} schema={schema} />)
     unmount()
   })
+
+  it('routes doc changes to the latest onChange prop (no stale tab closure)', () => {
+    // 回归:view 只建一次,直捕首个 onChange 会把切标签后的受控同步/输入
+    // 写回旧标签(覆盖其 SQL 草稿)。rerender 后必须走最新 onChange。
+    const first = vi.fn()
+    const latest = vi.fn()
+    const { rerender, unmount } = render(<SqlEditor value="a" onChange={first} />)
+    rerender(<SqlEditor value="b" onChange={latest} />)
+    expect(first).not.toHaveBeenCalled()
+    expect(latest).toHaveBeenCalledWith('b')
+    unmount()
+  })
 })
 
 describe('SQL completion behavior', () => {

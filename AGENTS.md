@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.118.6(**CI 构建失败**:SFTP 测试文件未使用参数 `args` 导致 TypeScript TS6133 错误(`noUnusedParameters`),改为 `_args`。) |
+| 当前版本 | v0.119.0(**DB 工作台内容区统一 tab 条**:点开一个表即在 tab 条开一个独立的表数据标签(Navicat 风格),查询标签与表标签混排、可随意切换/关闭,同表重复点击只激活不重复开;原「SQL 查询 / 表数据」双模式切换按钮移除,查询标签条从 SQL 面板内上移到内容区头部。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-14 (v0.118.6)*
+*最后更新: 2026-09-15 (v0.119.0)*

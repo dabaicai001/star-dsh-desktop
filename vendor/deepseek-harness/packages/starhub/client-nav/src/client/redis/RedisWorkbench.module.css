@@ -81,5 +81,9 @@
 .modal { display: flex; width: min(380px, calc(100vw - 32px)); flex-direction: column; gap: 10px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 7px; padding: 16px; background: var(--dsw-alias-bg-layer-2); box-shadow: var(--dsw-shadow-lv3); }
 .modalTitle { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 650; }
 .modalActions { display: flex; justify-content: flex-end; gap: 8px; }
+/* 新建 key 弹窗:目标 DB / 类型选择器行。 */
+.modalFieldRow { display: flex; gap: 8px; }
+.modalSelect { flex: 1; min-width: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; outline: none; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-size: 12px; padding: 6px 8px; }
+.modalSelect:focus { border-color: var(--dsw-alias-state-business-primary); }
 .toast { position: absolute; z-index: 3; bottom: 18px; left: 50%; transform: translateX(-50%); border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 8px 14px; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3); font-size: 12px; }
 @media (max-width: 720px) { .body { flex-direction: column; } .side { width: auto; min-width: 0; min-height: 38%; border-right: 0; border-bottom: 1px solid var(--dsw-alias-border-l2); } }
