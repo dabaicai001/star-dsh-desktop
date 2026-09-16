@@ -398,6 +398,27 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
   // 表数据标签,null = 活动项为 activeQueryId 指向的查询标签。
   const [tableTabs, setTableTabs] = useState<TableTab[]>([])
   const [activeTableKey, setActiveTableKey] = useState<string | null>(null)
+  // tab 条滚动:「新建查询」钮钉在滚动区外(永不裁切),滚动区只做横向细滚动条。
+  const tabsScrollRef = useRef<HTMLDivElement>(null)
+  const tabNodeRefs = useRef(new Map<string, HTMLDivElement>())
+  // 纵向滚轮转横向:React 合成 onWheel 是 passive(无法 preventDefault),改挂原生监听。
+  useEffect(() => {
+    const el = tabsScrollRef.current
+    /* v8 ignore next -- ref 在挂载后即就绪,空分支不可达 */
+    if (el === null) return
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY === 0) return
+      event.preventDefault()
+      el.scrollLeft += event.deltaY
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () =>{  el.removeEventListener('wheel', onWheel) }
+  }, [])
+  // 活动标签变化(点表开新标签/切标签)时把它滚进可视区;jsdom 无 scrollIntoView,空调用跳过。
+  const activeTabDomKey = activeTableKey !== null ? `t-${activeTableKey}` : `q-${activeQueryId}`
+  useEffect(() => {
+    tabNodeRefs.current.get(activeTabDomKey)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [activeTabDomKey, queryTabs.length, tableTabs.length])
   // SQL 编辑区高度(px):SQL 模式内可拖拽分隔条调整,夹在 min/max 间,内存态。
   const [sqlPaneHeight, setSqlPaneHeight] = useState(300)
   const sqlResizeRef = useRef(false)
@@ -995,8 +1016,13 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
             <div className={css.contentHeader}>
               {/* 统一 tab 条:查询标签 + 表数据标签混排;点表在左侧树开一个表标签。 */}
               <div className={css.queryTabsRow} role="tablist" aria-label="工作台标签">
+                <div className={css.queryTabsScroll} ref={tabsScrollRef}>
                 {queryTabs.map(tab => (
-                  <div key={`q-${tab.id}`} className={`${css.queryTab} ${activeTableKey === null && tab.id === activeQueryId ? css.queryTabActive : ''}`}>
+                  <div
+                    key={`q-${tab.id}`}
+                    ref={(el) =>{  if (el !== null) tabNodeRefs.current.set(`q-${tab.id}`, el); else tabNodeRefs.current.delete(`q-${tab.id}`) }}
+                    className={`${css.queryTab} ${activeTableKey === null && tab.id === activeQueryId ? css.queryTabActive : ''}`}
+                  >
                     <button
                       type="button"
                       role="tab"
@@ -1019,7 +1045,11 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                   </div>
                 ))}
                 {tableTabs.map(tab => (
-                  <div key={`t-${tab.key}`} className={`${css.queryTab} ${activeTableKey === tab.key ? css.queryTabActive : ''}`}>
+                  <div
+                    key={`t-${tab.key}`}
+                    ref={(el) =>{  if (el !== null) tabNodeRefs.current.set(`t-${tab.key}`, el); else tabNodeRefs.current.delete(`t-${tab.key}`) }}
+                    className={`${css.queryTab} ${activeTableKey === tab.key ? css.queryTabActive : ''}`}
+                  >
                     <button
                       type="button"
                       role="tab"
@@ -1039,6 +1069,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                     ><IconCloseFill14 size={11} /></button>
                   </div>
                 ))}
+                </div>
                 <button type="button" className={css.queryTabNew} onClick={newQuery} title="新建查询标签" aria-label="新建查询"><IconPlusOutline16 size={12} /> 新建查询</button>
               </div>
               <span className={css.spacer} />

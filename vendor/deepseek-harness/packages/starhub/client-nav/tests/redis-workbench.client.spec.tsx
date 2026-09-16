@@ -273,6 +273,36 @@ describe('RedisWorkbench connect & DB tree', () => {
     }
   })
 
+  it('expanding a size-only refreshed db (new key into a collapsed db) still loads its keys', async () => {
+    const invoke = installTauri()
+    const restore = stubInvoke(invoke)
+    try {
+      renderWorkbench()
+      await waitConnected()
+      // 新建 key 到收起的 db2(全程不展开任何库):先 select 再 SET,最后只刷新
+      // db2 的 size —— 产生「有 size、无键」的占位记录(回归:它曾被误判为完整
+      // 缓存,展开后显示「暂无 key。」)。
+      fireEvent.click(screen.getByRole('button', { name: '新建 Key' }))
+      await waitFor(() =>{  expect(screen.getByLabelText('目标 DB')).toBeTruthy() })
+      fireEvent.change(screen.getByLabelText('目标 DB'), { target: { value: '2' } })
+      fireEvent.change(screen.getByLabelText('key 名'), { target: { value: 'k2' } })
+      fireEvent.click(screen.getByText('创建'))
+      await waitFor(() =>{  expect(screen.getByText('Key 已创建')).toBeTruthy() })
+      expect(invoke).not.toHaveBeenCalledWith('db_redis_scan', expect.anything())
+      // db2 行出现计数徽标(size-only 占位),但键尚未加载。
+      await waitFor(() =>{  expect(within(screen.getByRole('button', { name: '数据库 db2' })).getByText('2')).toBeTruthy() })
+      // 展开 db2:不得命中占位缓存,必须真实 SCAN 并把键渲染出来。
+      clickDb(2)
+      await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_scan', expect.objectContaining({ connId: 'c1' })) })
+      const userFolder = await waitFor(() =>{  return screen.getByLabelText('文件夹 user') })
+      fireEvent.click(userFolder)
+      await waitFor(() =>{  expect(screen.getByTitle('user:1')).toBeTruthy() })
+      expect(screen.queryByText('暂无 key。')).toBeNull()
+    } finally {
+      restore()
+    }
+  })
+
   it('surfaces a key-list error with a working retry (Error and plain-string)', async () => {
     const invoke = installTauri({ scanError: new Error('scan-fail') })
     const restore = stubInvoke(invoke)

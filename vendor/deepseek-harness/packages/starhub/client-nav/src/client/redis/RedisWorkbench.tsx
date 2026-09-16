@@ -85,12 +85,15 @@ interface DbLoadable {
   error: string | null
   /** DBSIZE 键总数(展开时与 SCAN 一起刷新)。 */
   size: number
-  /** 本次加载使用的搜索匹配模式(缓存命中判定用)。 */
-  match: string
+  /** 本次加载使用的搜索匹配模式(缓存命中判定用);null = 从未加载过键——
+      新建 key/FLUSHDB 后只刷新 size 会基于 EMPTY 建出「有 size 无键」的占位
+      记录,若 match 也是 '' 会被 toggleDb 误判为完整缓存而跳过加载(展开后
+      显示「暂无 key」),故未加载恒为 null,命中判定天然失败。 */
+  match: string | null
 }
 
 /** 未加载 db 的占位记录(patchDbList 的合并基底)。 */
-const EMPTY_DB_LOADABLE: DbLoadable = { keys: [], cursor: 0, complete: true, loading: false, error: null, size: 0, match: '' }
+const EMPTY_DB_LOADABLE: DbLoadable = { keys: [], cursor: 0, complete: true, loading: false, error: null, size: 0, match: null }
 
 /** 无展开文件夹的占位集(toggleKeyFolder 从不原地改动,可安全共享)。 */
 const EMPTY_FOLDER_PATHS: ReadonlySet<string> = new Set()
@@ -291,7 +294,8 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     try {
       const { keys, cursor, complete } = await redisScanAccumulate(
         (cur, m, count) => redisScan(connId, cur, m, count),
-        cached.cursor, cached.match === '' ? undefined : cached.match, cached.keys, cached.keys.length + SCAN_BATCH_LIMIT,
+        /* v8 ignore next -- 续传守卫要求 complete=false,而 match=null(从未加载)的记录恒 complete=true,null 臂不可达 */
+        cached.cursor, cached.match !== null && cached.match !== '' ? cached.match : undefined, cached.keys, cached.keys.length + SCAN_BATCH_LIMIT,
       )
       patchDbList(db, { keys, cursor, complete, loading: false, error: null })
     } catch (e: unknown) {
@@ -383,7 +387,8 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
   }
 
   // 搜索词防抖:展开 db 的搜索词与其缓存匹配串不一致时,停敲 350ms 自动重扫;
-  // toggleDb 的首次加载(entry 未建)不在此处触发,避免双请求。
+  // toggleDb 的首次加载(entry 未建)不在此处触发,避免双请求;加载进行中
+  // (toggleDb 首次加载在途)同样跳过,加载落地后 dbLists 变化会重估本效应。
   const expandedSearch = expandedDb === null ? '' : searchFor(expandedDb)
   useEffect(() => {
     if (expandedDb === null) return
@@ -391,7 +396,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     if (connId === null) return
     const entry = dbLists.get(expandedDb)
     const desired = toScanMatch(expandedSearch.trim())
-    if (entry === undefined || entry.match === desired) return
+    if (entry === undefined || entry.loading || entry.match === desired) return
     const timer = window.setTimeout(() =>{  void loadKeysForDb(connId, expandedDb, desired) }, SEARCH_DEBOUNCE_MS)
     return () =>{  window.clearTimeout(timer) }
   }, [expandedDb, expandedSearch, dbLists, loadKeysForDb])

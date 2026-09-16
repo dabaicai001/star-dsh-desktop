@@ -196,7 +196,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   // 命令广播(需求 6 broadcast 子集):弹层会话列表 + 发送结果提示。
   const [broadcastSessions, setBroadcastSessions] = useState<BroadcastSession[] | null>(null)
   const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null)
-  // ZMODEM(rz/sz):远端执行 rz(我们发送)或 sz(我们接收)时弹出传输条。
+  // ZMODEM(rz/sz):远端执行 rz(我们发送)或 sz(我们接收)时弹出传输弹窗。
   const zmodemInputRef = useRef<HTMLInputElement>(null)
   const [zmodemPromptVisible, setZmodemPromptVisible] = useState(false)
   const [zmodemStatus, setZmodemStatus] = useState('')
@@ -817,21 +817,27 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
               onChange={(event) => void onZmodemFilesSelected(event)}
             />
             {zmodemPromptVisible && (
-              <div className={css.zmodemBar} role="status" aria-label="ZMODEM 传输">
-                <span className={css.zmodemLabel}>ZMODEM</span>
-                <span className={css.zmodemStatus}>{zmodemStatus}</span>
-                {zmodemFileName !== '' && (
-                  <span className={css.zmodemFile}>
-                    {zmodemFileName} ({formatSize(zmodemTransferred)} / {formatSize(zmodemTotal)})
-                  </span>
-                )}
-                <div className={css.zmodemTrack} aria-hidden="true">
-                  <div className={css.zmodemFill} style={{ width: `${zmodemProgress}%` }} />
+              <div className={css.zmodemBackdrop}>
+                <div className={css.zmodemDialog} role="dialog" aria-label="ZMODEM 传输">
+                  <div className={css.zmodemHead}>
+                    <span className={css.zmodemLabel}>ZMODEM</span>
+                    <span className={css.zmodemStatus}>{zmodemStatus}</span>
+                  </div>
+                  {zmodemFileName !== '' && (
+                    <span className={css.zmodemFile}>
+                      {zmodemFileName} ({formatSize(zmodemTransferred)} / {formatSize(zmodemTotal)})
+                    </span>
+                  )}
+                  <div className={css.zmodemTrack} aria-hidden="true">
+                    <div className={css.zmodemFill} style={{ width: `${zmodemProgress}%` }} />
+                  </div>
+                  <div className={css.zmodemActions}>
+                    {zmodemType === 'send' && (
+                      <button type="button" className={css.zmodemBtnPrimary} onClick={chooseZmodemFiles}>选择文件</button>
+                    )}
+                    <button type="button" className={css.zmodemBtn} onClick={cancelZmodem}>取消</button>
+                  </div>
                 </div>
-                {zmodemType === 'send' && (
-                  <button type="button" className={css.zmodemBtn} onClick={chooseZmodemFiles}>选择文件</button>
-                )}
-                <button type="button" className={css.zmodemBtn} onClick={cancelZmodem}>取消</button>
               </div>
             )}
             <div ref={host} className={css.terminal} />

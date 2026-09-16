@@ -430,6 +430,33 @@ describe('DbWorkbench', () => {
     unmount()
   })
 
+  it('tab 条:纵向滚轮转横向滚动,活动标签挂 scrollIntoView 跟随', async () => {
+    stubInvoke({})
+    const scrollIntoView = vi.fn()
+    ;(Element.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView = scrollIntoView
+    try {
+      const { unmount } = render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
+      await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
+      // 挂载后活动标签「查询 1」已触发一次 scrollIntoView 跟随。
+      expect(scrollIntoView).toHaveBeenCalled()
+      // 滚轮 deltaY 转成横向 scrollLeft(jsdom 无布局,scrollLeft 以可写属性模拟)。
+      const tablist = screen.getByRole('tablist', { name: '工作台标签' })
+      const scroller = tablist.firstElementChild as HTMLElement
+      Object.defineProperty(scroller, 'scrollLeft', { value: 0, writable: true, configurable: true })
+      fireEvent.wheel(scroller, { deltaY: 120 })
+      expect(scroller.scrollLeft).toBe(120)
+      // deltaY = 0 不滚动。
+      fireEvent.wheel(scroller, { deltaY: 0 })
+      expect(scroller.scrollLeft).toBe(120)
+      // 「新建查询」钮钉在滚动区外(tablist 直接子级),不随滚动裁切。
+      expect(scroller.querySelector('[aria-label="新建查询"]')).toBeNull()
+      expect(screen.getByRole('button', { name: '新建查询' })).toBeTruthy()
+      unmount()
+    } finally {
+      delete (Element.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView
+    }
+  })
+
   it('点开多个表各开一个 tab,重复点同表只激活不重复开', async () => {
     stubInvoke({ tables: [{ name: 'users' }, { name: 'orders' }] })
     const { container, unmount } = render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)

@@ -111,11 +111,19 @@
 .historySql { font-family: var(--ds-font-family-code); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sqlLabel { font-weight: 600; color: var(--dsw-alias-label-primary); font-size: 12px; }
 
-/* 内容区头部统一 tab 条:查询标签 + 表数据标签混排,超宽横向滚动。 */
-.queryTabsRow { display: flex; flex: 1; min-width: 0; align-items: center; gap: 4px; padding: 0 2px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-scrollbar-bg-l1) transparent; align-self: stretch; }
+/* 内容区头部统一 tab 条:查询标签 + 表数据标签混排,超宽横向滚动。
+   「新建查询」钮钉在滚动区外(永不随滚动裁切);滚动区用 4px 细滚动条,避免
+   Chromium 默认滚动条(~12px)挤占 42px 头部、遮挡标签。 */
+.queryTabsRow { display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; padding: 0 2px; align-self: stretch; }
+.queryTabsScroll { display: flex; flex: 1; min-width: 0; align-items: center; gap: 4px; overflow-x: auto; align-self: stretch; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-scrollbar-bg-l1) transparent; }
+.queryTabsScroll::-webkit-scrollbar { height: 4px; }
+.queryTabsScroll::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--dsw-alias-scrollbar-bg-l1); }
+.queryTabsScroll::-webkit-scrollbar-thumb:hover { background: var(--dsw-alias-scrollbar-hover-l1); }
+.queryTabsScroll::-webkit-scrollbar-track { background: transparent; }
 .queryTab { display: inline-flex; flex: none; align-items: center; gap: 2px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 2px 4px 2px 8px; background: transparent; }
 .queryTabActive { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-tertiary); }
-.queryTabName { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 11px; cursor: pointer; padding: 2px 0; white-space: nowrap; align-self: center; display: inline-flex; align-items: center; }
+/* 长表名限宽省略,避免单个标签挤占整条 tab 条。 */
+.queryTabName { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 11px; cursor: pointer; padding: 2px 0; white-space: nowrap; align-self: center; display: inline-flex; align-items: center; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .queryTabActive .queryTabName { color: var(--dsw-alias-state-business-primary); font-weight: 650; }
 .queryTabClose { display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1; cursor: pointer; padding: 0; }
 .queryTabClose:hover { color: var(--dsw-alias-state-error-primary); background: var(--dsw-alias-interactive-bg-hover); }

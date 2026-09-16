@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.119.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.119.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,10 +48,11 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.119.0 (2026-09-15)
-- ✨ **DB 工作台内容区统一 tab 条**:点开一个表即在 tab 条开一个独立的表数据标签(Navicat 风格),查询标签与表标签混排、可随意切换/关闭,同表重复点击只激活不重复开;原「SQL 查询 / 表数据」双模式切换按钮移除,查询标签条从 SQL 面板内上移到内容区头部。
-- ✨ **Redis 新建 Key 可选目标 DB 与类型**:新建弹窗新增目标 db 选择器(默认当前展开库,跨库创建先 SELECT 再写入,防库漂移)与类型选择器(string/hash/list/set/zset);hash 需填字段名、zset 需填数字分值(校验拦截),list/set 以输入值作首个成员。
-- 🐛 **SQL 多标签文本互相覆盖**:SqlEditor 的 CodeMirror view 只建一次,而 `onChange`/`onExecute` 闭包直捕首次挂载时的活动标签,开第二个查询标签后输入与受控同步全部写回第一个标签(覆盖其草稿),Mod-Enter 执行结果也落错标签;改为经 ref 惰性取最新回调。
+### v0.119.1 (2026-09-16)
+- 🐛 **DB 工作台 tab 条遮挡与溢出体验**:标签溢出时 Chromium 默认横向滚动条(约 12px)挤占 42px 头部、遮挡标签,「新建查询」钮随标签一起滚出可视区被裁切;改为「新建查询」钉在滚动区外常驻可见,滚动区改用 4px 细滚动条、支持纵向滚轮转横向滚动,活动标签自动滚入视野,长表名限宽省略。
+- 🐛 **侧栏「工具」入口与「设置」透明度/几何不一致**:工具按钮文字色为 tertiary(与设置行并排显得发灰)且宽度比设置行窄 4px、rail(收起)态缺 36px 圆形样式;与「设置」触发行对齐为同一几何(calc(100% + 4px) 行宽 / 36px rail 圆钮)与 label-primary 配色。
+- 🐛 **rz/sz 文件传输改为居中弹窗**:远端执行 rz 时的 ZMODEM 提示从终端顶部内联横条(易被忽略、挤压终端首行)改为居中模态弹窗,含状态、文件名、进度条与「选择文件」「取消」按钮,接收(sz)进度同弹窗展示。
+- 🐛 **Redis 新建 key 后展开目标 db 显示「暂无 key」**:新建 key(或 FLUSHDB)到收起状态的 db 只刷新 DBSIZE,会基于占位记录建出「有 size、无键」且 match 恰为 '' 的缓存项,之后展开该 db 被误判为完整缓存而跳过 SCAN(明明有 key 却显示「暂无 key。」);改为从未加载的记录 match 恒为 null,缓存命中判定天然失败,展开必然真实加载键列表。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

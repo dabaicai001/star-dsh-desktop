@@ -929,19 +929,40 @@
   filter: brightness(1.1);
 }
 
-/* ── ZMODEM transfer bar ────────────────────────────────────────── */
+/* ── ZMODEM transfer dialog ─────────────────────────────────────── */
 
-.zmodemBar {
+/* rz/sz 触发时以居中弹窗呈现(旧版内联传输条挤压终端顶部,易被忽略)。 */
+.zmodemBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
   display: flex;
-  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--dsw-alias-bg-mask-3);
+}
+
+.zmodemDialog {
+  display: flex;
+  width: min(420px, 92vw);
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
+.zmodemHead {
+  display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-2);
 }
 
 .zmodemLabel {
+  flex: none;
   color: var(--dsw-alias-label-tertiary);
   font-size: 10px;
   font-weight: 700;
@@ -960,12 +981,12 @@
   font-family: var(--ds-font-family-code);
   font-size: 10px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .zmodemTrack {
-  min-width: 60px;
-  flex: 1;
-  height: 3px;
+  height: 4px;
   border-radius: 2px;
   overflow: hidden;
   background: var(--dsw-alias-border-l1);
@@ -978,20 +999,37 @@
   transition: width 150ms linear;
 }
 
-.zmodemBtn {
+.zmodemActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.zmodemBtn,
+.zmodemBtnPrimary {
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 4px;
-  padding: 3px 9px;
+  padding: 4px 14px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.zmodemBtnPrimary {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-inverted);
 }
 
 .zmodemBtn:hover {
   border-color: var(--dsw-alias-state-business-primary);
   color: var(--dsw-alias-state-business-primary);
+}
+
+.zmodemBtnPrimary:hover {
+  filter: brightness(1.08);
 }
 
 /* ── Responsive ─────────────────────────────────────────────────── */
