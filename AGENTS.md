@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.121.0(**升级内置 DeepSeek Harness 至上游 master(0.1.6-alpha.1, 2026-09-15)**:`vendor/deepseek-harness` 从 `dsh-v0.1.1-rc.2` 快照替换到 `0d1f500`,并重放 StarHub 全部补丁(DiffBlock 双列 LCS 对比、侧栏 StarHub 品牌、ui-chat 文件打开走工作台等)。随升级迁移:apiproxy/`IApiClient` 撤除,设置写入与 LLM 目录改走 `ctx.remote`(api-gateway);`web-react` 并入 `ui-renderer`(本会话改为 synthesized 标准 seat);会话快照节点/流式投影迁至 ui-chat Chat target;输入附件 API 更名(`createDrafts`/`addAttachments`);InputTrigger 图标支持自定义组件;全局槽位新增 `usePanelInfo`/`useSessionPendingInteraction`/`useResource` 席位。DiffBlock 的 +/− 统计改为 LCS 口径(共享上下文行不计),折叠行与展开卡片一致。) |
+| 当前版本 | v0.121.1(**修复 CI `package-dsh-runtime` 构建失败**:`python/sdk-runtime/package.json` 补齐 `dsh-web-app` 运行时依赖闭包缺失的 6 个 workspace peer(`dsh-agent-default-model` / `dsh-client-file-upload` / `dsh-native-command` / `dsh-util-workspace-path` / `dsh-workspace` / `dsh-host-directory-picker`),`verify-runtime-closure` 通过(4 presets / 237 包闭包闭合)。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-18 (v0.121.0)*
+*最后更新: 2026-09-18 (v0.121.1)*

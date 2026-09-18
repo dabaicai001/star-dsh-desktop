@@ -9,6 +9,11 @@
 
 ---
 
+## [0.121.1] - 2026-09-18
+
+### 修复
+- **修复 CI `package-dsh-runtime` 构建失败**:`python/sdk-runtime/package.json` 补齐 `dsh-web-app` 运行时依赖闭包缺失的 6 个 workspace peer(`dsh-agent-default-model` / `dsh-client-file-upload` / `dsh-native-command` / `dsh-util-workspace-path` / `dsh-workspace` / `dsh-host-directory-picker`),`verify-runtime-closure` 通过(4 presets / 237 包闭包闭合)。
+
 ## [0.121.0] - 2026-09-18
 
 ### 变更
