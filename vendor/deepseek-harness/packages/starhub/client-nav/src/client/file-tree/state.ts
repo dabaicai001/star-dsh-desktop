@@ -4,7 +4,7 @@
  * scope 共享——同一裸 source 桥范式(one-handle-one-scope,同
  * connectionManager / aiChat / fileViewer)。
  */
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
 /** 文件树桥状态:当前会话右侧列是否切到「文件树」视图。 */
 export interface FileTreeState {

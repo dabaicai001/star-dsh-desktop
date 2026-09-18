@@ -4,7 +4,7 @@
  * source 桥范式(one-handle-one-scope,同 fileTree / execRecords)。
  * open 携带落地 Tab:胶囊点击以分支管理为首要意图,落到「分支」Tab。
  */
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
 /** Git 工作台 Tab(变更 / 历史 / 分支)。 */
 export type GitWorkbenchTab = 'changes' | 'history' | 'branches'

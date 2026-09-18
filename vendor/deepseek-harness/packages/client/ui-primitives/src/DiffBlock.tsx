@@ -95,6 +95,9 @@ type SplitRow =
   | { span: { kind: 'path' | 'gap'; text: string } }
   | { left: SideCell; right: SideCell }
 
+/** One aligned before|after cell pair; {@link pairSides} emits only this shape. */
+type PairRow = { left: SideCell; right: SideCell }
+
 /* v8 ignore next 3 -- closed-union backstop; only reached if a row kind is forged */
 function assertNever(value: never): never {
   throw new Error(`unreachable diff row kind: ${String(value)}`)
@@ -125,27 +128,27 @@ const ctx = (text: string): NonNullable<SideCell> => ({ kind: 'context', text })
  * before | after. Purely presentational: footer totals and copied text come
  * from {@link buildStackRows} and are unaffected.
  */
-function zipAdjacentDelAddRuns(rows: readonly SplitRow[]): SplitRow[] {
-  const out: SplitRow[] = []
+function zipAdjacentDelAddRuns(rows: readonly PairRow[]): PairRow[] {
+  const out: PairRow[] = []
   let index = 0
   while (index < rows.length) {
     const row = rows[index]!
-    if ('span' in row || row.left === null || row.right !== null) {
+    if (row.left === null || row.right !== null) {
       out.push(row)
       index++
       continue
     }
-    const dels: Array<{ left: SideCell; right: SideCell }> = []
+    const dels: PairRow[] = []
     while (index < rows.length) {
       const candidate = rows[index]
-      if (candidate === undefined || 'span' in candidate || candidate.left === null || candidate.right !== null) break
+      if (candidate === undefined || candidate.left === null || candidate.right !== null) break
       dels.push(candidate)
       index++
     }
-    const adds: Array<{ left: SideCell; right: SideCell }> = []
+    const adds: PairRow[] = []
     while (index < rows.length) {
       const candidate = rows[index]
-      if (candidate === undefined || 'span' in candidate || candidate.right === null || candidate.left !== null) break
+      if (candidate === undefined || candidate.right === null || candidate.left !== null) break
       adds.push(candidate)
       index++
     }
@@ -168,8 +171,8 @@ function zipAdjacentDelAddRuns(rows: readonly SplitRow[]): SplitRow[] {
  * common-subsequence guidance); {@link zipAdjacentDelAddRuns} folds either
  * walk result into side-by-side pairs afterwards.
  */
-function pairSides(oldLines: readonly string[], newLines: readonly string[]): SplitRow[] {
-  const rows: SplitRow[] = []
+function pairSides(oldLines: readonly string[], newLines: readonly string[]): PairRow[] {
+  const rows: PairRow[] = []
   let start = 0
   const minSide = Math.min(oldLines.length, newLines.length)
   while (start < minSide && oldLines[start] === newLines[start]) start++
@@ -191,9 +194,9 @@ function pairSides(oldLines: readonly string[], newLines: readonly string[]): Sp
 
   const midOld = oldLines.slice(start, endOld)
   const midNew = newLines.slice(start, endNew)
-  const delRow = (text: string): SplitRow => ({ left: { kind: 'del', text }, right: null })
-  const addRow = (text: string): SplitRow => ({ left: null, right: { kind: 'add', text } })
-  const midRows: SplitRow[] = []
+  const delRow = (text: string): PairRow => ({ left: { kind: 'del', text }, right: null })
+  const addRow = (text: string): PairRow => ({ left: null, right: { kind: 'add', text } })
+  const midRows: PairRow[] = []
   if (midOld.length === 0) {
     for (const text of midNew) midRows.push(addRow(text))
   } else if (midNew.length === 0 || midOld.length * midNew.length > ALIGN_TABLE_CELL_CAP) {

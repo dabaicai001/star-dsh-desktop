@@ -14,7 +14,7 @@
  */
 import {
   createSnapshotStore, type SnapshotStore,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from '@deepseek-ai/dsh-client-store'
 import { routePrefixForAsset, STARHUB_SUBCATEGORIES, type StarHubAsset } from './sections.ts'
 
 /** Rust get_assets 返回的 Asset 序列化形态(与 src-tauri/src/commands/asset.rs 一致)。 */

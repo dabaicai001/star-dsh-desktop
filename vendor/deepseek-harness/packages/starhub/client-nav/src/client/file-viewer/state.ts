@@ -4,7 +4,7 @@
  * FileViewerOverlay 组件经 hooks 舱位读取——同一裸 source 桥范式
  * (one-handle-one-scope,同 connectionManager / aiChat)。
  */
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
 /** 一次 before/after 变更 hunk(edit 查看请求用)。 */
 export interface FileViewDiff {

@@ -18,7 +18,7 @@
  * 开关与重挂载丢失——与 StarHubConnCard 的组件级监听同因,但订阅点升到
  * 插件层:视图组件是纯展示,卸载不影响采集。
  */
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { tauriListen } from '../tauri.ts'
 
 /** 单条 SSH 执行记录(每个会话连接保留最近一次命令)。 */

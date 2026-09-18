@@ -39,6 +39,9 @@
       "path": "../../client/runtime"
     },
     {
+      "path": "../../client/store"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]
