@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.121.1(**修复 CI `package-dsh-runtime` 构建失败**:`python/sdk-runtime/package.json` 补齐 `dsh-web-app` 运行时依赖闭包缺失的 6 个 workspace peer(`dsh-agent-default-model` / `dsh-client-file-upload` / `dsh-native-command` / `dsh-util-workspace-path` / `dsh-workspace` / `dsh-host-directory-picker`),`verify-runtime-closure` 通过(4 presets / 237 包闭包闭合)。) |
+| 当前版本 | v0.121.2(**修复 CI `package-dsh-runtime` 构建失败(DSH 0.1.6 升级遗留三处)**:`tsconfig.base.json` 补 `@deepseek-ai/dsh-client-file-upload/types` paths 映射(gen-typert TS2307);`DiffBlock` 收窄 `pairSides` 返回类型为新增的 `PairRow`(不含 span 变体),修 `diffTotals` 直接访问 `row.left/right` 的 TS2339;client-nav 五处 `createSnapshotStore` 值导入从 `dsh-client-runtime/client` 改到基线共享包 `dsh-client-store`(client bundle purity 门禁禁止跨插件值导入),并补 devDependency 与 tsconfig 引用。本地 `gen:typert`、`tsc -b`(host/client 双面)、`tsdown` 全量、`verify-runtime-closure` 全绿。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-18 (v0.121.1)*
+*最后更新: 2026-09-18 (v0.121.2)*
