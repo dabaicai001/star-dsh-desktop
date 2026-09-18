@@ -11,9 +11,9 @@ import { useEffect } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the 'shell.overlay' SlotMap row (declared by ui-layout).
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { ISessions, IWorkspaces, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions, IWorkspaces, SessionId, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { NewConnectionDialog } from './NewConnectionDialog.tsx'
-import { AiChatPanel } from './ai/AiChatPanel.tsx'
+import { AiChatPanel, type AiChatSource } from './ai/AiChatPanel.tsx'
 import type { AiChatState, ConnectionManagerState } from './store.ts'
 
 /** Business face injected by the registration: dialog open/close + asset-list refresh. */
@@ -28,6 +28,8 @@ export interface StarHubOverlayInjected {
   /** AI 聊天面板读取/写入所依的 shell 会话/工作区服务面。 */
   sessions: ISessions
   workspaces: IWorkspaces
+  /** 会话 → Chat legacy 投影源(uiConversation Chat target 的适配,0.1.6)。 */
+  chatOf: (sessionId: SessionId) => AiChatSource | undefined
   hooks: {
     connectionManager: SnapshotStore<ConnectionManagerState>
     aiChat: SnapshotStore<AiChatState>
@@ -50,7 +52,7 @@ const EMBED_OPEN_SECTION_MESSAGE = 'starhub-embed-open-section'
  */
 export function StarHubOverlay({
   openConnectionManager, closeConnectionManager, closeAiChat, refreshAssets,
-  sessions, workspaces, useConnectionManager, useAiChat,
+  sessions, workspaces, chatOf, useConnectionManager, useAiChat,
 }: StarHubOverlayProps) {
   const state = useConnectionManager(s => s)
   const aiChatState = useAiChat(s => s)
@@ -95,7 +97,7 @@ export function StarHubOverlay({
         />
       )}
       {aiChatState.open && (
-        <AiChatPanel sessions={sessions} workspaces={workspaces} onClose={closeAiChat} />
+        <AiChatPanel sessions={sessions} workspaces={workspaces} chatOf={chatOf} onClose={closeAiChat} />
       )}
     </>
   )

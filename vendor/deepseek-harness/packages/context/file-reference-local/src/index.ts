@@ -11,7 +11,6 @@ import FileReferenceService, {
   FILE_REFERENCE_PROMPT,
   type FileReferenceCandidate,
 } from '@deepseek-ai/dsh-file-reference'
-import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import {
   DEFAULT_FILE_SEARCH_EXCLUDED_DIRECTORIES,
@@ -64,16 +63,18 @@ export class LocalFileReferenceService extends FileReferenceService {
     }
     validateConfig(this.config)
 
-    const installPrompt = (agent: Agent): void => {
-      if (this.promptFibers.has(agent)) return
+    const installPrompt = (agent: Agent): ReturnType<Context['inject']> => {
+      const existing = this.promptFibers.get(agent)
+      if (existing !== undefined) return existing
       const fiber = agent.ctx.inject(['systemPrompt', 'tools'], (scope) => {
         scope.systemPrompt.section({
           name: 'context:file-reference',
-          order: 99,
+          order: scope.systemPrompt.getSectionOrder('FILE_REFERENCE'),
           text: () => agent.ctx.tools.get('read', agent) === undefined ? '' : FILE_REFERENCE_PROMPT,
         })
       })
       this.promptFibers.set(agent, fiber)
+      return fiber
     }
     const disposePrompt = (agent: Agent): void => {
       const fiber = this.promptFibers.get(agent)
@@ -88,7 +89,7 @@ export class LocalFileReferenceService extends FileReferenceService {
       })
     }
     for (const agent of ctx.agents.list()) installPrompt(agent)
-    ctx.on('agent/created', ({ agent }) => { installPrompt(agent) })
+    ctx.on('agent/created', async ({ agent }) => { await installPrompt(agent) })
     ctx.on('agent/disposed', ({ agent }) => {
       this.searches.get(agent)?.dispose()
       this.searches.delete(agent)

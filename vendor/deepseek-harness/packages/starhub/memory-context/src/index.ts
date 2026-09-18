@@ -35,7 +35,7 @@ import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { PreToolDecision } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
-import { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+// Type-only: ctx.settings 的 Context 声明合并(register/get 类型化)。import type {} from '@deepseek-ai/dsh-settings'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'starhub-memory-context'
@@ -312,7 +312,7 @@ export async function composeMemoryContext(
  * @param ctx - plugin context;监听器随插件 fiber 卸载。
  */
 export function apply(ctx: Context): void {
-  const ns: SettingsNamespace = settingsNamespace(MEMORY_CONTEXT_NAMESPACE)
+  const ns = MEMORY_CONTEXT_NAMESPACE
   // Declare the namespace once; the pre-step listener reads it per request.
   const scope = ctx.settings.register(ns, MemoryContextSchema)
 

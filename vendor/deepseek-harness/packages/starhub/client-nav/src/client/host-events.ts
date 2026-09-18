@@ -5,14 +5,13 @@
  * openAssetPage / 会话聚焦 + composer prefill,经 ctx.effect 注册、dispose
  * 卸载(HMR 安全)。
  */
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { IConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ISessions, IWorkspaces } from '@deepseek-ai/dsh-client-runtime/client'
 import { tauriListen, type TauriUnlisten } from './tauri.ts'
 import type { StarHubAsset } from './sections.ts'
 import type { StarHubAssets, ToolSelectionBridge } from './store.ts'
-import { bindAssetContext } from './tool-context.ts'
+import { bindAssetContext, type SettingsUpdateWriter } from './tool-context.ts'
 
 /** `starhub://open-asset` payload(契约 §3):tool 缺省 auto,action 由 Rust 注册表预判。 */
 export interface OpenAssetPayload {
@@ -62,9 +61,9 @@ export function createOpenAssetHandler(deps: OpenAssetDeps): (payload: OpenAsset
   }
 }
 
-/** ask-ai 处理器依赖:settings 面 + 选择桥 + 会话/工作区/会话输入服务。 */
+/** ask-ai 处理器依赖:settings 写入面 + 选择桥 + 会话/工作区/会话输入服务。 */
 export interface AskAiDeps {
-  api: IApiClient
+  writer: SettingsUpdateWriter
   selection: ToolSelectionBridge
   sessions: ISessions
   workspaces: IWorkspaces
@@ -86,7 +85,7 @@ export function createAskAiHandler(deps: AskAiDeps): (payload: AskAiPayload) => 
       // 取当前会话 id 作作用域:host 侧 tool-context 只对触发绑定(ask-ai)
       // 的会话注入,避免全局粘性扩散到普通对话。
       const current = deps.sessions.list.getSnapshot().current
-      bindAssetContext(deps.api, deps.selection.source.getSnapshot(), {
+      bindAssetContext(deps.writer, deps.selection.source.getSnapshot(), {
         id: payload.assetId,
         name: payload.assetName ?? '',
       }, current ?? '')
@@ -109,16 +108,18 @@ async function routeAskAi(
     sessions.open(current)
     return
   }
-  const target = workspaces.list.getSnapshot().recentWorkspaceId
+  // 0.1.6 起 IWorkspaces 不再有 recentWorkspaceId / connectWorkspace:
+  // 「最近工作区」取列表首项(Host 侧按近用排序),新建会话走 sessions.create。
+  const target = workspaces.list.getSnapshot().items[0]?.workspaceId
   if (target === undefined) {
     // 没有任何工作区:清空选择落到新建会话视图,由用户自行开始。
     sessions.clear()
     return
   }
   try {
-    // connectWorkspace 的解析保证:返回的 id 已在 list 且 binding 可同步
-    // 解析——先写 draft 再 open,新会话的 composer 在打开前就拿到文本。
-    const sessionId = await workspaces.connectWorkspace(target)
+    // create 的解析保证:返回的 id 已在 list 且 binding 可同步解析——
+    // 先写 draft 再 open,新会话的 composer 在打开前就拿到文本。
+    const sessionId = await sessions.create({ workspaceId: target })
     setDraft(sessions, conversation, sessionId, text)
     sessions.open(sessionId)
   } catch (error) {

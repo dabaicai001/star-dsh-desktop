@@ -1,4 +1,4 @@
-/** Host loader entry for the browser runtime exported from `./client` and `./loader`. */
-
-/** Host plugin body — no host-side behavior for the runtime plugin. */
-export function apply(_ctx: unknown): void {}
+/**
+ * StarHub 兼容垫片入口:裸 specifier 再导出 ./client 面(见 client.ts 头注)。
+ */
+export * from './client.ts'

@@ -1,37 +1,30 @@
 // @vitest-environment jsdom
 /**
  * Component tests for `ai/AiChatPanel.tsx`: no-session guidance, new-session
- * flow, live conversation rendering (nodes + streaming partial), send/stop/
- * load-older over the session face, and the gate states (loading/error).
+ * flow, live conversation rendering (nodes + streaming partial, 0.1.6 起经
+ * chatOf 注入的 Chat legacy 投影), send/stop/load-older over the session
+ * face, and the gate states (loading/error).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import { cleanup, render, screen, fireEvent } from '@testing-library/react'
 import {
-  createSnapshotStore, EMPTY_CHAT_SNAPSHOT,
-  type ConversationNode, type ConversationSnapshot, type ISessions, type IWorkspaces,
-  type SessionFace, type SessionId, type SessionListState,
+  createSnapshotStore,
+  type ConversationNode, type ISessions, type IWorkspaces, type PartialAssistant,
+  type SessionFace, type SessionId, type SessionListState, type SessionSnapshot,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import { AiChatPanel } from '../src/client/ai/AiChatPanel.tsx'
+import { AiChatPanel, type AiChatSource } from '../src/client/ai/AiChatPanel.tsx'
 
 afterEach(cleanup)
 
-/** Minimal full conversation snapshot with defaults. */
-function makeSnap(over: Partial<ConversationSnapshot> = {}): ConversationSnapshot {
+/** Minimal session snapshot with defaults(0.1.6:nodes/partial 已迁出本会话快照)。 */
+function makeSnap(over: Partial<SessionSnapshot> = {}): SessionSnapshot {
   return {
     sessionId: 's1' as SessionId,
-    views: { get: () => undefined },
-    chat: EMPTY_CHAT_SNAPSHOT,
-    nodes: [],
-    turnTimings: new Map(),
-    turnEnds: new Map(),
-    partial: null,
-    runningCalls: [],
-    pending: [],
     queue: [],
+    pendingSubmissions: [],
     running: false,
     subagent: null,
-    composerPhase: 'blank',
     removed: false,
     openState: 'open',
     openError: null,
@@ -40,24 +33,25 @@ function makeSnap(over: Partial<ConversationSnapshot> = {}): ConversationSnapsho
     promptError: null,
     blank: true,
     lastAgentError: null,
+    promptAttempted: false,
+    awaitingFirstTurn: false,
     ...over,
-  }
+  } as SessionSnapshot
 }
 
 interface SessionDouble extends SessionFace {
-  __set: (s: ConversationSnapshot) => void
+  __set: (s: SessionSnapshot) => void
   prompt: Mock<SessionFace['prompt']>
   cancel: Mock<SessionFace['cancel']>
   loadOlder: Mock<SessionFace['loadOlder']>
 }
 
 /** Build a live session face (observable snapshot + behaviour verbs). */
-function makeSession(snapshot: ConversationSnapshot): SessionDouble {
+function makeSession(snapshot: SessionSnapshot): SessionDouble {
   let current = snapshot
   const subs = new Set<() => void>()
   const face = {
     sessionId: 's1',
-    projections: { faceOf: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }) },
     getSnapshot: () => current,
     subscribe: (fn: () => void) => { subs.add(fn); return () => { subs.delete(fn) } },
     prompt: vi.fn<SessionFace['prompt']>().mockResolvedValue({ ok: true, value: { accepted: true } }),
@@ -68,8 +62,17 @@ function makeSession(snapshot: ConversationSnapshot): SessionDouble {
     updateQueue: vi.fn(),
     readAttachment: vi.fn(),
   } as unknown as SessionDouble
-  face.__set = (s: ConversationSnapshot) => { current = s; for (const fn of subs) fn() }
+  face.__set = (s: SessionSnapshot) => { current = s; for (const fn of subs) fn() }
   return face
+}
+
+/** Chat legacy 投影源(nodes + 流式 partial),面板经 chatOf 读取。 */
+function makeChatSource(
+  nodes: readonly ConversationNode[] = [],
+  partial: PartialAssistant | null = null,
+): AiChatSource {
+  const slice = { nodes, partial }
+  return { getSnapshot: () => slice, subscribe: () => () => {} }
 }
 
 /** Build an ISessions with a selectable current session. */
@@ -77,6 +80,7 @@ function makeSessions(
   currentId: string | undefined,
   sessionFace: SessionFace | undefined,
   open: ReturnType<typeof vi.fn> = vi.fn(),
+  create: ReturnType<typeof vi.fn> = vi.fn(),
 ): ISessions {
   const current = currentId as SessionId | undefined
   const list = createSnapshotStore<SessionListState>({
@@ -87,60 +91,77 @@ function makeSessions(
     subagentsByParent: {},
     jobsBySession: {},
     currentAddress: undefined,
-  })
+  } as SessionListState)
   return {
     list,
     // The component reads `binding(id).session` — the SessionBinding wraps the
-    // SessionFace in `{ sessionId, session, ctx }` (runtime sessions/service.ts).
+    // SessionFace in `{ sessionId, session, ctx }` (session-controller client).
     binding: (id: SessionId) => (sessionFace !== undefined && id === current
       ? { sessionId: current, session: sessionFace, ctx: {} as never }
       : undefined),
     open,
     clear: vi.fn(),
+    create,
   } as unknown as ISessions
 }
 
-/** Build an IWorkspaces stub. */
-function makeWorkspaces(recentWorkspaceId: string | undefined, connectWorkspace = vi.fn()): IWorkspaces {
-  return { list: { getSnapshot: () => ({ recentWorkspaceId, ids: [], byId: {}, phase: 'ready', items: [] }) }, connectWorkspace } as unknown as IWorkspaces
+/** Build an IWorkspaces stub(0.1.6:「最近工作区」= items 首项)。 */
+function makeWorkspaces(recentWorkspaceId: string | undefined): IWorkspaces {
+  return {
+    list: {
+      getSnapshot: () => ({
+        items: recentWorkspaceId === undefined ? [] : [{ workspaceId: recentWorkspaceId }],
+      }),
+    },
+  } as unknown as IWorkspaces
+}
+
+/** 渲染辅助:chatOf 恒返回同一源。 */
+function renderPanel(
+  sessions: ISessions,
+  workspaces: IWorkspaces,
+  chat: AiChatSource,
+  onClose = vi.fn(),
+): ReturnType<typeof render> {
+  return render(<AiChatPanel sessions={sessions} workspaces={workspaces} chatOf={() => chat} onClose={onClose} />)
 }
 
 describe('AiChatPanel', () => {
   it('shows no-session guidance when nothing is current', () => {
     const sessions = makeSessions(undefined, undefined)
     const workspaces = makeWorkspaces(undefined)
-    render(<AiChatPanel sessions={sessions} workspaces={workspaces} onClose={vi.fn()} />)
+    renderPanel(sessions, workspaces, makeChatSource())
     expect(screen.getByText('没有正在进行的 AI 会话')).toBeTruthy()
     expect(screen.getByText('新建会话')).toBeTruthy()
   })
 
   it('creates a session from the recent workspace when 新建会话 is pressed', () => {
-    const connectWorkspace = vi.fn().mockResolvedValue('s1')
+    const create = vi.fn().mockResolvedValue('s1')
     const open = vi.fn()
-    const sessions = makeSessions(undefined, undefined, open)
-    const workspaces = makeWorkspaces('w1', connectWorkspace)
-    render(<AiChatPanel sessions={sessions} workspaces={workspaces} onClose={vi.fn()} />)
+    const sessions = makeSessions(undefined, undefined, open, create)
+    const workspaces = makeWorkspaces('w1')
+    renderPanel(sessions, workspaces, makeChatSource())
     fireEvent.click(screen.getByText('新建会话'))
-    expect(connectWorkspace).toHaveBeenCalledWith('w1')
+    expect(create).toHaveBeenCalledWith({ workspaceId: 'w1' })
     return vi.waitFor(() =>{  expect(open).toHaveBeenCalledWith('s1') })
   })
 
-  it('does not connect when there is no recent workspace', () => {
-    const connectWorkspace = vi.fn()
-    const sessions = makeSessions(undefined, undefined)
-    const workspaces = makeWorkspaces(undefined, connectWorkspace)
-    render(<AiChatPanel sessions={sessions} workspaces={workspaces} onClose={vi.fn()} />)
+  it('does not create when there is no recent workspace', () => {
+    const create = vi.fn()
+    const sessions = makeSessions(undefined, undefined, vi.fn(), create)
+    const workspaces = makeWorkspaces(undefined)
+    renderPanel(sessions, workspaces, makeChatSource())
     fireEvent.click(screen.getByText('新建会话'))
-    expect(connectWorkspace).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
   })
 
   it('stays on the guidance when creating a new session fails', async () => {
-    const connectWorkspace = vi.fn().mockRejectedValue(new Error('no workspace'))
-    const sessions = makeSessions(undefined, undefined)
-    const workspaces = makeWorkspaces('w1', connectWorkspace)
-    render(<AiChatPanel sessions={sessions} workspaces={workspaces} onClose={vi.fn()} />)
+    const create = vi.fn().mockRejectedValue(new Error('no workspace'))
+    const sessions = makeSessions(undefined, undefined, vi.fn(), create)
+    const workspaces = makeWorkspaces('w1')
+    renderPanel(sessions, workspaces, makeChatSource())
     fireEvent.click(screen.getByText('新建会话'))
-    await vi.waitFor(() =>{  expect(connectWorkspace).toHaveBeenCalledWith('w1') })
+    await vi.waitFor(() =>{  expect(create).toHaveBeenCalledWith({ workspaceId: 'w1' }) })
     expect(screen.getByText('没有正在进行的 AI 会话')).toBeTruthy()
   })
 
@@ -150,28 +171,26 @@ describe('AiChatPanel', () => {
       { kind: 'assistant', seq: 2, time: 0, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'hello back' }] },
       {
         kind: 'tool-result', seq: 3, time: 0, callId: 'c', call: { name: 'bash', argsRaw: '{}' }, callTime: 0,
-        content: [{ type: 'text', text: 'tool out' }], isError: false,
-        callView: null, resultView: null, subCalls: [],
+        content: [{ type: 'text', text: 'tool out' }], isError: false, subCalls: [],
       },
     ]
-    const face = makeSession(makeSnap({ nodes, blank: false }))
+    const face = makeSession(makeSnap({ blank: false }))
     const sessions = makeSessions('s1', face)
     const workspaces = makeWorkspaces(undefined)
-    render(<AiChatPanel sessions={sessions} workspaces={workspaces} onClose={vi.fn()} />)
+    renderPanel(sessions, workspaces, makeChatSource(nodes))
     expect(screen.getByText('hi there')).toBeTruthy()
     expect(screen.getByText('hello back')).toBeTruthy()
     expect(screen.getByText('tool out')).toBeTruthy()
   })
 
   it('renders an in-flight streaming partial underneath the settled nodes', () => {
-    const face = makeSession(makeSnap({
-      nodes: [{ kind: 'user', seq: 1, time: 0, content: [{ type: 'text', text: 'q' }], source: {} }],
-      partial: { turn: 1, step: 1, blocks: [{ kind: 'text', text: 'streaming…' }] },
-      running: true,
-      blank: false,
-    }))
+    const face = makeSession(makeSnap({ running: true, blank: false }))
+    const chat = makeChatSource(
+      [{ kind: 'user', seq: 1, time: 0, content: [{ type: 'text', text: 'q' }], source: {} }],
+      { turn: 1, step: 1, blocks: [{ kind: 'text', text: 'streaming…' }] } as PartialAssistant,
+    )
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), chat)
     expect(screen.getByText('streaming…')).toBeTruthy()
     expect(screen.getByText('停止')).toBeTruthy()
   })
@@ -179,7 +198,7 @@ describe('AiChatPanel', () => {
   it('sends a prompt over the session face on 发送 and moves on running', () => {
     const face = makeSession(makeSnap({ openState: 'open', blank: false }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     fireEvent.change(screen.getByPlaceholderText(/输入消息/), { target: { value: 'run a query' } })
     fireEvent.click(screen.getByText('发送'))
     expect(face.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'run a query' }], 'queue')
@@ -188,14 +207,14 @@ describe('AiChatPanel', () => {
   it('disables the send button while the draft is empty', () => {
     const face = makeSession(makeSnap({ blank: false }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     expect((screen.getByText<HTMLButtonElement>('发送')).disabled).toBe(true)
   })
 
   it('sends on Enter with a non-empty draft', () => {
     const face = makeSession(makeSnap({ blank: false }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     fireEvent.change(screen.getByPlaceholderText(/输入消息/), { target: { value: 'go' } })
     // bubbles: true — the onKeyDown handler lives on the wrapping .body div, so
     // a textarea key event must bubble to reach it.
@@ -207,7 +226,7 @@ describe('AiChatPanel', () => {
   it('stops the running turn when the stop button is pressed', () => {
     const face = makeSession(makeSnap({ running: true, blank: false }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     fireEvent.click(screen.getByText('停止'))
     expect(face.cancel).toHaveBeenCalled()
   })
@@ -215,7 +234,7 @@ describe('AiChatPanel', () => {
   it('loads older messages when 加载更早 is pressed', () => {
     const face = makeSession(makeSnap({ hasMore: true, loadingOlder: false, blank: false }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     fireEvent.click(screen.getByText('加载更早'))
     expect(face.loadOlder).toHaveBeenCalled()
   })
@@ -223,14 +242,14 @@ describe('AiChatPanel', () => {
   it('hides the composer while the window is loading', () => {
     const face = makeSession(makeSnap({ openState: 'loading' }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     expect(screen.queryByPlaceholderText(/输入消息/)).toBeNull()
   })
 
   it('shows the open-error and hides the composer on openState error', () => {
-    const face = makeSession(makeSnap({ openState: 'error', openError: { message: 'boom' } } as Partial<ConversationSnapshot>))
+    const face = makeSession(makeSnap({ openState: 'error', openError: { message: 'boom' } } as Partial<SessionSnapshot>))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     expect(screen.getByText(/会话历史打开失败:boom/)).toBeTruthy()
     expect(screen.queryByPlaceholderText(/输入消息/)).toBeNull()
   })
@@ -239,9 +258,9 @@ describe('AiChatPanel', () => {
     const face = makeSession(makeSnap({
       promptError: { op: 'send', error: { code: 'x', message: 'sendfailed', details: {} } },
       blank: false,
-    } as unknown as Partial<ConversationSnapshot>))
+    } as unknown as Partial<SessionSnapshot>))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     expect(screen.getByRole('alert')).toBeTruthy()
     expect(screen.getByText('发送失败: sendfailed')).toBeTruthy()
   })
@@ -249,12 +268,11 @@ describe('AiChatPanel', () => {
   it('renders tool-result errors in an error row', () => {
     const nodes: ConversationNode[] = [{
       kind: 'tool-result', seq: 4, time: 0, callId: 'c2', call: null, callTime: null,
-      content: [], isError: true, error: { name: 'n', code: '1' },
-      callView: null, resultView: null, subCalls: [],
+      content: [], isError: true, error: { name: 'n', code: '1' }, subCalls: [],
     }]
-    const face = makeSession(makeSnap({ nodes, blank: false }))
+    const face = makeSession(makeSnap({ blank: false }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource(nodes))
     expect(screen.getByText(/! c2/)).toBeTruthy()
   })
 
@@ -262,11 +280,14 @@ describe('AiChatPanel', () => {
     const nodes: ConversationNode[] = [
       { kind: 'turn-error', seq: 5, time: 0, turn: 1, step: 1, message: 'task failed' },
       { kind: 'turn-max-tokens', seq: 6, time: 0, turn: 1, step: 1 },
-      { kind: 'context', seq: 7, time: 0, content: [{ type: 'text', text: 'ctx note' }], source: {}, provenance: { role: 'inject', label: 'ctx' }, form: null },
+      {
+        kind: 'context', seq: 7, time: 0, content: [{ type: 'text', text: 'ctx note' }],
+        source: {}, producer: { role: 'inject', label: 'ctx' }, form: null,
+      } as ConversationNode,
     ]
-    const face = makeSession(makeSnap({ nodes, blank: false }))
+    const face = makeSession(makeSnap({ blank: false }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource(nodes))
     expect(screen.getByText('task failed')).toBeTruthy()
     expect(screen.getByText('已达输出上限')).toBeTruthy()
     expect(screen.getByText('ctx note')).toBeTruthy()
@@ -276,7 +297,7 @@ describe('AiChatPanel', () => {
     const face = makeSession(makeSnap({ blank: false }))
     const sessions = makeSessions('s1', face)
     const onClose = vi.fn()
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={onClose} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource(), onClose)
     fireEvent.click(screen.getByText('关闭'))
     expect(onClose).toHaveBeenCalled()
   })
@@ -284,7 +305,7 @@ describe('AiChatPanel', () => {
   it('shows the cold-window guidance while keeping the composer', () => {
     const face = makeSession(makeSnap({ openState: 'cold' }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     expect(screen.getByText(/会话尚未打开/)).toBeTruthy()
     expect(screen.queryByPlaceholderText(/输入消息/)).not.toBeNull()
   })
@@ -292,7 +313,7 @@ describe('AiChatPanel', () => {
   it('shows the empty-conversation prompt when there are no messages and it is idle', () => {
     const face = makeSession(makeSnap({ openState: 'open', running: false, blank: false }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     expect(screen.getByText(/还没有消息/)).toBeTruthy()
     expect(screen.getByText('空闲')).toBeTruthy()
   })
@@ -303,7 +324,7 @@ describe('AiChatPanel', () => {
     const promptMock = base.prompt
     promptMock.mockImplementation(() => new Promise((resolve) => { resolvePrompt = resolve }))
     const sessions = makeSessions('s1', base)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     const input = screen.getByPlaceholderText(/输入消息/)
     fireEvent.change(input, { target: { value: 'go' } })
     // Two sends while pending: only one prompt call.
@@ -316,7 +337,7 @@ describe('AiChatPanel', () => {
   it('shows the loading case for the load-older button', () => {
     const face = makeSession(makeSnap({ hasMore: true, loadingOlder: true, blank: false }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     expect(screen.getByText('加载中…')).toBeTruthy()
     expect((screen.getByText<HTMLButtonElement>('加载中…')).disabled).toBe(true)
   })
@@ -324,7 +345,7 @@ describe('AiChatPanel', () => {
   it('does not send on Shift+Enter or other keys', () => {
     const face = makeSession(makeSnap({ blank: false }))
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), makeChatSource())
     const input = screen.getByPlaceholderText(/输入消息/)
     fireEvent.change(input, { target: { value: 'go' } })
     fireEvent.keyDown(input, { key: 'Enter', shiftKey: true, bubbles: true })
@@ -333,20 +354,17 @@ describe('AiChatPanel', () => {
   })
 
   it('renders the in-flight partial filtering non-text blocks', () => {
-    const face = makeSession(makeSnap({
-      nodes: [],
-      partial: {
-        turn: 1, step: 1,
-        blocks: [
-          { kind: 'text', text: 'real' },
-          { kind: 'tool-call', callId: 'c', name: 'x', argsRaw: '{}' },
-          { kind: 'text', text: '' },
-        ],
-      },
-      running: true,
-    }))
+    const face = makeSession(makeSnap({ running: true }))
+    const chat = makeChatSource([], {
+      turn: 1, step: 1,
+      blocks: [
+        { kind: 'text', text: 'real' },
+        { kind: 'tool-call', callId: 'c', name: 'x', argsRaw: '{}' },
+        { kind: 'text', text: '' },
+      ],
+    } as unknown as PartialAssistant)
     const sessions = makeSessions('s1', face)
-    render(<AiChatPanel sessions={sessions} workspaces={makeWorkspaces(undefined)} onClose={vi.fn()} />)
+    renderPanel(sessions, makeWorkspaces(undefined), chat)
     expect(screen.getByText('real')).toBeTruthy()
   })
 })

@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.119.1(**DB 工作台 tab 条遮挡与溢出体验**:标签溢出时 Chromium 默认横向滚动条(约 12px)挤占 42px 头部、遮挡标签,「新建查询」钮随标签一起滚出可视区被裁切;改为「新建查询」钉在滚动区外常驻可见,滚动区改用 4px 细滚动条、支持纵向滚轮转横向滚动,活动标签自动滚入视野,长表名限宽省略。) |
+| 当前版本 | v0.121.0(**升级内置 DeepSeek Harness 至上游 master(0.1.6-alpha.1, 2026-09-15)**:`vendor/deepseek-harness` 从 `dsh-v0.1.1-rc.2` 快照替换到 `0d1f500`,并重放 StarHub 全部补丁(DiffBlock 双列 LCS 对比、侧栏 StarHub 品牌、ui-chat 文件打开走工作台等)。随升级迁移:apiproxy/`IApiClient` 撤除,设置写入与 LLM 目录改走 `ctx.remote`(api-gateway);`web-react` 并入 `ui-renderer`(本会话改为 synthesized 标准 seat);会话快照节点/流式投影迁至 ui-chat Chat target;输入附件 API 更名(`createDrafts`/`addAttachments`);InputTrigger 图标支持自定义组件;全局槽位新增 `usePanelInfo`/`useSessionPendingInteraction`/`useResource` 席位。DiffBlock 的 +/− 统计改为 LCS 口径(共享上下文行不计),折叠行与展开卡片一致。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-16 (v0.119.1)*
+*最后更新: 2026-09-18 (v0.121.0)*

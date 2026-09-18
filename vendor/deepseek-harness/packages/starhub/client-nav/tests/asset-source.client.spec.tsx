@@ -7,11 +7,10 @@
  * 除时序列化失败阻止发送。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientSessionContext, InputTriggerPick } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { createStarHubAssets, createToolSelectionBridge, type RustAsset } from '../src/client/store.ts'
-import { renderAssetReference, createStarHubAssetSource } from '../src/client/asset-source.ts'
-import { TOOL_CONTEXT_NAMESPACE } from '../src/client/tool-context.ts'
+import { assetToolBadge, renderAssetReference, createStarHubAssetSource } from '../src/client/asset-source.ts'
+import { TOOL_CONTEXT_NAMESPACE, type SettingsUpdateWriter } from '../src/client/tool-context.ts'
 
 /** 构造一个最小资产(只带匹配所需的字段)。 */
 function rustAsset(id: string, name: string, config: Record<string, unknown> = {}): RustAsset {
@@ -27,8 +26,8 @@ function proj(sessionId = 's1'): ClientSessionContext {
 }
 
 /** 候选请求。 */
-function req(query: string): { query: string; position: 'leading'; signal: AbortSignal } {
-  return { query, position: 'leading', signal: new AbortController().signal }
+function req(query: string): { query: string; position: 'leading'; drilled: false; signal: AbortSignal } {
+  return { query, position: 'leading', drilled: false, signal: new AbortController().signal }
 }
 
 /** 组装 pick(候选必须是 candidates() 返回的同一引用)。 */
@@ -38,15 +37,16 @@ function pickOf(candidate: { name: string; description?: string }): InputTrigger
     session: proj(),
     position: 'leading',
     via: 'menu',
+    action: 'pick',
     span: { start: 0, end: 1, draftRev: 0 },
   }
 }
 
 function makeHarness(assets: ReturnType<typeof createStarHubAssets>, update: ReturnType<typeof vi.fn>) {
-  const api = { settings: { update } } as unknown as IApiClient
+  const writer = { update } as unknown as SettingsUpdateWriter
   const selection = createToolSelectionBridge()
-  const source = createStarHubAssetSource({ api, assets, selection })
-  return { api, selection, source }
+  const source = createStarHubAssetSource({ writer, assets, selection })
+  return { writer, selection, source }
 }
 
 afterEach(() => {
@@ -95,12 +95,12 @@ describe('createStarHubAssetSource', () => {
     })
     const { source } = makeHarness(assets, vi.fn())
     await expect(source.candidates(proj(), req('WEB'))).resolves.toEqual([
-      { name: 'web-1', icon: 'SSH', description: 'deploy@10.0.0.5' },
-      { name: 'web-2', icon: 'SSH', description: '10.0.0.6' },
+      { name: 'web-1', icon: expect.any(Function), description: 'deploy@10.0.0.5' },
+      { name: 'web-2', icon: expect.any(Function), description: '10.0.0.6' },
     ])
     // 无副标题的资产:候选不带 description 键(exactOptionalPropertyTypes)
     await expect(source.candidates(proj(), req('local-1'))).resolves.toEqual([
-      { name: 'local-1', icon: 'SSH' },
+      { name: 'local-1', icon: expect.any(Function) },
     ])
   })
 
@@ -120,7 +120,10 @@ describe('createStarHubAssetSource', () => {
     })
     const { source } = makeHarness(assets, vi.fn())
     const [candidate] = await source.candidates(proj(), req(''))
-    expect(candidate).toMatchObject({ icon: badge })
+    // 0.1.6:候选 icon 位只收词表字符串或自定义组件;分类文本徽标由组件承载,
+    // 文本映射本身仍由纯函数 assetToolBadge 覆盖。
+    expect(assetToolBadge({ type, config })).toBe(badge)
+    expect(candidate?.icon).toBeTypeOf('function')
   })
 
   it('candidates return everything on an empty query and nothing when aborted', async () => {
@@ -130,7 +133,7 @@ describe('createStarHubAssetSource', () => {
     await expect(source.candidates(proj(), req(''))).resolves.toHaveLength(2)
     const controller = new AbortController()
     controller.abort()
-    await expect(source.candidates(proj(), { query: '', position: 'leading', signal: controller.signal }))
+    await expect(source.candidates(proj(), { query: '', position: 'leading', drilled: false, signal: controller.signal }))
       .resolves.toEqual([])
   })
 
@@ -187,10 +190,11 @@ describe('createStarHubAssetSource', () => {
     })
     // 轻绑定:settings.update 写 starhub-tool-context 补丁——subcategory/routePrefix
     // 由被引用资产派生(此处为 SSH),不再读侧栏当前打开的工具;并携带 assetType。
-    expect(update).toHaveBeenCalledWith({
-      ns: TOOL_CONTEXT_NAMESPACE,
-      patch: { sessionId: 's1', subcategory: 'terminal', assetId: 'a1', assetName: 'web-1', routePrefix: '/ssh', assetType: 'ssh' },
-    })
+    expect(update).toHaveBeenCalledWith(
+      TOOL_CONTEXT_NAMESPACE,
+      { sessionId: 's1', subcategory: 'terminal', assetId: 'a1', assetName: 'web-1', routePrefix: '/ssh', assetType: 'ssh' },
+      undefined,
+    )
   })
 
   it.each([
@@ -209,9 +213,9 @@ describe('createStarHubAssetSource', () => {
     selection.selectSubcategory('database')
     const [candidate] = await source.candidates(proj(), req(''))
     source.onPick(pickOf(candidate!))
-    expect(update).toHaveBeenCalledWith({
-      ns: TOOL_CONTEXT_NAMESPACE,
-      patch: {
+    expect(update).toHaveBeenCalledWith(
+      TOOL_CONTEXT_NAMESPACE,
+      {
         sessionId: 's1',
         subcategory,
         assetId: id,
@@ -219,7 +223,8 @@ describe('createStarHubAssetSource', () => {
         routePrefix,
         assetType,
       },
-    })
+      undefined,
+    )
   })
 
   it('onPick binds a db asset with its dbType into the tool context', async () => {
@@ -232,10 +237,11 @@ describe('createStarHubAssetSource', () => {
     const { source } = makeHarness(assets, update)
     const [candidate] = await source.candidates(proj(), req(''))
     source.onPick(pickOf(candidate!))
-    expect(update).toHaveBeenCalledWith({
-      ns: TOOL_CONTEXT_NAMESPACE,
-      patch: { sessionId: 's1', subcategory: 'database', assetId: 'r1', assetName: 'redis-1', routePrefix: '/db/redis', assetType: 'db', dbType: 'redis' },
-    })
+    expect(update).toHaveBeenCalledWith(
+      TOOL_CONTEXT_NAMESPACE,
+      { sessionId: 's1', subcategory: 'database', assetId: 'r1', assetName: 'redis-1', routePrefix: '/db/redis', assetType: 'db', dbType: 'redis' },
+      undefined,
+    )
   })
 
   it('onPick falls back to plain text for a candidate this source did not produce', () => {
@@ -252,7 +258,8 @@ describe('createStarHubAssetSource', () => {
     })
     const { source } = makeHarness(assets, vi.fn(() => Promise.resolve({ result: { ok: true } })))
     const [candidate] = await source.candidates(proj(), req(''))
-    expect(candidate?.icon).toBe('Docker')
+    expect(assetToolBadge({ type: 'docker', config: {} })).toBe('Docker')
+    expect(candidate?.icon).toBeTypeOf('function')
     expect(candidate?.description).toBe('删除操作需用户确认')
     const outcome = source.onPick(pickOf(candidate!))
     expect(outcome).toMatchObject({

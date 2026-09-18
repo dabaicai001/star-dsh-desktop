@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { IApiClient, ModelProviderGroup } from '@deepseek-ai/dsh-client-connection/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   aiMemoryDelete, aiMemoryList, aiMemoryUpdate, logAudit,
   type AiMemoryRow,
@@ -16,6 +16,13 @@ import {
 import { isMemoryRouteConfigured, loadAiSettings, saveAiSettings, type AiSettings } from './aiSettings.ts'
 import { syncMemoryEnabled, syncMemoryModel } from './memory-context.ts'
 import s from './settings.module.css'
+
+/** 记忆模型目录的一条 provider 分组(0.1.6:listConfigurableProviders + discoverModels 组装)。 */
+interface ModelProviderGroup {
+  id: string
+  name: string
+  models: Array<{ id: string; name: string }>
+}
 
 /** 卡容量上限(与 Rust 侧一致:user/asset=1375,global/folder=2200)。 */
 function memoryScopeLimit(scope: string): number {
@@ -37,14 +44,15 @@ function memoryScopeLabel(scope: string): string {
 
 /**
  * 渲染 AI 助手设置:记忆与上下文(即时生效)+ 记忆管理弹窗。
- * @param props.api - 连接线的 settings RPC 面;「启用长期记忆」总开关与
- *   「记忆模型」配置经它同步到 host 侧 memory-context / memory-sink 插件
- *   (v0.92.0 起 namespace 未写过 = 关闭;v0.94.0 起记忆模型是硬前置,
- *   未配置时开关禁用且 host 侧不注入/不沉淀/memory 工具锁死)。浏览器预览下
- *   可为空,此时记忆模型下拉不可用、开关仍受「已配置」门禁约束。
+ * @param props.remote - Host 类型化 RPC 面(api-gateway ClientRemote);
+ *   「启用长期记忆」总开关与「记忆模型」配置经它同步到 host 侧
+ *   memory-context / memory-sink 插件(v0.92.0 起 namespace 未写过 = 关闭;
+ *   v0.94.0 起记忆模型是硬前置,未配置时开关禁用且 host 侧不注入/不沉淀/
+ *   memory 工具锁死)。浏览器预览下可为空,此时记忆模型下拉不可用、开关仍受
+ *   「已配置」门禁约束。
  * @returns AI tab 内容。
  */
-export function AiTab({ api }: { api?: IApiClient }) {
+export function AiTab({ remote }: { remote?: ClientRemote }) {
   const [aiSettings, setAiSettings] = useState<AiSettings>(loadAiSettings)
 
   // 记忆管理弹窗
@@ -70,32 +78,45 @@ export function AiTab({ api }: { api?: IApiClient }) {
   // (挂载时补齐一次,覆盖「上次关了但没开过设置页」的场景;旧运行时无该
   // namespace,失败静默)。v0.96.4 起 enabled 与 autoReview 同值下发。
   useEffect(() => {
-    if (api !== undefined) syncMemoryEnabled(api, aiSettings.memoryEnabled)
-  }, [api, aiSettings.memoryEnabled])
+    if (remote !== undefined) syncMemoryEnabled(remote.settings, aiSettings.memoryEnabled)
+  }, [remote, aiSettings.memoryEnabled])
 
   // 「记忆模型」配置同步到 host 侧(v0.94.0,2026-08-23):provider + model
   // 成对下发,host 侧 memory-context / memory-sink 据此判定记忆功能是否可用。
   useEffect(() => {
-    if (api !== undefined) syncMemoryModel(api, aiSettings.memoryProvider, aiSettings.memoryModel)
-  }, [api, aiSettings.memoryProvider, aiSettings.memoryModel])
+    if (remote !== undefined) syncMemoryModel(remote.settings, aiSettings.memoryProvider, aiSettings.memoryModel)
+  }, [remote, aiSettings.memoryProvider, aiSettings.memoryModel])
 
   // 拉取模型目录(provider 分组);失败/缺失时下拉置空并展示原因。
+  // 0.1.6:rc2 的 llm.models({}) 会话无关目录端点撤除,改为
+  // listConfigurableProviders × discoverModels(settingsNs, { provider })
+  // 逐 provider 组装(适配器已知的路由从注册表直接回答,不打端点网络请求)。
   useEffect(() => {
-    if (api === undefined) return
+    if (remote === undefined) return
     let cancelled = false
-    void api.llm.models({}).then((response) => {
-      if (cancelled) return
-      if (response.result.ok) {
-        setModelGroups(response.result.value.groups)
-        setModelCatalogError('')
-      } else {
-        setModelCatalogError(response.result.error.message)
+    void (async () => {
+      const providers = await remote.llm.listConfigurableProviders()
+      if (!providers.ok) throw new Error(providers.error.message)
+      const groups: ModelProviderGroup[] = []
+      for (const p of providers.value) {
+        const found = await remote.llm.discoverModels(p.settingsNs, { provider: p.provider })
+        if (cancelled) return undefined
+        groups.push({
+          id: p.provider,
+          name: p.displayName,
+          models: found.ok ? found.value.map(m => ({ id: m.id, name: m.name ?? m.id })) : [],
+        })
       }
+      return groups
+    })().then((groups) => {
+      if (cancelled || groups === undefined) return
+      setModelGroups(groups)
+      setModelCatalogError('')
     }).catch((error: unknown) => {
       if (!cancelled) setModelCatalogError(error instanceof Error ? error.message : String(error))
     })
     return () => { cancelled = true }
-  }, [api])
+  }, [remote])
 
   /** 记忆/上下文字段:直接写 localStorage 即时持久化。 */
   const updateSettings = (patch: Partial<AiSettings>) => {
@@ -217,7 +238,7 @@ export function AiTab({ api }: { api?: IApiClient }) {
               className={s.select}
               aria-label="记忆模型 provider"
               value={aiSettings.memoryProvider}
-              disabled={api === undefined || providerGroups.length === 0}
+              disabled={remote === undefined || providerGroups.length === 0}
               onChange={(event) =>{  changeMemoryProvider(event.target.value) }}
             >
               <option value="">未选择 provider</option>
@@ -229,7 +250,7 @@ export function AiTab({ api }: { api?: IApiClient }) {
               className={s.select}
               aria-label="记忆模型 model"
               value={aiSettings.memoryModel}
-              disabled={api === undefined || aiSettings.memoryProvider === '' || selectedProviderModels.length === 0}
+              disabled={remote === undefined || aiSettings.memoryProvider === '' || selectedProviderModels.length === 0}
               onChange={(event) =>{  updateSettings({ memoryModel: event.target.value }) }}
             >
               <option value="">未选择模型</option>

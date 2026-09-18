@@ -18,10 +18,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Loader } from '@deepseek-ai/cordis-plugin-loader'
 import type {
   CordisDynamicPackageId, CordisDynamicPluginId, CordisDynamicPluginRunId, DynamicCordisPackage,
+  SessionId,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientModuleSystem } from '@deepseek-ai/dsh-client-modules/client'
-import type { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { DynamicCordisStyles, evaluateClientHalf, DYNAMIC_CLIENT_REDIRECTS } from './evaluator.ts'
 import type { DynamicCordisEvaluatedPlugin } from './evaluator.ts'
 import { dynamicCordisContext } from './guard.ts'
@@ -451,7 +451,9 @@ export class DynamicCordisPackageRunner {
     this.failures.delete(id)
     // Entry removal disposes the fiber (slot entries and facade effects
     // cascade); the factory invalidation makes a later re-load legal.
-    await this.env.loader.remove(entryId)
+    const disposal = this.env.loader.resolve(entryId).fiber?.dispose()
+    this.env.loader.remove(entryId)
+    await disposal
     this.env.modules.invalidate(moduleIdOf(id))
     styles.dispose()
   }

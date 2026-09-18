@@ -37,7 +37,6 @@ import {
   type StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
-import { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   MEMORY_CONTEXT_NAMESPACE,
   isAutoReviewEnabled,
@@ -50,6 +49,7 @@ import {
   shouldReview,
   type DistilledFact,
 } from './gates.ts'
+// Type-only: ctx.settings 的 Context 声明合并(register/get 类型化)。import type {} from '@deepseek-ai/dsh-settings'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'starhub-memory-sink'
@@ -469,7 +469,7 @@ export async function runTurnReview(params: {
  * @param ctx - Cordis plugin context.
  */
 export function apply(ctx: Context): void {
-  const ns: SettingsNamespace = settingsNamespace(MEMORY_CONTEXT_NAMESPACE)
+  const ns = MEMORY_CONTEXT_NAMESPACE
   ctx.effect(() => {
     const transport = ctx.get('sdk-transport') as JsonRpcTransportPeer | undefined
     return ctx.on('agent/turn-stopping', async ({ agent, signal }): Promise<void> => {

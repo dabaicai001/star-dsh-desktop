@@ -6,10 +6,21 @@
  * 隐藏保存按钮;AI 空闲时可编辑——修改后点「保存」覆盖写回文件。
  */
 import { useEffect, useState } from 'react'
-import { Modal, ReadBlock, type ReadBlockLine } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Modal, ReadBlock, type ReadBlockLabels, type ReadBlockLine } from '@deepseek-ai/dsh-client-ui-primitives'
 import { readLocalTextFile, writeLocalTextFile, looksLikeBinary } from '../file-viewer/file-service.ts'
 import { statLocalPath, type LocalPathInfo } from './file-tree-service.ts'
 import css from './FileInfoDialog.module.css'
+
+/** ReadBlock 的本地化 chrome(0.1.6 起 labels 为必需 prop)。 */
+const READ_BLOCK_LABELS: ReadBlockLabels = {
+  window: (shown, total) => `显示 ${shown} / ${total} 行`,
+  copy: '复制',
+  copied: '已复制',
+  collapseAria: '折叠预览',
+  expandAria: (hidden) => `展开隐藏的 ${hidden} 行`,
+  collapse: '折叠',
+  expand: (hidden) => `展开 ${hidden} 行`,
+}
 
 /** 引用文本生成:文件 `@文件名 (路径)`;文件夹 `@文件夹名/ (路径)`。 */
 export function renderFileReference(name: string, path: string, kind: 'file' | 'directory'): string {
@@ -234,6 +245,7 @@ export function FileInfoDialog({ path, onClose, aiRunning = false, onSaved }: {
           <ReadBlock
             label={info?.path ?? path}
             lines={previewLines}
+            labels={READ_BLOCK_LABELS}
             totalLines={previewLines.length}
             lang={langFromPath(path)}
             maxLines={DIALOG_READ_MAX_LINES}

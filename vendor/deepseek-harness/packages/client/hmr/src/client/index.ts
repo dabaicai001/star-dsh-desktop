@@ -64,7 +64,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Entry, Loader } from '@deepseek-ai/cordis-plugin-loader'
 import type { PluginsEventFrame } from '../events.ts'
-import { EVENTS_ENDPOINT } from '../events.ts'
+import { EVENTS_ENDPOINT, parsePluginsEventFrame } from '../events.ts'
 
 export type { PluginsEventFrame } from '../events.ts'
 export { EVENTS_ENDPOINT } from '../events.ts'
@@ -74,6 +74,24 @@ export const name = 'client-hmr'
 
 /** Required services: the vendored Loader (entry governance) and the client module system (boot provide, service name `modules`). */
 export const inject = ['loader', 'modules']
+
+/**
+ * Registry-first teardown of an entry's running fiber so `entry.refresh()`
+ * rebuilds it (see the module comment): delete the runtime record before the
+ * fiber's disposer emits `internal/plugin` (or the Loader flags the entry
+ * disabled), drain the unload so effect disposers finish before a new apply
+ * re-registers, then clear `entry.fiber` so `refresh()` re-imports instead of
+ * no-oping. A fiberless entry is left untouched.
+ * @param entry - the Loader entry to tear down.
+ */
+export async function tearDownEntryFiber(entry: Entry): Promise<void> {
+  const oldFiber = entry.fiber
+  if (oldFiber === undefined) return
+  const runtime = oldFiber.runtime
+  if (runtime !== null) entry.ctx.registry.delete(runtime.callback)
+  while (oldFiber.inertia !== undefined) await oldFiber.inertia
+  delete entry.fiber
+}
 
 /** Find the loader entry whose module specifier is `id` (entry tree ids are random; the package name lives in `options.name`). */
 function findEntry(loader: Loader, id: string): Entry | undefined {
@@ -101,7 +119,7 @@ export function apply(ctx: Context): void {
   const modLoader = ctx.modules
   const loader: Loader = ctx.loader
 
-  async function reload(id: string): Promise<void> {
+  async function reload(id: string, rev: string): Promise<void> {
     const entry = findEntry(loader, id)
     if (entry === undefined) {
       ctx.logger.warn(`client-hmr: rebuilt frame for unknown entry "${id}" (not in the loader tree)`)
@@ -112,21 +130,10 @@ export function apply(ctx: Context): void {
     // async half while the old fiber still serves: script loading registers
     // the fresh factory with zero side effects (lazy CJS — module bodies run
     // at materialization, not execution).
-    modLoader.invalidate(id)
+    modLoader.invalidate(id, rev)
     await modLoader.prefetch(id)
 
-    const oldFiber = entry.fiber
-    if (oldFiber !== undefined) {
-      // Registry-first teardown (see module comment): the runtime record must
-      // be gone before the fiber's disposer emits internal/plugin, or the
-      // Loader flags the entry disabled.
-      const runtime = oldFiber.runtime
-      if (runtime !== null) entry.ctx.registry.delete(runtime.callback)
-      // Drain the unload: effect disposers (slots, subscriptions) must finish
-      // before the new bundle executes and the new apply re-registers.
-      while (oldFiber.inertia !== undefined) await oldFiber.inertia
-      delete entry.fiber
-    }
+    await tearDownEntryFiber(entry)
     // Old owned styles go before materialization re-injects them (the CSS
     // idempotency guard keys on stable tag ids).
     removeOwnedStyles(id)
@@ -145,16 +152,15 @@ export function apply(ctx: Context): void {
   const handle = (frame: PluginsEventFrame): void => {
     switch (frame.type) {
       case 'rebuilt':
-        queue = queue.then(() => reload(frame.id)).catch((error: unknown) => {
+        queue = queue.then(() => reload(frame.id, frame.rev)).catch((error: unknown) => {
           ctx.logger.error(`client-hmr: reload of "${frame.id}" failed`)
           ctx.logger.error(error)
         })
         break
       case 'graph':
-        // Connect-time snapshot, unused. The loader's cached graph rev
-        // goes stale after rebuilds — harmless, since prefetch hits the
-        // network anyway (host serves bundles no-cache); graph rev refresh
-        // lands with the reconnect-handshake mechanism.
+        // Connect-time snapshot, unused. Each rebuilt frame carries the
+        // revision that selects the immutable single-resource combo script; the boot
+        // graph remains the initial-load record until a page reload.
         break
       default:
         // Merge-extensible frame union: unknown frame types from newer hosts
@@ -166,15 +172,20 @@ export function apply(ctx: Context): void {
   ctx.effect(() => {
     const source = new EventSource(EVENTS_ENDPOINT)
     source.addEventListener('message', (event: MessageEvent<string>) => {
-      let frame: PluginsEventFrame
+      let value: unknown
       try {
-        frame = JSON.parse(event.data) as PluginsEventFrame
+        value = JSON.parse(event.data) as unknown
       } catch {
         // Wire boundary: a malformed dev-channel frame is dropped loudly.
         ctx.logger.warn(`client-hmr: unparseable event frame: ${event.data}`)
         return
       }
-      handle(frame)
+      const parsed = parsePluginsEventFrame(value)
+      if (parsed.kind === 'invalid') {
+        ctx.logger.warn(`client-hmr: invalid event frame: ${event.data}`)
+      } else if (parsed.kind === 'frame') {
+        handle(parsed.frame)
+      }
     })
     return () => { source.close() }
   }, 'client-hmr: event source')

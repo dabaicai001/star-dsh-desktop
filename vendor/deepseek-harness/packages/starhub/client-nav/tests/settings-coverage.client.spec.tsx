@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import { AuditTab, formatAuditDetail } from '../src/client/settings/audit.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
 import { PluginsTab, ConfirmActionDialog } from '../src/client/settings/plugins.tsx'
@@ -38,9 +38,12 @@ function stubTauriInternals(handlers: Record<string, (args?: unknown) => unknown
   }
 }
 
-/** 空模型目录响应(llm.models 桩)。 */
-function mkEmptyCatalog() {
-  return { result: { ok: true as const, value: { groups: [], failures: [] } } }
+/** 空模型目录的 remote.llm 桩(0.1.6:listConfigurableProviders + discoverModels)。 */
+function mkEmptyCatalogLlm() {
+  return {
+    listConfigurableProviders: vi.fn(async () => ({ ok: true as const, value: [] })),
+    discoverModels: vi.fn(async () => ({ ok: true as const, value: [] })),
+  }
 }
 
 afterEach(() => {
@@ -574,35 +577,36 @@ describe('ai extra branches', () => {
 
   it('syncs the memory toggle to the host namespace when an api is present', async () => {
     const update = vi.fn<(request: unknown) => Promise<void>>(() => Promise.resolve())
-    const api = {
+    const remote = {
       settings: { update },
-      llm: { models: vi.fn(async () => mkEmptyCatalog()) },
-    } as unknown as IApiClient
+      llm: mkEmptyCatalogLlm(),
+    } as unknown as ClientRemote
     // v0.94.0:预置路由,「启用长期记忆」才能被勾选。
     localStorage.setItem(AI_STORAGE_KEY, JSON.stringify({
       settings: { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
     }))
-    render(<AiTab api={api} />)
+    render(<AiTab remote={remote} />)
     await act(async () => { await Promise.resolve() })
     // 挂载时把 localStorage 里的开关(v0.92.0 起默认 false)补齐到 host namespace;
     // v0.96.4 起 enabled 与 autoReview 同值下发。
-    expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: false, autoReview: false } })
-    expect(update).toHaveBeenCalledWith({
-      ns: 'starhub-memory-context',
-      patch: { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
-    })
+    expect(update).toHaveBeenCalledWith('starhub-memory-context', { enabled: false, autoReview: false }, undefined)
+    expect(update).toHaveBeenCalledWith(
+      'starhub-memory-context',
+      { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
+      undefined,
+    )
     fireEvent.click(screen.getByText('启用长期记忆与自动沉淀'))
     await act(async () => { await Promise.resolve() })
-    expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: true, autoReview: true } })
+    expect(update).toHaveBeenCalledWith('starhub-memory-context', { enabled: true, autoReview: true }, undefined)
   })
 
   it('keeps rendering when the host namespace sync rejects (legacy runtime)', async () => {
     const update = vi.fn<(request: unknown) => Promise<void>>(() => Promise.reject(new Error('unknown namespace')))
-    const api = {
+    const remote = {
       settings: { update },
-      llm: { models: vi.fn(async () => mkEmptyCatalog()) },
-    } as unknown as IApiClient
-    render(<AiTab api={api} />)
+      llm: mkEmptyCatalogLlm(),
+    } as unknown as ClientRemote
+    render(<AiTab remote={remote} />)
     await act(async () => { await Promise.resolve() })
     expect(update).toHaveBeenCalled()
     // 同步失败静默:开关仍以 localStorage 为准,设置页正常渲染。

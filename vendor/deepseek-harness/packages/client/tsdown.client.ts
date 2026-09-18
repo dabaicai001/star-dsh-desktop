@@ -7,17 +7,20 @@
  * and injects a tagged style at factory execution, while `x.css?inline`
  * exports compiled text for a plugin-owned lifecycle effect. The virtual
  * loaders register each real stylesheet as a watch dependency.
+ * Non-experimental client outputs reject experimental module and stylesheet
+ * inputs, including origins recorded by chained source maps.
  */
 import { readFile } from 'node:fs/promises'
 import { existsSync, globSync, readFileSync } from 'node:fs'
 import { createRequire, isBuiltin } from 'node:module'
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { UserConfig } from 'tsdown'
+import type { TsdownPlugin, UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 import { optionalStringArray } from './modules/src/client/manifest.ts'
 import { PLATFORM_MODULES, PRELOADED_CLIENT_EXTERNALS } from './web/src/platform.ts'
 import { clientBuildEnvironmentDefines } from '../../scripts/client-build-environment.ts'
+import { BundleInputIsolation, physicalBundleInput } from '../../scripts/bundle-input-isolation.ts'
 
 /**
  * Virtual-id wrapper keeping module CSS away from tsdown's own css pipeline
@@ -53,12 +56,12 @@ function styleInjectionModule(
 }
 
 /**
- * Wire/type layers a client bundle may inline: browser-safe contracts
- * with no runtime identity to share (no Symbol/instanceof/singleton state).
+ * Contract layers and pure folds a client bundle may inline: browser-safe
+ * values with no runtime identity to share (no Symbol/instanceof/singleton state).
  * Everything else under @deepseek-ai/* is either a module-table entry
  * (external) or a leak the purity gate rejects.
  */
-export const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|file-reference|session|llm|tools|brand)(\/|$)/
+export const INLINE_SAFE = /^(?:@deepseek-ai\/dsh-(?:file-reference|session|llm|tools|brand|deque|output-retention|typert-protocol|util-crypto|util-values|util-workspace-path)(?:\/|$)|@deepseek-ai\/dsh-token-meter\/client$|@deepseek-ai\/dsh-host-open-in-app\/shared$|@deepseek-ai\/dsh-agent-presets\/display$|@deepseek-ai\/dsh-spill-policy\/notice$)/
 
 /**
  * Vendored framework libraries: rescoped into @deepseek-ai, so the gate below
@@ -94,7 +97,8 @@ function browserSourcePath(source: string, sourcemapPath: string): string {
  * earlier Host pass. A package-level tsdown.config.ts REPLACES the root
  * workspace layout, so the lib half must be restated here — dropping it leaves
  * the package without lib/index.js and the host Loader cannot import its node
- * half.
+ * half. The Client build consumes `lib/types` and chains those tsc maps, with
+ * original source content, into the standalone plugin map.
  * @param id - plugin id (package name), stamped into the __ModuleLoader__.load
  * handoff and onto the injected style tags.
  * @param libEntry - node-half entries, spelled at the call site so the
@@ -254,6 +258,7 @@ interface AssetEmitter {
 
 function staticLinkedConfig(id: string, entry: string, outputName = basename(entry, '.js')): UserConfig {
   const emitted = new Set<string>()
+  const isolation = clientInputIsolation(id)
   return {
     name: id,
     entry: { [outputName]: entry },
@@ -267,6 +272,10 @@ function staticLinkedConfig(id: string, entry: string, outputName = basename(ent
     // The shell compiles this artifact, so its map is the only path from a
     // browser stack frame back to the TSX (tsc emits the lib/types half).
     sourcemap: true,
+    outputOptions: {
+      sourcemapExcludeSources: false,
+      sourcemapPathTransform: isolation.sourcePath,
+    },
     plugins: [{
       // Contract 1. `pre` because tsdown's own deps plugin would otherwise
       // resolve and inline every specifier missing from the npm production
@@ -281,18 +290,7 @@ function staticLinkedConfig(id: string, entry: string, outputName = basename(ent
           return isBareSpecifier(source) ? { id: source, external: true } : null
         },
       },
-    }, {
-      // Contract 3. Rolldown does not read the `//# sourceMappingURL` of its
-      // inputs, so each tsc map is handed over as that module's map and
-      // composed into the bundle map; without it frames stop at the emitted
-      // lib/types JavaScript instead of reaching the TSX.
-      name: 'dsh-tsc-sourcemap',
-      async load(id: string) {
-        if (!id.includes(TYPES_MARKER) || !id.endsWith('.js') || !existsSync(`${id}.map`)) return null
-        const code = await readFile(id, 'utf8')
-        return { code: code.replace(SOURCEMAP_COMMENT, ''), map: await readFile(`${id}.map`, 'utf8') }
-      },
-    }, {
+    }, tscSourceMapPlugin(), isolation.plugin, {
       // Contract 4. The import survives verbatim and the sheet lands beside the
       // JavaScript, so the shell's CSS Modules pipeline sees a real stylesheet.
       name: 'dsh-css-asset',
@@ -436,6 +434,7 @@ function matchesSpecifier(patterns: readonly RegExp[], specifier: string): boole
 
 function clientConfig(id: string, entry: string): UserConfig {
   const isRequested = (specifier: string): boolean => clientExternals(id).has(specifier)
+  const isolation = clientInputIsolation(id)
   return {
     name: `${id}/client`,
     entry: { client: entry },
@@ -459,6 +458,18 @@ function clientConfig(id: string, entry: string): UserConfig {
       // package's own request list: requested specifiers stay imports,
       // everything else is bundled.
       alwaysBundle: (specifier: string) => !isRequested(specifier),
+    },
+    // Dual-mode libraries (lexical's exports carry development/production/
+    // node conditions; the node file picks its flavor with a top-level await
+    // a CJS bundle cannot carry) resolve their static flavor matching the
+    // NODE_ENV the defines below bake in.
+    inputOptions: {
+      resolve: {
+        conditionNames: [
+          (process.env.NODE_ENV ?? 'production') === 'development' ? 'development' : 'production',
+          'browser', 'import', 'module', 'default',
+        ],
+      },
     },
     // Browser bundles inline node-idiom deps (zustand/immer read
     // process.env.NODE_ENV; zustand's esm build also probes
@@ -495,7 +506,7 @@ function clientConfig(id: string, entry: string): UserConfig {
           + '(type-only imports are erased and never reach this gate)',
         )
       },
-    }, {
+    }, tscSourceMapPlugin(), isolation.plugin, {
       name: 'dsh-css-modules-inline',
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith('.module.css')) return null
@@ -554,14 +565,104 @@ function clientConfig(id: string, entry: string): UserConfig {
     }],
     outputOptions: {
       entryFileNames: 'client.js',
+      sourcemapExcludeSources: false,
       // The map is served from /plugins/<scoped-package>/client.js.map. The
       // browser resolves its local sources back into URLs that mirror the
       // /packages/<group>/<package>/src directories; sourcesContent keeps them usable
       // without exposing that tree as an HTTP route.
-      sourcemapPathTransform: browserSourcePath,
+      sourcemapPathTransform(source, mapPath) {
+        isolation.sourcePath(source, mapPath)
+        return browserSourcePath(source, mapPath)
+      },
       banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, factory: (require) => {`,
       footer: 'return module.exports; } });',
       intro: 'var module = { exports: {} }; var exports = module.exports;',
+    },
+  }
+}
+
+/** Check browser bundle inputs before their original package identity is folded into an artifact. */
+function clientInputIsolation(id: string): {
+  plugin: TsdownPlugin
+  sourcePath: (source: string, mapPath: string) => string
+} {
+  const experimental = id.startsWith('@deepseek-ai/dsh-experimental-')
+  const inputs = new BundleInputIsolation(REPOSITORY_ROOT, `client bundle isolation (${id})`)
+  return {
+    plugin: {
+      name: 'dsh-client-input-isolation',
+      buildStart() { inputs.reset() },
+      generateBundle(_options, bundle) {
+        if (experimental) return
+        for (const output of Object.values(bundle)) {
+          if (output.type === 'chunk') {
+            for (const module of Object.keys(output.modules)) {
+              inputs.assertInput(clientInputFile(module))
+              const info = this.getModuleInfo(module)
+              if (info === null) {
+                // Rolldown's runtime helper is compiler-generated and has no source module record.
+                if (module === '\0rolldown/runtime.js') continue
+                throw new Error(`client bundle isolation (${id}): module ${module} has no bundler module record`)
+              }
+              for (const dependency of [...info.importedIds, ...info.dynamicallyImportedIds]) {
+                inputs.assertInput(clientInputFile(dependency))
+              }
+            }
+            for (const external of [...output.imports, ...output.dynamicImports]) {
+              if (!(external in bundle)) inputs.assertInput(external)
+            }
+          } else {
+            for (const original of output.originalFileNames) inputs.assertInput(original)
+          }
+        }
+      },
+    },
+    sourcePath(source, mapPath) {
+      if (!experimental) {
+        const decoded = clientInputFile(source)
+        const file = physicalBundleInput(decoded) ?? resolvePath(dirname(mapPath), decoded)
+        inputs.assertSourceMapInput(file)
+      }
+      return source
+    },
+  }
+}
+
+/** CSS loader ids append a JavaScript suffix to the physical stylesheet path. */
+function clientInputFile(id: string): string {
+  const prefix = [CSS_VIRTUAL_PREFIX, GLOBAL_CSS_VIRTUAL_PREFIX, INLINE_CSS_VIRTUAL_PREFIX]
+    .find(prefix => id.startsWith(prefix))
+  return prefix === undefined ? id : id.slice(prefix.length, -CSS_VIRTUAL_SUFFIX.length)
+}
+
+/** Chain tsc's emitted maps into any Client bundle that consumes `lib/types`. */
+function tscSourceMapPlugin() {
+  return {
+    name: 'dsh-tsc-sourcemap',
+    async load(id: string) {
+      if (!id.includes(TYPES_MARKER) || !id.endsWith('.js') || !existsSync(`${id}.map`)) return null
+      const code = await readFile(id, 'utf8')
+      const mapPath = `${id}.map`
+      const map = JSON.parse(await readFile(mapPath, 'utf8')) as {
+        sourceRoot?: unknown
+        sources?: unknown
+        sourcesContent?: unknown
+        [key: string]: unknown
+      }
+      if (!Array.isArray(map.sources) || map.sources.some(source => typeof source !== 'string')) {
+        throw new Error(`client sourcemap: ${mapPath} has invalid sources`)
+      }
+      const sources = map.sources as string[]
+      if (
+        !Array.isArray(map.sourcesContent)
+        || map.sourcesContent.length !== sources.length
+        || map.sourcesContent.some(source => typeof source !== 'string')
+      ) {
+        const sourceRoot = typeof map.sourceRoot === 'string' ? map.sourceRoot : ''
+        map.sourcesContent = await Promise.all(sources.map(async source =>
+          await readFile(resolvePath(dirname(mapPath), sourceRoot, source), 'utf8')))
+      }
+      return { code: code.replace(SOURCEMAP_COMMENT, ''), map }
     },
   }
 }
@@ -580,19 +681,7 @@ const SOURCEMAP_COMMENT = /\n\/\/# sourceMappingURL=.*\s*$/
 
 /** Resolve an emitted JS asset import against its source-tree counterpart. */
 function sourceAssetPath(source: string, importer: string): string {
-  // 裸包 CSS 导入(如 `@xterm/xterm/css/xterm.css`):走 Node 模块解析定位到
-  // node_modules 里的真实文件,不能当相对路径拼到 importer 目录(上游补丁:
-  // dsh-css-*-inline 插件原先对裸包 specifier 会拼出
-  // `<pkg>/lib/types/.../@scope/pkg/...css` 的假路径,读文件时报 ENOENT;
-  // 首次由 StarHub 堡垒机浮层在 client 半依赖图引入 xterm.css 时触发)。
-  const isBare = !source.startsWith('.') && !source.startsWith('/') && !isAbsolute(source)
-  if (isBare) {
-    try {
-      return createRequire(importer).resolve(source)
-    } catch {
-      // 解析失败(包内文件缺失等)回退原相对拼接,由下游 readFile 报清晰错误。
-    }
-  }
+  if (!source.startsWith('.') && !isAbsolute(source)) return createRequire(importer).resolve(source)
   const emitted = resolvePath(dirname(importer), source)
   if (existsSync(emitted)) return emitted
   const boundary = emitted.indexOf(TYPES_MARKER)

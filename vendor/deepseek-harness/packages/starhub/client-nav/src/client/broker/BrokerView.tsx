@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   IconDataOutline16, IconLinkOutline16, IconListPenOutline16, IconQueueOutline14,
-  IconRefreshOutline14, IconSendOutline16, IconWarningOutline16,
+  IconRefreshOutline14, IconSendOutline14, IconWarningOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RustAsset } from '../store.ts'
 import { loadBrokerOverview, type BrokerConnectParams, type BrokerKind, type BrokerOverview } from './service.ts'
@@ -188,7 +188,7 @@ export function BrokerView({ asset }: BrokerViewProps) {
         {kind === 'nsq' && (
           <DashboardCard
             title="累计消息"
-            icon={<IconSendOutline16 size={16} />}
+            icon={<IconSendOutline14 size={16} />}
             value={totalMessages.toLocaleString()}
             color="green"
             loading={loading}

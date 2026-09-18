@@ -32,10 +32,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
 import type { PreToolDecision } from '@deepseek-ai/dsh-tools'
-import { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import type { Session } from '@deepseek-ai/dsh-session'
+// Type-only: ctx.settings 的 Context 声明合并。
+import type {} from '@deepseek-ai/dsh-settings'
+import { SessionSeq, type Session } from '@deepseek-ai/dsh-session'
 import {
-  effectiveApprovalPolicy,
   setApprovalPolicy,
   type ApprovalOutcome,
 } from '@deepseek-ai/dsh-user-approval'
@@ -59,7 +59,7 @@ export const Config: z<{ answerer?: boolean; ownsPermissionSettings?: boolean }>
 const BRIDGE_METHOD = 'starhub/approval.request'
 
 /** 与 web GUI 共享的权限设置命名空间(dsh permission-presets 的写入方)。 */
-const PERMISSION_NAMESPACE: SettingsNamespace = settingsNamespace('permission')
+const PERMISSION_NAMESPACE = 'permission'
 
 /** settings.yaml 里 permission 段的最小形状(defaultPreset 由 GUI 权限行写入)。 */
 const PermissionSchema = z.object({
@@ -382,8 +382,11 @@ function sessionPreset(
   session: Session,
   readDefaultPreset: () => string | undefined,
 ): string | undefined {
-  for (let index = session.events.length - 1; index >= 0; index -= 1) {
-    const event = session.events[index]
+  // 0.1.6 起 Session 不再暴露 events 数组;按 seq 倒序读(同 bundle/headless
+  // 的 liveEvents 模式)。
+  for (let index = session.seq - 1; index >= 0; index -= 1) {
+    // oxlint-disable-next-line typescript/no-deprecated -- 既有 Session 历史读取;迁移待上游。
+    const event = session.eventAt(SessionSeq(index))
     if (event === undefined) continue
     if ((event.type as string) === 'permission/preset') {
       const preset = (event.data as { preset?: unknown }).preset
@@ -445,7 +448,8 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
       return typeof value?.defaultPreset === 'string' ? value.defaultPreset : undefined
     }
   ctx.on('session/created', (session) => {
-    if (effectiveApprovalPolicy(session.events) !== undefined) return
+    // 0.1.6:effectiveApprovalPolicy(events) 撤除,改由 ApprovalService.overrideOf 读。
+    if (ctx.approval.overrideOf(session) !== undefined) return
     setApprovalPolicy(session, 'ask')
   })
 

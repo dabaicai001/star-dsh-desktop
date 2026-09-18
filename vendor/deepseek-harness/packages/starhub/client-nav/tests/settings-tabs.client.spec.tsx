@@ -9,7 +9,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import { AuditTab, formatAuditDetail, formatAuditTime } from '../src/client/settings/audit.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
 import { PluginsTab } from '../src/client/settings/plugins.tsx'
@@ -364,33 +364,27 @@ describe('AiTab', () => {
 
   it('configures the memory model via the catalog dropdowns and syncs to the namespace', async () => {
     const update = vi.fn(() => Promise.resolve())
-    const api = {
+    const remote = {
       settings: { update },
       llm: {
-        models: vi.fn(async () => ({
-          result: {
-            ok: true as const,
-            value: {
-              groups: [
-                {
-                  id: 'deepseek-official', name: 'DeepSeek',
-                  models: [
-                    { id: 'deepseek-chat', name: 'DeepSeek Chat' },
-                    { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' },
-                  ],
-                },
-              ],
-              failures: [],
-            },
-          },
+        listConfigurableProviders: vi.fn(async () => ({
+          ok: true as const,
+          value: [{ provider: 'deepseek-official', settingsNs: 'model.deepseek-official', displayName: 'DeepSeek' }],
+        })),
+        discoverModels: vi.fn(async () => ({
+          ok: true as const,
+          value: [
+            { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+            { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' },
+          ],
         })),
       },
-    } as unknown as IApiClient
+    } as unknown as ClientRemote
     // 已有历史内存写入习惯的旧 localStorage(未配模型)不受影响。
     localStorage.setItem(AI_STORAGE_KEY, JSON.stringify({
       settings: { memoryEnabled: true },
     }))
-    render(<AiTab api={api} />)
+    render(<AiTab remote={remote} />)
     await act(async () => { await Promise.resolve() })
     // 未配置时「启用长期记忆」被归一化回 false 且禁用。
     expect(screen.getByText('启用长期记忆与自动沉淀').closest('label')!.querySelector('input')!.disabled).toBe(true)
@@ -404,15 +398,16 @@ describe('AiTab', () => {
     }
     expect(stored().settings.memoryProvider).toBe('deepseek-official')
     expect(stored().settings.memoryModel).toBe('deepseek-chat')
-    expect(update).toHaveBeenCalledWith({
-      ns: 'starhub-memory-context',
-      patch: { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
-    })
+    expect(update).toHaveBeenCalledWith(
+      'starhub-memory-context',
+      { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
+      undefined,
+    )
     // 配置后开关可用
     expect(screen.getByText('启用长期记忆与自动沉淀').closest('label')!.querySelector('input')!.disabled).toBe(false)
     fireEvent.click(screen.getByText('启用长期记忆与自动沉淀'))
     await act(async () => { await Promise.resolve() })
-    expect(update).toHaveBeenCalledWith({ ns: 'starhub-memory-context', patch: { enabled: true, autoReview: true } })
+    expect(update).toHaveBeenCalledWith('starhub-memory-context', { enabled: true, autoReview: true }, undefined)
   })
 
   it('manages memories: group by scope, edit with audit, two-step delete', async () => {

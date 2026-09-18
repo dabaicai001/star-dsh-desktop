@@ -20,8 +20,6 @@ function renderButton(startRegion: () => Promise<void>) {
   const props: ScreenshotButtonProps = {
     addImages: () => null,
     startRegion,
-    session: undefined as unknown as ScreenshotButtonProps['session'],
-    input: undefined as unknown as ScreenshotButtonProps['input'],
     sessionId: 's-1' as unknown as ScreenshotButtonProps['sessionId'],
     useSession: (() => undefined) as unknown as ScreenshotButtonProps['useSession'],
     useProjection: (() => undefined) as unknown as ScreenshotButtonProps['useProjection'],
@@ -29,6 +27,12 @@ function renderButton(startRegion: () => Promise<void>) {
     inputActions: undefined as unknown as ScreenshotButtonProps['inputActions'],
     useSessions: (() => undefined) as unknown as ScreenshotButtonProps['useSessions'],
     useWorkspaces: (() => undefined) as unknown as ScreenshotButtonProps['useWorkspaces'],
+    usePanelInfo: (() => undefined) as never,
+    useSessionPendingInteraction: (() => undefined) as never,
+    useResource: (() => undefined) as never,
+    useConversation: (() => undefined) as never,
+    useChat: (() => undefined) as never,
+    useTrajectory: (() => undefined) as never,
   }
   render(<ScreenshotButton {...props} />)
 }

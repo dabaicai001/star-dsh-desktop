@@ -6,13 +6,14 @@
  * 资产上下文到 starhub-tool-context settings namespace——不切窗口、不打断
  * (设计文档 M5.1:`@` 是用户的嘴,是否打开窗口由 AI 按消息意图调 focus 工具)。
  */
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
+import { createElement, type ComponentType } from 'react'
+import type { IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   ClientSessionContext, InputTriggerCandidate, InputTriggerSource,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { STARHUB_SUBCATEGORIES, assetSubtitle, routeNameForAsset, routePrefixForAsset, type StarHubAsset } from './sections.ts'
 import type { RustAsset, StarHubAssets, ToolSelectionBridge } from './store.ts'
-import { bindAssetContext } from './tool-context.ts'
+import { bindAssetContext, type SettingsUpdateWriter } from './tool-context.ts'
 
 /** source 名(菜单分组与 codec 路由键,契约 §6.1)。 */
 export const STARHUB_ASSET_SOURCE = 'starhub-asset'
@@ -23,9 +24,9 @@ const STARHUB_ASSET_TRIGGER = '@'
 /** Docker 资产引用文本上的特别标注(死规定:Docker 删除类操作必须用户确认)。 */
 export const DOCKER_REFERENCE_TAG = '[Docker]'
 
-/** 构造依赖:settings RPC 面 + 资产快照 holder + 选择桥(轻绑定读当前子类)。 */
+/** 构造依赖:settings 写入面 + 资产快照 holder + 选择桥(轻绑定读当前子类)。 */
 export interface StarHubAssetSourceDeps {
-  api: IApiClient
+  writer: SettingsUpdateWriter
   assets: StarHubAssets
   selection: ToolSelectionBridge
 }
@@ -62,6 +63,32 @@ export function assetToolBadge(asset: { type: string; config: Record<string, unk
   return 'DB'
 }
 
+// 徽标组件缓存:InputTriggerCandidate.icon 只收 ReferenceIcon 词表字符串或
+// 自定义组件(0.1.6 起不再接受任意字符串),同一文本复用同一组件引用。
+const badgeIconCache = new Map<string, ComponentType<IconProps>>()
+
+/**
+ * 工具大类短标签 → 候选 icon 位的文本徽标组件。
+ * @param text - 徽标文本(SSH / Docker / 本机 / DB)。
+ * @returns 渲染该文本的 IconProps 组件。
+ */
+function badgeIconOf(text: string): ComponentType<IconProps> {
+  let icon = badgeIconCache.get(text)
+  if (icon === undefined) {
+    icon = function AssetToolBadge({ size = 16, className }: IconProps) {
+      return createElement('span', {
+        className,
+        style: {
+          display: 'inline-block', width: size, height: size, lineHeight: `${size}px`,
+          fontSize: Math.max(9, size - 7), textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap',
+        },
+      }, text)
+    }
+    badgeIconCache.set(text, icon)
+  }
+  return icon
+}
+
 /**
  * Create the `@` asset source: candidates from the asset snapshot, lexicon =
  * the asset-name roll (subscribeLexicon feeds the pipeline's decoration
@@ -93,7 +120,7 @@ export function createStarHubAssetSource(deps: StarHubAssetSourceDeps): InputTri
         const dockerGuard = asset.type === 'docker' && sub === '' ? '删除操作需用户确认' : ''
         const candidate: InputTriggerCandidate = {
           name: asset.name,
-          icon: assetToolBadge(asset),
+          icon: badgeIconOf(assetToolBadge(asset)),
           ...(sub !== '' ? { description: sub } : dockerGuard !== '' ? { description: dockerGuard } : {}),
         }
         byCandidate.set(candidate, asset)
@@ -121,7 +148,7 @@ export function createStarHubAssetSource(deps: StarHubAssetSourceDeps): InputTri
       // 模型去调 ssh_exec。附会话 id,host 侧 tool-context 只对触发绑定的会话注入。
       const subcategory = STARHUB_SUBCATEGORIES.find(s => s.matches(asset as StarHubAsset))?.key ?? ''
       const routePrefix = routePrefixForAsset(asset as StarHubAsset) ?? ''
-      bindAssetContext(deps.api, { subcategory, routePrefix }, asset, session.sessionId)
+      bindAssetContext(deps.writer, { subcategory, routePrefix }, asset, session.sessionId)
       const sub = assetSubtitle(asset)
       // Docker 资产管理标签也带 ⚠ 标注(候选行与输入框里的引用都醒目)。
       const dockerMark = asset.type === 'docker' ? ` ${DOCKER_REFERENCE_TAG}` : ''

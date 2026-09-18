@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.119.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.121.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,11 +48,8 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.119.1 (2026-09-16)
-- 🐛 **DB 工作台 tab 条遮挡与溢出体验**:标签溢出时 Chromium 默认横向滚动条(约 12px)挤占 42px 头部、遮挡标签,「新建查询」钮随标签一起滚出可视区被裁切;改为「新建查询」钉在滚动区外常驻可见,滚动区改用 4px 细滚动条、支持纵向滚轮转横向滚动,活动标签自动滚入视野,长表名限宽省略。
-- 🐛 **侧栏「工具」入口与「设置」透明度/几何不一致**:工具按钮文字色为 tertiary(与设置行并排显得发灰)且宽度比设置行窄 4px、rail(收起)态缺 36px 圆形样式;与「设置」触发行对齐为同一几何(calc(100% + 4px) 行宽 / 36px rail 圆钮)与 label-primary 配色。
-- 🐛 **rz/sz 文件传输改为居中弹窗**:远端执行 rz 时的 ZMODEM 提示从终端顶部内联横条(易被忽略、挤压终端首行)改为居中模态弹窗,含状态、文件名、进度条与「选择文件」「取消」按钮,接收(sz)进度同弹窗展示。
-- 🐛 **Redis 新建 key 后展开目标 db 显示「暂无 key」**:新建 key(或 FLUSHDB)到收起状态的 db 只刷新 DBSIZE,会基于占位记录建出「有 size、无键」且 match 恰为 '' 的缓存项,之后展开该 db 被误判为完整缓存而跳过 SCAN(明明有 key 却显示「暂无 key。」);改为从未加载的记录 match 恒为 null,缓存命中判定天然失败,展开必然真实加载键列表。
+### v0.121.0 (2026-09-18)
+- 🔧 **升级内置 DeepSeek Harness 至上游 master(0.1.6-alpha.1, 2026-09-15)**:`vendor/deepseek-harness` 从 `dsh-v0.1.1-rc.2` 快照替换到 `0d1f500`,并重放 StarHub 全部补丁(DiffBlock 双列 LCS 对比、侧栏 StarHub 品牌、ui-chat 文件打开走工作台等)。随升级迁移:apiproxy/`IApiClient` 撤除,设置写入与 LLM 目录改走 `ctx.remote`(api-gateway);`web-react` 并入 `ui-renderer`(本会话改为 synthesized 标准 seat);会话快照节点/流式投影迁至 ui-chat Chat target;输入附件 API 更名(`createDrafts`/`addAttachments`);InputTrigger 图标支持自定义组件;全局槽位新增 `usePanelInfo`/`useSessionPendingInteraction`/`useResource` 席位。DiffBlock 的 +/− 统计改为 LCS 口径(共享上下文行不计),折叠行与展开卡片一致。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

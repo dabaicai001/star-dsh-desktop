@@ -25,13 +25,10 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
             data-slot="sidebar.brand.mark"
             style="display: contents;"
           >
-            <svg
-              aria-hidden="true"
-              data-content="965fe321"
-              fill="none"
-              height="17.6580310880829"
-              viewBox="0 0 23.16 17.04"
-              width="24"
+            <img
+              alt="StarHub"
+              class="brandLogo"
+              src="/starhub-logo.png"
             />
           </div>
         </span>
@@ -120,13 +117,10 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
               data-slot="sidebar.brand.mark"
               style="display: contents;"
             >
-              <svg
-                aria-hidden="true"
-                data-content="965fe321"
-                fill="none"
-                height="17.6580310880829"
-                viewBox="0 0 23.16 17.04"
-                width="24"
+              <img
+                alt="StarHub"
+                class="brandLogo"
+                src="/starhub-logo.png"
               />
             </div>
           </span>
@@ -137,16 +131,11 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
               data-slot="sidebar.brand.name"
               style="display: contents;"
             >
-              <span
-                class="fallbackBrandName"
-              >
-                DSH Local Build
-              </span>
-              <span
-                class="buildRevision"
-              >
-                abc1234
-              </span>
+              <img
+                alt="StarHub harness"
+                class="brandBadge"
+                src="/starhub-badge.png"
+              />
             </div>
           </span>
         </span>
@@ -246,13 +235,10 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
               data-slot="sidebar.brand.mark"
               style="display: contents;"
             >
-              <svg
-                aria-hidden="true"
-                data-content="965fe321"
-                fill="none"
-                height="17.6580310880829"
-                viewBox="0 0 23.16 17.04"
-                width="24"
+              <img
+                alt="StarHub"
+                class="brandLogo"
+                src="/starhub-logo.png"
               />
             </div>
           </span>
@@ -263,16 +249,11 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
               data-slot="sidebar.brand.name"
               style="display: contents;"
             >
-              <span
-                class="fallbackBrandName"
-              >
-                DSH Local Build
-              </span>
-              <span
-                class="buildRevision"
-              >
-                abc1234
-              </span>
+              <img
+                alt="StarHub harness"
+                class="brandBadge"
+                src="/starhub-badge.png"
+              />
             </div>
           </span>
         </span>

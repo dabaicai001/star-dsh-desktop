@@ -25,12 +25,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-// Type-only: the connection service merge (ctx.get('connection') typing).
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { ISessions, IWorkspaces } from '@deepseek-ai/dsh-client-runtime/client'
+// Type-only: connection service merge 不再使用(0.1.6 起 connection.api 撤除,
+// Host RPC 走 ctx.remote);保留 dsh-client-connection 仅因 SessionId 经垫片转口。
+import type { ISessions, IWorkspaces, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+// Type-only: Chat target 的 ConversationViewSnapshotMap.chat 声明合并(ui-chat 注册)。
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { AiChatSlice, AiChatSource } from './ai/AiChatPanel.tsx'
 import { createStarHubAssetSource, DOCKER_REFERENCE_TAG, STARHUB_ASSET_SOURCE } from './asset-source.ts'
 import { createStarhubFileSource } from './file-source.ts'
 import { createAskAiHandler, createOpenAssetHandler, subscribeHostEvents } from './host-events.ts'
@@ -74,7 +77,7 @@ import { syncMemoryEnabled } from './settings/memory-context.ts'
  * pipeline (for the `@` source) and the session/workspace/conversation services
  * (for `starhub://ask-ai`).
  */
-export const inject = ['slots', 'connection', 'inputTriggers', 'sessions', 'workspaces', 'conversation']
+export const inject = ['slots', 'connection', 'remote', 'uiConversation', 'inputTriggers', 'sessions', 'workspaces', 'conversation']
 
 /**
  * Client plugin body: one root-scope store handle (sidebar) plus the
@@ -117,15 +120,54 @@ export function apply(ctx: Context): void {
     open: (target) => { fileViewer.open(target) },
   } satisfies { open: (target: FileViewTarget) => void })
   // 服务面:注入数组已声明依赖,读取必然非空;conversation 在预填时退化处理。
-  const connection = ctx.get('connection') as ConnectionHandle
+  // 0.1.6:apiproxy 的 connection.api 撤除,类型化 Host RPC 走 ctx.remote
+  // (api-gateway 的 ClientRemote);settings 写入统一经 remote.settings。
+  const settingsWriter = ctx.remote.settings
   // 「启用长期记忆」初始同步:host 侧 memory-context 插件的 namespace 未写过
   // 视为开启;若用户此前关过(localStorage false),启动时补写一次关闭态。
-  syncMemoryEnabled(connection.api, loadAiSettings().memoryEnabled)
+  syncMemoryEnabled(settingsWriter, loadAiSettings().memoryEnabled)
   const inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
   const sessions = ctx.get('sessions') as ISessions
   const workspaces = ctx.get('workspaces') as IWorkspaces
   // inject 声明了 required 'conversation',加载后必然存在(cordis ctx.get 返回可空)。
   const conversation = ctx.get('conversation') as unknown as ConversationController
+  // AI 聊天面板的会话内容源(0.1.6):会话节点/流式片段由 uiConversation 的
+  // Chat target 发布(ui-chat 注册),适配成 legacy 投影(nodes + partial)。
+  // 源身份按会话缓存,且 getSnapshot 按 legacy 引用缓存切片——uSES 要求
+  // 快照引用在两次发布间稳定。ui-chat 未装载的组合里 target('chat') 抛错,
+  // 退回 undefined(面板空态)。
+  const EMPTY_CHAT_SLICE: AiChatSlice = { nodes: [], partial: null }
+  const chatSources = new Map<string, AiChatSource>()
+  const chatOf = (sessionId: SessionId): AiChatSource | undefined => {
+    const key = String(sessionId)
+    const cached = chatSources.get(key)
+    if (cached !== undefined) return cached
+    const binding = sessions.binding(sessionId)
+    if (binding === undefined) return undefined
+    let target: ReturnType<ReturnType<typeof ctx.uiConversation.binding>['target']>
+    try {
+      target = ctx.uiConversation.binding(binding).target('chat')
+    } catch {
+      return undefined
+    }
+    let cachedLegacy: unknown
+    let cachedSlice = EMPTY_CHAT_SLICE
+    const source: AiChatSource = {
+      getSnapshot: () => {
+        const legacy = target.getSnapshot()?.legacy
+        if (legacy !== cachedLegacy) {
+          cachedLegacy = legacy
+          cachedSlice = legacy === undefined
+            ? EMPTY_CHAT_SLICE
+            : { nodes: legacy.nodes, partial: legacy.partial }
+        }
+        return cachedSlice
+      },
+      subscribe: (fn) => target.subscribe(fn),
+    }
+    chatSources.set(key, source)
+    return source
+  }
   // 执行记录按会话隔离(2026-08-27):把「当前活跃会话」喂给 execRecords 桥,
   // 「执行」角标、抽屉列表与「清空」都只作用于本会话,跨会话不再共用;
   // 首次同步立即写一次(不依赖切换事件才初始化)。
@@ -178,6 +220,7 @@ export function apply(ctx: Context): void {
       refreshAssets: assets.refresh,
       sessions,
       workspaces,
+      chatOf,
       hooks: {
         connectionManager: connectionManager.source,
         aiChat: aiChat.source,
@@ -263,7 +306,7 @@ export function apply(ctx: Context): void {
       if (current === undefined) return
       const binding = sessions.binding(current)
       if (binding === undefined) return
-      bindAssetContext(connection.api, selection.source.getSnapshot(), asset, current)
+      bindAssetContext(settingsWriter, selection.source.getSnapshot(), asset, current)
       const sub = assetSubtitle(asset)
       // Docker 资产带 [Docker] 删除保护标注(与 pick 候选/引用文本一致)。
       const dockerMark = asset.type === 'docker' ? ` ${DOCKER_REFERENCE_TAG}` : ''
@@ -306,7 +349,7 @@ export function apply(ctx: Context): void {
   // 契约 §6.1:`@` 资产 source(ui-input-trigger 流水线);pick 轻绑定上下文,
   // 不切窗口。ctx.effect 保证 HMR 卸载时反注册 source。
   ctx.effect(
-    () => inputTriggers.registerSource(createStarHubAssetSource({ api: connection.api, assets, selection })),
+    () => inputTriggers.registerSource(createStarHubAssetSource({ writer: settingsWriter, assets, selection })),
     'starhub: @ asset source',
   )
   // `@` 文件 source(2026-08-24):与资产 source 同 trigger 并行,候选来自当前
@@ -387,7 +430,8 @@ export function apply(ctx: Context): void {
     order: 10,
     label: 'StarHub 截图',
     inject: () => ({
-      // rc.2 附件管线:createDraftImages 注册 draft → input shell addImages 挂进输入。
+      // 0.1.6 附件管线:createDrafts(sessionId, files) 注册草稿附件 →
+      // input shell addAttachments 挂进输入;失败回滚 releaseDraftAttachments。
       // 无当前会话(session-maybe 空态)时 shell 不存在,addImages 置 undefined(按钮仍可截图,
       // 结果无处挂载时静默丢弃)。
       addImages: (files: readonly File[]): string | null => {
@@ -396,9 +440,9 @@ export function apply(ctx: Context): void {
         const binding = sessions.binding(current)
         if (binding === undefined) return null
         try {
-          const images = conversation.createDraftImages(files)
-          if (!conversation.input.for(binding.ctx).addImages(images.map(image => image.id))) {
-            conversation.releaseDraftImages(images)
+          const attachments = conversation.createDrafts(current, files)
+          if (!conversation.input.for(binding.ctx).addAttachments(attachments.map(a => a.id))) {
+            conversation.releaseDraftAttachments(attachments)
           }
           return null
         } catch (error: unknown) {
@@ -417,7 +461,7 @@ export function apply(ctx: Context): void {
       focusWindow: focusWindowByKey,
     }),
     onAskAi: createAskAiHandler({
-      api: connection.api,
+      writer: settingsWriter,
       selection,
       sessions,
       workspaces,
@@ -434,7 +478,7 @@ export function apply(ctx: Context): void {
     label: string
     component: () => JSX.Element
   }> = [
-    { id: 'starhub-ai', order: 30, label: 'AI 助手', component: () => createElement(AiTab, { api: connection.api }) },
+    { id: 'starhub-ai', order: 30, label: 'AI 助手', component: () => createElement(AiTab, { remote: ctx.remote }) },
     { id: 'starhub-plugins', order: 31, label: '插件市场', component: PluginsTab },
     { id: 'starhub-audit', order: 32, label: '审计日志', component: AuditTab },
     { id: 'starhub-alert', order: 33, label: '告警规则', component: AlertTab },

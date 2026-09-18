@@ -1,18 +1,22 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import sharp from 'sharp'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CompressionLimiter } from '../src/compression-limiter.ts'
-import LocalAttachmentStore, { requestImageDimensions } from '../src/index.ts'
+import LocalAttachmentStore from '../src/index.ts'
 
 const homes: string[] = []
 
-async function store(): Promise<LocalAttachmentStore> {
+async function home(): Promise<string> {
   const dshHome = await mkdtemp(join(tmpdir(), 'dsh-request-image-'))
   homes.push(dshHome)
-  return new LocalAttachmentStore(new Context(), { dshHome })
+  return dshHome
+}
+
+async function store(): Promise<LocalAttachmentStore> {
+  return new LocalAttachmentStore(new Context(), { dshHome: await home() })
 }
 
 async function image(width: number, height: number): Promise<Uint8Array> {
@@ -39,44 +43,50 @@ async function complexOpaqueAlphaImage(width: number, height: number): Promise<U
 }
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true })))
 })
 
-describe('request image dimensions', () => {
-  it.each([
-    [4096, 4096, 800, 800],
-    [4096, 2048, 1130, 565],
-    [3840, 2160, 1066, 600],
-    [320, 240, 320, 240],
-  ])('projects %sx%s under 640,000 pixels as %sx%s', (width, height, expectedWidth, expectedHeight) => {
-    const projected = requestImageDimensions(width, height, 640_000)
-    expect(projected).toEqual({
-      width: expectedWidth,
-      height: expectedHeight,
-    })
-    expect(projected.width * projected.height).toBeLessThanOrEqual(640_000)
-  })
-
-  it('projects a portrait within the same total-pixel budget', () => {
-    const projected = requestImageDimensions(2160, 3840, 640_000)
-
-    expect(projected).toEqual({ width: 600, height: 1066 })
-    expect(projected.width * projected.height).toBeLessThanOrEqual(640_000)
-  })
-
-  it('rounds a portrait inward when integer aspect rounding crosses the pixel cap', () => {
-    expect(requestImageDimensions(2, 4, 5)).toEqual({ width: 1, height: 2 })
-  })
-
-})
-
 describe('local request-image cache', () => {
+  it('rebuilds a cleared cache without moving or losing durable attachments', async () => {
+    const fallbackHome = await home()
+    vi.stubEnv('DSH_HOME', fallbackHome)
+    try {
+      const dshHome = await home()
+      const attachments = new LocalAttachmentStore(new Context(), { dshHome })
+      const attachment = await attachments.saveImage({ data: await image(64, 32), mediaType: 'image/png' })
+      const stored = await attachments.readImage(attachment)
+      const fileData = Uint8Array.of(0, 1, 2, 255)
+      const file = await attachments.saveFile({ data: fileData, name: 'notes.bin' })
+      const policy = { width: 22, height: 11, maxBytes: 4_096 }
+      const initial = await attachments.readImageRequest(attachment, policy)
+      const hash = String(initial.variantId).slice('sha256:'.length)
+      const cacheRoot = join(dshHome, 'cache')
+      const path = join(cacheRoot, 'attachments', 'request-images', hash.slice(0, 2), hash)
+
+      expect(attachments.root).toBe(join(dshHome, 'attachments', 'v1'))
+      await expect(readFile(path)).resolves.toEqual(Buffer.from(initial.data))
+      await expect(readFile(join(attachments.root, 'request-images', hash.slice(0, 2), hash)))
+        .rejects.toMatchObject({ code: 'ENOENT' })
+      await rm(cacheRoot, { recursive: true })
+
+      const reopened = new LocalAttachmentStore(new Context(), { dshHome })
+      await expect(reopened.readImage(attachment)).resolves.toEqual(stored)
+      await expect(readFile(reopened.fileHostPath(file))).resolves.toEqual(Buffer.from(fileData))
+      await expect(reopened.readImageRequest(attachment, policy)).resolves.toEqual(initial)
+      await expect(readFile(path)).resolves.toEqual(Buffer.from(initial.data))
+      await expect(readdir(fallbackHome)).resolves.toEqual([])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('passes through an in-budget attachment and composes ordered request reads', async () => {
     const attachments = await store()
     const first = await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })
     const second = await attachments.saveImage({ data: await image(4, 8), mediaType: 'image/png' })
     const firstStored = await attachments.readImage(first)
-    const policy = { maxPixels: 1_000, maxBytes: 1024 * 1024 }
+    const policy = { width: 8, height: 8, maxBytes: 1024 * 1024 }
 
     const request = await attachments.readImageRequest(first, policy)
     const batch = await Promise.all([first, second].map(
@@ -87,31 +97,75 @@ describe('local request-image cache', () => {
     expect(batch.map(value => value.attachment.attachmentId)).toEqual([first.attachmentId, second.attachmentId])
   })
 
-  it('rejects invalid request policies', async () => {
+  it('rejects invalid request targets', async () => {
     const attachments = await store()
     const attachment = await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })
 
-    await expect(attachments.readImageRequest(attachment, { maxPixels: 0, maxBytes: 100 }))
-      .rejects.toThrow('Image request maxPixels must be a positive integer')
-    await expect(attachments.readImageRequest(attachment, { maxPixels: 100, maxBytes: 0 }))
+    await expect(attachments.readImageRequest(attachment, { width: 0, height: 4, maxBytes: 100 }))
+      .rejects.toThrow('Image request width must be a positive integer')
+    await expect(attachments.readImageRequest(attachment, { width: 8, height: 1.5, maxBytes: 100 }))
+      .rejects.toThrow('Image request height must be a positive integer')
+    await expect(attachments.readImageRequest(attachment, { width: 8, height: 4, maxBytes: 0 }))
       .rejects.toThrow('Image request maxBytes must be a positive integer')
   })
 
-  it('refuses a one-pixel request that cannot meet the encoded-byte budget', async () => {
+  it('resizes by the long edge to the exact target and keys the cache by target', async () => {
+    const attachments = await store()
+    const maxBytes = 2 * 1024 * 1024
+    const square = await attachments.saveImage({ data: await image(2048, 2048), mediaType: 'image/png' })
+    const small = await attachments.saveImage({ data: await image(800, 800), mediaType: 'image/png' })
+    const thin = await attachments.saveImage({ data: await image(8000, 40), mediaType: 'image/png' })
+    const wide = await attachments.saveImage({ data: await image(1920, 1080), mediaType: 'image/png' })
+    const tall = await attachments.saveImage({ data: await image(1080, 1920), mediaType: 'image/png' })
+
+    const squareRequest = await attachments.readImageRequest(square, { width: 1302, height: 1302, maxBytes })
+    const smallRequest = await attachments.readImageRequest(small, { width: 800, height: 800, maxBytes })
+    const thinRequest = await attachments.readImageRequest(thin, { width: 4096, height: 20, maxBytes })
+    const wideRequest = await attachments.readImageRequest(wide, { width: 1708, height: 961, maxBytes })
+    const tallRequest = await attachments.readImageRequest(tall, { width: 961, height: 1708, maxBytes })
+    const smaller = await attachments.readImageRequest(square, { width: 1024, height: 1024, maxBytes })
+    const enlarged = await attachments.readImageRequest(thin, { width: 9000, height: 45, maxBytes })
+
+    expect(squareRequest).toMatchObject({ width: 1302, height: 1302, mediaType: 'image/jpeg' })
+    expect(smallRequest).toMatchObject({ width: 800, height: 800, mediaType: 'image/png' })
+    expect(smallRequest.data).toEqual((await attachments.readImage(small)).data)
+    expect(thinRequest).toMatchObject({ width: 4096, height: 20 })
+    expect(wideRequest).toMatchObject({ width: 1708, height: 961 })
+    expect(tallRequest).toMatchObject({ width: 961, height: 1708 })
+    expect(enlarged).toMatchObject({ width: 8000, height: 40 })
+    expect(smaller.variantId).not.toBe(squareRequest.variantId)
+    expect(enlarged.variantId).not.toBe(thinRequest.variantId)
+  })
+
+  it('encodes the rounded short edge at the route target', async () => {
+    const attachments = await store()
+    const attachment = await attachments.saveImage({ data: await image(1224, 1429), mediaType: 'image/png' })
+    const request = await attachments.readImageRequest(attachment, {
+      width: 1187, height: 1386, maxBytes: 2 * 1024 * 1024,
+    })
+    expect(request).toMatchObject({ width: 1187, height: 1386 })
+    await expect(sharp(request.data).metadata()).resolves.toMatchObject({ width: 1187, height: 1386 })
+  })
+
+  it('keeps the smallest ladder output when the encoded-byte target is unreachable', async () => {
     const attachments = await store()
     const attachment = await attachments.saveImage({ data: await image(1, 1), mediaType: 'image/png' })
 
-    await expect(attachments.readImageRequest(attachment, { maxPixels: 1, maxBytes: 1 }))
-      .rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
+    const request = await attachments.readImageRequest(attachment, { width: 1, height: 1, maxBytes: 1 })
+
+    expect(request.mediaType).toBe('image/jpeg')
+    expect(request.bytes).toBeGreaterThan(1)
+    expect(request).toMatchObject({ width: 1, height: 1 })
   })
 
   it('regenerates invalid, oversized, incompatible, or mismatched cached variants', async () => {
-    const attachments = await store()
+    const dshHome = await home()
+    const attachments = new LocalAttachmentStore(new Context(), { dshHome })
     const attachment = await attachments.saveImage({ data: await image(64, 32), mediaType: 'image/png' })
-    const policy = { maxPixels: 16 * 16, maxBytes: 4_096 }
+    const policy = { width: 22, height: 11, maxBytes: 4_096 }
     const initial = await attachments.readImageRequest(attachment, policy)
     const hash = String(initial.variantId).slice('sha256:'.length)
-    const path = join(attachments.root, 'request-images', hash.slice(0, 2), hash)
+    const path = join(dshHome, 'cache', 'attachments', 'request-images', hash.slice(0, 2), hash)
     const noisyPixels = new Uint8Array(64 * 64 * 3)
     let state = 0x2545f491
     for (let index = 0; index < noisyPixels.length; index += 1) {
@@ -157,10 +211,10 @@ describe('local request-image cache', () => {
       data: await image(2048, 1024), mediaType: 'image/png', name: 'wide.png',
     })
 
-    const squareRequest = await attachments.readImageRequest(square, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
-    const wideRequest = await attachments.readImageRequest(wide, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
-    const repeated = await attachments.readImageRequest(wide, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
-    const low = await attachments.readImageRequest(wide, { maxPixels: 512 * 512, maxBytes: 1024 * 1024 })
+    const squareRequest = await attachments.readImageRequest(square, { width: 800, height: 800, maxBytes: 1024 * 1024 })
+    const wideRequest = await attachments.readImageRequest(wide, { width: 1130, height: 565, maxBytes: 1024 * 1024 })
+    const repeated = await attachments.readImageRequest(wide, { width: 1130, height: 565, maxBytes: 1024 * 1024 })
+    const low = await attachments.readImageRequest(wide, { width: 724, height: 362, maxBytes: 1024 * 1024 })
 
     expect(squareRequest).toMatchObject({ width: 800, height: 800 })
     expect(wideRequest).toMatchObject({ width: 1130, height: 565 })
@@ -171,7 +225,7 @@ describe('local request-image cache', () => {
     expect(low.width * low.height).toBeLessThanOrEqual(512 * 512 + low.width)
   })
 
-  it('classifies opaque PNG pixels and preserves alpha while enforcing the request budget', async () => {
+  it('routes opaque pixels to JPEG and preserves alpha on the WebP ladder', async () => {
     const attachments = await store()
     const side = 256
     const photoPixels = new Uint8Array(side * side * 3)
@@ -200,12 +254,13 @@ describe('local request-image cache', () => {
     const photo = await attachments.saveImage({ data: photoSource, mediaType: 'image/png' })
     const alpha = await attachments.saveImage({ data: alphaSource, mediaType: 'image/png' })
 
-    const photoRequest = await attachments.readImageRequest(photo, { maxPixels: 128 * 128, maxBytes: 1024 * 1024 })
-    const alphaRequest = await attachments.readImageRequest(alpha, { maxPixels: 128 * 128, maxBytes: 4_096 })
+    const photoRequest = await attachments.readImageRequest(photo, { width: 128, height: 128, maxBytes: 1024 * 1024 })
+    const alphaRequest = await attachments.readImageRequest(alpha, { width: 128, height: 128, maxBytes: 4_096 })
 
     expect(photoRequest.mediaType).toBe('image/jpeg')
-    expect(alphaRequest.bytes).toBeLessThanOrEqual(4_096)
-    expect(alphaRequest.width).toBeLessThan(128)
+    expect(alphaRequest.mediaType).toBe('image/webp')
+    expect(alphaRequest.bytes).toBeGreaterThan(4_096)
+    expect(alphaRequest).toMatchObject({ width: 128, height: 128 })
     await expect(sharp(alphaRequest.data).metadata()).resolves.toMatchObject({ hasAlpha: true, depth: 'uchar', space: 'srgb' })
   })
 
@@ -216,7 +271,7 @@ describe('local request-image cache', () => {
     }).toColourspace('rgb16').png().toBuffer())
     const attachment = await attachments.saveImage({ data: source, mediaType: 'image/png' })
 
-    const request = await attachments.readImageRequest(attachment, { maxPixels: 16 * 16, maxBytes: 1024 * 1024 })
+    const request = await attachments.readImageRequest(attachment, { width: 22, height: 11, maxBytes: 1024 * 1024 })
 
     expect(request.bytes).toBeLessThanOrEqual(1024 * 1024)
     expect(request.width * request.height).toBeLessThanOrEqual(16 * 16)
@@ -230,7 +285,7 @@ describe('local request-image cache', () => {
     const source = await complexOpaqueAlphaImage(64, 32)
     const attachment = await attachments.saveImage({ data: source, mediaType: 'image/png' })
 
-    const request = await attachments.readImageRequest(attachment, { maxPixels: 16 * 16, maxBytes: 1024 * 1024 })
+    const request = await attachments.readImageRequest(attachment, { width: 22, height: 11, maxBytes: 1024 * 1024 })
 
     expect(request.mediaType).toBe('image/webp')
     await expect(sharp(request.data).metadata()).resolves.toMatchObject({ hasAlpha: false })
@@ -252,7 +307,7 @@ describe('local request-image cache', () => {
     }).png().toBuffer())
     const attachment = await attachments.saveImage({ data: source, mediaType: 'image/png' })
 
-    const request = await attachments.readImageRequest(attachment, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
+    const request = await attachments.readImageRequest(attachment, { width: 800, height: 800, maxBytes: 1024 * 1024 })
 
     expect(request).toMatchObject({ width: 800, height: 800 })
     expect(request.bytes).toBeLessThanOrEqual(1024 * 1024)
@@ -265,7 +320,7 @@ describe('local request-image cache', () => {
     })
     const run = vi.spyOn(CompressionLimiter.prototype, 'run')
     const controller = new AbortController()
-    const policy = { maxPixels: 640_000, maxBytes: 1024 * 1024 }
+    const policy = { width: 1130, height: 565, maxBytes: 1024 * 1024 }
 
     const cancelled = attachments.readImageRequest(attachment, policy, controller.signal)
     const completed = attachments.readImageRequest(attachment, policy)
@@ -295,7 +350,7 @@ describe('local request-image cache', () => {
     const controller = new AbortController()
     const request = attachments.readImageRequest(
       attachment,
-      { maxPixels: 640_000, maxBytes: 1024 * 1024 },
+      { width: 1130, height: 565, maxBytes: 1024 * 1024 },
       controller.signal,
     )
     await vi.waitFor(() => {
@@ -328,7 +383,7 @@ describe('local request-image cache', () => {
       return actualRead(ref, signal)
     })
     const controller = new AbortController()
-    const policy = { maxPixels: 640_000, maxBytes: 1024 * 1024 }
+    const policy = { width: 1130, height: 565, maxBytes: 1024 * 1024 }
     const cancelled = attachments.readImageRequest(attachment, policy, controller.signal)
     await vi.waitFor(() => {
       expect(calls).toBe(1)

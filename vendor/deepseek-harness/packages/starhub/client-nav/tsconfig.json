@@ -24,6 +24,9 @@
       "path": "../../client/ui-conversation"
     },
     {
+      "path": "../../client/ui-chat"
+    },
+    {
       "path": "../../client/ui-input-trigger"
     },
     {

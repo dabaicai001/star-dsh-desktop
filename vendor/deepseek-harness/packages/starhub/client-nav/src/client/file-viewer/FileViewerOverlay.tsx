@@ -198,6 +198,7 @@ export function FileViewerOverlay({ useSessions, useFileViewer, closeViewer }: F
       open
       onClose={closeViewer}
       title={title}
+      closeLabel="关闭"
       className={css.viewer ?? ''}
       footer={(
         <>

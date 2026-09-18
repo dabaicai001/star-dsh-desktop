@@ -13,13 +13,12 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import type { Loader } from '@deepseek-ai/cordis-plugin-loader'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type {
-  CordisDynamicPackageId, CordisDynamicPluginId, CordisDynamicPluginRunId,
+  CordisDynamicPackageId, CordisDynamicPluginId, CordisDynamicPluginRunId, SessionId,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientModuleSystem } from '@deepseek-ai/dsh-client-modules/client'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { DYNAMIC_CLIENT_REDIRECTS } from '../src/client/evaluator.ts'
 import { DynamicCordisPackageRunner } from '../src/client/runtime.ts'
 import type { DynamicCordisClientHalf, DynamicCordisRenderFailure } from '../src/client/runtime.ts'
@@ -53,7 +52,7 @@ interface Bench {
   invalidated: string[]
   removed: string[]
   created: string[]
-  invoke: ReturnType<typeof vi.fn>
+  invoke: ReturnType<typeof vi.fn<() => Promise<unknown>>>
   /** Render failures the runner sent upstream, in order. */
   reported: {
     agentId: SessionId
@@ -104,15 +103,15 @@ async function boot(): Promise<Bench> {
       return Promise.resolve(entryId)
     },
     resolve: (entryId: string) => fibers.get(entryId) ?? { fiber: undefined },
-    remove: async (entryId: string) => {
+    remove: (entryId: string) => {
       removed.push(entryId)
       const entry = fibers.get(entryId)
       fibers.delete(entryId)
-      await (entry?.fiber as { dispose(): Promise<void> } | undefined)?.dispose()
+      void (entry?.fiber as { dispose(): Promise<void> } | undefined)?.dispose()
     },
   } as unknown as Loader
 
-  const invoke = vi.fn(() => Promise.resolve(null))
+  const invoke = vi.fn<() => Promise<unknown>>(() => Promise.resolve(null))
   const reported: Bench['reported'] = []
   // The crash seam is stood in so a test can report an entry failure without a
   // React render, exactly as the renderer's boundary would; registrations still
@@ -290,7 +289,7 @@ describe('failure stages', () => {
     await bench.runner.load(half({
       code: 'return { apply: (ctx) => { ctx.on("t/ping", () => console.error("after load")) } }',
     }))
-    ;(bench.ctx.emit as (type: string) => void)('t/ping')
+    Reflect.apply(bench.ctx.emit.bind(bench.ctx), undefined, ['t/ping'])
     const mirrored = logged.mock.calls.filter(call => String(call[0]).includes('logged an error'))
     logged.mockRestore()
     expect(mirrored).toHaveLength(1)
@@ -299,6 +298,26 @@ describe('failure stages', () => {
 })
 
 describe('retract', () => {
+  it('waits for plugin cleanup before invalidating its module factory', async () => {
+    const bench = await boot()
+    const started = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    onTestFinished(() => { release.resolve(undefined) })
+    bench.invoke.mockImplementation(() => {
+      started.resolve(undefined)
+      return release.promise
+    })
+    await bench.runner.load(half({ code: 'return { apply: (ctx) => ctx.effect(() => () => host.call("cleanup", null)) }' }))
+    bench.runner.retract(PLUGIN, RUN)
+    await started.promise
+    await bench.settle()
+    expect(bench.removed).toEqual(['entry-1'])
+    expect(bench.invalidated).toEqual(['dyn/dyn-1'])
+    release.resolve(undefined)
+    await bench.settle()
+    expect(bench.invalidated).toEqual(['dyn/dyn-1', 'dyn/dyn-1'])
+  })
+
   it('unloads at the named revision', async () => {
     const bench = await boot()
     await bench.runner.load(half())
@@ -406,7 +425,7 @@ describe('render failures', () => {
   it('seats a package that registers an unindexable component without claiming it', async () => {
     const bench = await boot()
     // A component that is not an object has no identity to key ownership on; the
-    // registration still stands, and a crash on it simply goes unattributed.
+    // registration remains valid, while a crash on it has no attributable package.
     await expect(bench.runner.load(half({
       code: `return {
         inject: ['slots'],

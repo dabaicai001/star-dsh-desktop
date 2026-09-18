@@ -30,6 +30,14 @@ const fetchBundle = (url: string): Promise<void> => new Promise((resolve, reject
   document.head.append(el)
 })
 
+/** Replace the rev query while preserving absolute, protocol-relative, or path-relative form. */
+function atRevision(url: string, rev: string): string {
+  if (!/[?&]rev=[^&#]*/.test(url)) {
+    throw new Error(`client-modules: bundle URL ${url} has no revision`)
+  }
+  return url.replace(/([?&]rev=)[^&#]*/, `$1${encodeURIComponent(rev)}`)
+}
+
 /**
  * Backoff before each bundle-fetch retry (ms). Boot can race the host: the
  * page requests a bundle while the server process is mid-swap or the bundle
@@ -84,8 +92,10 @@ export class ClientModuleSystem implements ClientModuleLoader {
   private readonly seed: Map<string, unknown>
   private readonly factories = new Map<string, ClientBundleRegistration['factory']>()
   private readonly bootstrapIds = new Set<string>()
-  /** In-flight prefetch (script load) per id; concurrent callers share it. */
+  /** In-flight script transport per URL; every row in one batch shares it. */
   private readonly pendingArrival = new Map<string, Promise<void>>()
+  /** Single-resource combo URL selected by HMR after invalidating one row. */
+  private readonly reloadUrls = new Map<string, string>()
   /** Materialization re-entrancy guard: factory-form CJS cannot deliver partial exports, so a cycle is fatal. */
   private readonly materializing = new Set<string>()
   private readonly graphRows = new Map<string, BootModuleRow>()
@@ -137,21 +147,31 @@ export class ClientModuleSystem implements ClientModuleLoader {
 
   /** Load one graph row so its factory is registered (idempotent per in-flight arrival). */
   private arrive(row: BootModuleRow): Promise<void> {
-    const { id, url } = row
-    const pending = this.pendingArrival.get(id)
-    if (pending !== undefined) return pending
+    const { id } = row
     if (this.loadCache.has(id) || this.factories.has(id)) return Promise.resolve()
-    const task = this.loadBundle(url).then(() => {
+    const reloadUrl = this.reloadUrls.get(id)
+    const url = reloadUrl ?? row.initialUrl
+    let transport = this.pendingArrival.get(url)
+    if (transport === undefined) {
+      transport = this.loadBundle(url).finally(() => { this.pendingArrival.delete(url) })
+      this.pendingArrival.set(url, transport)
+    }
+    return transport.then(() => {
       if (!this.factories.has(id)) {
         throw new Error(`client-modules: bundle ${url} loaded without registering "${id}" via __ModuleLoader__.load`)
       }
-    }).finally(() => { this.pendingArrival.delete(id) })
-    this.pendingArrival.set(id, task)
-    return task
+      if (reloadUrl !== undefined && this.reloadUrls.get(id) === reloadUrl) {
+        this.reloadUrls.delete(id)
+      }
+    })
   }
 
-  /** Register each unresolved dynamic request before registering its consumer. */
-  private async arriveGraphRow(row: BootModuleRow, open: readonly string[] = []): Promise<void> {
+  /** Register each injected package and unresolved dynamic request before its consumer. */
+  private async arriveGraphRow(
+    row: BootModuleRow,
+    open: readonly string[] = [],
+    visited = new Set<string>(),
+  ): Promise<void> {
     const cycleStart = open.indexOf(row.id)
     if (cycleStart !== -1) {
       throw new Error(
@@ -159,12 +179,18 @@ export class ClientModuleSystem implements ClientModuleLoader {
         + '(the host must reject this graph before serving it)',
       )
     }
+    if (visited.has(row.id)) return
+    visited.add(row.id)
     const next = [...open, row.id]
     for (const request of row.external) {
       const id = stripClientSuffix(request)
       if (this.seed.has(request) || this.loadCache.has(id)) continue
       const dependency = this.graphRows.get(id)
-      if (dependency !== undefined) await this.arriveGraphRow(dependency, next)
+      if (dependency !== undefined) await this.arriveGraphRow(dependency, next, visited)
+    }
+    for (const packageName of row.inject) {
+      const dependency = this.graphRows.get(packageName)
+      if (dependency !== undefined) await this.arriveGraphRow(dependency, [], visited)
     }
     await this.arrive(row)
   }
@@ -237,9 +263,12 @@ export class ClientModuleSystem implements ClientModuleLoader {
     await this.arriveGraphRow(row)
   }
 
-  invalidate(id: string): void {
+  invalidate(id: string, rev?: string): void {
     const normalized = stripClientSuffix(id)
     if (this.bootstrapIds.has(normalized)) return
+    const row = this.graphRows.get(normalized)
+    if (row !== undefined) this.reloadUrls.set(normalized, atRevision(row.url, rev ?? row.rev))
+    else this.reloadUrls.delete(normalized)
     this.factories.delete(normalized)
     this.loadCache.delete(normalized)
   }

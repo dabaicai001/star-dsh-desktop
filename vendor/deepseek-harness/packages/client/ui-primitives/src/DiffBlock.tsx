@@ -14,6 +14,7 @@
 
 import { Fragment, useCallback, useMemo, useState } from 'react'
 import clsx from 'clsx'
+import { FoldToggle } from './FoldToggle.tsx'
 import { writeClipboard } from './clipboard.ts'
 import css from './DiffBlock.module.css'
 
@@ -53,6 +54,8 @@ export interface DiffHunk {
 export interface DiffBlockProps {
   /** One entry per applied hunk, in file order; empty renders nothing. */
   diffs: DiffHunk[]
+  /** Localized chrome supplied by the owning render site. */
+  labels: DiffBlockLabels
   /**
    * Height cap in paired rows before the collapsed sheet scrolls behind the
    * expand control (default {@link DEFAULT_DIFF_MAX_LINES}); expanding lifts
@@ -61,6 +64,21 @@ export interface DiffBlockProps {
   maxLines?: number | undefined
   /** Extra class merged onto the wrapper (callers position; this component draws). */
   className?: string | undefined
+}
+
+/** Localized chrome for {@link DiffBlock}. */
+export interface DiffBlockLabels {
+  copy: string
+  copied: string
+  collapseAria: string
+  expandAria: (hidden: number) => string
+  collapse: string
+  expand: (hidden: number) => string
+  files: (count: number) => string
+  /** Left column head of the two-column sheet (the before side). */
+  columnBefore: string
+  /** Right column head of the two-column sheet (the after side). */
+  columnAfter: string
 }
 
 /** Legacy stacked row (path/del/add/gap) used ONLY for the footer counts and the copied text. */
@@ -274,6 +292,26 @@ function buildStackRows(diffs: readonly DiffHunk[]): { rows: StackRow[]; added: 
 }
 
 /**
+ * Count displayed additions and deletions by the LCS-paired walk: shared
+ * context lines do not count, so a one-line edit inside a long file reports
+ * `+1 -1` (matching the two-column card), not the raw side lengths.
+ * @param diffs - the hunks to count.
+ * @returns the +/- totals for summaries and the card footer.
+ */
+export function diffTotals(diffs: readonly DiffHunk[]): { added: number; removed: number } {
+  let added = 0
+  let removed = 0
+  for (const diff of diffs) {
+    const oldSide = diff.oldText === null ? [] : contentLines(diff.oldText)
+    for (const row of pairSides(oldSide, contentLines(diff.newText))) {
+      if (row.left?.kind === 'del') removed++
+      if (row.right?.kind === 'add') added++
+    }
+  }
+  return { added, removed }
+}
+
+/**
  * The diff text a reader copies: each row's `-`/`+`/path/gap prefix and its
  * content, exactly what the card shows (legacy format, pairing-independent).
  */
@@ -301,9 +339,12 @@ function cellClass(cell: SideCell): string | undefined {
  * @param props - see {@link DiffBlockProps}.
  * @returns the diff block element.
  */
-export function DiffBlock({ diffs, maxLines = DEFAULT_DIFF_MAX_LINES, className }: DiffBlockProps) {
+export function DiffBlock({ diffs, labels, maxLines = DEFAULT_DIFF_MAX_LINES, className }: DiffBlockProps) {
   const splitRows = useMemo(() => buildSplitRows(diffs), [diffs])
-  const { rows, added, removed, files } = useMemo(() => buildStackRows(diffs), [diffs])
+  // 卡片 footer 的 +/- 与 ToolRow 折叠行共用 diffTotals 的 LCS 口径;
+  // buildStackRows 只为复制文本(stack 布局)与文件数服务。
+  const { rows, files } = useMemo(() => buildStackRows(diffs), [diffs])
+  const { added, removed } = useMemo(() => diffTotals(diffs), [diffs])
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -329,7 +370,7 @@ export function DiffBlock({ diffs, maxLines = DEFAULT_DIFF_MAX_LINES, className 
   return (
     <div className={clsx(css.block, className)} data-diff="">
       <button type="button" className={css.copyButton} onClick={onCopy}>
-        {copied ? '复制成功' : '复制'}
+        {copied ? labels.copied : labels.copy}
       </button>
       <div className={css.body}>
         <div
@@ -337,8 +378,8 @@ export function DiffBlock({ diffs, maxLines = DEFAULT_DIFF_MAX_LINES, className 
           style={capped ? { maxHeight: `${maxLines * SPLIT_LINE_HEIGHT_PX}px` } : undefined}
         >
           <div className={css.grid}>
-            <div className={clsx(css.cell, css.colHead, css.headDel)}>− 修改前</div>
-            <div className={clsx(css.cell, css.colHead, css.headAdd)}>+ 修改后</div>
+            <div className={clsx(css.cell, css.colHead, css.headDel)}>{labels.columnBefore}</div>
+            <div className={clsx(css.cell, css.colHead, css.headAdd)}>{labels.columnAfter}</div>
             {splitRows.map((row, index) => ('span' in row ? (
               <div
                 key={index}
@@ -360,18 +401,16 @@ export function DiffBlock({ diffs, maxLines = DEFAULT_DIFF_MAX_LINES, className 
           </div>
         </div>
         {hidden > 0 && (
-          <button
-            type="button"
+          <FoldToggle
             className={css.expand}
-            aria-expanded={expanded}
-            aria-label={expanded ? '收起差异' : `展开其余 ${hidden} 行差异`}
-            onClick={onToggle}
-          >
-            {expanded ? '收起' : `… 其余 ${hidden} 行`}
-          </button>
+            expanded={expanded}
+            hidden={hidden}
+            labels={labels}
+            onToggle={onToggle}
+          />
         )}
       </div>
-      <div className={css.footer}>└ +{added} -{removed} · {files} file{files === 1 ? '' : 's'}</div>
+      <div className={css.footer}>└ +{added} -{removed} · {labels.files(files)}</div>
     </div>
   )
 }

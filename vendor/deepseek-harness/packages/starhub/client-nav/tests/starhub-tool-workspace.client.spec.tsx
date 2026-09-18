@@ -83,6 +83,10 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
     useInput: (() => undefined) as never,
     inputActions: {} as never,
     useWorkspaces: (() => undefined) as never,
+    // 0.1.6 GlobalStandardProps 新增席位:本组件不消费,给最小桩。
+    usePanelInfo: (() => undefined) as never,
+    useSessionPendingInteraction: (() => undefined) as never,
+    useResource: (() => undefined) as never,
   }
 }
 

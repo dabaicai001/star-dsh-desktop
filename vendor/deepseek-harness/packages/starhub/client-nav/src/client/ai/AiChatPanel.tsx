@@ -3,35 +3,60 @@
  * the detached workbench windows). It shows the CURRENT shell session's real
  * conversation with live streaming and lets the user send/stop/load-older,
  * reading and writing through the object layer — `sessions.binding(id).session`
- * is a `SessionFace = ISession & ObservableSnapshot<ConversationSnapshot>`.
+ * is a `SessionFace = ISession & ObservableSnapshot<SessionSnapshot>`.
  *
  * This is a deliberate self-drawn departure from the standard ChatView slot
  * seat: the panel lives at root scope (`shell.overlay`), where the framework
  * provides no `useSession`/`useSessions` standard props, so the one feasible
  * route (checkpoint §9) is `bindSnapshotSelector` on the session face.
  *
+ * 0.1.6 起会话的会话节点/流式片段不再挂在 SessionSnapshot 上,改由 ui-chat
+ * 的 Chat target 发布;本面板经注入的 `chatOf` 读其 legacy 投影(nodes +
+ * partial),生命周期面板字段(running / openState / hasMore …)仍读
+ * Session 自身快照。
+ *
  * @module StarHub AI chat panel (client)
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import type { ISessions, IWorkspaces, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { MessageText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type {
+  ConversationNode, ISessions, IWorkspaces, PartialAssistant, SessionFace, SessionId,
+} from '@deepseek-ai/dsh-client-runtime/client'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import { nodeRenderData, openStateView, promptErrorView, type NodeRenderData } from './ai-chat-utils.ts'
 import css from './AiChatPanel.module.css'
+
+/** 面板消费的 Chat legacy 投影(nodes + 流式 partial)。 */
+export interface AiChatSlice {
+  readonly nodes: readonly ConversationNode[]
+  readonly partial: PartialAssistant | null
+}
+
+/** 裸 observable 源(uSES 形状),由注入侧的 uiConversation Chat target 适配而来。 */
+export interface AiChatSource {
+  getSnapshot: () => AiChatSlice
+  subscribe: (fn: () => void) => () => void
+}
 
 /** Props for the in-shell AI chat panel. */
 export interface AiChatPanelProps {
   sessions: ISessions
   workspaces: IWorkspaces
+  /** 会话 → Chat legacy 投影源;会话未绑定或 Chat target 未装载时为 undefined。 */
+  chatOf: (sessionId: SessionId) => AiChatSource | undefined
   onClose: () => void
+}
+
+/** rc2 ui-primitives MessageText 的本地替身(0.1.6 删除):字面文本块。 */
+function MessageText({ text }: { text: string }) {
+  return <div className={css.messageText}>{text}</div>
 }
 
 /**
  * Bind the current session and render the embedded chat experience.
- * @param props - sessions/workspaces service faces and the close callback.
+ * @param props - sessions/workspaces service faces, chat source and the close callback.
  * @returns the floating chat panel, or the "no session / start" guidance.
  */
-export function AiChatPanel({ sessions, workspaces, onClose }: AiChatPanelProps) {
+export function AiChatPanel({ sessions, workspaces, chatOf, onClose }: AiChatPanelProps) {
   // The session list is a stable bare source; subscribe with the built-in
   // uSES hook (react is a baseline external — shell-side web-react glue is
   // not importable from a dynamic client plugin).
@@ -46,6 +71,7 @@ export function AiChatPanel({ sessions, workspaces, onClose }: AiChatPanelProps)
         <ConversationGate
           sessions={sessions}
           workspaces={workspaces}
+          chatOf={chatOf}
           sessionId={currentId}
           onClose={onClose}
         />
@@ -55,9 +81,10 @@ export function AiChatPanel({ sessions, workspaces, onClose }: AiChatPanelProps)
 }
 
 /** Header + body gate: resolve the target session and render its conversation. */
-function ConversationGate({ sessions, workspaces, sessionId, onClose }: {
+function ConversationGate({ sessions, workspaces, chatOf, sessionId, onClose }: {
   sessions: ISessions
   workspaces: IWorkspaces
+  chatOf: (sessionId: SessionId) => AiChatSource | undefined
   sessionId: SessionId | undefined
   onClose: () => void
 }) {
@@ -70,12 +97,14 @@ function ConversationGate({ sessions, workspaces, sessionId, onClose }: {
     /* v8 ignore next -- reentry guard: the 新建会话 buttons are disabled while creating, so startNew cannot be re-entered from the UI */
     if (creating) return
     setCreating(true)
-    const target = workspaces.list.getSnapshot().recentWorkspaceId
+    // 0.1.6 起 IWorkspaces 不再有 recentWorkspaceId / connectWorkspace:
+    // 「最近工作区」取列表首项(Host 侧按近用排序),新建走 sessions.create。
+    const target = workspaces.list.getSnapshot().items[0]?.workspaceId
     if (target === undefined) {
       setCreating(false)
       return
     }
-    void workspaces.connectWorkspace(target)
+    void sessions.create({ workspaceId: target })
       .then((id) => { sessions.open(id) })
       .catch(() => { /* leave the guidance state; user can retry */ })
       .finally(() => { setCreating(false) })
@@ -89,10 +118,10 @@ function ConversationGate({ sessions, workspaces, sessionId, onClose }: {
         <span className={css.spacer} />
         <button type="button" className={css.closeBtn} onClick={onClose}>关闭</button>
       </header>
-      {sessionFace === undefined ? (
+      {sessionFace === undefined || sessionId === undefined ? (
         <NoSession onCreate={startNew} onClose={onClose} />
       ) : (
-        <ConversationBody session={sessionFace} />
+        <ConversationBody session={sessionFace} sessionId={sessionId} chatOf={chatOf} />
       )}
     </>
   )
@@ -112,16 +141,27 @@ function NoSession({ onCreate, onClose }: { onCreate: () => void; onClose: () =>
   )
 }
 
+const EMPTY_CHAT_SLICE: AiChatSlice = { nodes: [], partial: null }
+
 /**
  * Subscribe a bound child to the session face (built-in uSES hook, keeping
  * Rules-of-Hooks order when the target switches) and render.
  */
-function ConversationBody({ session }: {
+function ConversationBody({ session, sessionId, chatOf }: {
   session: SessionFace
+  sessionId: SessionId
+  chatOf: (sessionId: SessionId) => AiChatSource | undefined
 }) {
   const snap = useSyncExternalStore(
     (fn) => session.subscribe(fn),
     () => session.getSnapshot(),
+  )
+  // Chat legacy 投影(nodes + partial)来自 uiConversation 的 Chat target;
+  // 源身份按 sessionId 稳定(注入侧 WeakMap 缓存),useMemo 保住订阅闭包稳定。
+  const chat = useMemo(() => chatOf(sessionId), [chatOf, sessionId])
+  const chatSnap = useSyncExternalStore(
+    useMemo(() => (fn: () => void) => chat?.subscribe(fn) ?? (() => {}), [chat]),
+    () => chat?.getSnapshot() ?? EMPTY_CHAT_SLICE,
   )
   const gate = openStateView(snap.openState, snap.openError)
   const [draft, setDraft] = useState('')
@@ -132,9 +172,9 @@ function ConversationBody({ session }: {
   useEffect(() => {
     const el = listRef.current
     if (el !== null) el.scrollTop = el.scrollHeight
-  }, [snap.nodes, snap.partial, snap.running])
+  }, [chatSnap.nodes, chatSnap.partial, snap.running])
 
-  const nodes = snap.nodes.map(nodeRenderData)
+  const nodes = chatSnap.nodes.map(nodeRenderData)
 
   const canSend = draft.trim() !== '' && !sending
   const send = (): void => {
@@ -171,10 +211,10 @@ function ConversationBody({ session }: {
                 <div className={css.empty}>还没有消息,输入下方内容开始对话。</div>
               )}
               {nodes.map(n => <MessageRow key={n.key} data={n} />)}
-              {snap.partial !== null && (
+              {chatSnap.partial !== null && (
                 <div className={`${css.row} ${css.assistant}`}>
                   <span className={css.label}>助手 …</span>
-                  <MessageText text={partialText(snap.partial)} />
+                  <MessageText text={partialText(chatSnap.partial)} />
                 </div>
               )}
             </div>
@@ -238,7 +278,12 @@ function MessageRow({ data }: { data: NodeRenderData }) {
       <div className={`${css.row} ${css.tool} ${data.error ? css.errorRow : ''}`}>
         <span className={css.label}>{data.error ? '! ' : ''}{data.label}</span>
         {data.text !== '' && <MessageText text={data.text} />}
-        {data.json !== undefined && <JsonBlock label="detail" payload={data.json} defaultOpen={data.error} />}
+        {data.json !== undefined && (
+          <JsonBlock
+            label="detail" payload={data.json} defaultOpen={data.error}
+            truncatedLabel={(total) => `… 已截断,共 ${total} 字符`}
+          />
+        )}
       </div>
     )
   }

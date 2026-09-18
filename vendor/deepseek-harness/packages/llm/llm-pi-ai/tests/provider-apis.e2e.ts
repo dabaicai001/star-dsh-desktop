@@ -5,12 +5,12 @@ import { AttachmentId, AttachmentStore, ImageVariantId } from '@deepseek-ai/dsh-
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
-  ImageRequestPolicy,
+  ImageRequestTarget,
   RequestImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import LlmRuntime, { createUserMessage, CallId } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Message, ToolSchema } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import type { PiAiReplayResponse } from '../src/replay.ts'
@@ -91,7 +91,7 @@ async function harness(image?: StoredImageAttachment): Promise<Context> {
         return Promise.resolve(fixture)
       }
 
-      override readImageRequest(ref: ImageAttachmentRef, _policy: ImageRequestPolicy): Promise<RequestImageAttachment> {
+      override readImageRequest(ref: ImageAttachmentRef, _target: ImageRequestTarget): Promise<RequestImageAttachment> {
         if (ref.attachmentId !== fixture.ref.attachmentId) {
           return Promise.reject(new Error('unknown e2e attachment fixture'))
         }
@@ -212,7 +212,7 @@ for (const profile of providerCases) {
             createUserMessage({
               content: [{
                 type: 'tool-result',
-                toolCallId: CallId(call!.id),
+                toolCallId: ToolCallId(call!.id),
                 content: [{ type: 'text', text: 'The code blue means ocean.' }],
               }],
               source: { kind: 'plugin', plugin: 'test' },

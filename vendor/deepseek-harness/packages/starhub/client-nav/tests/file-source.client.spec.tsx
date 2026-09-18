@@ -57,8 +57,8 @@ function proj(sessionId = 's1'): ClientSessionContext {
   return { sessionId: sessionId as ClientSessionContext['sessionId'] }
 }
 
-function req(query: string): { query: string; position: 'leading'; signal: AbortSignal } {
-  return { query, position: 'leading', signal: new AbortController().signal }
+function req(query: string): { query: string; position: 'leading'; drilled: false; signal: AbortSignal } {
+  return { query, position: 'leading', drilled: false, signal: new AbortController().signal }
 }
 
 function pickOf(candidate: { name: string; description?: string }): InputTriggerPick {
@@ -67,6 +67,7 @@ function pickOf(candidate: { name: string; description?: string }): InputTrigger
     session: proj(),
     position: 'leading',
     via: 'menu',
+    action: 'pick',
     span: { start: 0, end: 1, draftRev: 0 },
   }
 }
@@ -101,8 +102,8 @@ describe('createStarhubFileSource', () => {
     }).restore
     const { source } = makeHarness('C:\\ws\\p')
     await expect(source.candidates(proj(), req(''))).resolves.toEqual([
-      { name: 'src', icon: '文件夹' },
-      { name: 'z.ts', icon: '文件' },
+      { name: 'src', icon: 'folder' },
+      { name: 'z.ts', icon: 'file' },
     ])
   })
 
@@ -113,7 +114,7 @@ describe('createStarhubFileSource', () => {
     }).restore
     const { source } = makeHarness('C:\\ws\\p')
     await expect(source.candidates(proj(), req('app'))).resolves.toEqual([
-      { name: 'app.ts', icon: '文件', description: 'src/app.ts' },
+      { name: 'app.ts', icon: 'file', description: 'src/app.ts' },
     ])
   })
 
@@ -124,7 +125,7 @@ describe('createStarhubFileSource', () => {
     }).restore
     const { source } = makeHarness('C:\\ws\\p')
     await expect(source.candidates(proj(), req('app'))).resolves.toEqual([
-      { name: 'app-src', icon: '文件夹' },
+      { name: 'app-src', icon: 'folder' },
     ])
   })
 
@@ -137,7 +138,7 @@ describe('createStarhubFileSource', () => {
     const { source } = makeHarness('C:\\ws\\p')
     await expect(source.candidates(proj(), req('x'))).resolves.toEqual([])
     await expect(source.candidates(proj(), req('app'))).resolves.toEqual([
-      { name: 'app.ts', icon: '文件', description: 'src/app.ts' },
+      { name: 'app.ts', icon: 'file', description: 'src/app.ts' },
     ])
   })
 
@@ -147,7 +148,7 @@ describe('createStarhubFileSource', () => {
     }).restore
     const { source } = makeHarness('C:\\ws\\p')
     await expect(source.candidates(proj(), req(''))).resolves.toEqual([
-      { name: 'main.ts', icon: '文件' },
+      { name: 'main.ts', icon: 'file' },
     ])
   })
 
@@ -175,7 +176,7 @@ describe('createStarhubFileSource', () => {
     const controller = new AbortController()
     // 预置 abort:顶层列表成功返回后,首个 push 即短路。
     controller.abort()
-    await expect(source.candidates(proj(), { query: '', position: 'leading', signal: controller.signal }))
+    await expect(source.candidates(proj(), { query: '', position: 'leading', drilled: false, signal: controller.signal }))
       .resolves.toEqual([])
   })
 
@@ -187,7 +188,7 @@ describe('createStarhubFileSource', () => {
     const { source } = makeHarness('C:\\ws\\p')
     const controller = new AbortController()
     controller.abort()
-    await expect(source.candidates(proj(), { query: 'app', position: 'leading', signal: controller.signal }))
+    await expect(source.candidates(proj(), { query: 'app', position: 'leading', drilled: false, signal: controller.signal }))
       .resolves.toEqual([])
   })
 
@@ -209,7 +210,7 @@ describe('createStarhubFileSource', () => {
     // deep.ts 在深度 8,超过 MAX_DEPTH 6,不会出现;other/app.ts 可搜到。
     await expect(source.candidates(proj(), req('deep'))).resolves.toEqual([])
     await expect(source.candidates(proj(), req('app'))).resolves.toEqual([
-      { name: 'app.ts', icon: '文件', description: 'other/app.ts' },
+      { name: 'app.ts', icon: 'file', description: 'other/app.ts' },
     ])
   })
 
@@ -221,7 +222,7 @@ describe('createStarhubFileSource', () => {
     }).restore
     const { source } = makeHarness('C:\\ws\\p')
     await expect(source.candidates(proj(), req('app'))).resolves.toEqual([
-      { name: 'app.ts', icon: '文件', description: 'src/app.ts' },
+      { name: 'app.ts', icon: 'file', description: 'src/app.ts' },
     ])
   })
 
@@ -242,7 +243,7 @@ describe('createStarhubFileSource', () => {
     const { source } = makeHarness('C:\\ws\\p')
     const controller = new AbortController()
     controller.abort()
-    await expect(source.candidates(proj(), { query: '', position: 'leading', signal: controller.signal }))
+    await expect(source.candidates(proj(), { query: '', position: 'leading', drilled: false, signal: controller.signal }))
       .resolves.toEqual([])
   })
 

@@ -83,7 +83,7 @@ async function collectCandidates(
     if (IGNORED_DIRS.has(entry.name)) return
     const candidate: InputTriggerCandidate = {
       name: entry.name,
-      icon: entry.kind === 'directory' ? '文件夹' : '文件',
+      icon: entry.kind === 'directory' ? 'folder' : 'file',
       ...(relativeTo(cwd, entry.path) !== entry.name ? { description: relativeTo(cwd, entry.path) } : {}),
     }
     byCandidate.set(candidate, entry)

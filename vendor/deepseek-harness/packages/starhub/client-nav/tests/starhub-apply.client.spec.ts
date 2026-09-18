@@ -54,7 +54,7 @@ interface RegisterOptions {
 }
 
 /** 最小 ctx 替身:slots.inject 立即触发 register,layout/get/effect 打桩。 */
-function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; connection?: unknown } = {}) {
+function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; remote?: unknown } = {}) {
   const register = vi.fn((_options: RegisterOptions, _component: unknown) => () => {})
   const inject = vi.fn((_name: string, fn: () => unknown) => fn())
   const registerSource = vi.fn((_src: unknown) => () => {})
@@ -66,8 +66,7 @@ function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; co
   })
   const get = vi.fn((name: string) => {
     switch (name) {
-      case 'connection':
-        return overrides.connection ?? { api: { settings: { update: vi.fn(() => Promise.resolve({ result: { ok: true } })) } } }
+
       case 'inputTriggers':
         return { registerSource }
       case 'sessions':
@@ -81,12 +80,12 @@ function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; co
           open: vi.fn(), clear: vi.fn(), binding: vi.fn(() => undefined),
         }
       case 'workspaces':
-        return { list: { getSnapshot: () => ({ recentWorkspaceId: undefined }) } }
+        return { list: { getSnapshot: () => ({ items: [] }) } }
       case 'conversation':
         return overrides.conversation ?? {
-          createDraftImages: vi.fn(() => []),
-          releaseDraftImages: vi.fn(),
-          input: { for: vi.fn(() => ({ setDraft: vi.fn(), addImages: vi.fn(() => true) })) },
+          createDrafts: vi.fn(() => []),
+          releaseDraftAttachments: vi.fn(),
+          input: { for: vi.fn(() => ({ setDraft: vi.fn(), addAttachments: vi.fn(() => true) })) },
         }
       default:
         return undefined
@@ -99,6 +98,10 @@ function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; co
     get,
     effect,
     provide,
+    // 0.1.6:apiproxy 撤除,settings 写入与类型化 RPC 走 ctx.remote(api-gateway)。
+    remote: overrides.remote ?? { settings: { update: vi.fn(() => Promise.resolve({ ok: true, value: undefined })) } },
+    // chatOf 的 Chat target 面(仅面板渲染时惰性访问,apply 期不触)。
+    uiConversation: { binding: () => ({ target: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }) }) },
   } as unknown as Context
   return { ctx, register, inject, get, registerSource, effects, provide, provided }
 }
@@ -268,7 +271,7 @@ describe('client-nav apply (rc.2)', () => {
       state: { getSnapshot: () => ({ draft: '查一下 ', draftRev: 3 }) },
     }
     const harness = fakeContext({
-      connection: { api: { settings: { update: settingsUpdate } } },
+      remote: { settings: { update: settingsUpdate } },
       sessions: {
         list: {
           getSnapshot: () => ({ current: 's1', ids: ['s1'], byId: {} }),
@@ -277,8 +280,8 @@ describe('client-nav apply (rc.2)', () => {
         open: vi.fn(), clear: vi.fn(), binding: vi.fn(() => ({ ctx: {} })),
       },
       conversation: {
-        createDraftImages: vi.fn(() => []),
-        releaseDraftImages: vi.fn(),
+        createDrafts: vi.fn(() => []),
+        releaseDraftAttachments: vi.fn(),
         input: { for: vi.fn(() => input) },
       },
     })
@@ -293,10 +296,11 @@ describe('client-nav apply (rc.2)', () => {
     const panel = register.mock.calls[5]![0].inject() as { insertAssetReference: (asset: unknown) => void }
     panel.insertAssetReference(refAsset)
     // 轻绑定:starhub-tool-context settings patch 带会话 id 与资产(与 @ pick 同通道)
-    expect(settingsUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      ns: 'starhub-tool-context',
-      patch: expect.objectContaining({ sessionId: 's1', assetId: 'a1', assetName: 'prod-server' }),
-    }))
+    expect(settingsUpdate).toHaveBeenCalledWith(
+      'starhub-tool-context',
+      expect.objectContaining({ sessionId: 's1', assetId: 'a1', assetName: 'prod-server' }),
+      undefined,
+    )
     // chip 插在草稿末尾(span 从 draft 末起,带 pick 时刻 draftRev)
     expect(insertReference).toHaveBeenCalledWith(
       { source: STARHUB_ASSET_SOURCE, ref: 'a1', label: 'prod-server (deploy@10.0.0.5)', clipboardText: '@prod-server' },
@@ -319,7 +323,7 @@ describe('client-nav apply (rc.2)', () => {
   it('no-ops the asset reference when no session is current', () => {
     const settingsUpdate = vi.fn(() => Promise.resolve({ result: { ok: true } }))
     const { ctx, register } = fakeContext({
-      connection: { api: { settings: { update: settingsUpdate } } },
+      remote: { settings: { update: settingsUpdate } },
     })
     applyPlugin(ctx)
     // apply 启动期的记忆开关初始同步也会写一次 settings,先清掉再断言本路径不写
@@ -343,5 +347,7 @@ describe('client-nav apply (rc.2)', () => {
     expect(injectList).toContain('sessions')
     expect(injectList).toContain('workspaces')
     expect(injectList).toContain('conversation')
+    expect(injectList).toContain('remote')
+    expect(injectList).toContain('uiConversation')
   })
 })

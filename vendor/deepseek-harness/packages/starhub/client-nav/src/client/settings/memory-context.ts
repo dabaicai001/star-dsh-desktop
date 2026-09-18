@@ -4,7 +4,7 @@
  * 插件在 `agent/pre-step` 读取——关闭则完全不注入记忆卡。
  * 写入失败静默(旧运行时无该 namespace;开关仍以 localStorage 为准)。
  */
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
+import type { SettingsUpdateWriter } from '../tool-context.ts'
 
 /** Settings namespace holding the memory master switch. */
 export const MEMORY_CONTEXT_NAMESPACE = 'starhub-memory-context'
@@ -14,14 +14,11 @@ export const MEMORY_CONTEXT_NAMESPACE = 'starhub-memory-context'
  * v0.96.4 起单一开关同时写 `enabled`(memory-context 预读注入)与 `autoReview`
  * (memory-sink 自动沉淀)两个字段,替代原先「启用长期记忆」「自动沉淀记忆」
  * 两个独立开关。namespace 未写过视为关闭(与 host 侧 explicit-true 语义一致)。
- * @param api - 连接线的 settings RPC 面。
+ * @param writer - settings 写入面(`ctx.remote.settings`)。
  * @param enabled - 开关状态(两字段同值)。
  */
-export function syncMemoryEnabled(api: IApiClient, enabled: boolean): void {
-  void api.settings.update({
-    ns: MEMORY_CONTEXT_NAMESPACE,
-    patch: { enabled, autoReview: enabled },
-  }).catch(() => {})
+export function syncMemoryEnabled(writer: SettingsUpdateWriter, enabled: boolean): void {
+  void writer.update(MEMORY_CONTEXT_NAMESPACE, { enabled, autoReview: enabled }, undefined).catch(() => {})
 }
 
 /**
@@ -30,13 +27,10 @@ export function syncMemoryEnabled(api: IApiClient, enabled: boolean): void {
  * 注入、memory-sink 不沉淀、memory 工具调用被 tools/pre-execute 锁死。
  * 清空配置(空串)时 host 侧按未配置处理,UI 侧 normalizeAiSettings 会同步
  * 把两个开关强制归零。
- * @param api - 连接线的 settings RPC 面。
+ * @param writer - settings 写入面(`ctx.remote.settings`)。
  * @param provider - 记忆模型 provider 路由。
  * @param model - 记忆模型 model id。
  */
-export function syncMemoryModel(api: IApiClient, provider: string, model: string): void {
-  void api.settings.update({
-    ns: MEMORY_CONTEXT_NAMESPACE,
-    patch: { memoryProvider: provider, memoryModel: model },
-  }).catch(() => {})
+export function syncMemoryModel(writer: SettingsUpdateWriter, provider: string, model: string): void {
+  void writer.update(MEMORY_CONTEXT_NAMESPACE, { memoryProvider: provider, memoryModel: model }, undefined).catch(() => {})
 }

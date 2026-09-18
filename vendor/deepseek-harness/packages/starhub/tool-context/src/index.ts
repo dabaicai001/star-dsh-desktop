@@ -17,7 +17,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+// Type-only: ctx.settings 的 Context 声明合并(register/get 类型化)。import type {} from '@deepseek-ai/dsh-settings'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'starhub-tool-context'
@@ -116,7 +116,7 @@ function toolHintFor(value: StarHubToolContextValue): string | null {
  * @param ctx - plugin context; the listener is disposed with it.
  */
 export function apply(ctx: Context): void {
-  const ns: SettingsNamespace = settingsNamespace(TOOL_CONTEXT_NAMESPACE)
+  const ns = TOOL_CONTEXT_NAMESPACE
   // Declare the namespace once; the pre-step listener reads it per request.
   const scope = ctx.settings.register(ns, ToolContextSchema)
 
