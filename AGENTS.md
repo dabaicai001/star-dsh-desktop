@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.121.2(**修复 CI `package-dsh-runtime` 构建失败(DSH 0.1.6 升级遗留三处)**:`tsconfig.base.json` 补 `@deepseek-ai/dsh-client-file-upload/types` paths 映射(gen-typert TS2307);`DiffBlock` 收窄 `pairSides` 返回类型为新增的 `PairRow`(不含 span 变体),修 `diffTotals` 直接访问 `row.left/right` 的 TS2339;client-nav 五处 `createSnapshotStore` 值导入从 `dsh-client-runtime/client` 改到基线共享包 `dsh-client-store`(client bundle purity 门禁禁止跨插件值导入),并补 devDependency 与 tsconfig 引用。本地 `gen:typert`、`tsc -b`(host/client 双面)、`tsdown` 全量、`verify-runtime-closure` 全绿。) |
+| 当前版本 | v0.121.3(**修复 CI `package-dsh-runtime` deploy 失败(DSH 0.1.6 升级遗留两处)**:上游把 deploy 根包 `dsh-jsonrpc-agent-pkg` 改名为 `dsh-python-runtime-closure`,`package-dsh-runtime.ts` / `build-exe-for-starhub.ts` 的 `--filter` 失配,pnpm 打印 "No projects matched the filters" 后静默产出空 staging,`restoreLegacyHoists` 读不到 `staging/package.json` 报 ENOENT;两脚本同步改用新包名。另:pnpm 11 对闭包未消费的 `patchedDependencies`(`@electron/osx-sign`,仅桌面宿主工具链用)报 `ERR_PNPM_UNUSED_PATCH` 硬错(v10 的 `allowNonAppliedPatches` 已更名 `allowUnusedPatches`),deploy 命令补 `--config.allow-unused-patches=true` 降级为警告。本地以修正后的 filter + flag 实测 deploy 成功(464 包,staging/package.json 就位)。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-18 (v0.121.2)*
+*最后更新: 2026-09-19 (v0.121.3)*

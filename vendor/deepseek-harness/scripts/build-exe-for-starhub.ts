@@ -1,5 +1,5 @@
 /**
- * StarHub 专用单文件可执行构建脚本(P4b):把 dsh-jsonrpc-agent-pkg 闭包
+ * StarHub 专用单文件可执行构建脚本(P4b):把 dsh-python-runtime-closure 闭包
  * (已含 @deepseek-ai/dsh-starhub-tools)用 @yao-pkg/pkg 的 --sea 模式打包成
  * 单文件 exe,作为 Tauri sidecar(externalBin)入包。
  *
@@ -20,8 +20,10 @@ import { parseArgs } from 'node:util'
 /** vendor/deepseek-harness 仓库根。 */
 const root = resolve(import.meta.dirname, '..')
 
-/** 闭包清单(纯依赖 deploy root),其 dependencies 定义 exe 打包内容。 */
-const DEPLOY_ROOT_PACKAGE = 'dsh-jsonrpc-agent-pkg'
+/** 闭包清单(纯依赖 deploy root),其 dependencies 定义 exe 打包内容。
+ * DSH 0.1.6 起上游把 python/sdk-runtime 由 dsh-jsonrpc-agent-pkg 改名
+ * dsh-python-runtime-closure,filter 不匹配时 deploy 静默产出空 staging。 */
+const DEPLOY_ROOT_PACKAGE = 'dsh-python-runtime-closure'
 /** 闭包内的封闭运行时入口。 */
 const ENTRY_BIN = 'node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/packaged-bin.js'
 const OUTPUT_BASENAME = 'dsh-jsonrpc-agent-pkg'
@@ -209,6 +211,9 @@ class SingleExeBuild {
       'deploy',
       '--legacy',
       '--prod',
+      // pnpm 11 对闭包未消费的 patchedDependencies(如 @electron/osx-sign)
+      // 报 ERR_PNPM_UNUSED_PATCH 硬错,这里降级为警告(与 package-dsh-runtime 一致)。
+      '--config.allow-unused-patches=true',
       this.staging,
     ])
     await this.restoreLegacyHoists()

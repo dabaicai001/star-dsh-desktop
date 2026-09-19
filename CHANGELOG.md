@@ -9,6 +9,11 @@
 
 ---
 
+## [0.121.3] - 2026-09-19
+
+### 修复
+- **修复 CI `package-dsh-runtime` deploy 失败(DSH 0.1.6 升级遗留两处)**:上游把 deploy 根包 `dsh-jsonrpc-agent-pkg` 改名为 `dsh-python-runtime-closure`,`package-dsh-runtime.ts` / `build-exe-for-starhub.ts` 的 `--filter` 失配,pnpm 打印 "No projects matched the filters" 后静默产出空 staging,`restoreLegacyHoists` 读不到 `staging/package.json` 报 ENOENT;两脚本同步改用新包名。另:pnpm 11 对闭包未消费的 `patchedDependencies`(`@electron/osx-sign`,仅桌面宿主工具链用)报 `ERR_PNPM_UNUSED_PATCH` 硬错(v10 的 `allowNonAppliedPatches` 已更名 `allowUnusedPatches`),deploy 命令补 `--config.allow-unused-patches=true` 降级为警告。本地以修正后的 filter + flag 实测 deploy 成功(464 包,staging/package.json 就位)。
+
 ## [0.121.2] - 2026-09-18
 
 ### 修复

@@ -35,8 +35,10 @@ import { parseArgs } from 'node:util'
 /** vendor/deepseek-harness 仓库根。 */
 const root = resolve(import.meta.dirname, '..')
 
-/** 闭包清单(纯依赖 deploy root),其 dependencies 定义入包内容。 */
-const DEPLOY_ROOT_PACKAGE = 'dsh-jsonrpc-agent-pkg'
+/** 闭包清单(纯依赖 deploy root),其 dependencies 定义入包内容。
+ * DSH 0.1.6 起上游把 python/sdk-runtime 由 dsh-jsonrpc-agent-pkg 改名
+ * dsh-python-runtime-closure,filter 不匹配时 deploy 静默产出空 staging。 */
+const DEPLOY_ROOT_PACKAGE = 'dsh-python-runtime-closure'
 /** staging 目录(vendor 内,打包后即可丢弃)。 */
 const STAGING_DIR = 'dist-exe/.starhub-staging'
 /** StarHub src-tauri/binaries(相对 vendor 根向上两级)。 */
@@ -263,6 +265,10 @@ class DshRuntimePackage {
       // 移除后仍跑根 postinstall(静态 import 'lefthook/package.json'),本地必炸;
       // 闭包 native 产物已由首次完整 install 缓存于 store,这里跳过脚本无副作用。
       '--config.ignore-scripts=true',
+      // pnpm 11 对 deploy 闭包未消费的 patchedDependencies(如 @electron/osx-sign,
+      // 仅桌面宿主工具链用)报 ERR_PNPM_UNUSED_PATCH 硬错(v0.121.3 修复,
+      // 原为 allowNonAppliedPatches 的 v10 行为),这里降级为警告。
+      '--config.allow-unused-patches=true',
       this.staging,
     ])
     await this.restoreLegacyHoists()
@@ -586,7 +592,7 @@ class DshRuntimePackage {
     if (missing.length > 0) {
       throw new Error(
         `package-dsh-runtime: starhub-web profile 引用的插件包未随闭包入包: ${missing.join(', ')}。`
-        + '请加入 WEB_LOCAL_PACKAGE_DIRS(本地包)或 dsh-jsonrpc-agent-pkg 依赖(闭包包)后重新打包。',
+        + '请加入 WEB_LOCAL_PACKAGE_DIRS(本地包)或 dsh-python-runtime-closure 依赖(闭包包)后重新打包。',
       )
     }
   }
@@ -606,7 +612,7 @@ class DshRuntimePackage {
     }
   }
 
-  /** dsh web GUI 需要、但 deploy 根(dsh-jsonrpc-agent-pkg)依赖闭包里没有的
+  /** dsh web GUI 需要、但 deploy 根(dsh-python-runtime-closure)依赖闭包里没有的
    * 包,补入产物顶层 node_modules。dev 布局靠 pnpm 隐藏 hoist
    * `.pnpm/node_modules` 与 vendor 全量安装兜住,hoisted prod 闭包没有这两层:
    * - 两个 StarHub 本地包 → `@deepseek-ai/dsh-starhub-*`:loader 条目从
