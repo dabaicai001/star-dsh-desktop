@@ -13,6 +13,7 @@
   - `src-tauri/src/harness/plugins.rs`:用户插件包装配置改为单条 `- insert:` 包裹的 cordis:include(patch 层语义:裸 `- id:` 只替换已有行、匹配不到仅 warn,新行必须 insert);新增 `ensure_runtime_local_package_links`,为 sdk profile 的 DSH_HOME 补建 11 个 starhub 本地包 junction(与 web.rs 的 LOCAL_PACKAGES、打包脚本 WEB_LOCAL_PACKAGE_DIRS 三处对齐;healProfilesModuleFallback 只从 apps/cli 闭包建链,本地包不在闭包内)。
   - `vendor/deepseek-harness/examples/starhub-agent/cordis.yml`:从「外部整配置」改写为 sdk profile 的 patch 覆盖层——`agent-spine`(`dsh-agent-spine-demo` 亦被上游删除)的 persona 迁到 base 的 `system-prompt` 行(保留 sdk-app 的工作目录后缀);移除 base 已提供的重复条目(approval/sessions 配置保留 StarHub 定制、subagent 系列/todo/token-meter 等);starhub 六插件改 `- insert:` 注入;base 全套工具面(bash/fs/web/skill/goal/plan/workflow)按产品决策保留。
   - 打包链零改动:`dsh-sdk-app` 经 `@deepseek-ai/dsh`(apps/cli 0.1.6 起依赖它)传递进入闭包,agent-presets 由 `dsh-agent-presets` 包 `files` 自带。
+  - 顺带修复 `create_dir_link` 的 junction 创建健壮性:路径含混合分隔符(`/`)时 `mklink /J` 会把 `/xxx` 当开关参数报「无效名称」,现规范化分隔符并带回显错误详情;测试同步适配 0.1.6(临时 DSH_HOME + 本地包建链、mock 切 chat-completions 协议、按 `assistant/message`/`tool/result` 新事件格式断言)。
 
 ---
 

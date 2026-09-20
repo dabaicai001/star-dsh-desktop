@@ -795,7 +795,11 @@ impl HarnessRuntime {
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
             // dsh runtime 的日志全走 stderr,降级为 info 避免刷屏告警
-            tracing::info!("dsh runtime stderr: {}", line.trim());
+            let line = line.trim();
+            tracing::info!("dsh runtime stderr: {}", line);
+            // 测试构建无 tracing subscriber,镜像到 stderr 便于排查启动/会话失败
+            #[cfg(test)]
+            eprintln!("dsh runtime stderr: {line}");
         }
     }
 
@@ -1698,6 +1702,30 @@ mod tests {
         }
     }
 
+    /// 测试运行时布置(DSH 0.1.6 适配):`--profile sdk` 需要可写的 DSH_HOME
+    /// (物化 profile + 模块 heal),且 starhub 本地包不在 apps/cli 闭包内、必须
+    /// 由 `ensure_runtime_local_package_links` 建 junction,否则 boot 时
+    /// 「N entries did not activate」。另生成测试专用 patch:llm-deepseek 0.1.6
+    /// 默认 messages 协议(直连 api.deepseek.com/anthropic),mock 只服务
+    /// chat/completions,测试显式切 chat-completions。
+    /// 返回 (DSH_HOME, protocol 覆盖补丁路径)。
+    fn setup_test_dsh_home(runtime_dir: &Path, temp_root: &Path) -> (PathBuf, PathBuf) {
+        let home = temp_root.join("home");
+        std::fs::create_dir_all(&home).expect("创建测试 DSH_HOME");
+        plugins::ensure_runtime_local_package_links(&home, runtime_dir)
+            .expect("建 starhub 本地包 junction");
+        let protocol_patch = temp_root.join("test-protocol.patch.yml");
+        std::fs::write(
+            &protocol_patch,
+            "# 测试专用:mock 只服务 chat/completions,显式切 chat-completions 协议\n\
+             - id: llm-deepseek\n\
+             \x20 config:\n\
+             \x20   protocol: chat-completions\n",
+        )
+        .expect("写 protocol 覆盖补丁");
+        (home, protocol_patch)
+    }
+
     /// 启动 mock LLM(vendor 的 pnpm run mock:llm 等价物),解析 ready 行的 baseURL。
     /// `mock_args` 为行为脚本与行为参数(如 --sequence/--tool-name);
     /// 每个 behavior 对应一次 LLM 请求,success 是快速流(8 chunks)。
@@ -1770,6 +1798,7 @@ mod tests {
         let temp_root =
             std::env::temp_dir().join(format!("starhub-dsh-test-{}", std::process::id()));
         std::fs::create_dir_all(&temp_root).unwrap();
+        let (dsh_home, protocol_patch) = setup_test_dsh_home(&runtime_dir, &temp_root);
         let session_root = temp_root.join("sessions");
         let workdir = temp_root.join("work");
         std::fs::create_dir_all(&session_root).unwrap();
@@ -1782,10 +1811,11 @@ mod tests {
         let runtime = HarnessRuntime::spawn(
             runtime_dir,
             node_path,
-            vec![config_path],
+            vec![config_path, protocol_patch],
             vec![
                 ("DEEPSEEK_BASE_URL".into(), base_url),
                 ("DEEPSEEK_API_KEY".into(), "mock-key".into()),
+                ("DSH_HOME".into(), dsh_home.to_string_lossy().into_owned()),
                 (
                     "DSH_SESSION_ROOT".into(),
                     session_root.to_string_lossy().into_owned(),
@@ -1831,18 +1861,26 @@ mod tests {
             "prompt: {prompt_result}"
         );
 
-        // 收通知:拼 text-delta,直到 session.status idle(一轮结束的权威信号)
+        // 收通知:拼 assistant/message 的文本块,直到 session.status idle
+        // (一轮结束的权威信号)。DSH 0.1.6 起文本随 assistant/message 的
+        // content 文本块整体到达(0.1.1 的 assistant/chunk + text-delta 已不存在)。
         let mut text = String::new();
         let idle = tokio::time::timeout(Duration::from_secs(60), async {
             while let Some((method, params)) = notify_rx.recv().await {
                 match method.as_str() {
                     "session.event" => {
                         let event = &params["event"];
-                        if event["type"] == "assistant/chunk"
-                            && event["data"]["chunk"]["type"] == "text-delta"
-                        {
-                            if let Some(delta) = event["data"]["chunk"]["text"].as_str() {
-                                text.push_str(delta);
+                        if event["type"] == "assistant/message" {
+                            if let Some(content) =
+                                event["data"]["message"]["content"].as_array()
+                            {
+                                for block in content {
+                                    if block["type"] == "text" {
+                                        if let Some(chunk) = block["text"].as_str() {
+                                            text.push_str(chunk);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1894,6 +1932,7 @@ mod tests {
 
         let temp_root =
             std::env::temp_dir().join(format!("starhub-dsh-tool-test-{}", std::process::id()));
+        let (dsh_home, protocol_patch) = setup_test_dsh_home(&runtime_dir, &temp_root);
         let session_root = temp_root.join("sessions");
         let workdir = temp_root.join("work");
         std::fs::create_dir_all(&session_root).unwrap();
@@ -1906,10 +1945,11 @@ mod tests {
         let runtime = HarnessRuntime::spawn(
             runtime_dir,
             node_path,
-            vec![config_path],
+            vec![config_path, protocol_patch],
             vec![
                 ("DEEPSEEK_BASE_URL".into(), base_url),
                 ("DEEPSEEK_API_KEY".into(), "mock-key".into()),
+                ("DSH_HOME".into(), dsh_home.to_string_lossy().into_owned()),
                 (
                     "DSH_SESSION_ROOT".into(),
                     session_root.to_string_lossy().into_owned(),
@@ -1953,23 +1993,32 @@ mod tests {
                 match method.as_str() {
                     "session.event" => {
                         let event = &params["event"];
-                        if event["type"] == "assistant/chunk"
-                            && event["data"]["chunk"]["type"] == "text-delta"
-                        {
-                            if let Some(delta) = event["data"]["chunk"]["text"].as_str() {
-                                text.push_str(delta);
+                        // DSH 0.1.6:文本随 assistant/message 的 content 文本块到达
+                        if event["type"] == "assistant/message" {
+                            if let Some(content) =
+                                event["data"]["message"]["content"].as_array()
+                            {
+                                for block in content {
+                                    if block["type"] == "text" {
+                                        if let Some(chunk) = block["text"].as_str() {
+                                            text.push_str(chunk);
+                                        }
+                                    }
+                                }
                             }
                         }
                         // tool/call 事件应出现工具名;tool/result 事件不带名(只有 callId),
                         // 直接校验其内容含宿主返回的能力清单特征词且非错误,
-                        // 以此证明桥执行成功而非仅有 tool/call
+                        // 以此证明桥执行成功而非仅有 tool/call。
+                        // 0.1.6 的 tool/result 成功时无 isError 字段(失败才有),
+                        // 故以 data.error 缺失判定非错误。
                         let raw = event.to_string();
                         if raw.contains("starhub_list_capabilities") {
                             tool_event_seen = true;
                         }
                         if event["type"] == "tool/result"
                             && raw.contains("Kafka")
-                            && raw.contains("\"isError\":false")
+                            && event["data"]["error"].is_null()
                         {
                             tool_result_seen = true;
                         }
@@ -2024,17 +2073,25 @@ mod tests {
             plugins::render_user_plugins_wrapper_yml(&entries_file),
         )
         .unwrap();
+        let (dsh_home, protocol_patch) = setup_test_dsh_home(&runtime_dir, &temp_root);
         let session_root = temp_root.join("sessions");
         std::fs::create_dir_all(&session_root).unwrap();
 
         let sink: NotificationSink = Arc::new(|_method, _params| {});
+        // 先算 patch 列表(runtime_dir 之后要 move 进 spawn)
+        let patch_files = vec![
+            runtime_dir.join(RUNTIME_CONFIG_REL),
+            protocol_patch,
+            wrapper,
+        ];
         let runtime = HarnessRuntime::spawn(
             runtime_dir,
             node_path,
-            vec![runtime_dir.join(RUNTIME_CONFIG_REL), wrapper],
+            patch_files,
             vec![
                 ("DEEPSEEK_BASE_URL".into(), base_url),
                 ("DEEPSEEK_API_KEY".into(), "mock-key".into()),
+                ("DSH_HOME".into(), dsh_home.to_string_lossy().into_owned()),
                 (
                     "DSH_SESSION_ROOT".into(),
                     session_root.to_string_lossy().into_owned(),

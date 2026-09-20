@@ -473,18 +473,33 @@ pub(crate) fn create_dir_link(link: &Path, target: &Path) -> std::io::Result<()>
     use std::os::windows::process::CommandExt;
     /// CREATE_NO_WINDOW:GUI 进程下 mklink 不弹可见控制台窗口。
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let status = std::process::Command::new("cmd")
+    // 分隔符必须规范成 `\`:混合分隔符路径(如 Rust `join("../vendor/x")` 的产物
+    // `a\b/../vendor/x`)里的 `/vendor` 会被 mklink 当成开关参数,报「无效名称」。
+    // 注意不能加引号:Rust 的 argv 转义会把引号写成 `\"` 字面量传给 cmd,反而坏。
+    let normalized = |value: &Path| -> String { value.to_string_lossy().replace('/', "\\") };
+    let output = std::process::Command::new("cmd")
         .args(["/C", "mklink", "/J"])
-        .arg(link)
-        .arg(target)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .arg(normalized(link))
+        .arg(normalized(target))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .creation_flags(CREATE_NO_WINDOW)
-        .status()?;
-    if status.success() {
+        .output()?;
+    if output.status.success() {
         Ok(())
     } else {
-        Err(std::io::Error::other(format!("mklink /J 退出码: {status}")))
+        let detail = [
+            String::from_utf8_lossy(&output.stdout).trim(),
+            String::from_utf8_lossy(&output.stderr).trim(),
+        ]
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" | ");
+        Err(std::io::Error::other(format!(
+            "mklink /J 退出码 {} ({detail})",
+            output.status.code().map_or_else(|| "signal".to_string(), |code| code.to_string())
+        )))
     }
 }
 
