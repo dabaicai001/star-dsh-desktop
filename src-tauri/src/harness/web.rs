@@ -61,7 +61,9 @@ const CLI_BIN_REL: &str = "apps/cli/lib/bin.js";
 /// 2026-08-22 起 memory-sink 入列(agent/turn-stopping 自动沉淀;与
 /// package-dsh-runtime.ts 的 WEB_LOCAL_PACKAGE_DIRS 对齐,漏列即安装包
 /// 启动 ERR_MODULE_NOT_FOUND —— v0.92.2 事故)。
-const LOCAL_PACKAGES: [&str; 11] = [
+/// 2026-09-20(DSH 0.1.6 适配)起,同一清单同时供内嵌 runtime 的 sdk profile
+/// 建链(plugins::ensure_runtime_local_package_links 复用)。
+pub(crate) const LOCAL_PACKAGES: [&str; 11] = [
     "client-nav",
     "host-static",
     "tool-context",
@@ -119,6 +121,21 @@ pub fn dsh_home_dir(app: &tauri::AppHandle) -> Result<PathBuf, DshWebError> {
             .path()
             .app_data_dir()
             .map(|dir| dir.join("dsh-web-home"))
+            .map_err(|e| DshWebError::PathResolve(format!("app_data_dir 失败: {e}"))),
+    }
+}
+
+/// 内嵌 AI runtime 的 DSH_HOME(`STARHUB_DSH_AGENT_HOME` 覆盖优先,缺省
+/// `<app_data_dir>/dsh-agent-home`)。DSH 0.1.6 适配(2026-09-20):内嵌 runtime
+/// 改走 `dsh --profile sdk`,需要物化 profile 的 home,与 web GUI 的 dsh-web-home
+/// 分开;settings 仍经 DSH_SETTINGS_PATH 共享同一份。
+pub fn dsh_agent_home_dir(app: &tauri::AppHandle) -> Result<PathBuf, DshWebError> {
+    match std::env::var("STARHUB_DSH_AGENT_HOME") {
+        Ok(dir) => Ok(PathBuf::from(dir)),
+        Err(_) => app
+            .path()
+            .app_data_dir()
+            .map(|dir| dir.join("dsh-agent-home"))
             .map_err(|e| DshWebError::PathResolve(format!("app_data_dir 失败: {e}"))),
     }
 }
@@ -605,7 +622,8 @@ fn yaml_single_quoted(value: &str) -> String {
 ///   `link.exists()`:后者跟随链接,悬挂 junction 会返回 false,直接
 ///   mklink 又因「已存在」失败,永远卡死;
 /// - 该位置是真实目录/文件(非链接)→ 告警跳过,绝不删除用户数据。
-fn ensure_dir_link_fresh(link: &Path, target: &Path) -> Result<(), DshWebError> {
+/// pub(crate):plugins.rs 的内嵌 runtime(sdk profile)本地包建链共用。
+pub(crate) fn ensure_dir_link_fresh(link: &Path, target: &Path) -> Result<(), DshWebError> {
     let meta = match std::fs::symlink_metadata(link) {
         Ok(meta) => meta,
         Err(_) => {

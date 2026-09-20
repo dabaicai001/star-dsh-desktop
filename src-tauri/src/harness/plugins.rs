@@ -13,7 +13,7 @@
 //!     └── <id>/                  # 每个插件一个目录,含 package.json(dsh.bundle manifest)
 //! ```
 //!
-//! 加载机制(调研结论,见实施任务清单支线 B):
+//! 加载机制(调研结论,见实施任务清单支线 B;DSH 0.1.6 适配,2026-09-20):
 //! - app-boot 的 boot() 会把 vendored Include 注册为内建插件 `cordis:include`,
 //!   因此任何位置的配置都能直接引用它,无需模块解析;
 //! - Include 会把子树 baseUrl 重设为被包含文件所在目录,所以主组合里的裸包名
@@ -21,8 +21,13 @@
 //!   相对路径在 plugins/ 目录内解析;
 //! - **Include 是 tree carrier(EntryGroup.key),其 config 保持 literal,`!!js`
 //!   不会在 path 字段求值**——因此不能用 env 注入路径,改为本模块在每次 spawn
-//!   前生成包装配置 `dsh-cordis.generated.yml`(两条 cordis:include entry:
-//!   主组合 + plugins/cordis.yml,后者带 `initial: []` 容忍文件缺失)。
+//!   前生成包装配置 `dsh-cordis.generated.yml`(一条 `- insert:` 包着的
+//!   cordis:include entry:plugins/cordis.yml,带 `initial: []` 容忍文件缺失)。
+//! - 0.1.6 起内嵌 runtime 经 `dsh --profile sdk --patch <主组合> --patch <包装配置>`
+//!   启动:主组合(`examples/starhub-agent/cordis.yml`)直接作为 patch 覆盖层传入
+//!   (patch 语义:裸 `- id:` 行整段替换 bundle 已有行的 config,`- insert:` 追加
+//!   新行),故包装配置只剩用户插件一条 include;patch 层里匹配不到已有行的裸 id
+//!   只会 warn 跳过,不会插入。
 //!
 //! 安全决策(首版):
 //! - 仅支持**零依赖**插件:package.json `dependencies` 非空直接拒装;
@@ -165,7 +170,7 @@ impl PluginPaths {
         self.plugins_dir().join("market-cache.json")
     }
 
-    /// spawn 前生成的包装配置(主组合 + 用户插件两条 include entry)。
+    /// spawn 前生成的包装配置(用户插件一条 include entry,见 render_user_plugins_wrapper_yml)。
     fn wrapper_path(&self) -> PathBuf {
         self.app_data.join("dsh-cordis.generated.yml")
     }
@@ -1132,32 +1137,33 @@ fn path_to_file_url(path: &Path) -> String {
     out
 }
 
-/// 生成包装配置:两条 `cordis:include` entry(app-boot 注册的内建插件,
-/// 任何位置的配置都可引用,无需模块解析)。主组合 entry 的 path 指向 vendor
-/// 内的 starhub-agent/cordis.yml,其内部裸包名仍在 vendor 树解析;用户插件
-/// entry 挂 plugins/cordis.yml,`initial: []` 容忍文件缺失。
+/// 生成用户插件包装配置:一条 `- insert:` 包着的 cordis:include entry
+/// (app-boot 注册的内建插件,任何位置的配置都可引用,无需模块解析)。
+/// 用户插件 entry 挂 plugins/cordis.yml,`initial: []` 容忍文件缺失。
+/// DSH 0.1.6 适配(2026-09-20):主组合改由调用方直接作为 `--patch` 传入,
+/// 本文件只剩用户插件一条;include 是 tree carrier、path 保持 literal,
+/// 故文件 URL 由 Rust 侧直接写入生成文件。
 /// pub(crate):harness/mod.rs 的端到端测试直接渲染 wrapper 验证启动链路。
-pub(crate) fn render_wrapper_yml(main_config: &Path, entries_file: &Path) -> String {
+pub(crate) fn render_user_plugins_wrapper_yml(entries_file: &Path) -> String {
     format!(
         "# 本文件由 StarHub 在启动 dsh runtime 前自动生成,请勿手改(每次启动重写)。\n\
          # 机制说明见 src-tauri/src/harness/plugins.rs 模块注释。\n\
-         - id: starhub-core\n\
-         \x20 name: cordis:include\n\
-         \x20 config:\n\
-         \x20   path: {}\n\
-         - id: starhub-user-plugins\n\
-         \x20 name: cordis:include\n\
-         \x20 config:\n\
-         \x20   path: {}\n\
-         \x20   initial: []\n",
-        yaml_single_quoted(&path_to_file_url(main_config)),
+         - insert:\n\
+         \x20   - id: starhub-user-plugins\n\
+         \x20     name: cordis:include\n\
+         \x20     config:\n\
+         \x20       path: {}\n\
+         \x20       initial: []\n",
         yaml_single_quoted(&path_to_file_url(entries_file)),
     )
 }
 
 /// spawn 前准备:确保插件目录布局与默认 entries 文件存在,尽力建立 peer
-/// junction(失败仅告警——只在已装插件需要加载时才致命),生成包装配置并返回
-/// 其路径,供 HarnessRuntime::spawn 作为 config_path。
+/// junction(失败仅告警——只在已装插件需要加载时才致命),为内嵌 runtime 的
+/// sdk profile 补 starhub 本地包 junction,生成用户插件包装配置并返回其路径,
+/// 供 HarnessRuntime::spawn 作为 `--patch` 之一传入。
+/// DSH 0.1.6 适配(2026-09-20):主组合不再经 include 包装,由调用方直接以
+/// `--patch` 传入;本包装配置只承载用户插件一条 include entry。
 pub fn prepare_runtime_config(
     app: &tauri::AppHandle,
     runtime_dir: &Path,
@@ -1167,13 +1173,46 @@ pub fn prepare_runtime_config(
     if let Err(error) = ensure_peer_links(&paths.plugins_dir(), runtime_dir) {
         tracing::warn!("dsh 插件 peer 链接建立失败(已装插件可能无法加载): {error}");
     }
+    // 内嵌 runtime 的 sdk profile 从 apps/cli 闭包 heal profiles/sdk/node_modules,
+    // starhub 本地包不在闭包内;与 web profile 同理补 junction(DSH 0.1.6 适配:
+    // 旧 jsonrpc-demo 直启外部配置时裸包名在 vendor 树解析,改 --profile sdk 后
+    // 解析根变成 <agent_home>/profiles/sdk,必须在此建链)。
+    let agent_home = crate::harness::web::dsh_agent_home_dir(app)
+        .map_err(|e| PluginError::PathResolve(e.to_string()))?;
+    ensure_runtime_local_package_links(&agent_home, runtime_dir)?;
     let wrapper = paths.wrapper_path();
-    let main_config = runtime_dir.join(super::runtime_config_rel(runtime_dir));
     fs::write(
         &wrapper,
-        render_wrapper_yml(&main_config, &paths.entries_path()),
+        render_user_plugins_wrapper_yml(&paths.entries_path()),
     )?;
     Ok(wrapper)
+}
+
+/// 为内嵌 runtime(sdk profile)的 DSH_HOME 补 starhub 本地包 junction。
+/// dsh 的 `healProfilesModuleFallback` 只从 INSTALL_ANCHOR(apps/cli 依赖闭包)
+/// BFS 建链,`packages/starhub/*` 不在闭包内,裸 entry 解析即
+/// ERR_MODULE_NOT_FOUND——web profile 由 web.rs 建链,sdk profile 在此建链,
+/// 复用同一份 LOCAL_PACKAGES 清单与 junction 漂移校验(ensure_dir_link_fresh)。
+pub(crate) fn ensure_runtime_local_package_links(
+    dsh_home: &Path,
+    runtime_dir: &Path,
+) -> Result<(), PluginError> {
+    let link_base = dsh_home.join("profiles").join("node_modules").join("@deepseek-ai");
+    fs::create_dir_all(&link_base)?;
+    for dir_name in crate::harness::web::LOCAL_PACKAGES {
+        let link = link_base.join(format!("dsh-starhub-{dir_name}"));
+        let target = runtime_dir.join("packages").join("starhub").join(dir_name);
+        // 旧部署的 runtime 可能还没有该包目录:跳过即可,healed
+        // profiles/node_modules 兜底会从安装闭包解析;两边都缺时由 loader
+        // 在启动时 fail-loud。
+        if !target.exists() {
+            tracing::warn!("本地包目录缺失,跳过 junction: {}", target.display());
+            continue;
+        }
+        crate::harness::web::ensure_dir_link_fresh(&link, &target)
+            .map_err(|e| PluginError::PathResolve(e.to_string()))?;
+    }
+    Ok(())
 }
 
 // ============================== 插件市场 ==============================

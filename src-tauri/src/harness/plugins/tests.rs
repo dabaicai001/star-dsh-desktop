@@ -373,17 +373,12 @@ fn file_url_and_wrapper_rendering() {
     let url = path_to_file_url(Path::new("/home/u/plugins/cordis.yml"));
     assert_eq!(url, "file:///home/u/plugins/cordis.yml");
 
-    let wrapper = render_wrapper_yml(
-        Path::new(r"E:\repo\vendor\deepseek-harness\examples\starhub-agent\cordis.yml"),
-        Path::new(r"C:\App Data\plugins\cordis.yml"),
-    );
+    // DSH 0.1.6 适配:包装配置只剩用户插件一条 include entry,且必须是
+    // `- insert:` 块(patch 层里裸 id 匹配不到已有行只会 warn 跳过,不会插入)。
+    let wrapper = render_user_plugins_wrapper_yml(Path::new(r"C:\App Data\plugins\cordis.yml"));
     assert!(wrapper.contains("name: cordis:include"), "{wrapper}");
-    assert!(
-        wrapper.contains(
-            "path: 'file:///E:/repo/vendor/deepseek-harness/examples/starhub-agent/cordis.yml'"
-        ),
-        "{wrapper}"
-    );
+    assert!(wrapper.contains("- insert:"), "{wrapper}");
+    assert!(wrapper.contains("id: starhub-user-plugins"), "{wrapper}");
     assert!(
         wrapper.contains("path: 'file:///C:/App%20Data/plugins/cordis.yml'"),
         "{wrapper}"

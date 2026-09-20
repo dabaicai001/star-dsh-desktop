@@ -5,7 +5,14 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
-## [未发布]
+## [0.121.4] - 2026-09-20
+
+### 修复
+- **修复 DSH 0.1.6 升级后内嵌 AI runtime 无法启动(安装版窗口停在「STARHUB dsh 壳启动中…」)**:上游 0.1.6 删除整个 `packages/examples/` 组(jsonrpc-demo/acp-demo),Rust 启动器硬编码的两处路径全部失效——dev 布局探测标记 `packages/examples/jsonrpc-demo/lib/bin.js` 与打包布局标记 `node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/packaged-bin.js`,安装版回退 dev 探测又找不到 vendor 树,报「dsh runtime 路径解析失败」。启动机制整体迁移到上游官方 CLI 的 `sdk` profile(dsh-base + dsh-sdk-app bundle),全程走配置/插件层适配,不修改任何 DSH 内核源码:
+  - `src-tauri/src/harness/mod.rs`:入口统一为 `apps/cli/lib/bin.js`(dev 与打包同一相对路径,同时用作 dev 探测标记);打包布局改以便捷 node 位于 runtime 根判定;spawn argv 从「demo bin + 位置参数外部配置」改为 `--profile sdk --patch <主组合> --patch <用户插件包装配置>`;内嵌 runtime 新增独立 `DSH_HOME`(`<app_data_dir>/dsh-agent-home`,与 web 的 dsh-web-home 分开,settings 仍经 `DSH_SETTINGS_PATH` 共享)。
+  - `src-tauri/src/harness/plugins.rs`:用户插件包装配置改为单条 `- insert:` 包裹的 cordis:include(patch 层语义:裸 `- id:` 只替换已有行、匹配不到仅 warn,新行必须 insert);新增 `ensure_runtime_local_package_links`,为 sdk profile 的 DSH_HOME 补建 11 个 starhub 本地包 junction(与 web.rs 的 LOCAL_PACKAGES、打包脚本 WEB_LOCAL_PACKAGE_DIRS 三处对齐;healProfilesModuleFallback 只从 apps/cli 闭包建链,本地包不在闭包内)。
+  - `vendor/deepseek-harness/examples/starhub-agent/cordis.yml`:从「外部整配置」改写为 sdk profile 的 patch 覆盖层——`agent-spine`(`dsh-agent-spine-demo` 亦被上游删除)的 persona 迁到 base 的 `system-prompt` 行(保留 sdk-app 的工作目录后缀);移除 base 已提供的重复条目(approval/sessions 配置保留 StarHub 定制、subagent 系列/todo/token-meter 等);starhub 六插件改 `- insert:` 注入;base 全套工具面(bash/fs/web/skill/goal/plan/workflow)按产品决策保留。
+  - 打包链零改动:`dsh-sdk-app` 经 `@deepseek-ai/dsh`(apps/cli 0.1.6 起依赖它)传递进入闭包,agent-presets 由 `dsh-agent-presets` 包 `files` 自带。
 
 ---
 

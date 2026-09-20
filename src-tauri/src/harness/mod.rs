@@ -98,16 +98,21 @@ pub const OPEN_ASSET_EVENT: &str = "starhub://open-asset";
 /// 「问 AI」入口(主壳 emit_to("main"),client-nav prefill composer)。
 pub const ASK_AI_EVENT: &str = "starhub://ask-ai";
 
-/// dsh runtime 仓库内相对路径(Phase 0 POC 验证过的启动命令)。
-const RUNTIME_BIN_REL: &str = "packages/examples/jsonrpc-demo/lib/bin.js";
-/// StarHub 专用组合(P1-3):纯对话内核,无 bash/fs/subagent 工具;
+/// dsh CLI bin 相对 runtime_dir 的路径(DSH 0.1.6 适配,2026-09-20)。
+/// dev 仓库树与 packaged 闭包同一相对路径:打包脚本 `package-dsh-runtime.ts` 的
+/// WEB_STATIC_RELS 复制 `apps/cli/lib`;`harness/web.rs` 的 dsh web 走同一入口。
+/// 上游 0.1.6 删除 `packages/examples/jsonrpc-demo` 后,内嵌 runtime 与 dsh web
+/// 统一经 `dsh --profile <name>` 启动,本常量同时用作 dev 布局探测标记
+/// (`find_runtime_dir`)与 spawn 入口。
+const RUNTIME_BIN_REL: &str = "apps/cli/lib/bin.js";
+/// 内嵌 AI runtime 启动的 dsh profile(上游官方 sdk profile:dsh-base +
+/// dsh-sdk-app,stdio JSON-RPC 服务;StarHub 组合经 `--patch` 覆盖层注入)。
+const RUNTIME_PROFILE: &str = "sdk";
+/// StarHub 专用组合(P1-3):纯对话内核,无 bash/fs 工具;
 /// 资产工具自 P1-4 起经 starhub-tools 插件接入。
 /// pub(crate):支线 B 的包装配置(plugins::prepare_runtime_config)引用它。
+/// DSH 0.1.6 起改作 `--patch` 覆盖层(格式从「整配置」变为 patch 层)。
 pub(crate) const RUNTIME_CONFIG_REL: &str = "examples/starhub-agent/cordis.yml";
-/// prod 闭包入口(packaged-bin.js:runJsonrpcAgent(import.meta.url),裸插件从
-/// 物化后的 node_modules 闭包解析)。
-const RUNTIME_BIN_PACKAGED_REL: &str =
-    "node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/packaged-bin.js";
 /// prod 闭包配置(入包脚本把 examples/starhub-agent/cordis.yml 平移到 config/)。
 const RUNTIME_CONFIG_PACKAGED_REL: &str = "config/starhub-agent.yml";
 /// prod 资源目录名(tauri.conf.json bundle.resources 引用,落到 resource_dir 下)。
@@ -120,18 +125,11 @@ const NODE_EXE_NAME: &str = if cfg!(target_os = "windows") {
     "node"
 };
 
-/// runtime_dir 是否为 prod 闭包布局(以 packaged 入口是否存在判定)。
+/// runtime_dir 是否为 prod 闭包布局(DSH 0.1.6 适配:上游删除 jsonrpc-demo 后
+/// 不再有 packaged 专属入口 bin,改以便携 node 是否位于 runtime 根判定——
+/// packaged 闭包含根级 node.exe,dev 的便携 node 在仓库 tmp/node24)。
 fn is_packaged_runtime(runtime_dir: &Path) -> bool {
-    runtime_dir.join(RUNTIME_BIN_PACKAGED_REL).exists()
-}
-
-/// 入口 bin 相对 runtime_dir 的路径(dev/prod 布局不同)。
-fn runtime_bin_rel(runtime_dir: &Path) -> &'static str {
-    if is_packaged_runtime(runtime_dir) {
-        RUNTIME_BIN_PACKAGED_REL
-    } else {
-        RUNTIME_BIN_REL
-    }
+    runtime_dir.join(NODE_EXE_NAME).exists()
 }
 
 /// 主组合配置相对 runtime_dir 的路径(dev/prod 布局不同)。
@@ -526,25 +524,35 @@ pub struct HarnessRuntime {
 }
 
 impl HarnessRuntime {
-    /// spawn 便携 node + jsonrpc-demo bin(cwd = runtime_dir),stderr 转发 tracing。
+    /// spawn 便携 node + dsh CLI(`--profile sdk --patch <覆盖层>...`,cwd = runtime_dir),
+    /// stderr 转发 tracing。DSH 0.1.6 适配(2026-09-20):上游删除 jsonrpc-demo bin 后,
+    /// 内嵌 runtime 改走官方 CLI 的 sdk profile,StarHub 组合与用户插件经
+    /// `--patch` 覆盖层注入(可重复,按 argv 顺序应用)。
+    ///
+    /// `patch_files` 为 `--patch` 覆盖层路径列表(相对路径按 cwd=runtime_dir 解析):
+    /// 首位是 StarHub 主组合(RUNTIME_CONFIG_REL / config 覆盖),末位是
+    /// plugins::prepare_runtime_config 生成的用户插件包装配置。
     ///
     /// `extra_env` 注入模型凭证(DEEPSEEK_API_KEY/DEEPSEEK_BASE_URL)、persona
-    /// (DSH_SYSTEM_PROMPT)、DSH_SESSION_ROOT / DSH_CWD / DSH_SETTINGS_PATH 与
-    /// 测试 mock LLM 配置;未注入的项靠进程环境自然继承。
+    /// (DSH_SYSTEM_PROMPT)、DSH_HOME / DSH_SESSION_ROOT / DSH_CWD / DSH_SETTINGS_PATH
+    /// 与测试 mock LLM 配置;未注入的项靠进程环境自然继承。
     /// `bridge` 为宿主桥共享状态(审批/工具执行应答 + 会话绑定),与 manager 同 Arc。
     pub fn spawn(
         runtime_dir: PathBuf,
         node_path: PathBuf,
-        config_path: PathBuf,
+        patch_files: Vec<PathBuf>,
         extra_env: Vec<(String, String)>,
         on_notification: NotificationSink,
         bridge: Arc<HostBridgeState>,
     ) -> Result<Arc<Self>, HarnessError> {
         let mut cmd = Command::new(&node_path);
-        let bin_rel = runtime_bin_rel(&runtime_dir);
-        cmd.arg(bin_rel)
-            .arg(&config_path)
-            .current_dir(&runtime_dir)
+        cmd.arg(RUNTIME_BIN_REL)
+            .arg("--profile")
+            .arg(RUNTIME_PROFILE);
+        for patch in &patch_files {
+            cmd.arg("--patch").arg(patch);
+        }
+        cmd.current_dir(&runtime_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -558,7 +566,11 @@ impl HarnessRuntime {
         }
 
         let mut child = cmd.spawn().map_err(|e| {
-            HarnessError::Spawn(format!("{} {}: {e}", node_path.display(), bin_rel))
+            HarnessError::Spawn(format!(
+                "{} {} --profile {RUNTIME_PROFILE}: {e}",
+                node_path.display(),
+                RUNTIME_BIN_REL
+            ))
         })?;
         let stdin = child
             .stdin
@@ -588,9 +600,11 @@ impl HarnessRuntime {
         tokio::spawn(Self::stderr_drain(stderr));
 
         tracing::info!(
-            "dsh runtime spawned: node={} cwd={}",
+            "dsh runtime spawned: node={} cwd={} profile={} patches={:?}",
             node_path.display(),
-            runtime_dir.display()
+            runtime_dir.display(),
+            RUNTIME_PROFILE,
+            patch_files,
         );
         let runtime = Arc::new(Self {
             tx,
@@ -1261,12 +1275,12 @@ impl HarnessPaths {
         })
     }
 
-    /// prod 资源目录(resource_dir()/dsh-runtime),入口不存在则视为非打包布局。
+    /// prod 资源目录(resource_dir()/dsh-runtime),CLI bin 不存在则视为非打包布局。
     fn find_packaged_runtime_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
         use tauri::Manager;
         let resource_dir = app.path().resource_dir().ok()?;
         let dir = resource_dir.join(RUNTIME_RESOURCE_DIR);
-        dir.join(RUNTIME_BIN_PACKAGED_REL).exists().then_some(dir)
+        dir.join(RUNTIME_BIN_REL).exists().then_some(dir)
     }
 
     /// 从 current_exe 向上找包含 vendor/deepseek-harness 的目录(dev 布局)。
@@ -1386,6 +1400,19 @@ impl HarnessManager {
             "DSH_SETTINGS_PATH".into(),
             settings_path.to_string_lossy().into_owned(),
         ));
+        // 内嵌 runtime 的 DSH home(DSH 0.1.6 适配,2026-09-20):`--profile sdk`
+        // 需要物化 profile(旧 jsonrpc-demo bin 直接启动外部配置,不需要 home),
+        // 与 web GUI 的 dsh-web-home 分开、互不干扰;settings 仍经上面的
+        // DSH_SETTINGS_PATH 共享同一份。STARHUB_DSH_AGENT_HOME 可覆盖(测试用)。
+        let agent_home = crate::harness::web::dsh_agent_home_dir(app)
+            .map_err(|e| HarnessError::PathResolve(format!("DSH_HOME 解析失败: {e}")))?;
+        std::fs::create_dir_all(&agent_home).map_err(|e| {
+            HarnessError::PathResolve(format!("创建 DSH home {} 失败: {e}", agent_home.display()))
+        })?;
+        env.push((
+            "DSH_HOME".into(),
+            agent_home.to_string_lossy().into_owned(),
+        ));
         Ok(env)
     }
 
@@ -1452,16 +1479,27 @@ impl HarnessManager {
                 let _ = old.shutdown().await;
             }
             let paths = HarnessPaths::resolve_for_app(app)?;
-            // 支线 B:无 STARHUB_DSH_CONFIG 覆盖时,spawn 前生成包装配置
-            // (主组合 + 用户插件两条 cordis:include entry),让用户插件经
-            // plugins/cordis.yml 子树挂进 runtime;include 是 tree carrier,
-            // path 不支持 !!js,故路径由 Rust 侧直接写入生成文件。
-            let config_path = if std::env::var("STARHUB_DSH_CONFIG").is_ok() {
+            // 支线 B:无 STARHUB_DSH_CONFIG 覆盖时,spawn 前生成用户插件包装配置
+            // (plugins/cordis.yml 一条 cordis:include entry,`initial: []` 容忍
+            // 文件缺失),让用户插件经 include 子树挂进 runtime;include 是 tree
+            // carrier,path 不支持 !!js,故路径由 Rust 侧直接写入生成文件。
+            // DSH 0.1.6 起 `--patch` 可重复:主组合(StarHub 覆盖层)+ 用户插件
+            // 包装配置按序应用,匹配不到已有行的裸 id 只会 warn 跳过。
+            let main_overlay = if std::env::var("STARHUB_DSH_CONFIG").is_ok() {
                 paths.config_path.clone()
             } else {
-                plugins::prepare_runtime_config(app, &paths.runtime_dir)
-                    .map_err(|e| HarnessError::PathResolve(e.to_string()))?
+                PathBuf::from(crate::harness::runtime_config_rel(&paths.runtime_dir))
             };
+            let user_plugins_wrapper = if std::env::var("STARHUB_DSH_CONFIG").is_ok() {
+                None
+            } else {
+                Some(
+                    plugins::prepare_runtime_config(app, &paths.runtime_dir)
+                        .map_err(|e| HarnessError::PathResolve(e.to_string()))?,
+                )
+            };
+            let mut patch_files = vec![main_overlay];
+            patch_files.extend(user_plugins_wrapper);
             let app_handle = app.clone();
             let bridge = self.bridge.clone();
             let on_notification: NotificationSink = Arc::new(move |method, params| {
@@ -1480,7 +1518,7 @@ impl HarnessManager {
             let runtime = HarnessRuntime::spawn(
                 paths.runtime_dir,
                 paths.node_path,
-                config_path,
+                patch_files,
                 env,
                 on_notification,
                 self.bridge.clone(),
@@ -1744,7 +1782,7 @@ mod tests {
         let runtime = HarnessRuntime::spawn(
             runtime_dir,
             node_path,
-            config_path,
+            vec![config_path],
             vec![
                 ("DEEPSEEK_BASE_URL".into(), base_url),
                 ("DEEPSEEK_API_KEY".into(), "mock-key".into()),
@@ -1868,7 +1906,7 @@ mod tests {
         let runtime = HarnessRuntime::spawn(
             runtime_dir,
             node_path,
-            config_path,
+            vec![config_path],
             vec![
                 ("DEEPSEEK_BASE_URL".into(), base_url),
                 ("DEEPSEEK_API_KEY".into(), "mock-key".into()),
@@ -1961,9 +1999,9 @@ mod tests {
         runtime.shutdown().await.expect("shutdown");
     }
 
-    /// 支线 B 端到端:用 plugins::render_wrapper_yml 生成的包装配置启动
-    /// runtime(主组合 + 空用户插件清单两条 cordis:include entry),
-    /// initialize 成功即证明 include 链路与 assertEntriesActivated 全过。
+    /// 支线 B 端到端:主组合覆盖层 + plugins::render_user_plugins_wrapper_yml
+    /// 生成的用户插件包装配置两条 `--patch` 启动 runtime,initialize 成功即证明
+    /// `--profile sdk` + patch 覆盖链与 assertEntriesActivated 全过。
     #[tokio::test]
     async fn dsh_boots_with_generated_wrapper_config() {
         let Some((node_path, runtime_dir, _config_path)) = test_paths() else {
@@ -1983,7 +2021,7 @@ mod tests {
         let wrapper = temp_root.join("dsh-cordis.generated.yml");
         std::fs::write(
             &wrapper,
-            plugins::render_wrapper_yml(&runtime_dir.join(RUNTIME_CONFIG_REL), &entries_file),
+            plugins::render_user_plugins_wrapper_yml(&entries_file),
         )
         .unwrap();
         let session_root = temp_root.join("sessions");
@@ -1993,7 +2031,7 @@ mod tests {
         let runtime = HarnessRuntime::spawn(
             runtime_dir,
             node_path,
-            wrapper,
+            vec![runtime_dir.join(RUNTIME_CONFIG_REL), wrapper],
             vec![
                 ("DEEPSEEK_BASE_URL".into(), base_url),
                 ("DEEPSEEK_API_KEY".into(), "mock-key".into()),

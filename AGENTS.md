@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.121.3(**修复 CI `package-dsh-runtime` deploy 失败(DSH 0.1.6 升级遗留两处)**:上游把 deploy 根包 `dsh-jsonrpc-agent-pkg` 改名为 `dsh-python-runtime-closure`,`package-dsh-runtime.ts` / `build-exe-for-starhub.ts` 的 `--filter` 失配,pnpm 打印 "No projects matched the filters" 后静默产出空 staging,`restoreLegacyHoists` 读不到 `staging/package.json` 报 ENOENT;两脚本同步改用新包名。另:pnpm 11 对闭包未消费的 `patchedDependencies`(`@electron/osx-sign`,仅桌面宿主工具链用)报 `ERR_PNPM_UNUSED_PATCH` 硬错(v10 的 `allowNonAppliedPatches` 已更名 `allowUnusedPatches`),deploy 命令补 `--config.allow-unused-patches=true` 降级为警告。本地以修正后的 filter + flag 实测 deploy 成功(464 包,staging/package.json 就位)。) |
+| 当前版本 | v0.121.4(**修复 DSH 0.1.6 升级后内嵌 AI runtime 无法启动**:上游 0.1.6 删除整个 `packages/examples/` 组(jsonrpc-demo/acp-demo),Rust 启动器硬编码的 dev 探测标记 `packages/examples/jsonrpc-demo/lib/bin.js` 与打包标记 `node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/packaged-bin.js` 全部失效,安装版报「dsh runtime 路径解析失败」、窗口停在跳板页。启动机制整体迁移到上游官方 CLI 的 `sdk` profile(`--profile sdk --patch`),全程配置/插件层适配、不动 DSH 内核:入口统一 `apps/cli/lib/bin.js`、spawn argv 改 `--profile sdk --patch <主组合> --patch <用户插件包装配置>`、内嵌 runtime 新增独立 `DSH_HOME`(dsh-agent-home,settings 与 web 共享);`examples/starhub-agent/cordis.yml` 改写为 patch 覆盖层(agent-spine 随包删除,persona 迁 `system-prompt` 行;starhub 六插件改 `- insert:` 注入);sdk profile 补建 11 个 starhub 本地包 junction(healProfilesModuleFallback 只从 apps/cli 闭包建链)。打包链零改动。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-19 (v0.121.3)*
+*最后更新: 2026-09-20 (v0.121.4)*

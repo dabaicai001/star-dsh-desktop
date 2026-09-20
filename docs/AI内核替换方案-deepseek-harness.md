@@ -414,7 +414,7 @@ token 源:`packages/client/ui-theme/src/styles/`(三层命名:`--dsw-static-*` �
 - 传输:NDJSON 一行一帧 JSON-RPC 2.0(`packages/sdk/protocol/src/transport.ts`);stdout 只走协议帧;未知方法回 `-32603`(注意不是 -32601)。
 - 方法(仅 3 个):`initialize {cwd, provider, model, maxTokens?}` → `serverInfo`;`session/prompt {sessionId, contentBlocks}` → `{messageId}`(**未知 sessionId 惰性创建 session,无独立 create;返回值只是入队回执**);`shutdown` → `{}`。
 - 通知:`session.event`(完整事件溯源信封 `{type, seq, time, data}`;流式 = 拼 `assistant/chunk` 的 `text-delta`;一轮结束权威信号 = `session.status` → `idle`,或 `turn/end{reason}`)、`subagent.started/finished`。
-- 启动:`node packages/examples/jsonrpc-demo/lib/bin.js <cordis.yml>`(或 env `DSH_CORDIS_CONFIG`);LLM 走 env:`DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL`;组合(工具集/persona/持久化根/审批)全在 cordis.yml,参考 `examples/jsonrpc-agent/cordis.yml`(全)与 `python/sdk-runtime/.../runtime/cordis.yml`(最小)。
+- 启动:`node packages/examples/jsonrpc-demo/lib/bin.js <cordis.yml>`(或 env `DSH_CORDIS_CONFIG`);LLM 走 env:`DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL`;组合(工具集/persona/持久化根/审批)全在 cordis.yml,参考 `examples/jsonrpc-agent/cordis.yml`(全)与 `python/sdk-runtime/.../runtime/cordis.yml`(最小)。**迁移注记(v0.121.4 / DSH 0.1.6)**:上游删除 `packages/examples/jsonrpc-demo` 后此命令已不存在,改为 `node apps/cli/lib/bin.js --profile sdk --patch <starhub-agent/cordis.yml> [--patch <用户插件包装配置>]`,StarHub 组合从「整配置」改写为 sdk profile 的 patch 覆盖层,内嵌 runtime 需独立 `DSH_HOME`(dsh-agent-home)物化 profile。
 
 ### 11.3 cancel(D1 最终结论)
 

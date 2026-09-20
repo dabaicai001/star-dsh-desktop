@@ -1,116 +1,81 @@
-# StarHub AI 工作区(内嵌 AI 助手)专用组合(内核替换 P1-3 起)。
-# 安全边界:不挂 bash/fs 工具——StarHub 的资产工具经 starhub-tools 插件接入,
-# 审批语义走 ctx.approval 桥(方案 5.2):审批策略由 dsh 权限 preset 供给
-# (设置 → 通用 → 权限,共享 settings.yaml);starhub-approval-bridge 只做
-# preset 消费 + 风险门(防误删:starhub 域工具唯一的 ask 来源)+ 确认卡应答桥。
-# stdout 只走 JSON-RPC;不要加 console logger。
-
-- id: sdk-jsonrpc-server
-  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
-  config:
-    maxTokensAsSuccess: !!js "process.env.DSH_MAX_TOKENS_AS_SUCCESS === undefined ? true : JSON.parse(process.env.DSH_MAX_TOKENS_AS_SUCCESS)"
+# StarHub AI 工作区(内嵌 AI 助手)专用组合补丁层(DSH 0.1.6 适配,2026-09-20)。
+#
+# 机制变更:上游 0.1.6 删除 packages/examples/jsonrpc-demo(旧「外部整配置直启」
+# 的 bin)后,内嵌 runtime 改为启动官方 sdk profile:
+#   node apps/cli/lib/bin.js --profile sdk --patch <本文件> --patch <用户插件包装配置>
+# 本文件是 patch 覆盖层(不是整配置),语义(cordis-plugin-include 的
+# applyEntryPatches):
+#   - 裸 `- id:` 行:按 id 整段替换 bundle 层已有行的 config(last write wins);
+#   - `- insert:` 块:追加新行;
+#   - 匹配不到已有行的裸 id 只会 warn 跳过,不会插入。
+# sdk profile(dsh-base + dsh-sdk-app bundle)已内置 agent / settings / approval /
+# llm-deepseek / sessions / subagent / todo / token-meter / compaction /
+# bash / fs / web 等完整工具面(产品决策:保留上游全套,StarHub 域工具叠加),
+# 故旧版「整配置」里重复提供的条目全部移除,只留 StarHub 定制与注入。
+# stdout 只走 JSON-RPC;sdk-app 的 personaSuffix(工作目录提示)保持不变。
 
 # 与 dsh web GUI 共享的用户设置文档(权限默认 preset 等);路径由 Rust 桥注入,
 # 与 web 运行时(harness/web.rs 的 $DSH_HOME = <app_data_dir>/dsh-web-home)同一份。
 - id: settings
-  name: '@deepseek-ai/dsh-settings-file'
   config:
     path: !!js "process.env.DSH_SETTINGS_PATH ?? './.settings.yaml'"
 
-# 审批服务(策略 + 审计对);answerer 由 starhub-approval-bridge 桥到宿主确认卡。
-- id: approval
-  name: '@deepseek-ai/dsh-user-approval'
-
 # DeepSeek 适配器(OpenAI 兼容端点经 DEEPSEEK_BASE_URL 注入);模型随 initialize 按会话传入。
 - id: llm-deepseek
-  name: '@deepseek-ai/dsh-llm-deepseek'
   config:
     thinking: enabled
     reasoningEffort: max
 
-- id: agent-spine
-  name: '@deepseek-ai/dsh-agent-spine-demo'
+# persona(系统提示词):上游 0.1.6 起 persona 归 system-prompt 行持有
+# (旧 agent-spine-demo 包已删除)。personaSuffix 与 sdk-app 默认一致
+# (工作目录提示),避免整段替换丢掉上游文案。
+- id: system-prompt
   config:
-    persona: !!js process.env.DSH_SYSTEM_PROMPT ?? 'You are StarHub AI, an operations assistant embedded in the StarHub desktop app.'
-    workspaceContext: false
-    skills:
-      enabled: false
-    toolBash: false
-    toolJobs: false
+    personaPrefix: !!js process.env.DSH_SYSTEM_PROMPT ?? 'You are StarHub AI, an operations assistant embedded in the StarHub desktop app.'
+    personaSuffix: Your working directory is {{cwd}}.
 
 - id: sessions
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
   config:
     # StarHub Rust 桥默认注入应用数据目录;缺省 ./.sessions 仅限独立调试。
     root: !!js process.env.DSH_SESSION_ROOT ?? './.sessions'
     compression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
 
-- id: session-checkpoints
-  name: '@deepseek-ai/dsh-session-checkpoint-policy'
-
-# 子代理(P1-5:Planner→Executor 由 dsh subagent 承接;plan mode 依赖
-# user-questions 审批缝,待审批桥落地后再启用)
-- id: subagent
-  name: '@deepseek-ai/dsh-subagent'
-
-- id: subagent-spawn-in-process
-  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
-  config:
-    providerName: spawn
-
-- id: tool-subagent
-  name: '@deepseek-ai/dsh-tool-subagent'
-  config:
-    provider: spawn
-    toolName: subagent
-    enableRunInBackground: false
-
-- id: tool-todo
-  name: '@deepseek-ai/dsh-tool-todo'
-  config:
-    allowParallelInProgress: true
-
-# StarHub 宿主工具(P1-4):list_capabilities / list_assets / session_search /
-# memory;执行经 sdk-jsonrpc-server 暴露的 sdk-transport(本地补丁)桥回 Rust
-# 主进程,工具体不在 dsh 进程内。必须排在 sdk-jsonrpc-server 之后加载。
-- id: starhub-tools
-  name: '@deepseek-ai/dsh-starhub-tools'
-
-# 联动(契约 §5,排在 starhub-tools 之后):session-registry / domain-events
-# 经 sdk-jsonrpc-server 暴露的 sdk-notifications(本地补丁)订阅 Rust 推送的
-# 入站 notification(starhub/registry.sync 全量快照、starhub/domain.event 事件流),
-# 各自提供只读服务;live-context 在 agent/pre-step 消费这两个服务 + 经
-# sdk-transport 反向 pull starhub/live.snapshot,注入「当前在发生什么」。
-- id: starhub-session-registry
-  name: '@deepseek-ai/dsh-starhub-session-registry'
-
-- id: starhub-domain-events
-  name: '@deepseek-ai/dsh-starhub-domain-events'
-
-- id: starhub-live-context
-  name: '@deepseek-ai/dsh-starhub-live-context'
-
-# 长期记忆注入(2026-08-21):pre-step 经 sdk-transport 反向 pull
-# `starhub/memory.cards`(user + global + 工作区文件夹 + 绑定资产);开关走
-# `starhub-memory-context` settings namespace(与 web GUI 的设置 → AI 助手
-# 「启用长期记忆」共享同一份 settings.yaml)。
-- id: starhub-memory-context
-  name: '@deepseek-ai/dsh-starhub-memory-context'
-
-# 审批桥(Phase 2;2026-08-17 瘦身改名):消费共享 settings.yaml 的
-# permission preset(策略本体在 dsh 侧)+ starhub_* 工具风险门 +
-# approval/request 应答桥(前端确认卡)。
-# 必须排在 sdk-jsonrpc-server / settings / approval 之后。
-- id: starhub-approval-bridge
-  name: '@deepseek-ai/dsh-starhub-approval-bridge'
-
-- id: token-meter
-  name: '@deepseek-ai/dsh-token-meter'
-
 - id: compaction-basic
-  name: '@deepseek-ai/dsh-compaction-basic'
   config:
     thresholdRatio: 0.8
     retainRatio: 0.16
     maxTokens: 8192
     compactionRetries: 1
+
+# StarHub 域工具与联动插件(bundle 层没有,全部追加):
+# - starhub-tools:list_capabilities / list_assets / session_search / memory 等
+#   宿主工具;执行经 sdk-jsonrpc-server 暴露的 sdk-transport(本地补丁)桥回 Rust
+#   主进程,工具体不在 dsh 进程内。sdk-jsonrpc-server 由 sdk-app bundle 注入,
+#   服务可用性驱动激活,无需显式排序。
+# - session-registry / domain-events:经 sdk-notifications 订阅 Rust 推送的
+#   注册表快照与领域事件流;live-context 在 agent/pre-step 消费这两个服务 +
+#   经 sdk-transport 反向 pull starhub/live.snapshot,注入「当前在发生什么」。
+# - memory-context:pre-step 经 sdk-transport 反向 pull `starhub/memory.cards`
+#   (user + global + 工作区文件夹 + 绑定资产);开关走 `starhub-memory-context`
+#   settings namespace(与 web GUI 的设置 → AI 助手「启用长期记忆」共享同一份
+#   settings.yaml)。
+# - approval-bridge:消费共享 settings.yaml 的 permission preset(策略本体在 dsh
+#   侧)+ starhub_* 工具风险门 + approval/request 应答桥(前端确认卡)。
+- insert:
+    - id: starhub-tools
+      name: '@deepseek-ai/dsh-starhub-tools'
+
+    - id: starhub-session-registry
+      name: '@deepseek-ai/dsh-starhub-session-registry'
+
+    - id: starhub-domain-events
+      name: '@deepseek-ai/dsh-starhub-domain-events'
+
+    - id: starhub-live-context
+      name: '@deepseek-ai/dsh-starhub-live-context'
+
+    - id: starhub-memory-context
+      name: '@deepseek-ai/dsh-starhub-memory-context'
+
+    - id: starhub-approval-bridge
+      name: '@deepseek-ai/dsh-starhub-approval-bridge'
