@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.121.4-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.121.5-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,8 +48,8 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.121.4 (2026-09-20)
-- 🐛 **修复 DSH 0.1.6 升级后内嵌 AI runtime 无法启动(安装版窗口停在「STARHUB dsh 壳启动中…」)**:上游 0.1.6 删除整个 `packages/examples/` 组(jsonrpc-demo/acp-demo),Rust 启动器硬编码的两处路径全部失效——dev 布局探测标记 `packages/examples/jsonrpc-demo/lib/bin.js` 与打包布局标记 `node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/packaged-bin.js`,安装版回退 dev 探测又找不到 vendor 树,报「dsh runtime 路径解析失败」。启动机制整体迁移到上游官方 CLI 的 `sdk` profile(dsh-base + dsh-sdk-app bundle),全程走配置/插件层适配,不修改任何 DSH 内核源码:Rust 侧入口统一为 `apps/cli/lib/bin.js`、spawn argv 改 `--profile sdk --patch <主组合> --patch <用户插件包装配置>`、内嵌 runtime 新增独立 `DSH_HOME`(`<app_data_dir>/dsh-agent-home`,settings 仍与 web GUI 共享);`examples/starhub-agent/cordis.yml` 改写为 sdk profile 的 patch 覆盖层(persona 迁 `system-prompt` 行,starhub 六插件改 `- insert:` 注入);为 sdk profile 补建 11 个 starhub 本地包 junction。打包链零改动(`dsh-sdk-app` 经 `@deepseek-ai/dsh` 传递进闭包)。
+### v0.121.5 (2026-09-21)
+- 🐛 **修复 v0.121.4 token 适配后安装版仍落 401 文本页「dsh web authentication required」**:根因是 prod 跳板页(`shell-placeholder/index.html`)由 Tauri 从 `http://tauri.localhost` 源提供,它拿到 tokenized URL 后用 `location.replace()` 跳转 `http://127.0.0.1:3085/?token=...` 属**跨站发起的导航**——DSH 0.1.6 的会话 cookie 是 `SameSite=Strict`,Chromium 不会在 303 之后的请求上发送它,壳拿到 cookie 却用在重定向上,落 401 且无重试(cookie 实际已入 jar,同源重载即恢复;换回旧版本无认证所以正常)。修复(仍不动 vendor 内核):
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

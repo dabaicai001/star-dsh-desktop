@@ -47,6 +47,12 @@ const MAX_PORT_OFFSET: u16 = 10;
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
 /// 就绪探测间隔。
 const READY_INTERVAL: Duration = Duration::from_millis(300);
+/// tokenized URL(stdout `dsh web:` 行)捕获兜底上限。就绪探测「任何 HTTP 响应
+/// 即就绪」会远早于 URL 行打印——该行要等**整个 Loader 树 settle**(webserver
+/// 先 listen,其余插件随后激活,冷启动机器上间隔可达数十秒)。兜底太短会让
+/// nav_url 退化裸 URL、shell 导航落 401 页(v0.121.5:5s → 30s;进程已就绪,
+/// 多等一行 stdout 无副作用)。
+const AUTH_URL_CAPTURE_TIMEOUT: Duration = Duration::from_secs(30);
 /// starhub-web 组合在 vendor 内的相对路径。
 const EXAMPLE_REL: &str = "examples/starhub-web";
 /// dsh CLI bin 相对 vendor 根的路径。
@@ -517,9 +523,10 @@ impl DshWebManager {
             }
         }
 
-        // 等 tokenized URL 捕获(URL 行先于/同于监听打印,通常已就绪;给 5s 兜底,
-        // 超时退化为裸 URL——shell 直裸根路径会落 401,但好过永远卡在启动中)。
-        let auth_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        // 等 tokenized URL 捕获。URL 行在 Loader 树 settle 后打印,可能远晚于
+        // 就绪探测的首个 HTTP 响应(见 AUTH_URL_CAPTURE_TIMEOUT);超时才退化为
+        // 裸 URL——shell 直裸根路径会落 401,但好过永远卡在启动中。
+        let auth_deadline = tokio::time::Instant::now() + AUTH_URL_CAPTURE_TIMEOUT;
         while tokio::time::Instant::now() < auth_deadline {
             if auth_url.lock().ok().and_then(|slot| slot.clone()).is_some() {
                 break;
@@ -565,6 +572,17 @@ async fn drain_lines(tag: &'static str, io: impl tokio::io::AsyncRead + Unpin) {
     }
 }
 
+/// 从 web 子进程 stdout 行提取 tokenized 认证入口 URL(DSH 0.1.6 进程 token)。
+/// 行形态:`dsh web: http://127.0.0.1:PORT/?token=xxx [(LAN: http://<ip>:PORT/?token=yyy)]`
+/// ——取行首第一个 http(s) URL(loopback 优先于 LAN 后缀)。浏览器交接提示
+/// (`dsh web: opening the default browser; ...`)与本行同前缀但首 token 非 URL,
+/// 返回 None;行首尾空白(Windows 的 `\r`)由 `trim` 吸收。
+fn extract_auth_url(line: &str) -> Option<&str> {
+    let rest = line.trim().strip_prefix("dsh web: ")?;
+    let candidate = rest.split_whitespace().next()?;
+    (candidate.starts_with("http://") || candidate.starts_with("https://")).then_some(candidate)
+}
+
 /// web 进程 stdout 的 JSON-RPC 读循环:逐行解析帧,入站 request(method + id,
 /// 无 result/error,即 shell 会话经 sdk-jsonrpc-server 反调 host 的工具执行)由
 /// 共享 `handle_inbound_request` 分发,响应帧经 outbound 通道回写 web 的 stdin;
@@ -595,16 +613,11 @@ async fn web_read_loop(
                 line.extend_from_slice(&chunk[..pos]);
                 reader.consume(pos + 1);
                 let text = String::from_utf8_lossy(&line);
-                // `dsh web: http://127.0.0.1:PORT/?token=xxx [(LAN: ...)]`:
-                // 取行首第一个 http(s) URL(tokenized 入口),只捕获一次。
-                if let Some(rest) = text.trim().strip_prefix("dsh web: ") {
-                    if let Some(candidate) = rest.split_whitespace().next() {
-                        if candidate.starts_with("http://") || candidate.starts_with("https://") {
-                            if let Ok(mut slot) = auth_url.lock() {
-                                if slot.is_none() {
-                                    *slot = Some(candidate.to_string());
-                                }
-                            }
+                // `dsh web: <tokenized URL>` 行(tokenized 认证入口),只捕获一次。
+                if let Some(candidate) = extract_auth_url(&text) {
+                    if let Ok(mut slot) = auth_url.lock() {
+                        if slot.is_none() {
+                            *slot = Some(candidate.to_string());
                         }
                     }
                 }
@@ -919,6 +932,52 @@ fn collect_stale_links(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// tokenized URL 行提取(v0.121.5):loopback 优先、LAN 后缀不抢、浏览器交接
+    /// 提示行/JSON 帧/空行一律 None。
+    #[test]
+    fn extract_auth_url_captures_tokenized_line() {
+        assert_eq!(
+            extract_auth_url(
+                "dsh web: http://127.0.0.1:3085/?token=wsz7wH-vAMTEuUBOp2q2ySvrVW3NyFDCrbQA5KGlCZg"
+            ),
+            Some("http://127.0.0.1:3085/?token=wsz7wH-vAMTEuUBOp2q2ySvrVW3NyFDCrbQA5KGlCZg")
+        );
+    }
+
+    #[test]
+    fn extract_auth_url_prefers_loopback_over_lan_suffix() {
+        assert_eq!(
+            extract_auth_url(
+                "dsh web: http://127.0.0.1:3085/?token=loop (LAN: http://192.168.1.5:3085/?token=lan)"
+            ),
+            Some("http://127.0.0.1:3085/?token=loop")
+        );
+    }
+
+    #[test]
+    fn extract_auth_url_rejects_non_url_lines() {
+        // 浏览器交接提示与 `dsh web: ` 同前缀但首 token 不是 URL
+        assert_eq!(
+            extract_auth_url("dsh web: opening the default browser; pass --no-open to disable"),
+            None
+        );
+        assert_eq!(extract_auth_url("dsh web: "), None);
+        assert_eq!(
+            extract_auth_url("{\"jsonrpc\":\"2.0\",\"method\":\"starhub/tool.execute\"}"),
+            None
+        );
+        assert_eq!(extract_auth_url(""), None);
+    }
+
+    #[test]
+    fn extract_auth_url_tolerates_carriage_return() {
+        // Windows 上 console.log 的行进 stdout 可能带 \r
+        assert_eq!(
+            extract_auth_url("dsh web: https://127.0.0.1:3085/?token=abc\r"),
+            Some("https://127.0.0.1:3085/?token=abc")
+        );
+    }
 
     #[test]
     fn rewrite_patch_port_only_touches_webserver_block() {

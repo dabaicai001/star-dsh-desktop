@@ -73,16 +73,49 @@ pub async fn dsh_shutdown(manager: State<'_, HarnessManager>) -> Result<Value, S
 /// 跳板页下一次轮询会自动重启 web 自愈,不再卡死在「dsh web 未运行」需要
 /// 手动重开应用(v0.95.5 修复)。ensure_started 幂等且被 start_lock 串行化,
 /// 与 setup 后台任务的并发调用只会等到同一份结果。
+/// v0.121.5 起返回前由 Rust 用原生导航把主窗口导到该 URL(见 {@link navigate_main_to}):
+/// 跨站 `location.replace` 拿不到 SameSite=Strict cookie,导航必须 host 发起。
 #[tauri::command]
 pub async fn dsh_web_url(
     app: AppHandle,
     manager: State<'_, crate::harness::web::DshWebManager>,
 ) -> Result<String, String> {
     let bridge = app.state::<HarnessManager>().bridge();
-    manager
+    let url = manager
         .ensure_started(&app, bridge)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    navigate_main_to(&app, &url);
+    Ok(url)
+}
+
+/// 用原生导航(host 发起)把主窗口导到 dsh web 的认证入口 URL。
+/// v0.121.5:DSH 0.1.6 的会话 cookie 是 SameSite=Strict,prod 跳板页由 Tauri 从
+/// `http://tauri.localhost` 源提供,从此源发起的 `location.replace` 到
+/// `127.0.0.1:<port>` 属跨站导航,303 换到的 cookie 不会随重定向上行,壳会落
+/// 401 文本页且无重试(详见 docs/踩坑记录.md);host 发起的
+/// `WebviewWindow::navigate` site_for_cookies 为空,Strict cookie 正常发送。
+/// 已在目标源时跳过(壳内重入/重复调用):再导航会重跑 token 交换并把 GUI 重载一次。
+/// 窗口缺失或 URL 解析失败只落日志——调用方(跳板页轮询)靠返回值与下次轮询自愈。
+fn navigate_main_to(app: &AppHandle, url: &str) {
+    let Some(window) = app.get_webview_window("main") else {
+        tracing::warn!("主窗口缺失,跳过 dsh web 导航: {url}");
+        return;
+    };
+    let Ok(parsed) = tauri::Url::parse(url) else {
+        tracing::warn!("dsh web URL 解析失败: {url}");
+        return;
+    };
+    let already_there = window
+        .url()
+        .ok()
+        .is_some_and(|current| current.origin() == parsed.origin());
+    if already_there {
+        return;
+    }
+    if let Err(e) = window.navigate(parsed) {
+        tracing::warn!("主窗口导航到 dsh web 失败({url}): {e}");
+    }
 }
 
 /// 重启 dsh web 进程。用户插件增删/启停后,web 运行时的「插件列表」读的是

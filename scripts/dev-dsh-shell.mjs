@@ -9,9 +9,12 @@
  * 3. build:window(StarHub React workbench dist → dist-starhub-react/,host-static 托管)
  * 4. 前台占位等待页 server 监听 3185:tauri dev 要等 devUrl 可访问才启动应用,
  *    而真实 dsh web 由 Rust DshWebManager 在 setup 里拉起——3185 被本占位进程
- *    占用,管理器递增到 3186+。占位页经 Tauri invoke 轮询 `dsh_web_url` 并
- *    location.replace 过去(与 prod 跳板页同机制;DSH 0.1.6 起 web app 有进程
- *    token 认证,裸根路径 401,Rust 侧捕获 tokenized URL 后经该 command 返回)。
+ *    占用,管理器递增到 3186+。占位页经 Tauri invoke 轮询 `dsh_web_url` 探知
+ *    就绪;拿到 URL 后由 Rust 用原生导航(WebviewWindow::navigate,host 发起)
+ *    把主窗导过去(与 prod 跳板页同机制)。DSH 0.1.6 起 web app 有进程 token
+ *    认证,裸根路径 401,Rust 侧捕获 stdout 的 tokenized URL 后经该 command
+ *    返回并导航——壳不能自己 location.replace:prod 跳板页在 tauri.localhost
+ *    源,跨站导航拿不到 SameSite=Strict cookie(v0.121.5,见 docs/踩坑记录.md)。
  *    应用退出时 tauri 回收本进程树。
  * 端口(2026-08-23 起)与正式实例隔离:本脚本是 dev 专属,占位页固定 3185
  * (正式 release 实例保持 3085,见 web.rs DEFAULT_PORT 的 debug/release 分支),
@@ -71,9 +74,10 @@ run('build:window', 'npm', ['run', 'build:window'], { cwd: repoRoot })
 // DSH 0.1.6 适配(2026-09-20):web app 引入进程 token 认证,裸根路径返回 401、
 // body 不再含 __DSH_BOOT__,原「端口扫描 + body 标记」发现机制失效;且 node
 // 侧看不到子进程 stdout 里的 tokenized URL。改为与 prod 跳板页(shell-placeholder/
-// index.html)一致:页面经 Tauri invoke 轮询 `dsh_web_url`(Rust 的 web_read_loop
-// 捕获 `dsh web: <tokenized URL>` 行后返回),拿到地址整窗跳转。
-// node server 只保留伺服与 /screenshot.html。
+// index.html)一致:页面经 Tauri invoke 轮询 `dsh_web_url`,Rust 捕获
+// `dsh web: <tokenized URL>` 行后用原生导航把主窗导过去(v0.121.5:壳侧
+// location.replace 在 prod 是跨站导航,拿不到 SameSite=Strict cookie,必须
+// host 发起导航;详见 docs/踩坑记录.md)。node server 只保留伺服与 /screenshot.html。
 const page = `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><title>StarHub</title>
 <style>
@@ -87,7 +91,12 @@ const page = `<!DOCTYPE html>
     var tauri = window.__TAURI_INTERNALS__
     if (!tauri || typeof tauri.invoke !== 'function') { setTimeout(poll, 500); return }
     tauri.invoke('dsh_web_url')
-      .then(function (url) { if (url) location.replace(url); else setTimeout(poll, 500) })
+      .then(function (url) {
+        // Rust 已在 command 内完成原生导航,本文档随即被替换、轮询自然终止;
+        // 若导航因故未生效,继续轮询重试(ensure_started 幂等)。
+        msg.textContent = url ? 'dsh web 已就绪,正在打开…' : 'dsh web 启动中…'
+        setTimeout(poll, url ? 1000 : 500)
+      })
       .catch(function (err) {
         msg.textContent = 'dsh web 未就绪:' + String(err) + '(重试中…)'
         setTimeout(poll, 1000)

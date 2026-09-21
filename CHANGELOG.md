@@ -5,6 +5,21 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
+## [未发布]
+
+---
+
+## [0.121.5] - 2026-09-21
+
+### 修复
+- **修复 v0.121.4 token 适配后安装版仍落 401 文本页「dsh web authentication required」**:根因是 prod 跳板页(`shell-placeholder/index.html`)由 Tauri 从 `http://tauri.localhost` 源提供,它拿到 tokenized URL 后用 `location.replace()` 跳转 `http://127.0.0.1:3085/?token=...` 属**跨站发起的导航**——DSH 0.1.6 的会话 cookie 是 `SameSite=Strict`,Chromium 不会在 303 之后的请求上发送它,壳拿到 cookie 却用在重定向上,落 401 且无重试(cookie 实际已入 jar,同源重载即恢复;换回旧版本无认证所以正常)。修复(仍不动 vendor 内核):
+  - `dsh_web_url` 命令改为由 **Rust 用原生导航**收尾:`ensure_started` 成功后 `WebviewWindow::navigate` 把主窗口导到 tokenized URL(host 发起导航 `site_for_cookies` 为空,Strict cookie 正常发送);已在目标源时跳过,避免壳内重入把 GUI 重载一次;setup 后台任务仍直接调 `ensure_started` 预热,保证全局只有一次导航。
+  - 两块跳板页(prod `shell-placeholder/index.html` + dev `scripts/dev-dsh-shell.mjs`)**去掉自导航**,轮询只做状态展示与失败自愈(Rust 导航后文档被替换,轮询自然终止)。
+  - `web.rs` 加固:auth_url 捕获兜底 5s → **30s**(就绪探测「任何响应即就绪」远早于 Loader settle 后的 `dsh web:` URL 行打印,冷启动错过就退化裸 URL → 同样 401);捕获逻辑提取为纯函数 `extract_auth_url` 并补 4 个单测(loopback 优先于 LAN 后缀、浏览器交接提示行同前缀但非 URL、`\r` 容忍)。
+  - 验证:同一 Tauri WebView2 引擎四入口三角定位(跨站 `location.replace` 稳定复现 401、同源重载恢复、原生 `navigate` 正常);`cargo check --all-targets` 绿;`cargo test` 225/0(新增 4 个)。
+
+---
+
 ## [0.121.4] - 2026-09-20
 
 ### 修复
