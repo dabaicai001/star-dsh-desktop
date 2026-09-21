@@ -349,5 +349,10 @@ describe('client-nav apply (rc.2)', () => {
     expect(injectList).toContain('conversation')
     expect(injectList).toContain('remote')
     expect(injectList).toContain('uiConversation')
+    // 0.1.6 Typert gateway:每个 Remote 命名空间是独立 service,
+    // ctx.remote.<ns> 要求 fiber 声明点号全名,否则 apply 抛
+    // "cannot get property … without inject"(v0.121.7 启动事故)。
+    expect(injectList).toContain('remote.settings')
+    expect(injectList).toContain('remote.llm')
   })
 })

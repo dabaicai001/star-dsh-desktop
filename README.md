@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.121.6-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.121.7-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,8 +48,8 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.121.6 (2026-09-21)
-- 🐛 **修复本地构建的安装包 GUI 报「Failed to load plugins … dsh-client-store missed the module table」**:vendor 的 `pnpm run build`(`scripts/build.ts`)以 `import.meta.main` 自执行,而该属性在 **Node 24.0.x 是 undefined**(24.2+/22.19+ 才有)——用这类 node 打包时它**静默退 0、不构建任何东西**,磁盘上 vendor 快照替换前(08-26)残留的旧 `apps/web/dist` 被原样打进安装包;旧 dist 的客户端模块表没有 v0.121.2 起迁移到基线包的 `@deepseek-ai/dsh-client-store`,GUI 起不来。CI 全新检出无旧 dist、package-dsh-runtime 结尾的 existsSync 校验会响,只有「旧 node + 旧 dist 残留」的长期开发树会静默中招(v0.121.5 安装包事故)。
+### v0.121.7 (2026-09-21)
+- 🐛 **修复 GUI 启动报「Failed to load plugins @deepseek-ai/dsh-starhub-client-nav / web boot: 1 entry did not activate …: failed」**:DSH 0.1.6 的 Typert gateway 把每个 Remote 命名空间拆成独立 service(键名 `remote.<ns>`),`ctx.remote.<ns>` 经 traceable proxy 路由到 `ctx['remote.<ns>']`,cordis 的 ReflectService 守卫要求**调用方 fiber 的 inject 声明点号全名**,否则抛 `cannot get property "remote.<ns>" without inject`。client-nav 的 inject 只声明了 `'remote'`(v0.121.2 同步 0.1.6 时漏改),apply 里 `const settingsWriter = ctx.remote.settings` 当场抛错 → fiber FAILED → web boot 审计失败 → 启动页报错。安装版 v0.116.9 用旧 gateway(命名空间是 remote 实例的直接属性,只需 inject `'remote'`)所以正常,dev 树同步 0.1.6 后必坏。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

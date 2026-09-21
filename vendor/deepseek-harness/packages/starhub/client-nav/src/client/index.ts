@@ -74,10 +74,15 @@ import { syncMemoryEnabled } from './settings/memory-context.ts'
 
 /**
  * Required services: the slot registry, the connection wire, the input-trigger
- * pipeline (for the `@` source) and the session/workspace/conversation services
- * (for `starhub://ask-ai`).
+ * pipeline (for the `@` source), the session/workspace/conversation services
+ * (for `starhub://ask-ai`), and the typed Remote namespaces this plugin reads
+ * or writes: `remote.settings` (tool-context / memory switches) and
+ * `remote.llm` (AI tab model catalog). Since the 0.1.6 Typert gateway each
+ * Remote namespace is its own `remote.<ns>` service, and `ctx.remote.<ns>`
+ * throws `cannot get property "remote.<ns>" without inject` unless the
+ * owning fiber declares the dotted name (v0.121.7 启动事故)。
  */
-export const inject = ['slots', 'connection', 'remote', 'uiConversation', 'inputTriggers', 'sessions', 'workspaces', 'conversation']
+export const inject = ['slots', 'connection', 'remote', 'remote.settings', 'remote.llm', 'uiConversation', 'inputTriggers', 'sessions', 'workspaces', 'conversation']
 
 /**
  * Client plugin body: one root-scope store handle (sidebar) plus the

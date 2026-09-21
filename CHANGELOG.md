@@ -9,6 +9,14 @@
 
 ---
 
+## [0.121.7] - 2026-09-21
+
+### 修复
+- **修复 GUI 启动报「Failed to load plugins @deepseek-ai/dsh-starhub-client-nav / web boot: 1 entry did not activate …: failed」**:DSH 0.1.6 的 Typert gateway 把每个 Remote 命名空间拆成独立 service(键名 `remote.<ns>`),`ctx.remote.<ns>` 经 traceable proxy 路由到 `ctx['remote.<ns>']`,cordis 的 ReflectService 守卫要求**调用方 fiber 的 inject 声明点号全名**,否则抛 `cannot get property "remote.<ns>" without inject`。client-nav 的 inject 只声明了 `'remote'`(v0.121.2 同步 0.1.6 时漏改),apply 里 `const settingsWriter = ctx.remote.settings` 当场抛错 → fiber FAILED → web boot 审计失败 → 启动页报错。安装版 v0.116.9 用旧 gateway(命名空间是 remote 实例的直接属性,只需 inject `'remote'`)所以正常,dev 树同步 0.1.6 后必坏。
+  - `vendor/deepseek-harness/packages/starhub/client-nav/src/client/index.ts`:inject 补 `'remote.settings'`(apply 的 settings 写入面)与 `'remote.llm'`(AI 设置页模型目录),注释写明 0.1.6 点号 inject 契约;`tests/starhub-apply.client.spec.ts` 的 inject 契约断言同步扩展(15/15 绿)。
+  - 端到端复验:临时 DSH_HOME 复刻 `web.rs` 物化逻辑起 StarHub web 组合 + 无头 Chromium(CDP)真实加载——boot page 移除、无 failed/did not activate、`starhub-memory-context` 设置正常落盘(证明 apply 跑通);修复前同一手法稳定复现报错。
+  - 排查沉淀:浏览器壳无 logger,apply 抛错被 cordis `ctx.logger.error` 静默吞掉,boot 页只报 entry 名;用 CDP `Debugger.setPauseOnExceptions('all')` 在被 catch 的异常点暂停拿真实栈。详见 docs/踩坑记录.md §49。
+
 ## [0.121.6] - 2026-09-21
 
 ### 修复

@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.121.6(**修复本地构建的安装包 GUI 报「Failed to load plugins … dsh-client-store missed the module table」**:vendor 的 `pnpm run build`(`scripts/build.ts`)以 `import.meta.main` 自执行,而该属性在 **Node 24.0.x 是 undefined**(24.2+/22.19+ 才有)——用这类 node 打包时它**静默退 0、不构建任何东西**,磁盘上 vendor 快照替换前(08-26)残留的旧 `apps/web/dist` 被原样打进安装包;旧 dist 的客户端模块表没有 v0.121.2 起迁移到基线包的 `@deepseek-ai/dsh-client-store`,GUI 起不来。CI 全新检出无旧 dist、package-dsh-runtime 结尾的 existsSync 校验会响,只有「旧 node + 旧 dist 残留」的长期开发树会静默中招(v0.121.5 安装包事故)。) |
+| 当前版本 | v0.121.7(**修复 GUI 启动报「Failed to load plugins @deepseek-ai/dsh-starhub-client-nav / web boot: 1 entry did not activate …: failed」**:DSH 0.1.6 的 Typert gateway 把每个 Remote 命名空间拆成独立 service(键名 `remote.<ns>`),`ctx.remote.<ns>` 经 traceable proxy 路由到 `ctx['remote.<ns>']`,cordis 的 ReflectService 守卫要求**调用方 fiber 的 inject 声明点号全名**,否则抛 `cannot get property "remote.<ns>" without inject`。client-nav 的 inject 只声明了 `'remote'`(v0.121.2 同步 0.1.6 时漏改),apply 里 `const settingsWriter = ctx.remote.settings` 当场抛错 → fiber FAILED → web boot 审计失败 → 启动页报错。安装版 v0.116.9 用旧 gateway(命名空间是 remote 实例的直接属性,只需 inject `'remote'`)所以正常,dev 树同步 0.1.6 后必坏。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-21 (v0.121.6)*
+*最后更新: 2026-09-21 (v0.121.7)*
