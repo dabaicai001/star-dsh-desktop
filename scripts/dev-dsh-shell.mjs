@@ -44,10 +44,16 @@ function run(label, command, args, options = {}) {
 }
 
 // 1. vendor 构建产物存在性检查,缺失才跑对应构建
+// web dist **每次都会重建**:vendor 快照整体替换后,被删包/旧版 shell 的 dist
+// 残留(未跟踪、gitignored)会骗过「存在即跳过」——旧 dist 的客户端模块表没有
+// 新基线包(如 dsh-client-store),GUI 直接 "Failed to load plugins … missed the
+// module table"(v0.121.6 踩坑)。build:web 热的约 5 秒,correctness 优先。
+// host/lib 与 client bundle 是分钟级构建,保留存在性跳过(打包链另有
+// clean:vendor-starhub + clearClientBuildCache 全量重编译兜底)。
 const needHost = !existsSync(join(vendorRoot, 'apps', 'cli', 'lib', 'bin.js'))
 const needClient = !existsSync(join(vendorRoot, 'packages', 'starhub', 'client-nav', 'lib', 'client.js'))
   || !existsSync(join(vendorRoot, 'packages', 'starhub', 'host-static', 'lib', 'index.js'))
-const needWeb = !existsSync(join(vendorRoot, 'apps', 'web', 'dist', 'index.html'))
+const needWeb = true
 if (needHost || needClient || needWeb) {
   const env = {
     ...process.env,

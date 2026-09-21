@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.121.5(**修复 v0.121.4 token 适配后安装版仍落 401 文本页「dsh web authentication required」**:根因是 prod 跳板页(`shell-placeholder/index.html`)由 Tauri 从 `http://tauri.localhost` 源提供,它拿到 tokenized URL 后用 `location.replace()` 跳转 `http://127.0.0.1:3085/?token=...` 属**跨站发起的导航**——DSH 0.1.6 的会话 cookie 是 `SameSite=Strict`,Chromium 不会在 303 之后的请求上发送它,壳落到 401 页且无重试(cookie 实际已入 jar,同源重载即恢复;换回旧版本无认证所以正常)。修复(仍不动 vendor 内核):`dsh_web_url` 改由 Rust 原生 `WebviewWindow::navigate` 导主窗口(host 发起,Strict cookie 正常发送),两块跳板页只轮询状态不再自导航;`web.rs` auth_url 捕获兜底 5s→30s 并提取 `extract_auth_url` 纯函数补 4 个单测。详见 `docs/踩坑记录.md` 第 47 节。) |
+| 当前版本 | v0.121.6(**修复本地构建的安装包 GUI 报「Failed to load plugins … dsh-client-store missed the module table」**:vendor 的 `pnpm run build`(`scripts/build.ts`)以 `import.meta.main` 自执行,而该属性在 **Node 24.0.x 是 undefined**(24.2+/22.19+ 才有)——用这类 node 打包时它**静默退 0、不构建任何东西**,磁盘上 vendor 快照替换前(08-26)残留的旧 `apps/web/dist` 被原样打进安装包;旧 dist 的客户端模块表没有 v0.121.2 起迁移到基线包的 `@deepseek-ai/dsh-client-store`,GUI 起不来。CI 全新检出无旧 dist、package-dsh-runtime 结尾的 existsSync 校验会响,只有「旧 node + 旧 dist 残留」的长期开发树会静默中招(v0.121.5 安装包事故)。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-21 (v0.121.5)*
+*最后更新: 2026-09-21 (v0.121.6)*

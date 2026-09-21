@@ -1,6 +1,6 @@
 {
   "name": "starhub",
-  "version": "0.121.5",
+  "version": "0.121.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,6 +26,8 @@
     "clean:vendor-starhub": "node scripts/clean-vendor-starhub.mjs",
     "build:lib": "pnpm --dir vendor/deepseek-harness run build:lib",
     "build:lib:client": "pnpm --dir vendor/deepseek-harness run build:lib:client",
+    "build:web": "pnpm --dir vendor/deepseek-harness run build:web",
+    "verify:web-dist": "node scripts/verify-web-dist.mjs",
     "package:dsh-runtime": "pnpm --dir vendor/deepseek-harness exec tsx scripts/package-dsh-runtime.ts",
     "tauri:dev": "npm run tauri dev",
     "tauri:build": "npm run tauri build"

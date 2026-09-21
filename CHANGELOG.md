@@ -9,6 +9,16 @@
 
 ---
 
+## [0.121.6] - 2026-09-21
+
+### 修复
+- **修复本地构建的安装包 GUI 报「Failed to load plugins … dsh-client-store missed the module table」**:vendor 的 `pnpm run build`(`scripts/build.ts`)以 `import.meta.main` 自执行,而该属性在 **Node 24.0.x 是 undefined**(24.2+/22.19+ 才有)——用这类 node 打包时它**静默退 0、不构建任何东西**,磁盘上 vendor 快照替换前(08-26)残留的旧 `apps/web/dist` 被原样打进安装包;旧 dist 的客户端模块表没有 v0.121.2 起迁移到基线包的 `@deepseek-ai/dsh-client-store`,GUI 起不来。CI 全新检出无旧 dist、package-dsh-runtime 结尾的 existsSync 校验会响,只有「旧 node + 旧 dist 残留」的长期开发树会静默中招(v0.121.5 安装包事故)。
+  - 构建链显式化:`beforeBuildCommand` 插入 `npm run build:web`(直连 vendor 的 `vite build`,不经 `import.meta.main`,任何 Node 版本都真构建)+ 新增 `scripts/verify-web-dist.mjs` fail-loud 守卫(dist 必须是最近 60 分钟内写入的,否则中断打包,防将来链路漂移再次静默跳过)。
+  - `dev-dsh-shell.mjs` 的 web dist 由「存在即跳过」改为**每次重建**(热缓存约 5 秒):旧 dist 残留同样让 dev 的 GUI 坏掉。
+  - 硬约束:vendor 树里跑 `pnpm run build` 这类以 `import.meta.main` 自执行的脚本,node 必须 ≥22.19/≥24.2(本仓库统一用 `tmp/node24` v24.19.0),打包前先 `node --version` 自查。
+
+---
+
 ## [0.121.5] - 2026-09-21
 
 ### 修复
