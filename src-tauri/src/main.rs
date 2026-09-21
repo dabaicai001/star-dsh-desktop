@@ -210,9 +210,10 @@ fn main() {
                     .await
                 {
                     // dev 流里 devUrl 的 3185 是占位等待页(真实服务在 3186+),
-                    // 跳转由占位页轮询脚本完成;prod 由 shell-placeholder 跳板页
-                    // 轮询 dsh_web_url 后 location.replace。Rust 不参与窗口导航
-                    // (取舍见 docs/踩坑记录.md 第 20 节)。
+                    // prod 由 shell-placeholder 跳板页担当;两者都经 Tauri invoke
+                    // 轮询 dsh_web_url,由 Rust 用原生 WebviewWindow::navigate
+                    // 把主窗口导到 tokenized URL——壳侧 location.replace 是跨站
+                    // 导航,拿不到 SameSite=Strict cookie(见 docs/踩坑记录.md 第 47 节)。
                     Ok(url) => tracing::info!("dsh web 可用: {url}"),
                     Err(e) => tracing::error!("dsh web 启动失败: {e}"),
                 }
