@@ -99,9 +99,25 @@ pub enum DshWebError {
 }
 
 /// 一次成功启动的运行态:URL / 子进程句柄。
+/// `auth_url`:DSH 0.1.6 起 web app 引入进程 token 认证——根路径无 token 返回
+/// 401,带 token 的 URL 303 换签名 cookie 后跳干净根页。子进程启动时把
+/// `dsh web: <tokenized URL>` 行打到 stdout,由 web_read_loop 捕获进此槽;
+/// shell 导航必须用 tokenized URL(直裸根路径会落 401 页)。
 struct DshWebHandle {
     url: String,
+    auth_url: Arc<std::sync::Mutex<Option<String>>>,
     child: Child,
+}
+
+impl DshWebHandle {
+    /// shell 导航 URL:tokenized(认证入口)就绪优先,否则裸 URL。
+    fn nav_url(&self) -> String {
+        self.auth_url
+            .lock()
+            .ok()
+            .and_then(|slot| slot.clone())
+            .unwrap_or_else(|| self.url.clone())
+    }
 }
 
 /// 挂在 tauri State 上的 dsh web 单例管理器。
@@ -208,9 +224,11 @@ impl DshWebManager {
         }
     }
 
-    /// 启动(如未运行)并等待就绪,返回 `http://127.0.0.1:<port>`。
-    /// 幂等:已在运行直接返回现有 URL。`bridge` 为共享宿主桥(与 HarnessManager 同一
-    /// Arc):web 进程的 `starhub/tool.execute` 请求经它分发执行,当前会话绑定沿
+    /// 启动(如未运行)并等待就绪,返回 web GUI 的导航 URL。
+    /// 幂等:已在运行直接返回现有 URL。DSH 0.1.6 起返回的是子进程打印的
+    /// tokenized URL(认证入口;capture 未就绪时退化为裸 URL)。
+    /// `bridge` 为共享宿主桥(与 HarnessManager 同一 Arc):web 进程的
+    /// `starhub/tool.execute` 请求经它分发执行,当前会话绑定沿
     /// dsh_bind_session 语义共享,出站通知(registry.sync / domain.event)同时投给 web。
     pub async fn ensure_started(
         &self,
@@ -219,10 +237,10 @@ impl DshWebManager {
     ) -> Result<String, DshWebError> {
         let _start_guard = self.start_lock.lock().await;
         if let Some(handle) = self.handle.lock().await.as_ref() {
-            return Ok(handle.url.clone());
+            return Ok(handle.nav_url());
         }
         let handle = self.spawn(app, bridge).await?;
-        let url = handle.url.clone();
+        let url = handle.nav_url();
         *self.handle.lock().await = Some(handle);
         Ok(url)
     }
@@ -457,20 +475,31 @@ impl DshWebManager {
                 ),
             });
         }));
-        tokio::spawn(web_read_loop(stdout, bridge, notify_tx, clear_web_notify));
+        // DSH 0.1.6 认证:web app 启动时把 `dsh web: <tokenized URL>` 打到 stdout,
+        // web_read_loop 捕获进此槽;shell 导航必须用它(裸根路径 401)。
+        let auth_url: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
+        tokio::spawn(web_read_loop(
+            stdout,
+            bridge,
+            notify_tx,
+            clear_web_notify,
+            auth_url.clone(),
+        ));
         tokio::spawn(web_write_loop(stdin, notify_rx));
         tokio::spawn(drain_lines("stderr", stderr));
 
-        // 5. 就绪探测:轮询 GET / 直到 200;子进程提前退出(坏插件 fail-loud
-        // 令整组合退出)或超时都判定失败,立即转坏插件自救重试,不等满 60s
-        // (救回一个坏插件时把等待从 60s 拉到几秒)。
+        // 5. 就绪探测:轮询 GET / 直到**有任何 HTTP 响应**(DSH 0.1.6 起根路径
+        // 无 token 返回 401、带 token 303,「服务器在听」不再是 2xx 语义);
+        // 子进程提前退出(坏插件 fail-loud 令整组合退出)或超时都判定失败,
+        // 立即转坏插件自救重试,不等满 60s(救回一个坏插件时把等待从 60s 拉到几秒)。
         let url = format!("http://127.0.0.1:{port}");
         let deadline = tokio::time::Instant::now() + READY_TIMEOUT;
         let client = reqwest::Client::new();
         loop {
             match client.get(&url).send().await {
-                Ok(resp) if resp.status().is_success() => break,
-                _ => {
+                // 任何响应(含 401/303)都说明 HTTP 服务已就绪
+                Ok(_) => break,
+                Err(_) => {
                     // 子进程已退出说明组合在就绪前就失败了(坏插件/闭包缺失等),
                     // 立即结束探测,进入 spawn 的坏插件自救路径。
                     if child.try_wait().map_err(|e| {
@@ -488,8 +517,22 @@ impl DshWebManager {
             }
         }
 
-        tracing::info!("dsh web 就绪: {url}(DSH_HOME={})", dsh_home.display());
-        Ok(DshWebHandle { url, child })
+        // 等 tokenized URL 捕获(URL 行先于/同于监听打印,通常已就绪;给 5s 兜底,
+        // 超时退化为裸 URL——shell 直裸根路径会落 401,但好过永远卡在启动中)。
+        let auth_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        while tokio::time::Instant::now() < auth_deadline {
+            if auth_url.lock().ok().and_then(|slot| slot.clone()).is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+
+        tracing::info!(
+            "dsh web 就绪: {url}(DSH_HOME={}, auth_url={})",
+            dsh_home.display(),
+            auth_url.lock().ok().and_then(|slot| slot.clone()).unwrap_or_else(|| "(未捕获)".into())
+        );
+        Ok(DshWebHandle { url, auth_url, child })
     }
 
     /// 关停并清空单例(应用退出路径;kill_on_drop 已覆盖崩溃路径)。
@@ -527,11 +570,14 @@ async fn drain_lines(tag: &'static str, io: impl tokio::io::AsyncRead + Unpin) {
 /// 共享 `handle_inbound_request` 分发,响应帧经 outbound 通道回写 web 的 stdin;
 /// 通知/响应帧忽略(通知无对外下游,响应本进程不发起请求)。stdout EOF(web 退出)
 /// 时摘除 web_notify 出站,防止后续向已关闭 stdin 写报 EPIPE。
+/// `auth_url`:捕获 web app 启动打印的 `dsh web: <tokenized URL>` 行(DSH 0.1.6
+/// 认证入口;非 JSON 行本就被忽略,顺便提取不破坏桥)。
 async fn web_read_loop(
     stdout: tokio::process::ChildStdout,
     bridge: Arc<HostBridgeState>,
     outbound: mpsc::UnboundedSender<OutboundFrame>,
     clear_notify: impl Fn() + Send + 'static,
+    auth_url: Arc<std::sync::Mutex<Option<String>>>,
 ) {
     use tokio::io::AsyncBufReadExt;
     let mut reader = tokio::io::BufReader::new(stdout);
@@ -548,6 +594,20 @@ async fn web_read_loop(
             Some(pos) => {
                 line.extend_from_slice(&chunk[..pos]);
                 reader.consume(pos + 1);
+                let text = String::from_utf8_lossy(&line);
+                // `dsh web: http://127.0.0.1:PORT/?token=xxx [(LAN: ...)]`:
+                // 取行首第一个 http(s) URL(tokenized 入口),只捕获一次。
+                if let Some(rest) = text.trim().strip_prefix("dsh web: ") {
+                    if let Some(candidate) = rest.split_whitespace().next() {
+                        if candidate.starts_with("http://") || candidate.starts_with("https://") {
+                            if let Ok(mut slot) = auth_url.lock() {
+                                if slot.is_none() {
+                                    *slot = Some(candidate.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
                 if let Ok(frame) = serde_json::from_slice::<IncomingFrame>(&line) {
                     if let (Some(id), Some(method)) = (frame.id.as_ref(), frame.method.as_ref()) {
                         if frame.result.is_none() && frame.error.is_none() {
