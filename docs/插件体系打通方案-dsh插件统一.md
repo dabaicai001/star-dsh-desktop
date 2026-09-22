@@ -2,7 +2,7 @@
 
 > 状态:方案稿(用户决策:插件 tab 管理的插件就是 dsh 插件,插件市场就是 dsh 的
 > 市场,用户要从市场快速安装——包括 UI 类插件)
-> 关联:`docs/迁移手册-Vue到React渐进迁移.md`、`docs/重构方案-B-壳内React插件化.md`、
+> 关联:`docs/重构方案-B-壳内React插件化.md`、
 > `src-tauri/src/harness/plugins.rs`、`src-tauri/src/harness/web.rs`
 
 ---
