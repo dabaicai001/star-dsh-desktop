@@ -8,6 +8,7 @@
 ## [未发布]
 
 ### 移除
+- **移除壳内自绘 AI 聊天面板 `AiChatPanel`(与 DSH 原生对话视图重复)**:该面板挂在 client-nav 的 `shell.overlay` 上,但 `aiChat.open` 无任何写入方(死 UI——`starhub://ask-ai` 早已路由到原生对话视图:聚焦/新建会话 + prefill composer,见 host-events.ts 的 `routeAskAi`)。删除 `src/client/ai/`(AiChatPanel + ai-chat-utils)、store 的 AiChatOverlay 桥、StarHubOverlay 的面板分支与 `chatOf` 投影适配(顺带移除 `uiConversation` inject 依赖),「问 AI」行为零变化;另删死导出 `focusShellConversation`。
 - **移除 StarHub 侧「文件功能」(v0.121.8)**:与 DeepSeek Harness 主壳能力重复——DSH 已提供 agent 侧文件工具(`tool-fs` read/write、`tool-fs-search` glob/grep、`tool-str-replace-editor` edit)、原生 `@` 文件引用源(`ui-reference`/`file-reference-local`)与右侧栏文件面板(`ui-sidebar-files`),AI 读写本机文件统一走 DSH 主壳(沙箱/审批体系一致)。删除面:
   - 前端(client-nav):`file-tree/`(会话头部「文件」胶囊 + 工具抽屉内项目文件目录树 + 文件信息/编辑对话框)、`file-viewer/`(壳内文件查看窗 `FileViewerOverlay`)、`file-source.ts`(`@` 文件触发源)、`settings/OpenConfigAction.tsx`(壳内「打开配置文件」按钮)及 `index.ts` 全部接线(`starhubFileViewer` 服务、`starhub-file-viewer` / `starhub-file-tree` / `starhub-open-config` 槽位注册、`@` file source、`insertFileReference`)与 9 个单测。
   - 设置「打开配置文件」回退 DSH 上游原生打开:移除 starhub-web profile 的 `api-gateway nativeOpen:false` 覆盖(该覆盖本就是为屏蔽上游按钮、让位壳内按钮而加)。

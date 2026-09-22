@@ -97,8 +97,6 @@ function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; re
     provide,
     // 0.1.6:apiproxy 撤除,settings 写入与类型化 RPC 走 ctx.remote(api-gateway)。
     remote: overrides.remote ?? { settings: { update: vi.fn(() => Promise.resolve({ ok: true, value: undefined })) } },
-    // chatOf 的 Chat target 面(仅面板渲染时惰性访问,apply 期不触)。
-    uiConversation: { binding: () => ({ target: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }) }) },
   } as unknown as Context
   return { ctx, register, inject, get, registerSource, effects, provide, provided }
 }
@@ -324,7 +322,6 @@ describe('client-nav apply (rc.2)', () => {
     expect(injectList).toContain('workspaces')
     expect(injectList).toContain('conversation')
     expect(injectList).toContain('remote')
-    expect(injectList).toContain('uiConversation')
     // 0.1.6 Typert gateway:每个 Remote 命名空间是独立 service,
     // ctx.remote.<ns> 要求 fiber 声明点号全名,否则 apply 抛
     // "cannot get property … without inject"(v0.121.7 启动事故)。

@@ -127,21 +127,6 @@ async function routeAskAi(
   }
 }
 
-/**
- * 聚焦(或新建)壳内 AI 会话,不携带 prefill 文本——右侧工作区列的
- * 「AI 助手」入口用;与 ask-ai 共享同一聚焦逻辑(空文本 = 只聚焦不预填)。
- * @param sessions - 会话列表服务。
- * @param workspaces - 工作区服务。
- * @param conversation - 会话输入注册表;未装载时退化为仅聚焦。
- */
-export function focusShellConversation(
-  sessions: ISessions,
-  workspaces: IWorkspaces,
-  conversation: IConversation | undefined,
-): void {
-  void routeAskAi('', sessions, workspaces, conversation)
-}
-
 /** 把文本写进目标会话的 composer(binding 按需物化 scope;无输入服务则跳过)。 */
 function setDraft(
   sessions: ISessions,

@@ -27,17 +27,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: connection service merge 不再使用(0.1.6 起 connection.api 撤除,
 // Host RPC 走 ctx.remote);保留 dsh-client-connection 仅因 SessionId 经垫片转口。
-import type { ISessions, IWorkspaces, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions, IWorkspaces } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-// Type-only: Chat target 的 ConversationViewSnapshotMap.chat 声明合并(ui-chat 注册)。
-import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
-import type { AiChatSlice, AiChatSource } from './ai/AiChatPanel.tsx'
 import { createStarHubAssetSource, DOCKER_REFERENCE_TAG, STARHUB_ASSET_SOURCE } from './asset-source.ts'
 import { createAskAiHandler, createOpenAssetHandler, subscribeHostEvents } from './host-events.ts'
 import {
-  createAiChatOverlay, createConnectionManagerOverlay, createStarHubAssets, createToolSelectionBridge,
+  createConnectionManagerOverlay, createStarHubAssets, createToolSelectionBridge,
   createToolsPanelOverlay, type RustAsset,
 } from './store.ts'
 import { StarHubConnCard } from './conn/StarHubConnCard.tsx'
@@ -75,7 +72,7 @@ import { syncMemoryEnabled } from './settings/memory-context.ts'
  * throws `cannot get property "remote.<ns>" without inject` unless the
  * owning fiber declares the dotted name (v0.121.7 启动事故)。
  */
-export const inject = ['slots', 'connection', 'remote', 'remote.settings', 'remote.llm', 'uiConversation', 'inputTriggers', 'sessions', 'workspaces', 'conversation']
+export const inject = ['slots', 'connection', 'remote', 'remote.settings', 'remote.llm', 'inputTriggers', 'sessions', 'workspaces', 'conversation']
 
 /**
  * Client plugin body: one root-scope store handle (sidebar) plus the
@@ -92,7 +89,6 @@ export function apply(ctx: Context): void {
   const assets = createStarHubAssets()
   const selection = createToolSelectionBridge()
   const connectionManager = createConnectionManagerOverlay()
-  const aiChat = createAiChatOverlay()
   // 工具面板(侧栏底部入口 → shell.overlay):footer 按钮写 open,overlay 席位读渲染。
   const toolsPanel = createToolsPanelOverlay()
   // Git 工作台视图开关(v0.118.0):会话头部分支胶囊(入口)与工具抽屉
@@ -120,43 +116,6 @@ export function apply(ctx: Context): void {
   const workspaces = ctx.get('workspaces') as IWorkspaces
   // inject 声明了 required 'conversation',加载后必然存在(cordis ctx.get 返回可空)。
   const conversation = ctx.get('conversation') as unknown as ConversationController
-  // AI 聊天面板的会话内容源(0.1.6):会话节点/流式片段由 uiConversation 的
-  // Chat target 发布(ui-chat 注册),适配成 legacy 投影(nodes + partial)。
-  // 源身份按会话缓存,且 getSnapshot 按 legacy 引用缓存切片——uSES 要求
-  // 快照引用在两次发布间稳定。ui-chat 未装载的组合里 target('chat') 抛错,
-  // 退回 undefined(面板空态)。
-  const EMPTY_CHAT_SLICE: AiChatSlice = { nodes: [], partial: null }
-  const chatSources = new Map<string, AiChatSource>()
-  const chatOf = (sessionId: SessionId): AiChatSource | undefined => {
-    const key = String(sessionId)
-    const cached = chatSources.get(key)
-    if (cached !== undefined) return cached
-    const binding = sessions.binding(sessionId)
-    if (binding === undefined) return undefined
-    let target: ReturnType<ReturnType<typeof ctx.uiConversation.binding>['target']>
-    try {
-      target = ctx.uiConversation.binding(binding).target('chat')
-    } catch {
-      return undefined
-    }
-    let cachedLegacy: unknown
-    let cachedSlice = EMPTY_CHAT_SLICE
-    const source: AiChatSource = {
-      getSnapshot: () => {
-        const legacy = target.getSnapshot()?.legacy
-        if (legacy !== cachedLegacy) {
-          cachedLegacy = legacy
-          cachedSlice = legacy === undefined
-            ? EMPTY_CHAT_SLICE
-            : { nodes: legacy.nodes, partial: legacy.partial }
-        }
-        return cachedSlice
-      },
-      subscribe: (fn) => target.subscribe(fn),
-    }
-    chatSources.set(key, source)
-    return source
-  }
   // 执行记录按会话隔离(2026-08-27):把「当前活跃会话」喂给 execRecords 桥,
   // 「执行」角标、抽屉列表与「清空」都只作用于本会话,跨会话不再共用;
   // 首次同步立即写一次(不依赖切换事件才初始化)。
@@ -205,14 +164,9 @@ export function apply(ctx: Context): void {
     inject: () => ({
       openConnectionManager: () =>{  connectionManager.open() },
       closeConnectionManager: connectionManager.close,
-      closeAiChat: aiChat.close,
       refreshAssets: assets.refresh,
-      sessions,
-      workspaces,
-      chatOf,
       hooks: {
         connectionManager: connectionManager.source,
-        aiChat: aiChat.source,
       },
     }),
   }, StarHubOverlay))
