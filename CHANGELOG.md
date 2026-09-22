@@ -7,6 +7,13 @@
 
 ## [未发布]
 
+### 移除
+- **移除 StarHub 侧「文件功能」(v0.121.8)**:与 DeepSeek Harness 主壳能力重复——DSH 已提供 agent 侧文件工具(`tool-fs` read/write、`tool-fs-search` glob/grep、`tool-str-replace-editor` edit)、原生 `@` 文件引用源(`ui-reference`/`file-reference-local`)与右侧栏文件面板(`ui-sidebar-files`),AI 读写本机文件统一走 DSH 主壳(沙箱/审批体系一致)。删除面:
+  - 前端(client-nav):`file-tree/`(会话头部「文件」胶囊 + 工具抽屉内项目文件目录树 + 文件信息/编辑对话框)、`file-viewer/`(壳内文件查看窗 `FileViewerOverlay`)、`file-source.ts`(`@` 文件触发源)、`settings/OpenConfigAction.tsx`(壳内「打开配置文件」按钮)及 `index.ts` 全部接线(`starhubFileViewer` 服务、`starhub-file-viewer` / `starhub-file-tree` / `starhub-open-config` 槽位注册、`@` file source、`insertFileReference`)与 9 个单测。
+  - 设置「打开配置文件」回退 DSH 上游原生打开:移除 starhub-web profile 的 `api-gateway nativeOpen:false` 覆盖(该覆盖本就是为屏蔽上游按钮、让位壳内按钮而加)。
+  - vendor 内核补丁回退:`ui-chat` 的 `openFile` 不再优先路由 `starhubFileViewer`,恢复上游右侧栏资源打开;`dsh_settings_path` 命令(仅为壳内按钮服务)删除。
+  - Rust:`commands/file.rs`(`open_file_external`,删除前已无任何调用方)整体删除;`commands/local.rs` 只保留 `local_shell_exec`(Git 工作台 / AI 提交信息复用),删除 `local_system_info` / `local_list_directory` / `local_stat_path` / `local_read_text_file` / `local_write_text_file` / `local_create_directory` / `local_copy_file` / `local_move_path` / `local_remove_path` / `local_search_files`;`permissions/commands.toml` ACL 同步。
+
 ---
 
 ## [0.121.7] - 2026-09-21

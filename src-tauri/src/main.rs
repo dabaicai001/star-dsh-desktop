@@ -448,20 +448,8 @@ fn main() {
             commands::desktop::desktop_ui_replay_frames,
             commands::desktop::desktop_ui_open_live_window,
             commands::desktop::desktop_user_action_reply,
-            // File
-            commands::file::open_file_external,
-            // Local machine (AI #LOCAL workspace)
-            commands::local::local_system_info,
+            // Local machine (non-interactive shell; Git 工作台 / AI 提交信息复用)
             commands::local::local_shell_exec,
-            commands::local::local_list_directory,
-            commands::local::local_stat_path,
-            commands::local::local_read_text_file,
-            commands::local::local_write_text_file,
-            commands::local::local_create_directory,
-            commands::local::local_copy_file,
-            commands::local::local_move_path,
-            commands::local::local_remove_path,
-            commands::local::local_search_files,
             // AI(内核已迁移 dsh;此段只剩密钥与记忆持久化)
             commands::secret::set_ai_api_key,
             commands::secret::get_ai_api_key,
@@ -494,8 +482,6 @@ fn main() {
             // dsh web GUI 管理器(主壳融合 P1)
             commands::harness::dsh_web_url,
             commands::harness::dsh_web_restart,
-            // dsh 设置文件路径(壳内「打开配置文件」读改)
-            commands::harness::dsh_settings_path,
             // dsh 用户插件(支线 B):市场 / URL / 本地三入口 + 逐项启停
             commands::dsh_plugins::dsh_plugin_list,
             commands::dsh_plugins::dsh_plugin_install_local,

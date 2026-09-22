@@ -9,7 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 // The `file` entry of `SidebarRightResourceParamsMap`, which types `{ params: { line } }` below.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
-import { fileAddressFor, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 // Type-only service and declaration merges used by the apply world.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -132,36 +132,6 @@ export function apply(ctx: Context): void {
           // to land.
           openFile: async (path, options) => {
             const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
-            // StarHub 壳内文件查看窗(可选服务,由 StarHub 插件 ctx.provide 注入):
-            // 提供时先在壳内打开;一个文件变更行(Edit/Write 工具)经 options.diffs
-            // 携带应用后 hunks,以 edit(kind:'edit',before/after 双栏)打开——否则
-            // 退回 read(单栏,可编辑保存);服务未提供则回退上游默认(右侧栏资源)。
-            // 跨插件走 ctx.get 服务路由,不改上游工具视图渲染器。
-            const viewer = ctx.get('starhubFileViewer') as
-              | {
-                open: (target: (
-                  | { kind: 'read'; path: string; sessionId: string }
-                  | { kind: 'edit'; path: string; sessionId: string; diffs: readonly { oldText: string; newText: string }[] }
-                )) => void
-              }
-              | undefined
-            if (viewer !== undefined) {
-              const resolved = resolveWorkspacePath(cwd, path)
-              const diffs = options?.diffs
-              if (diffs !== undefined && diffs.length > 0) {
-                // 变更 hunk 的 oldText(null=新建/纯新增)归一化为 '' 以匹配查看窗的
-                // string 契约——查看对比左栏留空、右栏显示新增。
-                viewer.open({
-                  kind: 'edit',
-                  path: resolved,
-                  sessionId,
-                  diffs: diffs.map(diff => ({ oldText: diff.oldText ?? '', newText: diff.newText })),
-                })
-              } else {
-                viewer.open({ kind: 'read', path: resolved, sessionId })
-              }
-              return
-            }
             const url = fileAddressFor(sessionId, cwd, path)
             if (options?.line === undefined) ctx.sidebarRight.openResource(url)
             else ctx.sidebarRight.openResource(url, { params: { line: options.line } })

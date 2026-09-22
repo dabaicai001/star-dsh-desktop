@@ -10,15 +10,6 @@
     host: 127.0.0.1
     port: 3185
 
-# 关闭上游设置「打开配置文件」按钮:StarHub 由 client-nav 的壳内按钮
-# (settings.action → starhubFileViewer)接替,行为对齐 AI 对话里的 Read/Edit
-# 弹框。nativeOpen:false 让 api-proxy 的 hasDocument 为 false,上游
-# ui-settings-general 的 SettingsDocumentAction(原生打开器)不再渲染,避免
-# 与壳内按钮重复出现两个「打开配置文件」。
-- id: api-gateway
-  config:
-    nativeOpen: false
-
 # 全访问语义收窄(v0.106.1):danger-full-access 的 approval 由 never 改 ask。
 # never 会让 dsh-user-approval 的 decide() 先于所有 answerer 直接拒,StarHub
 # 风险门的 hard 档(DELETE FROM / rm -rf / desktop_exec 等删除/高危确认)被

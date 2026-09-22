@@ -35,18 +35,14 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { AiChatSlice, AiChatSource } from './ai/AiChatPanel.tsx'
 import { createStarHubAssetSource, DOCKER_REFERENCE_TAG, STARHUB_ASSET_SOURCE } from './asset-source.ts'
-import { createStarhubFileSource } from './file-source.ts'
 import { createAskAiHandler, createOpenAssetHandler, subscribeHostEvents } from './host-events.ts'
 import {
   createAiChatOverlay, createConnectionManagerOverlay, createStarHubAssets, createToolSelectionBridge,
   createToolsPanelOverlay, type RustAsset,
 } from './store.ts'
-import { createFileViewerBridge } from './file-viewer/state.ts'
-import { FileViewerOverlay } from './file-viewer/FileViewerOverlay.tsx'
 import { StarHubConnCard } from './conn/StarHubConnCard.tsx'
 import { ExecDrawerButton } from './conn/ExecDrawerButton.tsx'
 import { createExecRecordsBridge, subscribeSshExecEvents } from './conn/exec-records.ts'
-import type { FileViewTarget } from './file-viewer/state.ts'
 import { assetSubtitle, assetWindowUrl, type StarHubAsset } from './sections.ts'
 import { bindAssetContext } from './tool-context.ts'
 import { focusWindowByKey, openNewPage, tauriInvoke } from './tauri.ts'
@@ -55,8 +51,6 @@ import { StarHubOverlay } from './StarHubOverlay.tsx'
 import { StarHubFooterButton } from './StarHubFooterButton.tsx'
 import { GitBranchPill } from './git/GitBranchPill.tsx'
 import { createGitWorkbenchBridge } from './git/git-workbench-state.ts'
-import { FileTreeButton } from './file-tree/FileTreeButton.tsx'
-import { createFileTreeBridge } from './file-tree/state.ts'
 import { StarHubToolWorkspace, type StarHubToolWorkspaceInjected } from './StarHubToolWorkspace.tsx'
 import { AboutTab } from './settings/about.tsx'
 import { AndroidSettingsTab } from './settings/android.tsx'
@@ -68,7 +62,6 @@ import { AiTab } from './settings/ai.tsx'
 import { AlertTab } from './settings/alert.tsx'
 import { AuditTab } from './settings/audit.tsx'
 import { PluginsTab } from './settings/plugins.tsx'
-import { OpenConfigAction } from './settings/OpenConfigAction.tsx'
 import { loadAiSettings } from './settings/aiSettings.ts'
 import { syncMemoryEnabled } from './settings/memory-context.ts'
 
@@ -102,14 +95,8 @@ export function apply(ctx: Context): void {
   const aiChat = createAiChatOverlay()
   // 工具面板(侧栏底部入口 → shell.overlay):footer 按钮写 open,overlay 席位读渲染。
   const toolsPanel = createToolsPanelOverlay()
-  // 壳内文件查看窗(2026-08-21):viewFile 回调经 starhubFileViewer 服务写入,
-  // shell.overlay 席位渲染;服务面类型定义在 ui-conversation contract。
-  const fileViewer = createFileViewerBridge()
-  // 会话文件树视图开关(2026-08-24):头部按钮(header.actions)写,
-  // 右侧工作区列(details.workspace)读——同一裸 source 桥范式。
-  const fileTree = createFileTreeBridge()
   // Git 工作台视图开关(v0.118.0):会话头部分支胶囊(入口)与工具抽屉
-  // (视图承载)共享,与文件树/执行记录视图三向互斥。
+  // (视图承载)共享,与执行记录视图二向互斥。
   const gitWorkbench = createGitWorkbenchBridge()
   // SSH 执行记录桥(v0.100.0,v0.100.1 会话隔离):ssh:exec-done 事件在
   // apply 层订阅(下方 ctx.effect),记录打上「当时活跃会话」标记;头部
@@ -121,9 +108,6 @@ export function apply(ctx: Context): void {
     () => subscribeSshExecEvents(execRecords.note),
     'starhub: ssh exec-done events',
   )
-  ctx.provide('starhubFileViewer', {
-    open: (target) => { fileViewer.open(target) },
-  } satisfies { open: (target: FileViewTarget) => void })
   // 服务面:注入数组已声明依赖,读取必然非空;conversation 在预填时退化处理。
   // 0.1.6:apiproxy 的 connection.api 撤除,类型化 Host RPC 走 ctx.remote
   // (api-gateway 的 ClientRemote);settings 写入统一经 remote.settings。
@@ -232,16 +216,6 @@ export function apply(ctx: Context): void {
       },
     }),
   }, StarHubOverlay))
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'starhub-file-viewer',
-    order: 110,
-    label: 'StarHub FileViewer',
-    inject: () => ({
-      closeViewer: fileViewer.close,
-      hooks: { fileViewer: fileViewer.source },
-    }),
-  }, FileViewerOverlay))
   // 主壳 AI 连接卡(v0.99.0 整体重构):合并 MFA 验证卡与堡垒机选机器浮层为
   // 一张统一连接卡。组件级监听请求/结束信号(ssh:kb-interactive /
   // ssh:bastion-select / ssh:bastion-done),不随浮层重挂载丢失,修复「命令
@@ -264,8 +238,6 @@ export function apply(ctx: Context): void {
     openAsset: openAssetPage,
     refreshAssets: assets.refresh,
     openConnectionManager: connectionManager.open,
-    // 文件树视图:面板内「文件树」开关(关闭回到资产列表)。
-    closeFileTree: fileTree.close,
     // Git 工作台视图(v0.118.0):面板头「关闭」回到资产列表。
     closeGitWorkbench: gitWorkbench.close,
     // 执行记录视图(v0.100.0):头部「执行」按钮的开关与清空(关闭回到资产列表)。
@@ -280,32 +252,20 @@ export function apply(ctx: Context): void {
       })
     },
     // 关闭工具面板(footer 入口再点或面板右上角 ×,或点遮罩空白)。
-    // 一并复位文件树视图:面板已关,若 fileTree.open 仍为 true,下回点会话
-    // 头部「文件」胶囊会走到 closeFileTree 而非 openFileTree,看起来没反应。
+    // 一并复位两个视图开关:面板已关,若残留 true,下回点「分支/执行」
+    // 胶囊会走到 close 分支而非打开,看起来没反应。
     closeTools: () => {
-      // 一并复位三个视图开关:面板已关,若残留 true,下回点「分支/文件/执行」
-      // 胶囊会走到 close 分支而非打开,看起来没反应。
-      fileTree.close()
       gitWorkbench.close()
       execRecords.closeView()
       toolsPanel.close()
     },
     // 选中一个子类:写入选择桥,面板展开该子类的资产列表。
     selectSubcategory: (key: string) => { selection.selectSubcategory(key) },
-    // 文件树右键「引用文件/文件夹」:把 `@名称 (路径)` 追加进当前会话对话框。
-    insertFileReference: (text: string) => {
-      const current = sessions.list.getSnapshot().current
-      if (current === undefined) return
-      const binding = sessions.binding(current)
-      if (binding === undefined) return
-      const input = conversation.input.for(binding.ctx)
-      input.setDraft(input.state.getSnapshot().draft + text)
-    },
     // 资产行右键「引用到当前对话框」(v0.103.0):与 `@` 资产 source pick 同语义——
     // 先轻绑定资产上下文(starhub-tool-context settings,会话级),再把引用 chip
     // 插到草稿末尾(insertReference 走输入机,chip 由 starhub-asset codec 在提交时
     // 序列化为模型可读文本);输入机忙碌(非 plain/claimed 或 draftRev CAS 失败)
-    // 时退化为纯文本追加,与文件引用一致。无当前会话时静默不动作(同文件引用)。
+    // 时退化为纯文本追加。无当前会话时静默不动作。
     insertAssetReference: (asset: RustAsset) => {
       const current = sessions.list.getSnapshot().current
       if (current === undefined) return
@@ -332,7 +292,6 @@ export function apply(ctx: Context): void {
     hooks: {
       selection: selection.source,
       assets: assets.source,
-      fileTree: fileTree.source,
       gitWorkbench: gitWorkbench.source,
       toolsPanel: toolsPanel.source,
       execRecords: execRecords.source,
@@ -357,12 +316,6 @@ export function apply(ctx: Context): void {
     () => inputTriggers.registerSource(createStarHubAssetSource({ writer: settingsWriter, assets, selection })),
     'starhub: @ asset source',
   )
-  // `@` 文件 source(2026-08-24):与资产 source 同 trigger 并行,候选来自当前
-  // 会话工作区目录树;pick 产物 `@文件名 (路径)` 与文件树右键引用一致。
-  ctx.effect(
-    () => inputTriggers.registerSource(createStarhubFileSource({ sessions })),
-    'starhub: @ file source',
-  )
   // 会话头部「git 分支胶囊」(2026-08-21;v0.118.0 起为 Git 工作台入口):
   // 显示当前会话工作区分支 + 脏点,点击把工具抽屉切到「Git 工作台」视图
   // (分支/暂存/提交/历史/同步全在工作台内);非 git 工作区与浏览器预览
@@ -377,36 +330,13 @@ export function apply(ctx: Context): void {
       // 胶囊的首要意图是分支管理,工作台落到「分支」Tab(变更/历史可再切)。
       openWorkbench: () => {
         gitWorkbench.open('branches')
-        fileTree.close()
         execRecords.closeView()
         toolsPanel.open()
       },
       hooks: { gitWorkbench: gitWorkbench.source },
     }),
   }, GitBranchPill))
-  // 会话头部「文件树」按钮(2026-08-24):分支胶囊旁,点击打开工具抽屉
-  // (shell.overlay 承载的 StarHubToolWorkspace)并切到项目文件目录树视图;
-  // 再次点击切回资产列表。文件树本体渲染在工具抽屉内,故打开的是 toolsPanel
-  // 而非 rc.2 的 details 列(details 列由 ui-conversation 独占展示工具调用)。
-  // v0.100.0:打开文件树时顺带退出执行记录视图(两个视图互斥,避免双 open
-  // 状态下抽屉展示分支与按钮开合态不一致)。
-  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
-    name: 'conversation.session.header.actions',
-    id: 'starhub-file-tree',
-    order: 40,
-    label: 'StarHub 文件树',
-    inject: () => ({
-      openFileTree: () => {
-        fileTree.open()
-        execRecords.closeView()
-        gitWorkbench.close()
-        toolsPanel.open()
-      },
-      closeFileTree: fileTree.close,
-      hooks: { fileTree: fileTree.source },
-    }),
-  }, FileTreeButton))
-  // 会话头部「执行」按钮(v0.100.0):「文件」胶囊旁,点击打开工具抽屉并切到
+  // 会话头部「执行」按钮(v0.100.0):分支胶囊旁,点击打开工具抽屉并切到
   // 「SSH 执行记录」视图(ai 静默执行的 ssh_exec 完成记录,行点击展开/收起,
   // 多条纵向滚动);再次点击返回资产列表。数据由 apply 层的 execRecords 桥
   // 常驻订阅 ssh:exec-done 累积,按钮只是开关。
@@ -418,7 +348,6 @@ export function apply(ctx: Context): void {
     inject: () => ({
       openExecView: () => {
         execRecords.openView()
-        fileTree.close()
         gitWorkbench.close()
         toolsPanel.open()
       },
@@ -501,17 +430,4 @@ export function apply(ctx: Context): void {
       label: tab.label,
     }, tab.component))
   }
-  // 设置「打开配置文件」(壳内编辑,插件形式):dsh 上游默认把配置文件交原生
-  // 打开器(外跳);这里由 StarHub 注册 settings.action(先于上游 order,
-  // 用 order -1 置顶),读取 settings.yaml 路径后经 starhubFileViewer 在壳内
-  // 打开(支持编辑保存)。仅桌面端(Tauri IPC)可用;浏览器预览静默降级。
-  ctx.slots.inject('settings.action', () => ctx.slots.register({
-    name: 'settings.action',
-    id: 'starhub-open-config',
-    order: -1,
-    inject: () => ({
-      openInShell: (target) => { fileViewer.open(target) },
-      sessionId: sessions.list.getSnapshot().current,
-    }),
-  }, OpenConfigAction))
 }

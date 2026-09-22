@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.121.7(**修复 GUI 启动报「Failed to load plugins @deepseek-ai/dsh-starhub-client-nav / web boot: 1 entry did not activate …: failed」**:DSH 0.1.6 的 Typert gateway 把每个 Remote 命名空间拆成独立 service(键名 `remote.<ns>`),`ctx.remote.<ns>` 经 traceable proxy 路由到 `ctx['remote.<ns>']`,cordis 的 ReflectService 守卫要求**调用方 fiber 的 inject 声明点号全名**,否则抛 `cannot get property "remote.<ns>" without inject`。client-nav 的 inject 只声明了 `'remote'`(v0.121.2 同步 0.1.6 时漏改),apply 里 `const settingsWriter = ctx.remote.settings` 当场抛错 → fiber FAILED → web boot 审计失败 → 启动页报错。安装版 v0.116.9 用旧 gateway(命名空间是 remote 实例的直接属性,只需 inject `'remote'`)所以正常,dev 树同步 0.1.6 后必坏。) |
+| 当前版本 | v0.121.8(**移除 StarHub 侧「文件功能」**:与 DeepSeek Harness 主壳能力重复——DSH 已提供 agent 侧文件工具(`tool-fs` read/write、`tool-fs-search` glob/grep、`tool-str-replace-editor` edit)、原生 `@` 文件引用源(`ui-reference`/`file-reference-local`)与右侧栏文件面板(`ui-sidebar-files`)。删除 client-nav 的 `file-tree/`(文件胶囊 + 工具抽屉目录树 + 文件信息对话框)、`file-viewer/`(壳内查看窗)、`file-source.ts`(`@` 文件源)、`OpenConfigAction`(壳内打开配置)及全部接线;Rust 删 `commands/file.rs`(`open_file_external` 早已无调用方),`local.rs` 只留 `local_shell_exec`(Git 工作台在用),`dsh_settings_path` 命令删除;设置「打开配置文件」回退 DSH 上游原生打开(移除 profile 的 `nativeOpen:false` 覆盖)。AI 读写本机文件统一走 DSH 主壳,沙箱/审批体系一致。) |
 
 ## 架构一句话
 
@@ -26,8 +26,8 @@ starhub/
 │   │   ├── main.rs           # 入口(主窗口关闭联动销毁其余窗口)
 │   │   ├── commands/         # 全部 Tauri Command:ssh / sftp / db / docker / ai_memory /
 │   │   │                     # android(Android 设备设置)/ asset / audit / alert / broker /
-│   │   │                     # browser / desktop(沙箱桌面 UI)/ dsh_plugins / file / harness /
-│   │   │                     # local / mcp / screenshot / secret / sidecar
+│   │   │                     # browser / desktop(沙箱桌面 UI)/ dsh_plugins / harness /
+│   │   │                     # local(仅 local_shell_exec)/ mcp / screenshot / secret / sidecar
 │   │   ├── ssh/              # SSH 会话(russh):auth / session / known_hosts / sftp_transport
 │   │   ├── sftp/             # SFTP 会话与传输(russh-sftp)
 │   │   ├── android/          # Android 实体机(adb):mod(授权/直播双模/scrcpy 通道/20 工具)
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-21 (v0.121.7)*
+*最后更新: 2026-09-21 (v0.121.8)*

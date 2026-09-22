@@ -28,13 +28,11 @@ afterEach(cleanup)
 function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: boolean } = {}) {
   const assets = createSnapshotStore<StarHubAssetListState>({ assets: [], loading: false, error: null, preview: false })
   const bridge = createToolSelectionBridge()
-  const fileTree = createSnapshotStore<{ open: boolean }>({ open: false })
   const gitWorkbench = createSnapshotStore<{ open: boolean; initialTab: 'changes' | 'history' | 'branches' }>({ open: false, initialTab: 'changes' })
   const toolsPanel = createSnapshotStore<{ open: boolean }>({ open: opts.panelOpen ?? true })
   const execRecords = createSnapshotStore<ExecRecordsState>({ viewOpen: false, records: [] })
   const useAssets = <S,>(sel: (s: StarHubAssetListState) => S) => sel(assets.getSnapshot())
   const useSelection = <S,>(sel: (s: ToolSelection) => S) => sel(bridge.source.getSnapshot())
-  const useFileTree = <S,>(sel: (s: { open: boolean }) => S) => sel(fileTree.getSnapshot())
   const useGitWorkbench = <S,>(sel: (s: { open: boolean; initialTab: 'changes' | 'history' | 'branches' }) => S) => sel(gitWorkbench.getSnapshot())
   const useToolsPanel = <S,>(sel: (s: { open: boolean }) => S) => sel(toolsPanel.getSnapshot())
   const useExecRecords = <S,>(sel: (s: ExecRecordsState) => S) => sel(execRecords.getSnapshot())
@@ -51,24 +49,20 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
   return {
     assets,
     bridge,
-    fileTree,
     gitWorkbench,
     toolsPanel,
     execRecords,
     refreshAssets: vi.fn(),
     openConnectionManager: vi.fn(),
-    closeFileTree: vi.fn(),
     closeGitWorkbench: vi.fn(),
     closeExecView: vi.fn(),
     clearExecRecords: vi.fn(),
     disconnectExecSession: vi.fn(),
     closeTools: vi.fn(),
     selectSubcategory: vi.fn(),
-    insertFileReference: vi.fn(),
     insertAssetReference: vi.fn(),
     useAssets,
     useSelection,
-    useFileTree,
     useGitWorkbench,
     useToolsPanel,
     useSessions,
@@ -374,48 +368,14 @@ describe('StarHubToolWorkspace', () => {
     }
   })
 
-  it('renders the file tree when the fileTree bridge is open and the session has a cwd', async () => {
-    const props = workspaceProps({ sessionId: 's1', cwd: 'C:\\ws\\proj' })
-    props.fileTree.update((d) => { d.open = true })
-    // 文件树需要 local_list_directory(Tauri invoke stub);根目录懒加载。
-    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-    w.__TAURI_INTERNALS__ = {
-      invoke: (cmd: string, args?: { path?: string }) => {
-        if (cmd !== 'local_list_directory') return Promise.reject(new Error(`unexpected: ${cmd}`))
-        const path = args?.path ?? ''
-        if (path === 'C:\\ws\\proj') {
-          return Promise.resolve([{ name: 'main.ts', path: 'C:\\ws\\proj\\main.ts', kind: 'file', size: 10, modifiedAt: 1, readonly: false, hidden: false }])
-        }
-        return Promise.reject(new Error(`unknown dir: ${path}`))
-      },
-    }
-    try {
-      const view = render(<StarHubToolWorkspace {...props} />)
-      // 头部「文件树」标题出现,资产视图被替换
-      expect(screen.getByText('文件树')).toBeTruthy()
-      expect(screen.queryByText('新建连接')).toBeNull()
-      // 根目录懒加载 → 文件行出现
-      const fileRow = await screen.findByRole('button', { name: /main\.ts/ })
-      expect(fileRow).toBeTruthy()
-      // 返回资产列表按钮 → closeFileTree
-      fireEvent.click(screen.getByLabelText('返回资产列表'))
-      expect(props.closeFileTree).toHaveBeenCalledTimes(1)
-      delete w.__TAURI_INTERNALS__
-      view.unmount()
-    } finally {
-      delete w.__TAURI_INTERNALS__
-    }
-  })
-
-  it('keeps the asset list when the fileTree bridge is open but no session cwd exists', () => {
+  it('renders the exec records and keeps the asset list when no session cwd exists', () => {
     const props = workspaceProps()
     props.bridge.selectSubcategory('terminal')
     props.assets.update((d) => { d.assets = [sshAsset] })
-    props.fileTree.update((d) => { d.open = true })
     render(<StarHubToolWorkspace {...props} />)
-    // 无 cwd:文件树不可用,资产列表照常
+    // 无 cwd:Git 工作台不可用,资产列表照常
     expect(screen.getByText('prod-server')).toBeTruthy()
-    expect(screen.queryByText('文件树')).toBeNull()
+    expect(screen.queryByText('SSH 执行记录')).toBeNull()
   })
 
   it('switches to the exec-records view when the bridge is open and hides the asset list', () => {

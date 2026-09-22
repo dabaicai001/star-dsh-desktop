@@ -18,7 +18,7 @@
  * rc.2 移除了可多人占位的 `workspace` / `details.workspace` 槽,本面板改挂
  * `shell.overlay`(root scope,list 槽):开关经 toolsPanel 桥(裸 source +
  * open/close)由 footer 按钮写、本面板读;渲染为居中浮层。root scope 无
- * 框架注入的 sessionId,文件树视图的 cwd 改从全局「当前会话」读取。
+ * 框架注入的 sessionId,Git 工作台视图的 cwd 改从全局「当前会话」读取。
  */
 import { useEffect, useState } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
@@ -33,8 +33,6 @@ import {
 import { STARHUB_SUBCATEGORIES, assetRowBadge, assetSubtitle, type StarHubAsset, type StarHubSubcategory } from './sections.ts'
 import type { RustAsset, StarHubAssetListState, ToolSelection, ToolsPanelState } from './store.ts'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
-import { FileTreePanel } from './file-tree/FileTreePanel.tsx'
-import type { FileTreeState } from './file-tree/state.ts'
 import { GitWorkbenchPanel } from './git/GitWorkbenchPanel.tsx'
 import type { GitWorkbenchState } from './git/git-workbench-state.ts'
 import { ExecRecordList } from './conn/ExecRecordList.tsx'
@@ -54,8 +52,6 @@ export interface StarHubToolWorkspaceInjected {
   refreshAssets: () => void
   /** 打开连接对话框:不传资产 = 新建;传资产 = 编辑(含删除入口)。 */
   openConnectionManager: (asset?: RustAsset) => void
-  /** 切回资产列表视图(文件树面板头部「返回资产列表」)。 */
-  closeFileTree: () => void
   /** 切回资产列表视图(Git 工作台面板头「关闭」;v0.118.0 Git 工作台视图)。 */
   closeGitWorkbench: () => void
   /** 切回资产列表视图(执行记录视图头部「返回」;v0.100.0 执行记录入抽屉)。 */
@@ -68,14 +64,11 @@ export interface StarHubToolWorkspaceInjected {
   closeTools: () => void
   /** 选中一个子类(展开/聚焦该子类的资产列表)。 */
   selectSubcategory: (key: string) => void
-  /** 把引用文本追加进当前会话对话框输入框(文件树右键「引用文件/文件夹」)。 */
-  insertFileReference: (text: string) => void
   /** 把资产作为引用 chip 插入当前会话对话框并轻绑定资产上下文(资产行右键「引用到当前对话框」)。 */
   insertAssetReference: (asset: RustAsset) => void
   hooks: {
     selection: SnapshotStore<ToolSelection>
     assets: SnapshotStore<StarHubAssetListState>
-    fileTree: SnapshotStore<FileTreeState>
     gitWorkbench: SnapshotStore<GitWorkbenchState>
     toolsPanel: SnapshotStore<ToolsPanelState>
     execRecords: SnapshotStore<ExecRecordsState>
@@ -169,9 +162,8 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
  * its operation page. Also syncs
  * the current tool selection to host settings for AI context (Path B plan 4.3).
  *
- * 文件树视图(2026-08-24):面板内「文件树」按钮把 fileTree bridge 置 open 后,
- * 树区切换为项目文件目录树(以当前会话 cwd 为根)(overlay root scope 无框架
- * 注入 sessionId,当前会话经 useSessions 全局快照取 current → binding cwd)。
+ * 文件树/文件查看能力已在 v0.121.8 移除(与 DSH 主壳自带的 fs 工具/`@`
+ * 文件引用源重复),壳内文件浏览请用 DSH 侧能力。
  *
  * SSH 执行记录视图(v0.100.0,v0.100.1 会话隔离 + 行内断开):会话头部
  * 「执行」按钮把 execRecords 桥置 viewOpen 后,抽屉切换为 ExecRecordList
@@ -180,16 +172,16 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
  *
  * Git 工作台视图(v0.118.0):会话头部分支胶囊(GitBranchPill,已融合为
  * 工作台入口)把 gitWorkbench 桥置 open 后,抽屉切换为 GitWorkbenchPanel
- * (以当前会话 cwd 为工作区:变更/暂存/提交/diff/历史/分支);三个视图
+ * (以当前会话 cwd 为工作区:变更/暂存/提交/diff/历史/分支);两个视图
  * 互斥,开关组合由 apply 层的注册注入保证。
  * @param props - composed slot props (overlay runtime share + injected face).
  * @returns null when closed; otherwise the drawer layer.
  */
 export function StarHubToolWorkspace({
   openAsset, refreshAssets, openConnectionManager,
-  closeFileTree, closeGitWorkbench, closeExecView, clearExecRecords, disconnectExecSession,
-  closeTools, selectSubcategory, insertFileReference, insertAssetReference,
-  useSelection, useAssets, useFileTree, useGitWorkbench, useToolsPanel, useSessions, useExecRecords,
+  closeGitWorkbench, closeExecView, clearExecRecords, disconnectExecSession,
+  closeTools, selectSubcategory, insertAssetReference,
+  useSelection, useAssets, useGitWorkbench, useToolsPanel, useSessions, useExecRecords,
 }: StarHubToolWorkspaceProps) {
   // toolsPanel 开关:未提供该 hook(组件在旧测试桩/独立渲染下)时默认视为打开。
   const panelOpen = useToolsPanel?.(s => s.open) ?? true
@@ -200,7 +192,6 @@ export function StarHubToolWorkspace({
   const preview = useAssets(s => s.preview)
   const activeSubcategory = useSelection(s => s.subcategory)
   const activeAssetId = useSelection(s => s.assetId)
-  const fileTreeOpen = useFileTree(s => s.open)
   // Git 工作台视图(v0.118.0):hook 未提供时视为关闭(独立渲染兼容)。
   const gitOpen = useGitWorkbench?.(s => s.open) ?? false
   const gitInitialTab = useGitWorkbench?.(s => s.initialTab) ?? 'changes'
@@ -210,8 +201,6 @@ export function StarHubToolWorkspace({
   // 当前会话 cwd 经 root-scope 的 useSessions 响应式读取(shell.overlay 无
   // 框架注入 sessionId;注入期快照会过期,故此处订阅全局当前会话)。
   const sessionCwd = useSessions?.(s => (s.current !== undefined ? s.byId[s.current]?.cwd : undefined))
-  // 当前会话是否运行中(AI 运行中文件详情只读禁改,与 Read 卡门禁一致)。
-  const aiRunning = useSessions?.(s => (s.current !== undefined ? s.byId[s.current]?.running ?? false : false)) ?? false
 
   // 打开时(以及切换子类时)重新拉取(回调内部对并发拉取去重)。
   useEffect(() => { if (open) refreshAssets() }, [open, activeSubcategory, refreshAssets])
@@ -231,13 +220,6 @@ export function StarHubToolWorkspace({
           />
         ) : gitOpen && sessionCwd !== undefined ? (
           <GitWorkbenchPanel cwd={sessionCwd} initialTab={gitInitialTab} onClose={closeGitWorkbench} />
-        ) : fileTreeOpen && sessionCwd !== undefined ? (
-          <FileTreePanel
-            cwd={sessionCwd}
-            onClose={closeFileTree}
-            insertReference={insertFileReference}
-            aiRunning={aiRunning}
-          />
         ) : (
           <>
             <header className={css.header}>

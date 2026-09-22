@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 /**
  * client-nav 插件装配(apply,rc.2 适配后):各槽位注册的槽名、组件与注入面
- * (工具面板桥 / 连接对话框桥 / 文件查看窗 / git 分支胶囊 / 截图按钮附件)
+ * (工具面板桥 / 连接对话框桥 / git 分支胶囊 / 截图按钮附件)
  * 与工具树子类选中语义(selectSubcategory 写选择桥,不再联动布局开关)。
  * rc.2 注册面(v0.100.0 起右下角 BastionExecPanel 浮层席位移除;
- * v0.105.0 起沙箱桌面横幅 + 沙箱平台设置 tab 入列):
- * `sidebar.footer.action`(工具入口)+ `shell.overlay`×5(overlay / 文件查看 /
+ * v0.105.0 起沙箱桌面横幅 + 沙箱平台设置 tab 入列;v0.121.8 起文件树/
+ * 文件查看/@ 文件源随「文件功能」移除):
+ * `sidebar.footer.action`(工具入口)+ `shell.overlay`×4(overlay /
  * AI 连接卡 / 沙箱横幅 / 工具面板)+ `conversation.session.
- * header.actions`×3(git / 文件树 / 执行)+ `conversation.input.left`(截图)
- * + `settings.section`×6。
+ * header.actions`×2(git / 执行)+ `conversation.input.left`(截图)
+ * + `settings.section`×9。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
@@ -18,9 +19,7 @@ import { StarHubFooterButton } from '../src/client/StarHubFooterButton.tsx'
 import { StarHubOverlay } from '../src/client/StarHubOverlay.tsx'
 import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
 import { GitBranchPill } from '../src/client/git/GitBranchPill.tsx'
-import { FileTreeButton } from '../src/client/file-tree/FileTreeButton.tsx'
 import { ExecDrawerButton } from '../src/client/conn/ExecDrawerButton.tsx'
-import { FileViewerOverlay } from '../src/client/file-viewer/FileViewerOverlay.tsx'
 import { StarHubConnCard } from '../src/client/conn/StarHubConnCard.tsx'
 import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
 import { SandboxUserActionBanner } from '../src/client/sandbox/SandboxUserActionBanner.tsx'
@@ -29,12 +28,10 @@ import { AndroidSettingsTab } from '../src/client/settings/android.tsx'
 import { BrowserSettingsTab } from '../src/client/settings/browser.tsx'
 import { SshSettingsTab } from '../src/client/settings/ssh.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
-import { STARHUB_FILE_SOURCE } from '../src/client/file-source.ts'
 import { AboutTab } from '../src/client/settings/about.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
 import { AuditTab } from '../src/client/settings/audit.tsx'
 import { PluginsTab } from '../src/client/settings/plugins.tsx'
-import { OpenConfigAction } from '../src/client/settings/OpenConfigAction.tsx'
 import { apply as applyInvariant } from '../src/invariant.ts'
 
 afterEach(() => {
@@ -116,22 +113,19 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
       'sidebar.footer.action',
-      'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
+      'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
       'conversation.session.header.actions', 'conversation.session.header.actions',
-      'conversation.session.header.actions',
       'conversation.input.left',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
-      'settings.action',
     ])
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
       StarHubFooterButton,
-      StarHubOverlay, FileViewerOverlay, StarHubConnCard, SandboxUserActionBanner, StarHubToolWorkspace,
-      GitBranchPill, FileTreeButton, ExecDrawerButton,
+      StarHubOverlay, StarHubConnCard, SandboxUserActionBanner, StarHubToolWorkspace,
+      GitBranchPill, ExecDrawerButton,
       ScreenshotButton,
       // AiTab 经 () => createElement(AiTab, { api }) 包装,按函数断言。
       expect.any(Function), PluginsTab, AuditTab, AlertTab, SandboxSettingsTab, AndroidSettingsTab, BrowserSettingsTab, SshSettingsTab, AboutTab,
-      OpenConfigAction,
     ])
   })
 
@@ -142,7 +136,7 @@ describe('client-nav apply (rc.2)', () => {
     const injected = footerConfig.inject() as { openTools: () => void }
     expect(injected.openTools).toBeTypeOf('function')
     // toolsPanel 快照桥挂在工具面板(workspace)槽的 inject hooks 舱位,footer 只负责打开。
-    const panelConfig = register.mock.calls[5]![0]
+    const panelConfig = register.mock.calls[4]![0]
     const panelInjected = panelConfig.inject() as {
       openTools?: never
       hooks: { toolsPanel: { getSnapshot: () => { open: boolean } } }
@@ -152,7 +146,7 @@ describe('client-nav apply (rc.2)', () => {
     expect(panelInjected.hooks.toolsPanel.getSnapshot()).toEqual({ open: true })
   })
 
-  it('exec drawer and file-tree pills switch views exclusively', () => {
+  it('exec drawer pill opens and closes the records view', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
     const execConfig = register.mock.calls.find(c => (c[0] as RegisterOptions).id === 'starhub-exec-drawer')![0] as RegisterOptions
@@ -161,20 +155,10 @@ describe('client-nav apply (rc.2)', () => {
       closeExecView: () => void
       hooks: { execRecords: { getSnapshot: () => { viewOpen: boolean; records: unknown[] } } }
     }
-    const fileConfig = register.mock.calls.find(c => (c[0] as RegisterOptions).id === 'starhub-file-tree')![0] as RegisterOptions
-    const fileInjected = fileConfig.inject() as unknown as {
-      openFileTree: () => void
-      hooks: { fileTree: { getSnapshot: () => { open: boolean } } }
-    }
     expect(execInjected.hooks.execRecords.getSnapshot().viewOpen).toBe(false)
     execInjected.openExecView()
     expect(execInjected.hooks.execRecords.getSnapshot().viewOpen).toBe(true)
-    // 打开文件树 → 执行视图被复位(双 open 状态不允许)
-    fileInjected.openFileTree()
-    expect(fileInjected.hooks.fileTree.getSnapshot().open).toBe(true)
-    expect(execInjected.hooks.execRecords.getSnapshot().viewOpen).toBe(false)
     // 关闭执行视图回到资产列表
-    execInjected.openExecView()
     execInjected.closeExecView()
     expect(execInjected.hooks.execRecords.getSnapshot().viewOpen).toBe(false)
   })
@@ -182,7 +166,7 @@ describe('client-nav apply (rc.2)', () => {
   it('tools panel inject selects a subcategory through the selection bridge', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const panelConfig = register.mock.calls[5]![0]
+    const panelConfig = register.mock.calls[4]![0]
     const injected = panelConfig.inject() as {
       selectSubcategory: (key: string) => void
       hooks: { selection: { getSnapshot: () => { subcategory: string | null } } }
@@ -213,7 +197,7 @@ describe('client-nav apply (rc.2)', () => {
   it('tools panel inject closes the panel through the bridge', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const panelConfig = register.mock.calls[5]![0]
+    const panelConfig = register.mock.calls[4]![0]
     const injected = panelConfig.inject() as { closeTools: () => void; hooks: { toolsPanel: { getSnapshot: () => { open: boolean } } } }
     injected.closeTools()
     expect(injected.hooks.toolsPanel.getSnapshot()).toEqual({ open: false })
@@ -224,7 +208,7 @@ describe('client-nav apply (rc.2)', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       applyPlugin(ctx)
-      const panel = register.mock.calls[5]![0].inject() as { openAsset: (asset: unknown) => void }
+      const panel = register.mock.calls[4]![0].inject() as { openAsset: (asset: unknown) => void }
       const esAsset = {
         id: 'es1', type: 'db', name: 'es-1', group_id: null,
         config: { dbType: 'elasticsearch', host: 'h' },
@@ -238,21 +222,13 @@ describe('client-nav apply (rc.2)', () => {
     }
   })
 
-  it('registers the @ asset and @ file input sources', () => {
+  it('registers the @ asset input source', () => {
     const { ctx, registerSource } = fakeContext()
     applyPlugin(ctx)
     const sources = registerSource.mock.calls.map(c => c[0])
-    expect(sources).toHaveLength(2)
+    expect(sources).toHaveLength(1)
     // rc.2 InputTriggerSource 以 name 标识 source(无顶层 id 字段)。
     expect(sources[0]).toMatchObject({ name: STARHUB_ASSET_SOURCE })
-    expect(sources[1]).toMatchObject({ name: STARHUB_FILE_SOURCE })
-  })
-
-  it('provides the starhubFileViewer service', () => {
-    const { ctx, provided } = fakeContext()
-    applyPlugin(ctx)
-    const face = provided.starhubFileViewer as { open?: unknown } | undefined
-    expect(typeof face?.open).toBe('function')
   })
 
   // 资产右键「引用到当前对话框」(v0.103.0):apply 层注入面 insertAssetReference
@@ -293,7 +269,7 @@ describe('client-nav apply (rc.2)', () => {
     const setDraft = vi.fn()
     const { ctx, register, settingsUpdate } = referenceContext({ insertReference, setDraft })
     applyPlugin(ctx)
-    const panel = register.mock.calls[5]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
     panel.insertAssetReference(refAsset)
     // 轻绑定:starhub-tool-context settings patch 带会话 id 与资产(与 @ pick 同通道)
     expect(settingsUpdate).toHaveBeenCalledWith(
@@ -314,7 +290,7 @@ describe('client-nav apply (rc.2)', () => {
     const setDraft = vi.fn()
     const { ctx, register } = referenceContext({ insertReference, setDraft })
     applyPlugin(ctx)
-    const panel = register.mock.calls[5]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
     // Docker 资产:纯文本回退同样带 [Docker] 删除保护标注
     panel.insertAssetReference({ ...refAsset, id: 'd1', type: 'docker', name: 'local-docker', config: {} })
     expect(setDraft).toHaveBeenCalledWith('查一下 @local-docker [Docker] ')
@@ -328,7 +304,7 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     // apply 启动期的记忆开关初始同步也会写一次 settings,先清掉再断言本路径不写
     settingsUpdate.mockClear()
-    const panel = register.mock.calls[5]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
     panel.insertAssetReference(refAsset)
     expect(settingsUpdate).not.toHaveBeenCalled()
   })

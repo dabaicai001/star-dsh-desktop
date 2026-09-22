@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.121.7-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.121.8-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -44,12 +44,12 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 **Android 实体机直连**(adb):AI 直接操作用户真实的 Android 手机(开发者模式 → USB 调试 / 无线调试)——截屏看画面、点按/滑动/滚动、按键、输入文本、按包名启动 App、设备文件传输、无线配对,共 19 个 `android_*` 工具;直播窗口走 bundled scrcpy-server 的 H.264 实时画面(不可用自动降级截图轮询),同样支持围观/接管;任务级授权(60 分钟)、任意 shell 恒确认 hard 档、每次写操作自动截屏留档可回放——真实设备,每一步都有据可查。
 
-**其他**:本地文件工作区(VSCode 式编辑)、Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
+**其他**:Excel 工具、Kafka/NSQ 元数据、系统 Keyring 凭据托管、深浅双主题、自动更新。
 
 ## 当前版本
 
-### v0.121.7 (2026-09-21)
-- 🐛 **修复 GUI 启动报「Failed to load plugins @deepseek-ai/dsh-starhub-client-nav / web boot: 1 entry did not activate …: failed」**:DSH 0.1.6 的 Typert gateway 把每个 Remote 命名空间拆成独立 service(键名 `remote.<ns>`),`ctx.remote.<ns>` 经 traceable proxy 路由到 `ctx['remote.<ns>']`,cordis 的 ReflectService 守卫要求**调用方 fiber 的 inject 声明点号全名**,否则抛 `cannot get property "remote.<ns>" without inject`。client-nav 的 inject 只声明了 `'remote'`(v0.121.2 同步 0.1.6 时漏改),apply 里 `const settingsWriter = ctx.remote.settings` 当场抛错 → fiber FAILED → web boot 审计失败 → 启动页报错。安装版 v0.116.9 用旧 gateway(命名空间是 remote 实例的直接属性,只需 inject `'remote'`)所以正常,dev 树同步 0.1.6 后必坏。
+### v0.121.8 (2026-09-21)
+- 🔧 **移除 StarHub 侧「文件功能」**:与 DeepSeek Harness 主壳能力重复——DSH 已提供 agent 侧文件工具(read/write/edit/glob/grep)、原生 `@` 文件引用源与右侧栏文件面板。删除 client-nav 的文件树/文件查看窗/`@` 文件源/壳内打开配置及全部接线;Rust 删除 `file.rs`(`open_file_external` 早已无调用方),`local.rs` 只保留 `local_shell_exec`(Git 工作台在用),`dsh_settings_path` 命令删除;设置「打开配置文件」回退 DSH 上游原生打开。AI 读写本机文件统一走 DSH 主壳,沙箱/审批体系一致。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

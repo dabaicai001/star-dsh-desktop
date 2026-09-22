@@ -159,7 +159,7 @@ describe('subscribeSshExecEvents', () => {
 })
 
 describe('ExecDrawerButton', () => {
-  /** 最小 header-actions runtime 面 + 注入面(同 file-tree-button spec 桩法)。 */
+  /** 最小 header-actions runtime 面 + 注入面(与 git-branch-pill spec 同桩法)。 */
   function buttonProps(state: ExecRecordsState) {
     const unused = (): never => { throw new Error('unused share') }
     return {

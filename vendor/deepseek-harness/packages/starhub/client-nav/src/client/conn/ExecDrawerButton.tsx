@@ -1,11 +1,11 @@
 /**
  * 会话头部「执行」按钮(v0.100.0,重构自右下角 BastionExecPanel 浮层):
- * 「文件」胶囊旁边新增的第三个胶囊——点击打开工具抽屉并切到「SSH 执行记录」
+ * 分支胶囊旁边新增的胶囊——点击打开工具抽屉并切到「SSH 执行记录」
  * 视图(StarHubToolWorkspace 读到 execRecords 桥后渲染 ExecRecordList),
  * 再次点击返回资产列表;有记录时展示条数角标。
  *
- * 与 FileTreeButton 不同:执行记录是全局的(AI 静默执行的 SSH 命令),不依赖
- * 会话 cwd,故无 cwd 不渲染的门槛。
+ * 执行记录是全局的(AI 静默执行的 SSH 命令),不依赖会话 cwd,故无 cwd
+ * 不渲染的门槛。
  */
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { IconPlayOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
