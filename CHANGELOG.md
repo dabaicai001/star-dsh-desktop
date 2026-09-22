@@ -8,6 +8,7 @@
 ## [未发布]
 
 ### 移除
+- **MCP 接入切换到 DSH 原生 `dsh-mcp-client`(移除 StarHub 桥接 `mcp_list` / `mcp_call`)**:两个 meta 工具经 `dsh://tool-exec` 转发旧 Vue 前端(server 配置在已删除的前端 settings + keyring),执行侧与配置侧双断,调用恒定 180s 超时。DSH 原生 mcp-client 把外部 server 的工具以 `mcp__<server>__<tool>` 直接注册给模型(包已在 runtime 闭包,无需入包);DSH 无 MCP 配置 UI,接入方式为 profile 行式静态配置(每 server 一行),两个 profile 的 `cordis.patch.yml` / `cordis.yml` 内已留注释示例(stdio / streamable-http)。StarHub 侧删 tools 包两个 spec、approval-bridge 恒确认/域工具名单条目、Rust `FORWARDED_TOOLS` 两行与相关注释。
 - **会话历史搜索切换到 DSH 原生 `tool-session-query`(移除 StarHub 桥接 `session_search`)**:DSH 原生提供五个只读工具(session_search / session_event_search / session_trace / session_event_trace / session_event_read),能力覆盖且更全(事件级检索/血缘追踪)。改动:
   - web profile(`examples/starhub-web/cordis.patch.yml`):插入 `tool-session-query` 行;覆盖 `session-query-sqlite` 的 `openAt: never → first-search`(默认 never 会让全文调用直接以 SESSION_QUERY_SEARCH_DISABLED 拒绝;维持 `:memory:` 内存索引,首搜从会话存储重建,不落盘)。
   - agent profile(`examples/starhub-agent/cordis.yml`):同样插入 `tool-session-query` + `openAt: first-search` 覆盖,与 web 对齐。

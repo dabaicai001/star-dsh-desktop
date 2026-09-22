@@ -75,6 +75,18 @@
     # installWebRuntimePackages 入包共同保证可解析。
     - id: tool-session-query
       name: '@deepseek-ai/dsh-tool-session-query'
+    # MCP 外部工具(v0.121.9 起从 StarHub 桥接 mcp_list/mcp_call 切换到 DSH 原生
+    # dsh-mcp-client;包已在 runtime 闭包内,无需入包)。原生路径为「每 server 一行」
+    # 静态配置(DSH 无 MCP 配置 UI):需要接入时取消下面注释并按 server 改一行,
+    # 工具会以 mcp__<serverName>__<tool> 形式直接注册给模型。
+    # 注意:stdio server 会在 dsh web 进程内 spawn 子进程,请只配可信来源。
+    # - id: mcp-client
+    #   name: '@deepseek-ai/dsh-mcp-client'
+    #   config:
+    #     transport: stdio
+    #     serverName: myserver
+    #     command: npx
+    #     args: ['-y', '@modelcontextprotocol/server-everything']
     - id: starhub-tools
       name: '@deepseek-ai/dsh-starhub-tools'
     - id: starhub-approval-bridge

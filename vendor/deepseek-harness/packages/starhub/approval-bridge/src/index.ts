@@ -224,7 +224,6 @@ const ALWAYS_ASK_TOOLS: ReadonlySet<string> = new Set([
   'es_delete_document',
   'es_delete_index',
   'memory',
-  'mcp_call',
   // 沙箱桌面:箱内任意命令是沙箱与「外界逻辑」的交换口,不在任务级授权内
   'desktop_exec',
   // Android 实体机:真实设备上的任意 shell 命令(实体机不可销毁,比沙箱更严)
@@ -345,7 +344,6 @@ const STARHUB_DOMAIN_TOOLS: ReadonlySet<string> = new Set([
   'es_list_indices', 'es_cluster_health', 'es_get_mapping', 'es_search',
   'es_get_document', 'es_count',
   'docker_list_containers', 'docker_logs', 'docker_inspect', 'docker_exec',
-  'mcp_list',
   // AI 浏览器(无痕独立窗口)
   'browser_open', 'browser_navigate', 'browser_back', 'browser_forward',
   'browser_reload', 'browser_state', 'browser_extract', 'browser_click',

@@ -80,6 +80,18 @@
     - id: tool-session-query
       name: '@deepseek-ai/dsh-tool-session-query'
 
+    # MCP 外部工具(原生 dsh-mcp-client,「每 server 一行」静态配置;DSH 无 MCP
+    # 配置 UI)。需要接入时取消注释并按 server 改一行,工具以
+    # mcp__<serverName>__<tool> 直接注册给模型;包已在 runtime 闭包内。
+    # 注意:stdio server 会在 runtime 进程内 spawn 子进程,只配可信来源。
+    # - id: mcp-client
+    #   name: '@deepseek-ai/dsh-mcp-client'
+    #   config:
+    #     transport: stdio
+    #     serverName: myserver
+    #     command: npx
+    #     args: ['-y', '@modelcontextprotocol/server-everything']
+
     - id: starhub-session-registry
       name: '@deepseek-ai/dsh-starhub-session-registry'
 

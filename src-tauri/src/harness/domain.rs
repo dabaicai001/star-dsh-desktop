@@ -15,8 +15,7 @@
 //! - DB / Redis / ES / Docker:直接经 [`SidecarManager`] 的 stdio JSON-RPC
 //!   (connect → 执行 → format → disconnect),资产连接参数从 assets 表 + Keyring
 //!   合并(与 [`asset_ssh_config`] 同源,绝不含明文密钥泄漏)。
-//! - Excel / MCP 保持前端桥接:工作簿状态 / MCP server 配置在前端侧,
-//!   无法脱离 webview。
+//! - Excel 保持前端桥接:工作簿状态在前端侧,无法脱离 webview。
 //!
 //! 结果文本格式与前端 `src/services/dshToolExecutor.ts` 对齐(模型可读文本),
 //! 行为语义照搬前端实现,便于模型无感迁移。

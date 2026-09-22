@@ -15,7 +15,7 @@
 //!   SshManager / SidecarManager,exec 带 exec_id 注册到桥的 inflight,
 //!   停止生成时由 `bridge.drain()` 真正中断(不再有「前端执行超时或窗口
 //!   已关闭」);
-//! - 其余(excel_*/mcp_*)因前端状态依赖,仍 emit `dsh://tool-exec`
+//! - 其余(excel_*)因前端状态依赖,仍 emit `dsh://tool-exec`
 //!   转发给拥有该会话的前端面板,经 `dsh_tool_exec_reply` 应答等待结果
 //!   (超时 180s)。
 //!
@@ -50,9 +50,8 @@ const TOOL_EXEC_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// 仍在 Rust 进程内执行的域工具:ssh_*/sftp_*/db_query/redis_exec/es_*/docker_*
 /// 已迁移到进程内执行(方案1,见 domain 模块);这里只保留必须由前端面板
-/// 执行的工具——工作簿状态在 webview(Univer)、MCP server 配置在 aiStore:
+/// 执行的工具——工作簿状态在 webview(Univer),无法脱离前端:
 /// - Excel:excel_*(当前工作簿在前端 Univer 内存)
-/// - MCP:mcp_list / mcp_call(server 配置存于前端 settings + keyring)
 /// (与 vendor packages/starhub/tools/src/index.ts 的 BRIDGED_TOOLS 对齐)
 const FORWARDED_TOOLS: &[&str] = &[
     // Excel(当前工作簿,前端执行)
@@ -80,9 +79,6 @@ const FORWARDED_TOOLS: &[&str] = &[
     "excel_remove_duplicates",
     "excel_dedup_to_sheet",
     "excel_save",
-    // MCP(设置里配置的外部 MCP server 工具)
-    "mcp_list",
-    "mcp_call",
 ];
 
 /// 方案1:在 Rust 主进程内直接执行的域工具(见 harness/domain.rs)。
@@ -184,8 +180,8 @@ async fn dispatch_tool(
 
     // 方案1:可在 Rust 主进程内直接执行的域工具(ssh_*/sftp_*/db_query/
     // redis_exec/es_*/docker_*)——进程内执行,不依赖前端面板窗口存活,
-    // 停止生成经 bridge.drain() 真正中断在途命令。excel_*/mcp_*
-    // 因工作簿状态 / MCP 配置在前端,仍走 FORWARDED_TOOLS。
+    // 停止生成经 bridge.drain() 真正中断在途命令。excel_*
+    // 因工作簿状态在前端,仍走 FORWARDED_TOOLS。
     if IN_PROCESS_TOOLS.contains(&name) {
         let text = domain::execute_domain_tool(bridge, session_id, name, args).await?;
         on_ai_tool_success(bridge, session_id, name, args, &text).await;

@@ -609,21 +609,6 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
     description: '保存当前文件。',
     parameters: {},
   },
-  // ── MCP(设置里配置的外部 MCP server 工具)──
-  {
-    toolName: 'mcp_list',
-    description: '列出设置中配置的 MCP server 及其工具清单。',
-    parameters: {},
-  },
-  {
-    toolName: 'mcp_call',
-    description: '调用一个 MCP server 工具(外部进程,每次调用都会请求用户确认)。先用 mcp_list 查看可用的 server 与工具名。',
-    parameters: {
-      server: { type: 'string', required: true, description: 'MCP server 名(mcp_list 返回)' },
-      tool: { type: 'string', required: true, description: '工具名(mcp_list 返回)' },
-      arguments: { type: 'object', additionalProperties: true, description: '工具参数对象' },
-    },
-  },
   // ── 沙箱桌面(Ubuntu 容器沙箱平台,设计 docs/superpowers/specs/2026-08-28-desktop-automation-design.md)──
   // 安全模型:desktop_create_sandbox 的一次确认 = 任务级授权(60 分钟),授权期内
   // 箱内截图/键鼠全自动放行(授权由宿主在执行点强制);desktop_exec 恒确认;
