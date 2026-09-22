@@ -353,8 +353,7 @@ pub async fn ai_msg_sync(
 }
 
 /// 全文检索容错包装:非法 FTS 语法(fts5 解析错误)返回空列表而非报错
-/// (pub(crate):dsh 工具桥 harness::tools 的 session_search 复用)
-pub(crate) async fn search_messages_tolerant(
+async fn search_messages_tolerant(
     pool: &SqlitePool,
     query: &str,
     limit: Option<i64>,

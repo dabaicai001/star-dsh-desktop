@@ -10,6 +10,17 @@
     host: 127.0.0.1
     port: 3185
 
+# 开启会话历史全文检索(替代 StarHub 桥接 session_search):web-app 层把
+# session-query-sqlite 钉成 `:memory:` + `openAt: never`(只读部署不建索引,
+# 且 openAt=never 会让全文调用直接以 SESSION_QUERY_SEARCH_DISABLED 拒绝)。
+# 这里整段替换 config:维持内存索引(不落盘、无陈旧索引),改 first-search——
+# 首次搜索时从会话存储 + 活跃会话重建索引,之后进程内复用。桌面场景会话量
+# 有界,首搜一次重建的成本可接受;需要持久化索引的部署可改 path 为文件路径。
+- id: session-query-sqlite
+  config:
+    path: ':memory:'
+    openAt: first-search
+
 # 全访问语义收窄(v0.106.1):danger-full-access 的 approval 由 never 改 ask。
 # never 会让 dsh-user-approval 的 decide() 先于所有 answerer 直接拒,StarHub
 # 风险门的 hard 档(DELETE FROM / rm -rf / desktop_exec 等删除/高危确认)被
@@ -56,6 +67,14 @@
     # permission-presets 静默失效,GUI 权限行读到无 defaultPreset 的裸注册。
     - id: sdk-jsonrpc-server
       name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+    # 会话历史搜索:AI 会话存档检索从 StarHub 桥接 session_search 切换到 DSH
+    # 原生 tool-session-query(session_search/session_event_search/session_trace/
+    # session_event_trace/session_event_read 五个只读工具;session-query-sqlite
+    # 已随 base 挂载)。该包不在 apps/cli 安装闭包内,由 Rust web.rs 的
+    # RUNTIME_HOSTED_PATCH_DEPS junction + package-dsh-runtime 的
+    # installWebRuntimePackages 入包共同保证可解析。
+    - id: tool-session-query
+      name: '@deepseek-ai/dsh-tool-session-query'
     - id: starhub-tools
       name: '@deepseek-ai/dsh-starhub-tools'
     - id: starhub-approval-bridge

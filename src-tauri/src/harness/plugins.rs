@@ -1208,6 +1208,8 @@ pub fn prepare_runtime_config(
 /// BFS 建链,`packages/starhub/*` 不在闭包内,裸 entry 解析即
 /// ERR_MODULE_NOT_FOUND——web profile 由 web.rs 建链,sdk profile 在此建链,
 /// 复用同一份 LOCAL_PACKAGES 清单与 junction 漂移校验(ensure_dir_link_fresh)。
+/// RUNTIME_HOSTED_PATCH_DEPS(闭包外、但被 profile patch 直接引用的包,如
+/// tool-session-query)同理从 runtime 安装树建链:闭包 BFS 永不链接它们。
 pub(crate) fn ensure_runtime_local_package_links(
     dsh_home: &Path,
     runtime_dir: &Path,
@@ -1222,6 +1224,19 @@ pub(crate) fn ensure_runtime_local_package_links(
         // 在启动时 fail-loud。
         if !target.exists() {
             tracing::warn!("本地包目录缺失,跳过 junction: {}", target.display());
+            continue;
+        }
+        crate::harness::web::ensure_dir_link_fresh(&link, &target)
+            .map_err(|e| PluginError::PathResolve(e.to_string()))?;
+    }
+    for dir_name in crate::harness::web::RUNTIME_HOSTED_PATCH_DEPS {
+        let link = link_base.join(format!("dsh-{dir_name}"));
+        let target = runtime_dir
+            .join("node_modules")
+            .join("@deepseek-ai")
+            .join(format!("dsh-{dir_name}"));
+        if !target.exists() {
+            tracing::warn!("闭包外 patch 依赖目录缺失,跳过 junction: {}", target.display());
             continue;
         }
         crate::harness::web::ensure_dir_link_fresh(&link, &target)

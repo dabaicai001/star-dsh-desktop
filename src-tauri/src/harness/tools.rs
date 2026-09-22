@@ -9,7 +9,7 @@
 //!
 //! 分发:
 //! - 全局工具(starhub_list_capabilities / starhub_list_assets /
-//!   session_search / memory)在 Rust 内执行(tools.rs 本体);
+//!   memory)在 Rust 内执行(tools.rs 本体);
 //! - 方案1 域工具(ssh_*/sftp_*/db_query/redis_exec/es_*/docker_*)由
 //!   [`domain`](self::domain) 模块在 Rust 主进程内直接执行——连接走
 //!   SshManager / SidecarManager,exec 带 exec_id 注册到桥的 inflight,
@@ -27,7 +27,7 @@
 //! 绝不返回密码/密钥等敏感字段)。
 
 use crate::commands::ai_memory::{
-    add_memory, list_messages, remove_memory, replace_memory, search_messages_tolerant,
+    add_memory, remove_memory, replace_memory,
 };
 use crate::db;
 use serde_json::Value;
@@ -399,7 +399,6 @@ pub(crate) async fn execute_tool(
     match name {
         "starhub_list_capabilities" => Ok(list_capabilities()),
         "starhub_list_assets" => list_assets(pool, args).await,
-        "session_search" => session_search(pool, args).await,
         "memory" => memory(pool, args, session_id, bridge).await,
         other => Err(format!("unsupported StarHub tool: {other}")),
     }
@@ -529,38 +528,9 @@ async fn list_assets(pool: &SqlitePool, args: &Value) -> Result<String, String> 
 }
 
 // ============================================================
-// session_search:三形态(query 全文搜索 / conversation_id 浏览 / +before_rowid 翻页)
-// 语义照抄 src/utils/aiTools.ts makeSessionSearchToolCaller
+// memory:add / replace / remove(target user / global / asset / folder)
+// 写路径复用 commands::ai_memory;软错误原样透传为文本。
 // ============================================================
-
-fn format_archive_time(seconds: i64) -> String {
-    if seconds <= 0 {
-        return String::new();
-    }
-    match chrono::DateTime::from_timestamp(seconds, 0) {
-        Some(dt) => dt
-            .with_timezone(&chrono::Local)
-            .format("%Y/%m/%d %H:%M:%S")
-            .to_string(),
-        None => String::new(),
-    }
-}
-
-fn clamp_search_limit(value: Option<&Value>) -> i64 {
-    match value.and_then(Value::as_f64) {
-        Some(num) if num.is_finite() && num > 0.0 => (num.floor() as i64).min(50),
-        _ => 20,
-    }
-}
-
-/// FTS5 查询降级:去掉双引号、按空白分词后以空格(AND)连接,避免语法报错。
-fn sanitize_fts_query(query: &str) -> String {
-    query
-        .replace('"', " ")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
 
 fn truncate_chars(text: &str, max: usize) -> String {
     if text.chars().count() > max {
@@ -570,135 +540,6 @@ fn truncate_chars(text: &str, max: usize) -> String {
         text.to_string()
     }
 }
-
-async fn session_search(pool: &SqlitePool, args: &Value) -> Result<String, String> {
-    let query = args
-        .get("query")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim();
-    let conversation_id = args
-        .get("conversation_id")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim();
-    let limit = clamp_search_limit(args.get("limit"));
-
-    // 形态一 discovery:FTS5 全文搜索所有历史会话
-    if !query.is_empty() {
-        let sanitized = sanitize_fts_query(query);
-        if sanitized.is_empty() {
-            return Ok("搜索词只包含无法用于全文检索的字符,请换个关键词重试。".to_string());
-        }
-        let hits = search_messages_tolerant(pool, &sanitized, Some(limit)).await?;
-        if hits.is_empty() {
-            return Ok(format!(
-                "无命中:历史会话存档中没有找到与「{sanitized}」相关的内容。"
-            ));
-        }
-        let blocks: Vec<String> = hits
-            .iter()
-            .map(|hit| {
-                let time = format_archive_time(hit.created_at);
-                let time_part = if time.is_empty() {
-                    String::new()
-                } else {
-                    format!(" · {time}")
-                };
-                let title = if hit.conversation_title.is_empty() {
-                    "新会话"
-                } else {
-                    hit.conversation_title.as_str()
-                };
-                format!(
-                    "会话「{title}」(conversation_id: {})\nrowid {} · {}{time_part}\n{}",
-                    hit.conversation_id, hit.rowid, hit.role, hit.snippet
-                )
-            })
-            .collect();
-        return Ok(format!(
-            "命中 {} 条(传 conversation_id 浏览完整会话,传 before_rowid 向前翻页):\n\n{}",
-            hits.len(),
-            blocks.join("\n\n")
-        ));
-    }
-
-    // 形态二/三 browse / scroll:浏览指定会话,before_rowid 向前翻页
-    if !conversation_id.is_empty() {
-        let before_rowid = args
-            .get("before_rowid")
-            .and_then(Value::as_f64)
-            .filter(|n| n.is_finite() && *n > 0.0)
-            .map(|n| n.floor() as i64);
-        let rows = list_messages(pool, conversation_id, before_rowid, Some(limit))
-            .await
-            .map_err(|e| format!("Failed to list messages: {e}"))?;
-        if rows.is_empty() {
-            return Ok(match before_rowid {
-                Some(before) => {
-                    format!("会话 {conversation_id} 在 rowid {before} 之前没有更多消息了。")
-                }
-                None => format!("会话 {conversation_id} 没有消息(可能不存在或已被删除)。"),
-            });
-        }
-        let blocks: Vec<String> = rows
-            .iter()
-            .map(|row| {
-                let time = format_archive_time(row.created_at);
-                let time_part = if time.is_empty() {
-                    String::new()
-                } else {
-                    format!(" · {time}")
-                };
-                let tool_mark = if row.tool_calls_json.is_some() {
-                    "(含工具调用)"
-                } else {
-                    ""
-                };
-                let content = row.content.as_deref().unwrap_or("").trim();
-                let truncated = if content.chars().count() > 500 {
-                    format!(
-                        "{}…(+{} 字符)",
-                        content.chars().take(500).collect::<String>(),
-                        content.chars().count() - 500
-                    )
-                } else if content.is_empty() {
-                    "(空)".to_string()
-                } else {
-                    content.to_string()
-                };
-                format!(
-                    "[#{}] {}{tool_mark}{time_part}\n{}",
-                    row.rowid, row.role, truncated
-                )
-            })
-            .collect();
-        let first = &rows[0];
-        let hint = if rows.len() as i64 >= limit && first.seq > 1 {
-            format!(
-                "\n\n还有更早的消息:传 conversation_id=\"{conversation_id}\" + before_rowid={} 向前翻页。",
-                first.rowid
-            )
-        } else {
-            String::new()
-        };
-        return Ok(format!(
-            "会话 {conversation_id} 的消息({} 条):\n\n{}{hint}",
-            rows.len(),
-            blocks.join("\n\n")
-        ));
-    }
-
-    Ok(
-        "请提供 query(全文搜索历史会话)或 conversation_id(浏览指定会话),两者都不传无法执行。"
-            .to_string(),
-    )
-}
-
-// ============================================================
-// memory:add / replace / remove(target user / global / asset / folder)
-// 写路径复用 commands::ai_memory;软错误原样透传为文本。
-// ============================================================
 
 async fn memory(
     pool: &SqlitePool,
@@ -1020,31 +861,6 @@ mod tests {
         pool
     }
 
-    async fn seed_conversation(pool: &SqlitePool) {
-        sqlx::query(
-            "INSERT INTO ai_conversations (id, title, created_at, updated_at) VALUES ('c1', '数据库会话', 100, 100)",
-        )
-        .execute(pool)
-        .await
-        .expect("insert conversation");
-        for (seq, role, content) in [
-            (0, "user", "帮我查一下慢查询日志怎么开"),
-            (1, "assistant", "可以在 my.cnf 里设置 slow_query_log"),
-            (2, "user", "另外备份策略怎么做"),
-        ] {
-            sqlx::query(
-                "INSERT INTO ai_messages (conversation_id, role, content, seq, created_at) VALUES ('c1', ?, ?, ?, ?)",
-            )
-            .bind(role)
-            .bind(content)
-            .bind(seq)
-            .bind(100 + seq)
-            .execute(pool)
-            .await
-            .expect("insert message");
-        }
-    }
-
     // ---------- starhub_list_capabilities ----------
 
     #[tokio::test]
@@ -1120,85 +936,6 @@ mod tests {
         // 不返回 config / 任何敏感字段
         assert!(items[0].get("config").is_none());
         assert!(!filtered.contains("password"), "不应包含敏感字段");
-    }
-
-    // ---------- session_search ----------
-
-    #[tokio::test]
-    async fn session_search_discovery_and_browse() {
-        let pool = setup_pool().await;
-        seed_conversation(&pool).await;
-
-        let text = execute_tool(
-            &pool,
-            "session_search",
-            &serde_json::json!({"query": "slow_query_log"}),
-            "sess-1",
-            &empty_bridge(),
-        )
-        .await
-        .expect("discovery");
-        assert!(text.starts_with("命中 1 条"), "{text}");
-        assert!(text.contains("conversation_id: c1"), "{text}");
-
-        let text = execute_tool(
-            &pool,
-            "session_search",
-            &serde_json::json!({"query": "不存在的词"}),
-            "sess-1",
-            &empty_bridge(),
-        )
-        .await
-        .expect("no hit");
-        assert!(text.starts_with("无命中:"), "{text}");
-
-        let text = execute_tool(
-            &pool,
-            "session_search",
-            &serde_json::json!({"conversation_id": "c1"}),
-            "sess-1",
-            &empty_bridge(),
-        )
-        .await
-        .expect("browse");
-        assert!(text.starts_with("会话 c1 的消息(3 条)"), "{text}");
-        assert!(text.contains("slow_query_log"), "{text}");
-
-        // scroll:before_rowid 只取更早的消息
-        let text = execute_tool(
-            &pool,
-            "session_search",
-            &serde_json::json!({"conversation_id": "c1", "before_rowid": 3}),
-            "sess-1",
-            &empty_bridge(),
-        )
-        .await
-        .expect("scroll");
-        assert!(text.contains("会话 c1 的消息("), "{text}");
-
-        // 两者都不传
-        let text = execute_tool(
-            &pool,
-            "session_search",
-            &serde_json::json!({}),
-            "sess-1",
-            &empty_bridge(),
-        )
-        .await
-        .expect("empty");
-        assert!(text.contains("请提供 query"), "{text}");
-
-        // 只含引号的搜索词
-        let text = execute_tool(
-            &pool,
-            "session_search",
-            &serde_json::json!({"query": "\"\""}),
-            "sess-1",
-            &empty_bridge(),
-        )
-        .await
-        .expect("sanitize empty");
-        assert!(text.contains("无法用于全文检索"), "{text}");
     }
 
     // ---------- memory ----------

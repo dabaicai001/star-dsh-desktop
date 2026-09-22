@@ -620,6 +620,9 @@ class DshRuntimePackage {
    *   顶层 node_modules 在解析链上,缺包即 ERR_MODULE_NOT_FOUND。node 侧零外部
    *   依赖(client-nav 是空插件,host-static 只用 node 内置),补
    *   package.json + lib 即可。
+   * - `dsh-tool-session-query`(core DSH 包,非 starhub 本地包):web profile
+   *   引用它做会话历史搜索;apps/cli 闭包只含 session-query 服务、不含该工具
+   *   包,故同样手工入包(package.json + lib;peer 依赖均已在闭包内)。
    * - node-addon-require-builtin(+其唯一依赖 node-addon-native-custom-loader,
    *   均为纯 JS):profile-boot 在无 --expose-internals 时挂载 watch-only HMR,
    *   经它取 Node 内部 loader;缺失则 HMR 构造抛错、dsh web 启动后崩溃。 */
@@ -627,6 +630,18 @@ class DshRuntimePackage {
     for (const dir of WEB_LOCAL_PACKAGE_DIRS) {
       const source = join(root, 'packages', 'starhub', dir)
       const destination = join(this.outDir, 'node_modules', '@deepseek-ai', `dsh-starhub-${dir}`)
+      await mkdir(destination, { recursive: true })
+      await copyFile(join(source, 'package.json'), join(destination, 'package.json'))
+      await cp(join(source, 'lib'), join(destination, 'lib'), { recursive: true })
+    }
+    // 闭包外 core 包(与 Rust web.rs 的 RUNTIME_HOSTED_PATCH_DEPS 对齐):
+    // 仓库内相对根 → 产物 node_modules 顶层的包目录名。
+    const webRuntimeClosureExtras: ReadonlyArray<readonly [string, string]> = [
+      ['packages/session-query/tool-session-query', 'dsh-tool-session-query'],
+    ]
+    for (const [sourceRel, packageName] of webRuntimeClosureExtras) {
+      const source = join(root, sourceRel)
+      const destination = join(this.outDir, 'node_modules', '@deepseek-ai', packageName)
       await mkdir(destination, { recursive: true })
       await copyFile(join(source, 'package.json'), join(destination, 'package.json'))
       await cp(join(source, 'lib'), join(destination, 'lib'), { recursive: true })

@@ -5,7 +5,7 @@
  * `{ sessionId, name, args }`,结果为模型可读文本)桥回 StarHub 主进程,
  * 再由主进程分发给拥有该会话的前端面板执行(SSH/DB/Redis/ES/Docker/Excel/MCP
  * 等域工具)或在 Rust 内直接执行(全局工具:list_capabilities / list_assets /
- * session_search / memory)。
+ * memory)。
  *
  * 确认语义:本包不做确认;`starhub-approval-bridge` 插件在 tools/pre-execute 上按
  * 只读/风险分级把调用升级为 ask,经 ctx.approval 桥到前端确认卡(方案 5.2)。
@@ -957,7 +957,7 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
 
 /**
  * 注册 StarHub 工具:全域桥接工具 + 四个 Rust 侧全局工具
- * (starhub_list_capabilities / starhub_list_assets / session_search / memory)。
+ * (starhub_list_capabilities / starhub_list_assets / memory)。
  * @param ctx - registrant context carrying the tool registry.
  */
 export function apply(ctx: Context): void {
@@ -999,23 +999,6 @@ export function apply(ctx: Context): void {
     output: TEXT_OUTPUT,
     async execute(args, exec) {
       return callHost(getTransport(), exec, 'starhub_list_assets', args)
-    },
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'session_search',
-    description:
-      '搜索 AI 助手的历史会话存档(FTS5 全文检索)。三种用法:1) 传 query 全文搜索所有历史会话,返回命中片段;'
-      + '2) 传 conversation_id 浏览该会话消息;3) 传 conversation_id + before_rowid 向前翻页。',
-    parameters: {
-      query: { type: 'string', description: 'FTS5 搜索词,中文按字分词;多个词用空格(AND)或 OR 连接' },
-      conversation_id: { type: 'string', description: '要浏览的会话 id(search 结果里返回)' },
-      before_rowid: { type: 'number', description: '翻页:返回该 rowid 之前的消息' },
-      limit: { type: 'number', description: '返回条数上限,默认 20' },
-    },
-    output: TEXT_OUTPUT,
-    async execute(args, exec) {
-      return callHost(getTransport(), exec, 'session_search', args)
     },
   }))
 

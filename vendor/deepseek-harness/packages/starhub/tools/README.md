@@ -2,8 +2,8 @@
 
 StarHub 本地包(内核替换 P1-4 起,Phase 2 扩展全域工具,不在上游):把 StarHub
 宿主能力注册为 dsh 模型工具——全域桥接工具(ssh_*/sftp_*/db_query/redis_exec/
-es_*/docker_*/excel_*/mcp_*)+ 四个 Rust 侧全局工具
-(`starhub_list_capabilities` / `starhub_list_assets` / `session_search` / `memory`)
+es_*/docker_*/excel_*/mcp_*)+ 三个 Rust 侧全局工具
+(`starhub_list_capabilities` / `starhub_list_assets` / `memory`)
 + 一个无 UI 资产绑定工具(`bind_asset_context`,桥 `starhub/bind.asset`,仅把当前
 AI 会话绑定到资产,不打开或聚焦窗口),以及两个 UI 动作工具(`open_connection` /
 `focus_terminal`,联动契约 §2.2 / M5:分别直接桥 `starhub/open.asset`(tool=auto)
@@ -30,7 +30,7 @@ Rust 内直接执行(`src-tauri/src/harness/`)。
 
 #### What the model sees
 
-All StarHub domain tools (`ssh_exec`, `sftp_*`, `db_query`, `redis_exec`, `es_*`, `docker_*`, `excel_*`, `mcp_*`) plus the global tools (`starhub_list_capabilities`, `starhub_list_assets`, `session_search`, `memory`, `bind_asset_context`, `open_connection`, `focus_terminal`) are registered with host-generated Chinese descriptions; tool results are host-produced Chinese text that enters the session history.
+All StarHub domain tools (`ssh_exec`, `sftp_*`, `db_query`, `redis_exec`, `es_*`, `docker_*`, `excel_*`, `mcp_*`) plus the global tools (`starhub_list_capabilities`, `starhub_list_assets`, `memory`, `bind_asset_context`, `open_connection`, `focus_terminal`) are registered with host-generated Chinese descriptions; tool results are host-produced Chinese text that enters the session history.
 
 #### Token effect
 

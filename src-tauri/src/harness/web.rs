@@ -90,7 +90,12 @@ pub(crate) const LOCAL_PACKAGES: [&str; 11] = [
 /// junction 到 `$DSH_HOME/profiles/node_modules`,否则 web profile 的裸 entry 经
 /// Node parent-walk 在 profiles/node_modules 停步即 ERR_MODULE_NOT_FOUND、dsh web
 /// 起不来。值取包名去 `@deepseek-ai/` 前缀后的子目录名(见 runtime 布局)。
-const RUNTIME_HOSTED_PATCH_DEPS: [&str; 1] = ["sdk-jsonrpc-server"];
+/// 入包侧对应 package-dsh-runtime 的 installWebRuntimePackages(漏列即安装包
+/// 启动缺包,v0.92.2 同类事故)。
+/// - `sdk-jsonrpc-server`:StarHub 对 sdk/server 的本地补丁(starhub-tools 桥依赖)。
+/// - `tool-session-query`(v0.121.9):DSH 原生会话历史搜索工具,替代 StarHub 桥接
+///   session_search; apps/cli 只依赖 session-query 服务、未依赖该工具包。
+pub(crate) const RUNTIME_HOSTED_PATCH_DEPS: [&str; 2] = ["sdk-jsonrpc-server", "tool-session-query"];
 
 #[derive(Debug, Error)]
 pub enum DshWebError {

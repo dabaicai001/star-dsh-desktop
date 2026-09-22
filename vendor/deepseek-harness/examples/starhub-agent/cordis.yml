@@ -47,11 +47,23 @@
     maxTokens: 8192
     compactionRetries: 1
 
+# 开启会话历史全文检索(tool-session-query 的 session_search 需要):base 层把
+# session-query-sqlite 钉成 `:memory:` + `openAt: never`(全文调用会以
+# SESSION_QUERY_SEARCH_DISABLED 拒绝)。这里整段替换:内存索引 + first-search,
+# 首次搜索时从会话存储重建索引,不落盘、无陈旧索引。
+- id: session-query-sqlite
+  config:
+    path: ':memory:'
+    openAt: first-search
+
 # StarHub 域工具与联动插件(bundle 层没有,全部追加):
-# - starhub-tools:list_capabilities / list_assets / session_search / memory 等
-#   宿主工具;执行经 sdk-jsonrpc-server 暴露的 sdk-transport(本地补丁)桥回 Rust
+# - starhub-tools:list_capabilities / list_assets / memory 等宿主工具;
+#   执行经 sdk-jsonrpc-server 暴露的 sdk-transport(本地补丁)桥回 Rust
 #   主进程,工具体不在 dsh 进程内。sdk-jsonrpc-server 由 sdk-app bundle 注入,
 #   服务可用性驱动激活,无需显式排序。
+# - tool-session-query:DSH 原生动历史会话检索(session_search 等五个只读
+#   工具),替代原 StarHub 桥接 session_search;对应 session-query-sqlite 的
+#   openAt 覆盖见下方(默认 never 会拒绝全文调用)。
 # - session-registry / domain-events:经 sdk-notifications 订阅 Rust 推送的
 #   注册表快照与领域事件流;live-context 在 agent/pre-step 消费这两个服务 +
 #   经 sdk-transport 反向 pull starhub/live.snapshot,注入「当前在发生什么」。
@@ -64,6 +76,9 @@
 - insert:
     - id: starhub-tools
       name: '@deepseek-ai/dsh-starhub-tools'
+
+    - id: tool-session-query
+      name: '@deepseek-ai/dsh-tool-session-query'
 
     - id: starhub-session-registry
       name: '@deepseek-ai/dsh-starhub-session-registry'

@@ -7,6 +7,7 @@
     "@deepseek-ai/dsh-starhub-host-static": "workspace:*",
     "@deepseek-ai/dsh-starhub-tool-context": "workspace:*",
     "@deepseek-ai/dsh-sdk-jsonrpc-server": "workspace:*",
+    "@deepseek-ai/dsh-tool-session-query": "workspace:*",
     "@deepseek-ai/dsh-starhub-tools": "workspace:*",
     "@deepseek-ai/dsh-starhub-approval-bridge": "workspace:*",
     "@deepseek-ai/dsh-starhub-session-registry": "workspace:*",
