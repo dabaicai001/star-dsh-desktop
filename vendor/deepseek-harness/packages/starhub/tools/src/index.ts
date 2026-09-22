@@ -624,21 +624,6 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
       arguments: { type: 'object', additionalProperties: true, description: '工具参数对象' },
     },
   },
-  // ── 自定义 Skill 沉淀(前端执行,恒确认)──
-  {
-    toolName: 'skill_save',
-    description: '把一套可复用的多步工作流程保存为自定义 Skill,出现在 设置 → AI → Skills 列表中并自动启用,之后所有同作用域会话都会遵循。同名 Skill 会被覆盖更新。该存:反复使用的多步流程、项目特定的操作手册、用户明确要求「记住这个做法」的套路;不该存:一次性任务、琐碎事实(事实用 memory 工具)。',
-    parameters: {
-      name: { type: 'string', required: true, description: 'Skill 名称,简短的动宾短语,如「MySQL 慢查询排查」' },
-      description: { type: 'string', description: '一句话说明适用场景' },
-      prompt: { type: 'string', required: true, description: 'Skill 正文:注入 system prompt 的具体指引,步骤化、可直接执行' },
-      assetTypes: {
-        type: 'array',
-        items: { type: 'string', enum: ['ssh', 'db', 'docker', 'excel', 'local'] },
-        description: '生效的宿主作用域,默认仅当前宿主;确需通用才传多个',
-      },
-    },
-  },
   // ── 沙箱桌面(Ubuntu 容器沙箱平台,设计 docs/superpowers/specs/2026-08-28-desktop-automation-design.md)──
   // 安全模型:desktop_create_sandbox 的一次确认 = 任务级授权(60 分钟),授权期内
   // 箱内截图/键鼠全自动放行(授权由宿主在执行点强制);desktop_exec 恒确认;

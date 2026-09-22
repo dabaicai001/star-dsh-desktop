@@ -15,7 +15,7 @@ dsh 权限 preset(`settings.yaml` 的 `permission.defaultPreset`,dsh web GUI
   不匹配任何 preset,派生出不存在的 `custom` 权限状态)。
   StarHub 不再有自有命令白名单,也不维护策略表。
 - **风险门(防误删核心)**:`tools/pre-execute` 上把需要人工确认的 starhub 域
-  工具调用升级为 `ask`:写操作(sftp 上下传、ES 写、memory、skill_save、
+  工具调用升级为 `ask`:写操作(sftp 上下传、ES 写、memory、
   mcp_call)恒 ask;命令/SQL 按只读判定放行,风险词(移植自 StarHub
   `commandGuard.ts`)命中或不确定一律 ask。**删除/高危档(hard)与权限预设
   脱钩**:`rm`/`find -delete`/`ip link del`/`journalctl --vacuum`/Docker

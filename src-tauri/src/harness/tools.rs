@@ -15,7 +15,7 @@
 //!   SshManager / SidecarManager,exec 带 exec_id 注册到桥的 inflight,
 //!   停止生成时由 `bridge.drain()` 真正中断(不再有「前端执行超时或窗口
 //!   已关闭」);
-//! - 其余(excel_*/mcp_*/skill_save)因前端状态依赖,仍 emit `dsh://tool-exec`
+//! - 其余(excel_*/mcp_*)因前端状态依赖,仍 emit `dsh://tool-exec`
 //!   转发给拥有该会话的前端面板,经 `dsh_tool_exec_reply` 应答等待结果
 //!   (超时 180s)。
 //!
@@ -50,11 +50,9 @@ const TOOL_EXEC_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// 仍在 Rust 进程内执行的域工具:ssh_*/sftp_*/db_query/redis_exec/es_*/docker_*
 /// 已迁移到进程内执行(方案1,见 domain 模块);这里只保留必须由前端面板
-/// 执行的工具——工作簿状态在 webview(Univer)、MCP server 配置在 aiStore、
-/// Skill 落库在 settings,无法脱离前端:
+/// 执行的工具——工作簿状态在 webview(Univer)、MCP server 配置在 aiStore:
 /// - Excel:excel_*(当前工作簿在前端 Univer 内存)
 /// - MCP:mcp_list / mcp_call(server 配置存于前端 settings + keyring)
-/// - skill_save(写入前端 settings.customSkills)
 /// (与 vendor packages/starhub/tools/src/index.ts 的 BRIDGED_TOOLS 对齐)
 const FORWARDED_TOOLS: &[&str] = &[
     // Excel(当前工作簿,前端执行)
@@ -85,8 +83,6 @@ const FORWARDED_TOOLS: &[&str] = &[
     // MCP(设置里配置的外部 MCP server 工具)
     "mcp_list",
     "mcp_call",
-    // 自定义 Skill 沉淀(前端执行,恒确认)
-    "skill_save",
 ];
 
 /// 方案1:在 Rust 主进程内直接执行的域工具(见 harness/domain.rs)。
@@ -188,8 +184,8 @@ async fn dispatch_tool(
 
     // 方案1:可在 Rust 主进程内直接执行的域工具(ssh_*/sftp_*/db_query/
     // redis_exec/es_*/docker_*)——进程内执行,不依赖前端面板窗口存活,
-    // 停止生成经 bridge.drain() 真正中断在途命令。excel_*/mcp_*/skill_save
-    // 因工作簿状态 / MCP 配置 / Skill 落库在前端,仍走 FORWARDED_TOOLS。
+    // 停止生成经 bridge.drain() 真正中断在途命令。excel_*/mcp_*
+    // 因工作簿状态 / MCP 配置在前端,仍走 FORWARDED_TOOLS。
     if IN_PROCESS_TOOLS.contains(&name) {
         let text = domain::execute_domain_tool(bridge, session_id, name, args).await?;
         on_ai_tool_success(bridge, session_id, name, args, &text).await;
@@ -1528,7 +1524,7 @@ mod tests {
     }
 
     /// 域工具桥:ok=false 时 text 作为工具失败抛回桥(Err)。
-    /// 用 skill_save(仍转发前端)验证;db_query 已迁到进程内执行。
+    /// 用 excel_get_context(仍转发前端)验证;db_query 已迁到进程内执行。
     #[tokio::test]
     async fn domain_tool_reply_error_propagates_as_failure() {
         let (emit_tx, mut emit_rx) = mpsc::channel::<(String, serde_json::Value)>(10);
@@ -1542,8 +1538,8 @@ mod tests {
                     "starhub/tool.execute",
                     serde_json::json!({
                         "sessionId": "sess-1",
-                        "name": "skill_save",
-                        "args": { "name": "my-skill", "prompt": "..." },
+                        "name": "excel_get_context",
+                        "args": {},
                     }),
                     bridge,
                 )
@@ -1616,7 +1612,7 @@ mod tests {
     /// recentExecs 缓存写入(输出尾部 ≤2KB);notify dsh 无 runtime 时静默跳过。
     ///
     /// ssh_exec 已迁移到 Rust 进程内执行,在无 Tauri AppHandle 的单测中不能等待
-    /// 旧的 `dsh://tool-exec` 回调。skill_save 仍走前端桥接,可稳定覆盖成功回写路径。
+    /// 旧的 `dsh://tool-exec` 回调。excel_get_context 仍走前端桥接,可稳定覆盖成功回写路径。
     #[tokio::test]
     async fn forwarded_tool_success_generates_ai_domain_event_and_recent_exec() {
         let (emit_tx, mut emit_rx) = mpsc::channel::<(String, serde_json::Value)>(10);
@@ -1632,8 +1628,8 @@ mod tests {
                     "starhub/tool.execute",
                     serde_json::json!({
                         "sessionId": "sess-1",
-                        "name": "skill_save",
-                        "args": { "name": "my-skill", "prompt": "..." },
+                        "name": "excel_get_context",
+                        "args": {},
                     }),
                     bridge,
                 )
@@ -1641,19 +1637,19 @@ mod tests {
             }
         });
         let (_event, payload) = emit_rx.recv().await.expect("应收到 dsh://tool-exec 事件");
-        assert_eq!(payload["name"], "skill_save");
+        assert_eq!(payload["name"], "excel_get_context");
         let request_id = payload["requestId"]
             .as_str()
             .expect("requestId")
             .to_string();
         bridge
-            .resolve_tool_exec(&request_id, true, "已保存 Skill".to_string())
+            .resolve_tool_exec(&request_id, true, "当前工作簿已就绪".to_string())
             .await;
         let result = handle
             .await
             .expect("桥执行完成")
             .expect("应答 ok=true 应返回文本");
-        assert_eq!(result, "已保存 Skill");
+        assert_eq!(result, "当前工作簿已就绪");
 
         // 随后应收到 starhub://domain-event 广播
         let (event, payload) = emit_rx.recv().await.expect("应收到 domain-event 广播");
@@ -1664,15 +1660,15 @@ mod tests {
         assert!(payload["summary"]
             .as_str()
             .expect("summary")
-            .starts_with("skill_save"));
+            .starts_with("excel_get_context"));
         assert!(payload["ts"].as_i64().expect("ts") > 0);
 
         // recentExecs 已缓存(每资产一条,tail 为输出尾部)
         let recents = bridge.recent_execs();
         assert_eq!(recents.len(), 1);
         assert_eq!(recents[0].asset_id, "a1");
-        assert_eq!(recents[0].tool_name, "skill_save");
-        assert_eq!(recents[0].tail, "已保存 Skill");
+        assert_eq!(recents[0].tool_name, "excel_get_context");
+        assert_eq!(recents[0].tail, "当前工作簿已就绪");
         assert!(recents[0].ts > 0);
     }
 
@@ -1692,8 +1688,8 @@ mod tests {
                     "starhub/tool.execute",
                     serde_json::json!({
                         "sessionId": "sess-1",
-                        "name": "skill_save",
-                        "args": { "name": "my-skill", "prompt": "..." },
+                        "name": "excel_get_context",
+                        "args": {},
                     }),
                     bridge,
                 )
@@ -1732,8 +1728,8 @@ mod tests {
                     "starhub/tool.execute",
                     serde_json::json!({
                         "sessionId": "sess-nobody",
-                        "name": "skill_save",
-                        "args": { "name": "my-skill", "prompt": "..." },
+                        "name": "excel_get_context",
+                        "args": {},
                     }),
                     bridge,
                 )

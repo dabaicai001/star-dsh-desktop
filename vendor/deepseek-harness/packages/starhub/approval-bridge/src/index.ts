@@ -224,7 +224,6 @@ const ALWAYS_ASK_TOOLS: ReadonlySet<string> = new Set([
   'es_delete_document',
   'es_delete_index',
   'memory',
-  'skill_save',
   'mcp_call',
   // 沙箱桌面:箱内任意命令是沙箱与「外界逻辑」的交换口,不在任务级授权内
   'desktop_exec',
