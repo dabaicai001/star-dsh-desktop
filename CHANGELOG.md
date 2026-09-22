@@ -7,20 +7,34 @@
 
 ## [未发布]
 
+---
+
+## [0.121.9] - 2026-09-21
+
 ### 移除
 - **MCP 接入切换到 DSH 原生 `dsh-mcp-client`(移除 StarHub 桥接 `mcp_list` / `mcp_call`)**:两个 meta 工具经 `dsh://tool-exec` 转发旧 Vue 前端(server 配置在已删除的前端 settings + keyring),执行侧与配置侧双断,调用恒定 180s 超时。DSH 原生 mcp-client 把外部 server 的工具以 `mcp__<server>__<tool>` 直接注册给模型(包已在 runtime 闭包,无需入包);DSH 无 MCP 配置 UI,接入方式为 profile 行式静态配置(每 server 一行),两个 profile 的 `cordis.patch.yml` / `cordis.yml` 内已留注释示例(stdio / streamable-http)。StarHub 侧删 tools 包两个 spec、approval-bridge 恒确认/域工具名单条目、Rust `FORWARDED_TOOLS` 两行与相关注释。
 - **会话历史搜索切换到 DSH 原生 `tool-session-query`(移除 StarHub 桥接 `session_search`)**:DSH 原生提供五个只读工具(session_search / session_event_search / session_trace / session_event_trace / session_event_read),能力覆盖且更全(事件级检索/血缘追踪)。改动:
   - web profile(`examples/starhub-web/cordis.patch.yml`):插入 `tool-session-query` 行;覆盖 `session-query-sqlite` 的 `openAt: never → first-search`(默认 never 会让全文调用直接以 SESSION_QUERY_SEARCH_DISABLED 拒绝;维持 `:memory:` 内存索引,首搜从会话存储重建,不落盘)。
   - agent profile(`examples/starhub-agent/cordis.yml`):同样插入 `tool-session-query` + `openAt: first-search` 覆盖,与 web 对齐。
   - 入包/建链:`package-dsh-runtime` 的 `installWebRuntimePackages` 把 `dsh-tool-session-query`(package.json + lib,peer 依赖均已在闭包)补进 runtime 顶层 node_modules;web.rs 的 `RUNTIME_HOSTED_PATCH_DEPS` 增加 `tool-session-query`(闭包外 patch 依赖 junction);`plugins::ensure_runtime_local_package_links` 同步覆盖该清单,使内嵌 sdk profile 也能解析。**生效需重跑 `npm run package:dsh-runtime` 重打 runtime**(与 v0.92.2 同类约束)。
-  - StarHub 侧:`packages/starhub/tools` 删 `session_search` 工具注册;Rust `tools.rs` 删 session_search 分发/FTS 实现/单测(221 過),`search_messages_tolerant` 收回 ai_memory 私有(其 Tauri 命令 `ai_msg_search` 仍用)。
+  - StarHub 侧:`packages/starhub/tools` 删 `session_search` 工具注册;Rust `tools.rs` 删 session_search 分发/FTS 实现/单测(221 过),`search_messages_tolerant` 收回 ai_memory 私有(其 Tauri 命令 `ai_msg_search` 仍用)。
 - **移除 `skill_save` 工具(与 DSH 原生 skill 体系重复且执行链已断)**:DSH 原生提供 `tool-skill`(模型侧 skill 加载 + 会话目录注入)与 `skill-filesystem`(目录源)/设置 → AI → Skills 面板;StarHub 的 `skill_save` 经 `dsh://tool-exec` 转发旧 Vue 前端写入 `settings.customSkills`——旧前端已不在仓库,转发无人应答,调用恒定 180s 超时。删除 `packages/starhub/tools` 的 skill_save spec、approval-bridge 恒确认名单条目、Rust `FORWARDED_TOOLS` 条目与相关注释/单测(转发样本改用 `excel_get_context`)。AI 沉淀技能请用 DSH skill 目录(skill-filesystem)+ `skill` 工具加载。
 - **移除壳内自绘 AI 聊天面板 `AiChatPanel`(与 DSH 原生对话视图重复)**:该面板挂在 client-nav 的 `shell.overlay` 上,但 `aiChat.open` 无任何写入方(死 UI——`starhub://ask-ai` 早已路由到原生对话视图:聚焦/新建会话 + prefill composer,见 host-events.ts 的 `routeAskAi`)。删除 `src/client/ai/`(AiChatPanel + ai-chat-utils)、store 的 AiChatOverlay 桥、StarHubOverlay 的面板分支与 `chatOf` 投影适配(顺带移除 `uiConversation` inject 依赖),「问 AI」行为零变化;另删死导出 `focusShellConversation`。
-- **移除 StarHub 侧「文件功能」(v0.121.8)**:与 DeepSeek Harness 主壳能力重复——DSH 已提供 agent 侧文件工具(`tool-fs` read/write、`tool-fs-search` glob/grep、`tool-str-replace-editor` edit)、原生 `@` 文件引用源(`ui-reference`/`file-reference-local`)与右侧栏文件面板(`ui-sidebar-files`),AI 读写本机文件统一走 DSH 主壳(沙箱/审批体系一致)。删除面:
+
+### 保留(评估后不对齐)
+- **`browser_*(14)`AI 浏览器工具**:DSH 侧浏览器栈(`dsh-browser-use` 及各 provider)中,核心包不提供任何模型工具,全部带工具的 provider 位于 `packages/experimental/`,被上游 `verify-default-product-isolation` 门禁止进入 shipped 组合(CI 断言 composed Web plugins exclude experimental packages);且依赖 stagehand/puppeteer 等未入闭包。StarHub 的 `browser_*` 是产品内唯一可用的浏览器能力,保留。
+
+---
+
+## [0.121.8] - 2026-09-21
+
+### 移除
+- **移除 StarHub 侧「文件功能」**:与 DeepSeek Harness 主壳能力重复——DSH 已提供 agent 侧文件工具(`tool-fs` read/write、`tool-fs-search` glob/grep、`tool-str-replace-editor` edit)、原生 `@` 文件引用源(`ui-reference`/`file-reference-local`)与右侧栏文件面板(`ui-sidebar-files`),AI 读写本机文件统一走 DSH 主壳(沙箱/审批体系一致)。删除面:
   - 前端(client-nav):`file-tree/`(会话头部「文件」胶囊 + 工具抽屉内项目文件目录树 + 文件信息/编辑对话框)、`file-viewer/`(壳内文件查看窗 `FileViewerOverlay`)、`file-source.ts`(`@` 文件触发源)、`settings/OpenConfigAction.tsx`(壳内「打开配置文件」按钮)及 `index.ts` 全部接线(`starhubFileViewer` 服务、`starhub-file-viewer` / `starhub-file-tree` / `starhub-open-config` 槽位注册、`@` file source、`insertFileReference`)与 9 个单测。
   - 设置「打开配置文件」回退 DSH 上游原生打开:移除 starhub-web profile 的 `api-gateway nativeOpen:false` 覆盖(该覆盖本就是为屏蔽上游按钮、让位壳内按钮而加)。
   - vendor 内核补丁回退:`ui-chat` 的 `openFile` 不再优先路由 `starhubFileViewer`,恢复上游右侧栏资源打开;`dsh_settings_path` 命令(仅为壳内按钮服务)删除。
   - Rust:`commands/file.rs`(`open_file_external`,删除前已无任何调用方)整体删除;`commands/local.rs` 只保留 `local_shell_exec`(Git 工作台 / AI 提交信息复用),删除 `local_system_info` / `local_list_directory` / `local_stat_path` / `local_read_text_file` / `local_write_text_file` / `local_create_directory` / `local_copy_file` / `local_move_path` / `local_remove_path` / `local_search_files`;`permissions/commands.toml` ACL 同步。
+- **删除已废止/已完成的方案文档**(本地工作区方案、AI 成本顾问插件方案、AI 浏览器插件调研、AI 记忆系统方案、BUG-K3、Vue→React 迁移手册、DSH 升级交接说明、checkpoint-* ×3)与 Vue 时代 LocalView 视觉回归脚本。
 
 ---
 

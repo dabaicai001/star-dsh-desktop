@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.121.8(**移除 StarHub 侧「文件功能」**:与 DeepSeek Harness 主壳能力重复——DSH 已提供 agent 侧文件工具(`tool-fs` read/write、`tool-fs-search` glob/grep、`tool-str-replace-editor` edit)、原生 `@` 文件引用源(`ui-reference`/`file-reference-local`)与右侧栏文件面板(`ui-sidebar-files`)。删除 client-nav 的 `file-tree/`(文件胶囊 + 工具抽屉目录树 + 文件信息对话框)、`file-viewer/`(壳内查看窗)、`file-source.ts`(`@` 文件源)、`OpenConfigAction`(壳内打开配置)及全部接线;Rust 删 `commands/file.rs`(`open_file_external` 早已无调用方),`local.rs` 只留 `local_shell_exec`(Git 工作台在用),`dsh_settings_path` 命令删除;设置「打开配置文件」回退 DSH 上游原生打开(移除 profile 的 `nativeOpen:false` 覆盖)。AI 读写本机文件统一走 DSH 主壳,沙箱/审批体系一致。) |
+| 当前版本 | v0.121.9(**清理与 DSH 主壳重复的功能,全部对齐上游**:① 删壳内自绘 AI 聊天面板 `AiChatPanel`(死 UI,ask-ai 早已路由原生对话视图);② 删 `skill_save`(DSH 原生 `tool-skill`/skill-filesystem 覆盖,且转发死链);③ 会话历史搜索切到 DSH 原生 `tool-session-query`(五个只读工具,profile 挂载 + `openAt: first-search`,删 StarHub 桥接 `session_search`);④ MCP 切到 DSH 原生 `dsh-mcp-client`(profile 行式配置,删桥接 `mcp_list`/`mcp_call`)。②④ 的原实现均因旧 Vue 前端删除而成 180s 超时死链。`browser_*(14)`保留——DSH 浏览器栈全在 `experimental/`,被上游 `verify-default-product-isolation` 门禁进 shipped 组合,无法对齐。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-21 (v0.121.8)*
+*最后更新: 2026-09-21 (v0.121.9)*

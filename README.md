@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.121.8-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.121.9-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,8 +48,14 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.121.8 (2026-09-21)
-- 🔧 **移除 StarHub 侧「文件功能」**:与 DeepSeek Harness 主壳能力重复——DSH 已提供 agent 侧文件工具(read/write/edit/glob/grep)、原生 `@` 文件引用源与右侧栏文件面板。删除 client-nav 的文件树/文件查看窗/`@` 文件源/壳内打开配置及全部接线;Rust 删除 `file.rs`(`open_file_external` 早已无调用方),`local.rs` 只保留 `local_shell_exec`(Git 工作台在用),`dsh_settings_path` 命令删除;设置「打开配置文件」回退 DSH 上游原生打开。AI 读写本机文件统一走 DSH 主壳,沙箱/审批体系一致。
+### v0.121.9 (2026-09-21)
+- 🔧 **清理与 DSH 主壳重复的功能,全部对齐上游**:
+  - 删壳内自绘 AI 聊天面板 `AiChatPanel`(死 UI——`aiChat.open` 无写入方,「问 AI」早已路由 DSH 原生对话视图);
+  - 删 `skill_save` 工具(DSH 原生 `tool-skill` / `skill-filesystem` / 设置 Skills 面板覆盖;原实现经已删除的旧前端转发,恒定 180s 超时);
+  - 会话历史搜索切换到 DSH 原生 `tool-session-query`(session_search 等五个只读工具,profile 挂载 + `openAt: first-search`,删 StarHub 桥接 `session_search`);
+  - MCP 切换到 DSH 原生 `dsh-mcp-client`(profile 行式配置,两个 profile 留 stdio/streamable-http 示例,删桥接 `mcp_list`/`mcp_call`)。
+  - `browser_*(14)`保留:DSH 浏览器栈全部位于 `experimental/`,被上游 `verify-default-product-isolation` 门禁止进入 shipped 组合,暂无法对齐。
+  - 上一版(v0.121.8)已移除与 DSH 重复的「文件功能」(文件树/壳内查看窗/`@` 文件源/本地文件命令)。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
