@@ -36,6 +36,7 @@ import {
   type GenerateOptions,
   type StreamChunk,
 } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
 import {
   MEMORY_CONTEXT_NAMESPACE,
@@ -49,6 +50,13 @@ import {
   shouldReview,
   type DistilledFact,
 } from './gates.ts'
+import type {} from '@deepseek-ai/dsh-settings'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'dsh-starhub-memory-sink': { kind: 'dsh-starhub-memory-sink', plugin: string } & ContextFormed
+  }
+}
 // Type-only: ctx.settings 的 Context 声明合并(register/get 类型化)。import type {} from '@deepseek-ai/dsh-settings'
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -469,14 +477,13 @@ export async function runTurnReview(params: {
  * @param ctx - Cordis plugin context.
  */
 export function apply(ctx: Context): void {
-  const ns = MEMORY_CONTEXT_NAMESPACE
   ctx.effect(() => {
     const transport = ctx.get('sdk-transport') as JsonRpcTransportPeer | undefined
     return ctx.on('agent/turn-stopping', async ({ agent, signal }): Promise<void> => {
-      // namespace 由 dsh-starhub-memory-context 注册,本插件只读 autoReview +
-      // 记忆模型路由;重复 register 会触发 settings duplicate-registration
-      // 硬失败(v0.92.2 事故)。
-      const value = ctx.settings.get(ns) as MemoryContextValue | undefined
+      // DSH 0.1.7:namespace 由 dsh-starhub-memory-context 的 Config volatile
+      // 字段派生,本插件只读 autoReview + 记忆模型路由;跨命名空间读取走
+      // settings.describe()(旧 ctx.settings.get 面已移除)。
+      const value = ctx.settings.describe().find(row => row.ns === MEMORY_CONTEXT_NAMESPACE)?.value as MemoryContextValue | undefined
       const route = memoryRouteOf(value)
       await runTurnReview({
         agent,
@@ -526,7 +533,7 @@ export function wireLlmExtractor(ctx: Context): LlmExtractor | undefined {
         model: route.model,
         messages: [createUserMessage({
           content: [{ type: 'text', text: prompt }],
-          source: { kind: 'plugin', plugin: 'dsh-starhub-memory-sink' },
+          source: { kind: 'dsh-starhub-memory-sink', plugin: 'dsh-starhub-memory-sink' },
         })],
         system,
         signal,

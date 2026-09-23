@@ -21,9 +21,18 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
 import type { SessionRegistry, StarHubSessionRecord } from '@deepseek-ai/dsh-starhub-session-registry'
 import type { DomainEventStore, StarHubDomainEvent } from '@deepseek-ai/dsh-starhub-domain-events'
+
+// DSH 0.1.7:MessageSourceMap 是merge-extensible 联合,生产者自行声明 kind
+// (共享 catch-all `plugin` kind 已移除)。
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'dsh-starhub-live-context': { kind: 'dsh-starhub-live-context', plugin: string } & ContextFormed
+  }
+}
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'starhub-live-context'
@@ -253,7 +262,7 @@ export function apply(ctx: Context, config: Config): void {
           ...decision.messages,
           createUserMessage({
             content: [{ type: 'text', text }],
-            source: { kind: 'plugin', plugin: name, form: 'snapshot', sections: [{ name, text }] },
+            source: { kind: 'dsh-starhub-live-context', plugin: name, form: 'snapshot', sections: [{ name, text }] },
           }),
         ],
       }

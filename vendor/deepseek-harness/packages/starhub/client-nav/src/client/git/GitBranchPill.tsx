@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import clsx from 'clsx'
-import { IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBranchOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: the header-actions SlotMap row (declared by ui-conversation).
@@ -95,7 +95,7 @@ export function GitBranchPill({ sessionId, useSessions, useGitWorkbench, openWor
         aria-expanded={workbenchOpen}
         onClick={openWorkbench}
       >
-        <IconBranchOutline16 size={13} />
+        <IconBranchOutlineMedium size={13} />
         <span className={css.branchName}>{branch}</span>
         {dirty && <span className={css.dirtyDot} title="有未提交改动" />}
       </button>

@@ -15,6 +15,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { DiffBlock as LocalizedDiffBlock, type DiffHunk } from '../src/index.ts'
 import { diffBlockLabels } from './labels.client.ts'
+import { diffTotals } from '../src/DiffBlock.tsx'
 
 function DiffBlock(props: Omit<ComponentProps<typeof LocalizedDiffBlock>, 'labels'>) {
   return <LocalizedDiffBlock {...props} labels={diffBlockLabels} />
@@ -143,6 +144,43 @@ describe('DiffBlock two-column structure', () => {
   it('renders nothing for empty diffs', () => {
     const { container } = render(<DiffBlock diffs={[]} />)
     expect(container.firstChild).toBeNull()
+  })
+})
+
+describe('DiffBlock LCS pairing', () => {
+  it('keeps a sparse edit exact in a ten-thousand-line fragment', () => {
+    const before = Array.from({ length: 10000 }, (_, i) => `line ${i}`)
+    const after = [...before]
+    after[5000] = 'changed'
+    const diffs = [{ path: 'sparse.txt', oldText: before.join('\n'), newText: after.join('\n') }]
+    const { container } = render(<DiffBlock diffs={diffs} />)
+    expect(diffTotals(diffs)).toEqual({ added: 1, removed: 1 })
+    expect(changeCellTexts(container)).toEqual(['line 5000', 'changed'])
+  })
+
+  it.each([
+    ['a\nx\na\ny\na', 'a\nx\na\nz\na', 1, 1],
+    ['a\nb', 'a\nx\nb', 1, 0],
+    ['a\nx\nb', 'a\nb', 0, 1],
+    ['same\n', 'same', 0, 0],
+    ['same', 'same', 0, 0],
+    ['', '', 0, 0],
+    ['a\n\nb', 'a\nb', 0, 1],
+  ])('counts ordered changes in %j → %j', (oldText, newText, added, removed) => {
+    const diffs = [{ path: 'a.txt', oldText, newText }]
+    const { container } = render(<DiffBlock diffs={diffs} />)
+    expect(diffTotals(diffs)).toEqual({ added, removed })
+    expect(container.querySelectorAll('[data-state="add"]')).toHaveLength(added)
+    expect(container.querySelectorAll('[data-state="del"]')).toHaveLength(removed)
+  })
+
+  it('keeps distant changes paired while shared lines stay context', () => {
+    const before = Array.from({ length: 50 }, (_, i) => `item ${i}`)
+    const after = before.map((line, i) => i === 10 || i === 40 ? `changed ${i}` : line)
+    const { container } = render(<DiffBlock diffs={[{
+      path: 'items.txt', oldText: before.join('\n'), newText: after.join('\n'),
+    }]} />)
+    expect(changeCellTexts(container)).toEqual(['item 10', 'changed 10', 'item 40', 'changed 40'])
   })
 })
 

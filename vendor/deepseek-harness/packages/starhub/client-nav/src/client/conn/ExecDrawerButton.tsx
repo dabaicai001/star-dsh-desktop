@@ -8,7 +8,7 @@
  * 不渲染的门槛。
  */
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import { IconPlayOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconPlayOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the header-actions SlotMap row (declared by ui-conversation).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -51,7 +51,7 @@ export function ExecDrawerButton({
       aria-expanded={viewOpen}
       onClick={() => { if (viewOpen) closeExecView(); else openExecView() }}
     >
-      <IconPlayOutline16 size={12} />
+      <IconPlayOutlineMedium size={12} />
       <span className={css.label}>执行</span>
       {count > 0 && <span className={css.count}>{count}</span>}
     </button>

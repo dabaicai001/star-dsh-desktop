@@ -36,7 +36,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { tauriInvoke } from './tauri.ts'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
-import { IconChevronDownOutline14, IconChevronUpOutline14, IconRefreshOutline14, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronUpOutlineMedium, IconRefreshOutlineMedium, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './DbDataGrid.module.css'
 
 /** QueryResult 列信息(C 节数据形态;与 Vue src/types/db.ts ColumnInfo 同构)。 */
@@ -715,7 +715,7 @@ export function DbDataGrid({
         )}
         <span className={css.spacer} />
         <button type="button" className={css.exportBtn} onClick={refreshTable} disabled={loading} title="刷新当前表数据" aria-label="刷新当前表">
-          <span className={css.refreshBtnInner}><IconRefreshOutline14 size={12} /> 刷新</span>
+          <span className={css.refreshBtnInner}><IconRefreshOutlineMedium size={12} /> 刷新</span>
         </button>
         {onExport !== undefined && (
           <button type="button" className={css.exportBtn} onClick={() =>{  onExport(orderBy, orderDir, whereFilter !== '' ? whereFilter : null) }} title="全量导出该表到 Excel(后端执行,含当前筛选)">
@@ -796,7 +796,7 @@ export function DbDataGrid({
                   title={col.type ?? ''}
                 >
                   <span className={css.thLabel}>{col.name}</span>
-                  {orderBy === col.name && <span className={css.sortMark} aria-hidden="true">{orderDir === 'asc' ? <IconChevronUpOutline14 size={12} /> : <IconChevronDownOutline14 size={12} />}</span>}
+                  {orderBy === col.name && <span className={css.sortMark} aria-hidden="true">{orderDir === 'asc' ? <IconChevronUpOutlineMedium size={12} /> : <IconChevronDownOutlineMedium size={12} />}</span>}
                 </button>
                 <button
                   type="button"
@@ -805,7 +805,7 @@ export function DbDataGrid({
                   title="列筛选"
                   aria-label={`筛选 ${col.name}`}
                 >
-                  <IconChevronDownOutline14 size={12} />
+                  <IconChevronDownOutlineMedium size={12} />
                 </button>
                 <span
                   className={css.colResize}

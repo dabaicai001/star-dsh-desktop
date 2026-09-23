@@ -45,10 +45,9 @@ export const inject = ['approval', 'settings']
 
 /**
  * 插件配置:answerer=false 时只留权限固定与风险门,应答交给组合内其它 answerer;
- * ownsPermissionSettings=false 时不注册 permission 命名空间(组合内已有
- * permission-presets 持有,如 starhub-web),只在 session/created 只读消费——
- * 双注册会撞上 settings「duplicate registration fails loud」,先注册的一方胜出后
- * 另一方静默失效,GUI 权限行随即读到无 base/无 defaultPreset 的裸注册而报错。
+ * ownsPermissionSettings 自 DSH 0.1.7 起仅为兼容占位(命名空间改由上游
+ * permission-presets 的 Config volatile 字段持有,本桥一律经 settings.describe()
+ * 只读消费),配置里保留该字段不影响行为。
  */
 export const Config: z<{ answerer?: boolean; ownsPermissionSettings?: boolean }> = z.object({
   answerer: z.boolean().default(true),
@@ -58,13 +57,8 @@ export const Config: z<{ answerer?: boolean; ownsPermissionSettings?: boolean }>
 /** 桥方法名;Rust 侧实现见 src-tauri/src/harness/mod.rs。 */
 const BRIDGE_METHOD = 'starhub/approval.request'
 
-/** 与 web GUI 共享的权限设置命名空间(dsh permission-presets 的写入方)。 */
+/** 与 web GUI 共享的权限设置命名空间(dsh permission-presets 的写入方,profile entry id)。 */
 const PERMISSION_NAMESPACE = 'permission'
-
-/** settings.yaml 里 permission 段的最小形状(defaultPreset 由 GUI 权限行写入)。 */
-const PermissionSchema = z.object({
-  defaultPreset: z.string(),
-})
 
 // ── 风险词(移植自 commandGuard.ts RISKY_PATTERNS,语义硬编码、不可配置) ──
 
@@ -409,7 +403,6 @@ export interface ApprovalBridgeConfig {
  */
 export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
   const answerer = config.answerer !== false
-  const ownsPermissionSettings = config.ownsPermissionSettings !== false
   // sdk-transport 由 sdk-jsonrpc-server 在 apply 时同步 provide;两个插件
   // fiber 并行加载,启动期同步 ctx.get 可能取不到(服务尚未 provide),导致
   // 偶发 fail loud(与 starhub-tools 同款问题)。改为懒解析:仅审批应答
@@ -429,21 +422,21 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
   //    冲突(如 workspace-write + never 不匹配任何 preset),把会话权限
   //    派生成不存在的 "custom" 状态。已有 approval 时保持钉入结果。
   //    命名空间归口:ownsPermissionSettings=true(内嵌 AI 内核等没有
-  //    permission-presets 的组合)由本桥注册并持有;false(starhub-web,
-  //    permission-presets 在组合内)只读消费其解析值,绝不重复注册。
+  //    permission-presets 的组合)时无上游 permission 行可读,退化为
+  //    undefined(会话创建时统一钉 ask);false(starhub-web,组合内有
+  //    permission-presets)只读消费其解析值。
+  //    DSH 0.1.7:settings 命名空间改由插件 Config 的 volatile 字段派生
+  //    (旧 ctx.settings.register/get 面已移除),跨命名空间读取走
+  //    settings.describe();permission-presets 的 defaultPreset 正是
+  //    volatile 字段,describe 的投影值可直接读。
   //    v0.106.1:任何 preset 都钉 ask,绝不钉 never——never 会让
   //    dsh-user-approval 的 decide() 先于 answerer 直接拒,hard 档删除
   //    确认被静默驳回(全访问下 desktop_exec 必拒的事故)。全访问的
   //    「软确认放行」改由风险门按 preset 判断(见下)。
-  const readDefaultPreset: () => string | undefined = ownsPermissionSettings
-    ? (() => {
-      const permissionScope = ctx.settings.register(PERMISSION_NAMESPACE, PermissionSchema)
-      return () => permissionScope.get().defaultPreset
-    })()
-    : () => {
-      const value = ctx.settings.get(PERMISSION_NAMESPACE) as { defaultPreset?: unknown } | undefined
-      return typeof value?.defaultPreset === 'string' ? value.defaultPreset : undefined
-    }
+  const readDefaultPreset = (): string | undefined => {
+    const value = ctx.settings.describe().find(row => row.ns === PERMISSION_NAMESPACE)?.value as { defaultPreset?: unknown } | undefined
+    return typeof value?.defaultPreset === 'string' ? value.defaultPreset : undefined
+  }
   ctx.on('session/created', (session) => {
     // 0.1.6:effectiveApprovalPolicy(events) 撤除,改由 ApprovalService.overrideOf 读。
     if (ctx.approval.overrideOf(session) !== undefined) return

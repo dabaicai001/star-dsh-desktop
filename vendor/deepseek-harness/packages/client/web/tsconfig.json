@@ -24,9 +24,6 @@
       "path": "../ui-slots"
     },
     {
-      "path": "../ui-attachment"
-    },
-    {
       "path": "../ui-primitives"
     },
     {
@@ -36,10 +33,7 @@
       "path": "../ui-renderer"
     },
     {
-      "path": "../web-react"
-    },
-    {
-      "path": "../runtime"
+      "path": "../../host/webserver"
     }
   ],
   "exclude": [

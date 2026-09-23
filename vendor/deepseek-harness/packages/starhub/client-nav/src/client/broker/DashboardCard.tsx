@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './DashboardCard.module.css'
 
 export interface DashboardDetail {
@@ -231,7 +231,7 @@ export function DashboardCard({
                 aria-label="关闭"
                 onClick={() =>{  setDetailOpen(false) }}
               >
-                <IconCloseOutline16 size={14} />
+                <IconCloseOutlineMedium size={14} />
               </button>
             </div>
             <div className={css.detailValue}>{value}</div>

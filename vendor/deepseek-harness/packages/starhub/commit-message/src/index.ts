@@ -17,9 +17,18 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+
+// DSH 0.1.7:MessageSourceMap 是merge-extensible 联合,生产者自行声明 kind
+// (共享 catch-all `plugin` kind 已移除)。
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'dsh-starhub-commit-message': { kind: 'dsh-starhub-commit-message', plugin: string } & ContextFormed
+  }
+}
 
 /** Stable Cordis plugin name. */
 export const name = 'starhub-commit-message'
@@ -225,7 +234,7 @@ export function apply(ctx: Context, config: Config): void {
         ...route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort },
         messages: [createUserMessage({
           content: [{ type: 'text', text: prompt }],
-          source: { kind: 'plugin', plugin: 'dsh-starhub-commit-message' },
+          source: { kind: 'dsh-starhub-commit-message', plugin: 'dsh-starhub-commit-message' },
         })],
         system,
         maxTokens: resolved.maxOutputTokens,

@@ -37,12 +37,13 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
   const useToolsPanel = <S,>(sel: (s: { open: boolean }) => S) => sel(toolsPanel.getSnapshot())
   const useExecRecords = <S,>(sel: (s: ExecRecordsState) => S) => sel(execRecords.getSnapshot())
   const sessionId = opts.sessionId === undefined ? undefined : opts.sessionId as never
-  const useSessions = ((sel: (s: { current: string | undefined; byId: Record<string, { cwd?: string } | undefined> }) => unknown) => {
+  const useSessions = ((sel: (s: { ids: string[]; byId: Record<string, { cwd?: string; retainedBy?: Record<string, number> } | undefined> }) => unknown) => {
     const state = {
-      current: opts.sessionId,
+      // 0.1.7:当前会话 = mainView 保留的会话(currentSessionId 推导)。
+      ids: opts.sessionId === undefined ? [] : [opts.sessionId],
       byId: opts.sessionId === undefined || opts.cwd === undefined
         ? {}
-        : { [opts.sessionId]: { cwd: opts.cwd } },
+        : { [opts.sessionId]: { cwd: opts.cwd, retainedBy: { mainView: 1 } } },
     }
     return sel(state)
   }) as never
@@ -77,10 +78,12 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
     useInput: (() => undefined) as never,
     inputActions: {} as never,
     useWorkspaces: (() => undefined) as never,
-    // 0.1.6 GlobalStandardProps 新增席位:本组件不消费,给最小桩。
+    // 0.1.6/0.1.7 GlobalStandardProps 新增席位:本组件不消费,给最小桩。
     usePanelInfo: (() => undefined) as never,
     useSessionPendingInteraction: (() => undefined) as never,
     useResource: (() => undefined) as never,
+    useSessionStatus: (() => undefined) as never,
+    useSessionRetainInfo: (() => undefined) as never,
   }
 }
 

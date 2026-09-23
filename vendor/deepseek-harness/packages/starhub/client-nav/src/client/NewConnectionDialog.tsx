@@ -17,7 +17,7 @@
  * 与 hostkey-confirm(自动接受、不持久化)事件,与 Vue 版 onTestConnection 一致。
  */
 import { useRef, useState } from 'react'
-import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { tauriInvoke, tauriListen } from './tauri.ts'
 import type { RustAsset } from './store.ts'
 import s from './settings/settings.module.css'
@@ -490,7 +490,7 @@ export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDi
         <div className={s.dialogHead}>
           <span className={s.dialogTitle}>{editing ? `编辑连接 · ${asset.name}` : '新建连接'}</span>
           <button type="button" className={s.iconButton} aria-label="关闭" onClick={onClose}>
-            <IconCloseOutline16 size={14} />
+            <IconCloseOutlineMedium size={14} />
           </button>
         </div>
         {preview && (

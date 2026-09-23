@@ -134,6 +134,14 @@ describe('client slot projection', () => {
       .toContain('built in')
   })
 
+  it('names the Factory definition that declares an ordinary child seat', () => {
+    const factory = registration({ key: 'demo.factory', children: ['demo.seat'], factory: true })
+    const [entry] = resolveSlotEntries([declaration()], [factory], OWNER_TYPES, kits)
+    expect(entry?.declaredBy)
+      .toContain("factory 'demo.factory' (client-demo)")
+    expect(entry?.occupants).toEqual([])
+  })
+
   it('reports an open keyed domain and the keys already taken', () => {
     const [entry] = resolveSlotEntries(
       [declaration({ kind: 'keyed' })],
@@ -175,6 +183,13 @@ describe('client slot projection', () => {
     expect(entry?.example).toContain("ctx.slots.inject('demo.seat'")
     expect(entry?.example).toContain("id: 'my-entry'")
   })
+
+  it('uses an authored example when a slot interaction needs more than generic markup', () => {
+    const [entry] = resolveSlotEntries([
+      declaration({ jsDoc: '/** A seat.\n * @example\n * return { custom: true }\n */' }),
+    ], [], OWNER_TYPES, kits)
+    expect(entry?.example).toBe('return { custom: true }')
+  })
 })
 
 describe('the per-slot report budget', () => {
@@ -210,5 +225,7 @@ describe('the real workspace surface', () => {
     const root = entries.find(entry => entry.key === 'root')
     expect(root?.replaceRisk).toBe('shadows-shipped-ui')
     expect(root?.occupants.join(' ')).toContain('AppFrame')
+    expect(entries.find(entry => entry.key === 'conversation.session')?.declaredBy)
+      .toContain("factory 'conversation.content' (client-ui-conversation)")
   })
 })

@@ -17,8 +17,8 @@
  */
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
-  IconDownloadOutline16, IconFolderOpenOutline16, IconLinkOutline16,
-  IconPlusOutline16, IconRefreshOutline16,
+  IconDownloadOutlineMedium, IconFolderOpenOutlineMedium, IconLinkOutlineMedium,
+  IconPlusOutlineMedium, IconRefreshOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { tauriInvoke, tauriListen, type TauriUnlisten } from '../tauri.ts'
 import { isTauriRuntime } from '../settings/services.ts'
@@ -422,7 +422,7 @@ export function SftpPanel({
       )}
       {!connected && !connecting && error === null && (
         <div className={css.stateOverlay}>
-          <span className={css.stateIcon} aria-hidden="true"><IconFolderOpenOutline16 size={18} /></span>
+          <span className={css.stateIcon} aria-hidden="true"><IconFolderOpenOutlineMedium size={18} /></span>
           <strong>{sshConnected ? '正在准备 SFTP 文件通道' : '终端未连接，SFTP 等待 SSH 会话连接'}</strong>
           <span>{sshConnected ? '正在复用当前 SSH 会话，请稍候。' : '终端连接成功后，文件浏览与传输会自动可用。'}</span>
         </div>
@@ -443,18 +443,18 @@ export function SftpPanel({
           {/* toolbar */}
           <div className={css.toolbar}>
             <div className={css.toolGroup}>
-              <button type="button" className={css.tbBtn} title="上级目录" aria-label="上级目录" onClick={navigateUp}><IconFolderOpenOutline16 size={15} /></button>
-              <button type="button" className={css.tbBtn} title="刷新" aria-label="刷新" disabled={loading} onClick={refresh}><IconRefreshOutline16 size={15} /></button>
-              <button type="button" className={`${css.tbBtn} ${showHidden ? css.active : ''}`} title="显示隐藏文件" aria-label="显示隐藏文件" onClick={() =>{  setShowHidden(v => !v) }}><IconLinkOutline16 size={15} /></button>
+              <button type="button" className={css.tbBtn} title="上级目录" aria-label="上级目录" onClick={navigateUp}><IconFolderOpenOutlineMedium size={15} /></button>
+              <button type="button" className={css.tbBtn} title="刷新" aria-label="刷新" disabled={loading} onClick={refresh}><IconRefreshOutlineMedium size={15} /></button>
+              <button type="button" className={`${css.tbBtn} ${showHidden ? css.active : ''}`} title="显示隐藏文件" aria-label="显示隐藏文件" onClick={() =>{  setShowHidden(v => !v) }}><IconLinkOutlineMedium size={15} /></button>
             </div>
             <div className={css.toolGroup}>
-              <button type="button" className={css.tbBtn} title="上传文件" aria-label="上传文件" onClick={() => void uploadFiles()}><IconPlusOutline16 size={15} /></button>
-              <button type="button" className={css.tbBtn} title="上传文件夹" aria-label="上传文件夹" onClick={() => void uploadFolder()}><IconFolderOpenOutline16 size={15} /></button>
-              <button type="button" className={css.tbBtn} title="下载" aria-label="下载" disabled={selected.size === 0} onClick={() => void download(null, null)}><IconDownloadOutline16 size={15} /></button>
-              <button type="button" className={css.tbBtn} title="新建文件夹" aria-label="新建文件夹" onClick={newFolder}><IconPlusOutline16 size={15} /></button>
+              <button type="button" className={css.tbBtn} title="上传文件" aria-label="上传文件" onClick={() => void uploadFiles()}><IconPlusOutlineMedium size={15} /></button>
+              <button type="button" className={css.tbBtn} title="上传文件夹" aria-label="上传文件夹" onClick={() => void uploadFolder()}><IconFolderOpenOutlineMedium size={15} /></button>
+              <button type="button" className={css.tbBtn} title="下载" aria-label="下载" disabled={selected.size === 0} onClick={() => void download(null, null)}><IconDownloadOutlineMedium size={15} /></button>
+              <button type="button" className={css.tbBtn} title="新建文件夹" aria-label="新建文件夹" onClick={newFolder}><IconPlusOutlineMedium size={15} /></button>
             </div>
             <div className={`${css.toolGroup} ${css.toolsEnd}`}>
-              <button type="button" className={`${css.tbBtn} ${followTerminal ? css.active : ''}`} title={followTerminal ? '已跟随终端路径' : '跟随终端路径'} aria-label="跟随终端路径" aria-pressed={followTerminal} disabled={!sshConnected} onClick={toggleFollow}><IconLinkOutline16 size={15} /></button>
+              <button type="button" className={`${css.tbBtn} ${followTerminal ? css.active : ''}`} title={followTerminal ? '已跟随终端路径' : '跟随终端路径'} aria-label="跟随终端路径" aria-pressed={followTerminal} disabled={!sshConnected} onClick={toggleFollow}><IconLinkOutlineMedium size={15} /></button>
               {/* 传输任务入口:打开弹框(overlay 承载);有进行中任务时显示计数徽标 */}
               <button
                 type="button"
@@ -463,7 +463,7 @@ export function SftpPanel({
                 aria-label="传输任务"
                 onClick={() => onOpenTransfers?.()}
               >
-                <IconDownloadOutline16 size={15} />
+                <IconDownloadOutlineMedium size={15} />
                 {transferActiveCount > 0 && <span className={css.tbBadge}>{transferActiveCount}</span>}
               </button>
             </div>
@@ -511,7 +511,7 @@ export function SftpPanel({
             {!loading && visibleEntries.length === 0 && <div className={css.listEmpty}>空目录</div>}
             {!loading && visibleEntries.length > 0 && path !== '/' && (
               <div className={css.fileRow} onClick={navigateUp} onContextMenu={(e) =>{  onContextMenu(e, null) }}>
-                <span className={`${css.fileIcon} ${css.dir}`}><IconFolderOpenOutline16 size={15} /></span>
+                <span className={`${css.fileIcon} ${css.dir}`}><IconFolderOpenOutlineMedium size={15} /></span>
                 <span className={css.fileName}>..</span>
               </div>
             )}
@@ -522,7 +522,7 @@ export function SftpPanel({
                 onClick={(e) =>{  onFileClick(entry, index, e) }}
                 onContextMenu={(e) =>{  onContextMenu(e, entry) }}
               >
-                <span className={`${css.fileIcon} ${entry.isDir ? css.dir : ''}`}>{entry.isDir ? <IconFolderOpenOutline16 size={15} /> : <IconLinkOutline16 size={14} />}</span>
+                <span className={`${css.fileIcon} ${entry.isDir ? css.dir : ''}`}>{entry.isDir ? <IconFolderOpenOutlineMedium size={15} /> : <IconLinkOutlineMedium size={14} />}</span>
                 <span className={css.fileName}>{entry.name}</span>
                 <span className={css.fileSize}>{entry.isDir ? '—' : formatSize(entry.size)}</span>
               </div>

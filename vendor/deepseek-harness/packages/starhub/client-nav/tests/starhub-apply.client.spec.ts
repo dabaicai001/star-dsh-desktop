@@ -69,13 +69,15 @@ function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; re
       case 'sessions':
         return overrides.sessions ?? {
           list: {
-            getSnapshot: () => ({ current: undefined, ids: [], byId: {} }),
+            getSnapshot: () => ({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} }),
             // exec-records 会话跟踪(apply 层)订阅 list;返回 disposer,与
             // runtime/client-apply.client.spec.ts 的 sessions mock 同形态。
             subscribe: () => () => {},
           },
-          open: vi.fn(), clear: vi.fn(), binding: vi.fn(() => undefined),
+          binding: vi.fn(() => undefined),
         }
+      case 'uiWorkspace':
+        return { openSession: vi.fn() }
       case 'workspaces':
         return { list: { getSnapshot: () => ({ items: [] }) } }
       case 'conversation':
@@ -248,10 +250,16 @@ describe('client-nav apply (rc.2)', () => {
       remote: { settings: { update: settingsUpdate } },
       sessions: {
         list: {
-          getSnapshot: () => ({ current: 's1', ids: ['s1'], byId: {} }),
+          // 0.1.7:当前会话 = mainView 保留的会话(currentSessionId 推导)。
+          getSnapshot: () => ({
+            ids: ['s1'],
+            byId: { s1: { retainedBy: { mainView: 1 } } },
+            phase: 'ready',
+            projectionsBySession: {},
+          }),
           subscribe: () => () => {},
         },
-        open: vi.fn(), clear: vi.fn(), binding: vi.fn(() => ({ ctx: {} })),
+        binding: vi.fn(() => ({ ctx: {} })),
       },
       conversation: {
         createDrafts: vi.fn(() => []),
@@ -322,6 +330,8 @@ describe('client-nav apply (rc.2)', () => {
     expect(injectList).toContain('workspaces')
     expect(injectList).toContain('conversation')
     expect(injectList).toContain('remote')
+    // 0.1.7:ask-ai 的会话聚焦走 view owner 的导航面(uiWorkspace.openSession)。
+    expect(injectList).toContain('uiWorkspace')
     // 0.1.6 Typert gateway:每个 Remote 命名空间是独立 service,
     // ctx.remote.<ns> 要求 fiber 声明点号全名,否则 apply 抛
     // "cannot get property … without inject"(v0.121.7 启动事故)。

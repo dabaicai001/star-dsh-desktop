@@ -21,13 +21,7 @@
       "path": "../../../vendor/group"
     },
     {
-      "path": "../../../vendor/hmr"
-    },
-    {
       "path": "../../core/system-prompt"
-    },
-    {
-      "path": "../../util/atomic-write"
     },
     {
       "path": "../../util/launch-environment"

@@ -114,7 +114,7 @@ function makeHost() {
   })
   const sessionAdapter: SlotScopeAdapter = {
     current: currentBinding,
-    resolve: key => bindings.get(key),
+    bindingSource: () => currentBinding,
     renderArea: (binding, { empty, children }) => binding.key === undefined
       ? <>{empty?.() ?? null}</>
       : <>{children}</>,
@@ -159,6 +159,14 @@ function makeHost() {
     },
     specOf: key => specs.get(key),
     isLive: entry => live.has(entry),
+    // Factory seats: this suite registers no Factories (DSH 0.1.7 host face).
+    reportFactoryError: () => {},
+    factoryStoreOf: () => undefined,
+    retainFactoryOccurrence: () => () => {},
+    subscribeFactory: () => () => {},
+    getFactoryVersion: () => 0,
+    factoryOf: () => undefined,
+    isFactoryLive: () => false,
     storeOf: (entry, scopeBinding) => {
       if (entry.store === undefined) return undefined
       let perScope = storeCache.get(entry)
@@ -1142,7 +1150,7 @@ describe('session-maybe adoption identity', () => {
     act(() => {
       h.replaceScope({
         current: observable(binding),
-        resolve: key => key === binding.key ? binding : undefined,
+        bindingSource: () => observable(binding),
       })
     })
     expect(view.container.textContent).toBe('replacement#1')

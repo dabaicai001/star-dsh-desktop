@@ -1,1 +1,1 @@
-b150a551b8d465e31e418e1b2eaf5e79bbb7d28e 2026-08-26 Merge pull request #2908 from deepseek-harness/release/dsh-0.1.1-rc.2
+00102833dfaee1da9f48a3a8eae9d34005a75218 2026-09-23 Merge pull request #4978 from deepseek-harness/worktree/release-dsh-0.1.7-alpha.2 (tag: dsh-v0.1.7-alpha.2)

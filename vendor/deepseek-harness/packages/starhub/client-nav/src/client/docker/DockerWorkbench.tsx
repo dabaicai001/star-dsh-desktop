@@ -18,9 +18,9 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  IconCloseOutline16, IconCodeOutline16, IconDataOutline16, IconInspectOutline12, IconPaperclipOutline16,
-  IconPlayOutline16, IconRefreshOutline14, IconRefreshOutline16, IconStopFill16,
-  IconTrashOutline16,
+  IconCloseOutlineMedium, IconCodeOutlineMedium, IconDataOutlineMedium, IconInspectOutlineMedium, IconPaperclipOutlineMedium,
+  IconPlayOutlineMedium, IconRefreshOutlineMedium, IconStopFillMedium,
+  IconTrashOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RustAsset } from '../store.ts'
 import { tauriInvoke } from '../tauri.ts'
@@ -361,8 +361,8 @@ export function DockerWorkbench({ asset, onClose }: { asset: RustAsset; onClose:
             </div>
           </div>
           <div className={css.headActions}>
-            <button type="button" className={css.iconButton} onClick={() => { void loadContainers(); void loadImages() }} title="刷新工作台" aria-label="刷新工作台"><IconRefreshOutline14 size={15} /></button>
-            <button type="button" className={css.iconButton} onClick={onClose} title="关闭工作区" aria-label="关闭工作区"><IconCloseOutline16 size={15} /></button>
+            <button type="button" className={css.iconButton} onClick={() => { void loadContainers(); void loadImages() }} title="刷新工作台" aria-label="刷新工作台"><IconRefreshOutlineMedium size={15} /></button>
+            <button type="button" className={css.iconButton} onClick={onClose} title="关闭工作区" aria-label="关闭工作区"><IconCloseOutlineMedium size={15} /></button>
           </div>
         </header>
 
@@ -390,8 +390,8 @@ export function DockerWorkbench({ asset, onClose }: { asset: RustAsset; onClose:
                 <span className={css.spacer} />
                 {tab === 'images' && (
                   <>
-                    <button type="button" className={css.toolIcon} onClick={() =>{  setPullOpen(true) }} title="拉取镜像" aria-label="拉取镜像"><IconPaperclipOutline16 size={15} /></button>
-                    <button type="button" className={css.toolIconDanger} onClick={() => void runPrune()} title="清理悬空镜像" aria-label="清理悬空镜像"><IconTrashOutline16 size={15} /></button>
+                    <button type="button" className={css.toolIcon} onClick={() =>{  setPullOpen(true) }} title="拉取镜像" aria-label="拉取镜像"><IconPaperclipOutlineMedium size={15} /></button>
+                    <button type="button" className={css.toolIconDanger} onClick={() => void runPrune()} title="清理悬空镜像" aria-label="清理悬空镜像"><IconTrashOutlineMedium size={15} /></button>
                   </>
                 )}
                 {tab === 'containers' && (
@@ -400,7 +400,7 @@ export function DockerWorkbench({ asset, onClose }: { asset: RustAsset; onClose:
                     <span>显示全部</span>
                   </label>
                 )}
-                <button type="button" className={css.toolIcon} onClick={() => tab === 'containers' ? void loadContainers() : void loadImages()} disabled={tab === 'containers' ? containers.loading : images.loading} title="刷新" aria-label="刷新"><IconRefreshOutline14 size={14} /></button>
+                <button type="button" className={css.toolIcon} onClick={() => tab === 'containers' ? void loadContainers() : void loadImages()} disabled={tab === 'containers' ? containers.loading : images.loading} title="刷新" aria-label="刷新"><IconRefreshOutlineMedium size={14} /></button>
               </div>
               {tab === 'containers' && (
                 <ContainersView
@@ -536,13 +536,13 @@ function ContainersView({
               </button>
             </div>
             <div className={css.rowActions}>
-              <RowAction label="启动" disabled={c.state === 'running'} onClick={() =>{  onAction('start', c) }}><IconPlayOutline16 size={14} /></RowAction>
-              <RowAction label="停止" disabled={c.state !== 'running'} onClick={() =>{  onAction('stop', c) }}><IconStopFill16 size={14} /></RowAction>
-              <RowAction label="重启" onClick={() =>{  onAction('restart', c) }}><IconRefreshOutline16 size={14} /></RowAction>
-              <RowAction label="终端" onClick={() =>{  onExec(c) }}><IconCodeOutline16 size={14} /></RowAction>
-              <RowAction label="日志" onClick={() =>{  onOpenLogs(c) }}><IconInspectOutline12 size={14} /></RowAction>
-              <RowAction label="统计" onClick={() =>{   onToggleStats(c) }}><IconDataOutline16 size={14} /></RowAction>
-              <RowAction label="删除" danger onClick={() =>{  onAction('remove', c) }}><IconTrashOutline16 size={14} /></RowAction>
+              <RowAction label="启动" disabled={c.state === 'running'} onClick={() =>{  onAction('start', c) }}><IconPlayOutlineMedium size={14} /></RowAction>
+              <RowAction label="停止" disabled={c.state !== 'running'} onClick={() =>{  onAction('stop', c) }}><IconStopFillMedium size={14} /></RowAction>
+              <RowAction label="重启" onClick={() =>{  onAction('restart', c) }}><IconRefreshOutlineMedium size={14} /></RowAction>
+              <RowAction label="终端" onClick={() =>{  onExec(c) }}><IconCodeOutlineMedium size={14} /></RowAction>
+              <RowAction label="日志" onClick={() =>{  onOpenLogs(c) }}><IconInspectOutlineMedium size={14} /></RowAction>
+              <RowAction label="统计" onClick={() =>{   onToggleStats(c) }}><IconDataOutlineMedium size={14} /></RowAction>
+              <RowAction label="删除" danger onClick={() =>{  onAction('remove', c) }}><IconTrashOutlineMedium size={14} /></RowAction>
             </div>
           </div>
           {expanded === c.id && detail !== null && (
@@ -601,8 +601,8 @@ function LogsModal({ open, onClose, onRefresh }: {
             <span className={css.tailNote}>尾 {tail} 行，最新在前</span>
           </div>
           <div className={css.logModalActions}>
-            <button type="button" className={css.toolIcon} onClick={onRefresh} title="刷新日志" aria-label="刷新日志"><IconRefreshOutline14 size={15} /></button>
-            <button type="button" className={css.toolIcon} onClick={onClose} title="关闭日志" aria-label="关闭日志"><IconCloseOutline16 size={16} /></button>
+            <button type="button" className={css.toolIcon} onClick={onRefresh} title="刷新日志" aria-label="刷新日志"><IconRefreshOutlineMedium size={15} /></button>
+            <button type="button" className={css.toolIcon} onClick={onClose} title="关闭日志" aria-label="关闭日志"><IconCloseOutlineMedium size={16} /></button>
           </div>
         </header>
         {logs.loading && <div className={css.detailStatus}>加载日志…</div>}
@@ -686,7 +686,7 @@ function ImagesView({ load, onRefresh, onPullOpen, onRemove }: {
           <span className={css.imgTag}>{img.tags[0] ?? img.id.slice(0, 12)}</span>
           <span className={css.imgSize}>{formatBytes(img.size)}</span>
           <span className={css.imgAge}>{formatAge(img.created)}</span>
-          <button type="button" className={css.dangerButton} title="删除镜像" aria-label="删除镜像" onClick={() =>{  onRemove(img) }}><IconTrashOutline16 size={14} /></button>
+          <button type="button" className={css.dangerButton} title="删除镜像" aria-label="删除镜像" onClick={() =>{  onRemove(img) }}><IconTrashOutlineMedium size={14} /></button>
         </div>
       ))}
     </div>

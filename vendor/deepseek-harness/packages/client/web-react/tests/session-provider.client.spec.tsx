@@ -56,7 +56,7 @@ function makeHost(
   })
   const sessionAdapter: SlotScopeAdapter = {
     current: currentBinding,
-    resolve: key => bindings.get(key),
+    bindingSource: () => currentBinding,
     ...(options.installRenderArea === false
       ? {}
       : {
@@ -84,6 +84,14 @@ function makeHost(
     specOf: key => key === 'k.session' ? { kind: 'single', scope: 'session' } : undefined,
     isLive: () => true,
     storeOf: () => undefined,
+    // Factory seats: this suite registers no Factories (DSH 0.1.7 host face).
+    reportFactoryError: () => {},
+    factoryStoreOf: () => undefined,
+    retainFactoryOccurrence: () => () => {},
+    subscribeFactory: () => () => {},
+    getFactoryVersion: () => 0,
+    factoryOf: () => undefined,
+    isFactoryLive: () => false,
     root,
     scopeRevision: observable(0),
     scope: () => sessionAdapter,

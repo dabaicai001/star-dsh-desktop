@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import { IconCloseOutline16 } from './icons/index.tsx'
+import { IconCloseOutlineRegular } from './icons/index.tsx'
 import css from './Modal.module.css'
 
 interface ModalBaseProps {
@@ -24,7 +24,8 @@ type ModalProps = ModalBaseProps & (
 /**
  * Render a centered, body-portaled modal over a blurred page mask.
  * @param props.open - whether the dialog is showing.
- * @param props.onClose - Escape or mask click.
+ * @param props.onClose - Escape or mask click; while a menu is open inside the
+ * dialog, Escape belongs to that menu first.
  * @param props.title - dialog heading (aria-label in every mode).
  * @param props.closeLabel - localized accessible close-button label.
  * @param props.description - optional supporting sentence under the title.
@@ -66,7 +67,7 @@ export function Modal({
                 <div className={css.header}>
                   <h2 className={css.title}>{title}</h2>
                   <button type="button" className={css.close} aria-label={closeLabel} onClick={onClose}>
-                    <IconCloseOutline16 size={14} />
+                    <IconCloseOutlineRegular size={14} />
                   </button>
                 </div>
                 {description !== undefined && description !== '' && (

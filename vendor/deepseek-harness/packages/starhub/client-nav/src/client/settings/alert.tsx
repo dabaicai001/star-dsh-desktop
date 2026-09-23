@@ -4,7 +4,7 @@
  * 测试 Webhook。创建/编辑分支、默认值、5s 测试结果自动清除等语义原样保留。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   createAlertRule, deleteAlertRule, fetchAlertRules, testAlertWebhook, updateAlertRule,
   type AlertRule, type AlertRuleInput,
@@ -197,7 +197,7 @@ export function AlertTab() {
                       type="button" className={s.iconButton} title="删除" aria-label="删除"
                       onClick={() => void onDeleteAlert(rule.id)}
                     >
-                      <IconCloseOutline16 size={13} />
+                      <IconCloseOutlineMedium size={13} />
                     </button>
                   </span>
                 </div>
@@ -231,7 +231,7 @@ export function AlertTab() {
                 {alertEditing !== null ? '编辑告警规则' : '新建告警规则'}
               </span>
               <button type="button" className={s.iconButton} aria-label="关闭" onClick={() =>{  setAlertDialog(false) }}>
-                <IconCloseOutline16 size={14} />
+                <IconCloseOutlineMedium size={14} />
               </button>
             </div>
             <div className={s.formGrid}>

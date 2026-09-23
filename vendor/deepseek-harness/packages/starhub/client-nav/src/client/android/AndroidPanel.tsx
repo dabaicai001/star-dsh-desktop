@@ -9,7 +9,7 @@
  * 浏览器预览(无 Tauri IPC)时展示预览提示而不是红错,与资产列表同语义。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { IconRefreshOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconRefreshOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { listAndroidDevices, openAndroidLiveWindow, type AndroidDevice } from './services.ts'
 import css from '../sandbox/SandboxPanel.module.css'
 
@@ -80,7 +80,7 @@ export function AndroidPanel() {
             disabled={loading}
             onClick={() => { void refresh() }}
           >
-            <IconRefreshOutline14 size={12} /> 刷新
+            <IconRefreshOutlineMedium size={12} /> 刷新
           </button>
         </h3>
         {loading && <div className={css.status}>加载设备…</div>}

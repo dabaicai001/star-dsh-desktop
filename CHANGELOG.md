@@ -9,6 +9,21 @@
 
 ---
 
+## [0.122.0] - 2026-09-23
+
+### 升级
+- **vendored DeepSeek Harness 整体升级到上游 master `dsh-v0.1.7-alpha.2`(commit `0010283`,2026-09-23;上一版基线 `0d1f500` = 0.1.6-alpha.1)**:`vendor/deepseek-harness` 整树替换(上游 13244 个文件),342 个 StarHub 本地独有文件(`packages/starhub/*` 11 包、`apps/starhub-window`、`examples/starhub-*`、本地脚本与 Agent Notes)原样保留,32 处补丁逐项重放或退役(`UPSTREAM_COMMIT.txt` 同步更新);host/client 双面 `build:lib`、starhub 单测 1146 例、Rust 221 例、root node 套件、`build:window` / `build:web` 全绿。
+  - **settings 体系重构(最大适配点)**:插件设置命名空间改由插件 `Config` 的 schemastery `volatile()` 字段自动派生,`ctx.settings.register/get` 面移除。`starhub-tool-context` / `starhub-memory-context` 改为声明 `Config` + `Volatile` 活读(Loader 热提交),`starhub-memory-sink` / `starhub-approval-bridge` 的跨命名空间只读改走 `ctx.settings.describe()`(`permission` 命名空间现由上游 permission-presets 的 volatile `defaultPreset` 持有,approval-bridge 不再自注册)。GUI 设置页与 `ctx.remote.settings`(describe/update/replace/mutate)远端 API 形状不变,client-nav 的设置写入零改动。
+  - **消息来源去 catch-all `plugin` kind**:上游 `MessageSourceMap` 改为生产者自行 `declare module` 声明 kind(merge-extensible 联合)。五个 StarHub 注入点(commit-message / live-context / memory-context / memory-sink / tool-context)各自声明 `dsh-starhub-*` kind,保留 `plugin` 名字段与 `form: 'snapshot'` 语义,memory-context 的事件流去重判定同步更新。
+  - **会话导航 API 重构**:`ISessions.list.current` / `open()` / `clear()` 移除——「当前会话」改由 ui-session 的 mainView 保留推导,导航归 view owner(`ctx.uiWorkspace.openSession`)。client-nav 新增 `current-session.ts` 助手统一 4 处读取(exec 记录桥/资产引用/截图挂载/工具面板 cwd),ask-ai 聚焦改用 `uiWorkspace.openSession`(无公开清空选择面,无工作区时维持现状)。
+  - **图标表重命名**:`IconXxxOutline14/16/20` → `IconXxxOutlineMedium`,client-nav 30 个图标引用批量迁移;`DockerWorkbench` 去掉重复导入。
+  - **app-boot 移除 module-fallback 链接机制**(0.1.7 改运行时解析器拦截):§11.9 第 6 条「profiles/node_modules 真实目录污染自愈」补丁的目标机制消失,该补丁退役;Rust 侧 junction 物化逻辑不变。
+  - **DiffBlock 上游重构**(CodeToolbar、移除 footer):StarHub 双列 LCS 对比补丁在 0.1.7 新基线上重新合并,保留双列对比、`└ +A -R · N file(s)` footer 与 TUI 口径(新增 `diff.files.*` / 复用 `diff.columnBefore/After` 文案键),`labels` 测试夹具与 diff-card/tool-row 用例同步。
+  - **bundle retry 补丁与上游 arrival recovery 叠加**:0.1.7 的 client-modules 自带 batch 级重试 + one-resource 回退;StarHub 的传输级退避重试(300ms/1200ms,共 3 次)保留为瞬态启动竞态的第二层防线,用例改为按 URL 断言有界性。
+  - **修正 agent profile 的死补丁行**:`- id: sessions`(0.1.6/0.1.7 的 bundle 均无此 id,patch 机制一直静默跳过)改为真实行 `session-persistence-jsonl`,`DSH_SESSION_ROOT` / `DSH_SNAPSHOT` 注入自此真正生效。
+  - **闭包修正**:python/sdk-runtime 的 `dsh-agent-presets` 依赖随上游改名改为 `dsh-agent-preset`(旧名导致 `pnpm install` 直接失败)。
+- **清理**:删除上游 0.1.6 已删除的 `packages/client/web/src` AppRoot 死代码簇(连同其 `loader-status.ts` 补丁与 5 个测试);恢复被工具链写乱码的快照文件(`缓存题.txt` → 上游 `说明.txt`);删除上游已收编的 `SubagentCatalogAction.tsx` 本地副本(死代码,其依赖 `subagent-lineage.ts` 已被上游删除);`packages/client/web` 的 package.json/tsconfig 补丁随死代码簇一并退役(恢复上游原样)。
+
 ## [0.121.9] - 2026-09-21
 
 ### 移除

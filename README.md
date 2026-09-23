@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.121.9-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.122.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,14 +48,9 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.121.9 (2026-09-21)
-- 🔧 **清理与 DSH 主壳重复的功能,全部对齐上游**:
-  - 删壳内自绘 AI 聊天面板 `AiChatPanel`(死 UI——`aiChat.open` 无写入方,「问 AI」早已路由 DSH 原生对话视图);
-  - 删 `skill_save` 工具(DSH 原生 `tool-skill` / `skill-filesystem` / 设置 Skills 面板覆盖;原实现经已删除的旧前端转发,恒定 180s 超时);
-  - 会话历史搜索切换到 DSH 原生 `tool-session-query`(session_search 等五个只读工具,profile 挂载 + `openAt: first-search`,删 StarHub 桥接 `session_search`);
-  - MCP 切换到 DSH 原生 `dsh-mcp-client`(profile 行式配置,两个 profile 留 stdio/streamable-http 示例,删桥接 `mcp_list`/`mcp_call`)。
-  - `browser_*(14)`保留:DSH 浏览器栈全部位于 `experimental/`,被上游 `verify-default-product-isolation` 门禁止进入 shipped 组合,暂无法对齐。
-  - 上一版(v0.121.8)已移除与 DSH 重复的「文件功能」(文件树/壳内查看窗/`@` 文件源/本地文件命令)。
+### v0.122.0 (2026-09-23)
+- 🔧 **vendored DeepSeek Harness 整体升级到上游 master `dsh-v0.1.7-alpha.2`(commit `0010283`,2026-09-23;上一版基线 `0d1f500` = 0.1.6-alpha.1)**:`vendor/deepseek-harness` 整树替换(上游 13244 个文件),342 个 StarHub 本地独有文件(`packages/starhub/*` 11 包、`apps/starhub-window`、`examples/starhub-*`、本地脚本与 Agent Notes)原样保留,32 处补丁逐项重放或退役(`UPSTREAM_COMMIT.txt` 同步更新);host/client 双面 `build:lib`、starhub 单测 1146 例、Rust 221 例、root node 套件、`build:window` / `build:web` 全绿。
+- 🔧 **清理**:删除上游 0.1.6 已删除的 `packages/client/web/src` AppRoot 死代码簇(连同其 `loader-status.ts` 补丁与 5 个测试);恢复被工具链写乱码的快照文件(`缓存题.txt` → 上游 `说明.txt`);删除上游已收编的 `SubagentCatalogAction.tsx` 本地副本(死代码,其依赖 `subagent-lineage.ts` 已被上游删除);`packages/client/web` 的 package.json/tsconfig 补丁随死代码簇一并退役(恢复上游原样)。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

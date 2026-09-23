@@ -24,7 +24,7 @@
  * @module Redis value editor (client)
  */
 import { useEffect, useMemo, useState } from 'react'
-import { IconCloseFill14, IconCloseOutline16, IconPlusOutline16, IconRefreshOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseFillMedium, IconCloseOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   redisExecute, redisGetValue, redisQuote, redisSet,
   type RedisCommandResult,
@@ -371,7 +371,7 @@ function StructuralRows({ rows, type, onChange }: {
           onChange={(e) =>{  setFilter(e.target.value) }} />
         {filter !== '' && (
           <button type="button" className={css.filterClear} aria-label="清除筛选" title="清除筛选"
-            onClick={() =>{  setFilter('') }}><IconCloseOutline16 size={12} /></button>
+            onClick={() =>{  setFilter('') }}><IconCloseOutlineMedium size={12} /></button>
         )}
       </div>
       <div className={css.tableBody}>
@@ -395,7 +395,7 @@ function StructuralRows({ rows, type, onChange }: {
             )}
             <button type="button" className={css.delButton} title={r.deleted ? '撤销删除' : '删除'}
               onClick={() =>{  apply(index, { deleted: !r.deleted }) }}>
-              {r.deleted ? <IconRefreshOutline14 size={12} /> : <IconCloseFill14 size={12} />}
+              {r.deleted ? <IconRefreshOutlineMedium size={12} /> : <IconCloseFillMedium size={12} />}
             </button>
           </div>
         ))}
@@ -411,7 +411,7 @@ function StructuralRows({ rows, type, onChange }: {
         <input className={css.cellValue} placeholder={ph.single ? '新成员' : type === 'list' ? '新值(RPUSH 追加)' : `新${ph.value}`}
           spellCheck={false} aria-label="新值"
           value={newValue} onChange={(e) =>{  setNewValue(e.target.value) }} />
-        <button type="button" className={css.addButton} title="新增" aria-label="新增" disabled={addDisabled} onClick={add}><IconPlusOutline16 size={13} /></button>
+        <button type="button" className={css.addButton} title="新增" aria-label="新增" disabled={addDisabled} onClick={add}><IconPlusOutlineMedium size={13} /></button>
       </div>
     </div>
   )

@@ -15,8 +15,8 @@
 import { useState } from 'react'
 import clsx from 'clsx'
 import {
-  IconCloseOutline16, IconCopyOutline16, IconDownloadOutline16, IconFolderOpenOutline16,
-  IconPauseOutline16, IconPlayOutline16, IconRefreshOutline16, IconTrashOutline16,
+  IconCloseOutlineMedium, IconCopyOutlineMedium, IconDownloadOutlineMedium, IconFolderOpenOutlineMedium,
+  IconPauseOutlineMedium, IconPlayOutlineMedium, IconRefreshOutlineMedium, IconTrashOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   formatSize, sftpCancelTransfer, sftpPauseTransfer, sftpResumeTransfer,
@@ -127,7 +127,7 @@ export function TransferDialog({ sessionId, api, onClose }: TransferDialogProps)
             onClick={() => { clearFinished() }}
           >清除已完成</button>
           <button type="button" className={css.iconBtn} onClick={onClose} aria-label="关闭传输任务">
-            <IconCloseOutline16 size={14} />
+            <IconCloseOutlineMedium size={14} />
           </button>
         </header>
 
@@ -190,7 +190,7 @@ function TransferRow(props: {
           className={clsx(css.dirIcon, t.direction === 'upload' && css.dirIconUp)}
           title={t.direction === 'upload' ? '上传' : '下载'}
         >
-          <IconDownloadOutline16 size={14} />
+          <IconDownloadOutlineMedium size={14} />
         </span>
         <span className={css.rowTitle} title={taskTitle(t)}>{taskTitle(t)}</span>
         <span className={clsx(css.statusBadge, css[`st-${t.status}`])}>{STATUS_LABEL[t.status]}</span>
@@ -218,7 +218,7 @@ function TransferRow(props: {
               /* v8 ignore next -- error 在本块内已判空(渲染条件),`?? ''` 仅为 TS 收窄进闭包 */
               void navigator.clipboard.writeText(t.error ?? '')
             }}
-          ><IconCopyOutline16 size={11} /></button>
+          ><IconCopyOutlineMedium size={11} /></button>
         </div>
       )}
 
@@ -250,13 +250,13 @@ function TransferRow(props: {
         {t.status === 'running' && (
           <button type="button" className={css.miniBtn} disabled={busy}
             onClick={() => void onRun('暂停', () => sftpPauseTransfer(sessionId, t.id))}>
-            <IconPauseOutline16 size={11} />暂停
+            <IconPauseOutlineMedium size={11} />暂停
           </button>
         )}
         {t.status === 'paused' && (
           <button type="button" className={css.miniBtn} disabled={busy}
             onClick={() => void onRun('继续', () => sftpResumeTransfer(sessionId, t.id))}>
-            <IconPlayOutline16 size={11} />继续
+            <IconPlayOutlineMedium size={11} />继续
           </button>
         )}
         {!terminal && (
@@ -269,7 +269,7 @@ function TransferRow(props: {
           <button type="button" className={css.miniBtn} disabled={busy}
             title="从断点处续传(复用本任务)"
             onClick={() => void onRun('重试', () => sftpRetryTransfer(sessionId, t.id))}>
-            <IconRefreshOutline16 size={11} />重试
+            <IconRefreshOutlineMedium size={11} />重试
           </button>
         )}
         {t.status === 'done' && t.direction === 'download' && typeof t.downloadLocalDir === 'string' && (
@@ -279,13 +279,13 @@ function TransferRow(props: {
               /* v8 ignore next -- 本块由 `typeof t.downloadLocalDir === 'string'` 守护,`?? ''` 仅为 TS 收窄进闭包 */
               return sftpRevealLocal(t.downloadLocalDir ?? '')
             })}>
-            <IconFolderOpenOutline16 size={11} />打开目录
+            <IconFolderOpenOutlineMedium size={11} />打开目录
           </button>
         )}
         {terminal && (
           <button type="button" className={css.miniBtn} disabled={busy} title="从列表移除该记录"
             onClick={onDismiss}>
-            <IconTrashOutline16 size={11} />删除
+            <IconTrashOutlineMedium size={11} />删除
           </button>
         )}
         <span className={css.spacer} />

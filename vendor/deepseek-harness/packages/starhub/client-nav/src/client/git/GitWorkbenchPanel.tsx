@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import clsx from 'clsx'
-import { IconBranchOutline16, IconCloseOutline16, IconRefreshOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBranchOutlineMedium, IconCloseOutlineMedium, IconRefreshOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   gitAheadBehind, gitCheckout, gitCheckoutRemote, gitCleanPath, gitCommitStaged, gitCurrentBranch,
   gitDiffFile, gitDiscard, gitDraftCommitMessage, gitFetch, gitListBranches,
@@ -448,7 +448,7 @@ function PanelHeader({ branch, dirty, aheadBehind, busy, onRefresh, onFetch, onP
   return (
     <header className={css.header}>
       <span className={css.title} title={branch ?? undefined}>
-        <IconBranchOutline16 size={13} />
+        <IconBranchOutlineMedium size={13} />
         {branch !== null && <span className={css.branchName}>{branch}</span>}
         {branch !== null && dirty && <span className={css.dirtyDot} title="有未提交改动" />}
         {hasUpstream && (ahead > 0 || behind > 0) && (
@@ -460,7 +460,7 @@ function PanelHeader({ branch, dirty, aheadBehind, busy, onRefresh, onFetch, onP
       </span>
       <span className={css.spacer} />
       <button type="button" className={css.iconButton} title="刷新" aria-label="刷新" onClick={onRefresh}>
-        <IconRefreshOutline14 size={13} />
+        <IconRefreshOutlineMedium size={13} />
       </button>
       <button type="button" className={css.actionBtn} disabled={busy !== ''} title="git fetch --all --prune:同步远程分支列表" onClick={onFetch}>
         {busy === '同步远程' ? '同步中…' : '同步'}
@@ -472,7 +472,7 @@ function PanelHeader({ branch, dirty, aheadBehind, busy, onRefresh, onFetch, onP
         {busy === '推送' ? '推送中…' : '推送'}
       </button>
       <button type="button" className={css.iconButton} title="关闭 Git 工作台" aria-label="关闭 Git 工作台" onClick={onClose}>
-        <IconCloseOutline16 size={14} />
+        <IconCloseOutlineMedium size={14} />
       </button>
     </header>
   )
@@ -860,7 +860,7 @@ function BranchesTab({
             disabled={busy !== ''}
             onClick={() => { onCheckout(name) }}
           >
-            <IconBranchOutline16 size={12} />
+            <IconBranchOutlineMedium size={12} />
             <span className={css.branchRowName}>{name}</span>
             {name === branch && <span className={css.currentTag}>当前</span>}
           </button>
@@ -877,7 +877,7 @@ function BranchesTab({
             title={`拉取 ${ref} 为本地跟踪分支`}
             onClick={() => { onCheckoutRemote(ref) }}
           >
-            <IconBranchOutline16 size={12} />
+            <IconBranchOutlineMedium size={12} />
             <span className={css.branchRowName}>{ref}</span>
           </button>
         ))}

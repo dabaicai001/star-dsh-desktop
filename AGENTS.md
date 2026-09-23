@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.121.9(**清理与 DSH 主壳重复的功能,全部对齐上游**:① 删壳内自绘 AI 聊天面板 `AiChatPanel`(死 UI,ask-ai 早已路由原生对话视图);② 删 `skill_save`(DSH 原生 `tool-skill`/skill-filesystem 覆盖,且转发死链);③ 会话历史搜索切到 DSH 原生 `tool-session-query`(五个只读工具,profile 挂载 + `openAt: first-search`,删 StarHub 桥接 `session_search`);④ MCP 切到 DSH 原生 `dsh-mcp-client`(profile 行式配置,删桥接 `mcp_list`/`mcp_call`)。②④ 的原实现均因旧 Vue 前端删除而成 180s 超时死链。`browser_*(14)`保留——DSH 浏览器栈全在 `experimental/`,被上游 `verify-default-product-isolation` 门禁进 shipped 组合,无法对齐。) |
+| 当前版本 | v0.122.0(**vendored DeepSeek Harness 整体升级到上游 master `dsh-v0.1.7-alpha.2`(commit `0010283`,2026-09-23;上一版基线 `0d1f500` = 0.1.6-alpha.1)**:`vendor/deepseek-harness` 整树替换(上游 13244 个文件),342 个 StarHub 本地独有文件(`packages/starhub/*` 11 包、`apps/starhub-window`、`examples/starhub-*`、本地脚本与 Agent Notes)原样保留,32 处补丁逐项重放或退役(`UPSTREAM_COMMIT.txt` 同步更新);host/client 双面 `build:lib`、starhub 单测 1146 例、Rust 221 例、root node 套件、`build:window` / `build:web` 全绿。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-21 (v0.121.9)*
+*最后更新: 2026-09-23 (v0.122.0)*

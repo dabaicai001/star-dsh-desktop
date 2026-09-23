@@ -13,10 +13,10 @@
  * (StarHub 分组,壳内 React tab),连接管理为壳内小对话框。
  */
 import {
-  IconArchiveOutline20,
-  IconBrowseOutline16,
-  IconCodeOutline16,
-  IconDataOutline16,
+  IconArchiveOutlineMedium,
+  IconBrowseOutlineMedium,
+  IconCodeOutlineMedium,
+  IconDataOutlineMedium,
   type IconProps,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ComponentType } from 'react'
@@ -134,7 +134,7 @@ export const STARHUB_SUBCATEGORIES: readonly StarHubSubcategory[] = [
     key: 'terminal',
     label: '终端',
     routePrefix: '/ssh',
-    Icon: IconCodeOutline16,
+    Icon: IconCodeOutlineMedium,
     matches: (a) => {
       const name = routeNameForAsset(a)
       return name === 'ssh-terminal' || name === 'db-broker'
@@ -144,7 +144,7 @@ export const STARHUB_SUBCATEGORIES: readonly StarHubSubcategory[] = [
     key: 'database',
     label: '数据库',
     routePrefix: '/db/mysql',
-    Icon: IconDataOutline16,
+    Icon: IconDataOutlineMedium,
     matches: (a) => {
       const name = routeNameForAsset(a)
       return name === 'db-mysql' || name === 'db-postgresql' || name === 'db-clickhouse'
@@ -156,7 +156,7 @@ export const STARHUB_SUBCATEGORIES: readonly StarHubSubcategory[] = [
     key: 'docker',
     label: 'Docker',
     routePrefix: '/docker',
-    Icon: IconArchiveOutline20,
+    Icon: IconArchiveOutlineMedium,
     matches: a => routeNameForAsset(a) === 'docker',
   },
   {
@@ -165,7 +165,7 @@ export const STARHUB_SUBCATEGORIES: readonly StarHubSubcategory[] = [
     key: 'sandbox',
     label: '沙箱桌面',
     routePrefix: '/sandbox',
-    Icon: IconArchiveOutline20,
+    Icon: IconArchiveOutlineMedium,
     matches: () => false,
   },
   {
@@ -174,7 +174,7 @@ export const STARHUB_SUBCATEGORIES: readonly StarHubSubcategory[] = [
     key: 'android',
     label: 'Android',
     routePrefix: '/android',
-    Icon: IconBrowseOutline16,
+    Icon: IconBrowseOutlineMedium,
     matches: () => false,
   },
 ]

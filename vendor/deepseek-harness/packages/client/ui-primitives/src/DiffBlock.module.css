@@ -10,6 +10,7 @@
 
   position: relative;
   margin: 16px 0;
+  overflow: hidden;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-markdown-code-block);
   border-radius: var(--dsl-diff-radius);
@@ -60,6 +61,14 @@
 .cell,
 .spanRow {
   white-space: pre;
+}
+
+/* Wrap toggle (CodeToolbar): long lines fold inside their column instead of
+   widening the sheet. */
+.block[data-code-wrap='true'] .cell,
+.block[data-code-wrap='true'] .spanRow {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* Column heads: marker-carrying (- before / + after), pinned while the

@@ -11,8 +11,8 @@
  */
 import { useState } from 'react'
 import {
-  IconChevronDownOutline14, IconChevronRightOutline14,
-  IconCloseOutline16,
+  IconChevronDownOutlineMedium, IconChevronRightOutlineMedium,
+  IconCloseOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ExecRecord } from './exec-records.ts'
 import css from './ExecRecordList.module.css'
@@ -74,7 +74,7 @@ export function ExecRecordList({ records, onClose, onClear, onDisconnect }: {
           aria-label="返回资产列表"
           onClick={onClose}
         >
-          <IconCloseOutline16 size={14} />
+          <IconCloseOutlineMedium size={14} />
         </button>
       </header>
       <div className={css.list} role="region" aria-label="SSH 执行记录列表">
@@ -98,7 +98,7 @@ export function ExecRecordList({ records, onClose, onClear, onDisconnect }: {
                   onClick={() => toggle(record.sessionId)}
                 >
                   <span className={css.chevron}>
-                    {open ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
+                    {open ? <IconChevronDownOutlineMedium size={12} /> : <IconChevronRightOutlineMedium size={12} />}
                   </span>
                   <span className={css.badge}>{name}</span>
                   <span className={css.command}>$ {record.command}</span>
@@ -111,7 +111,7 @@ export function ExecRecordList({ records, onClose, onClear, onDisconnect }: {
                   aria-label={`断开 ${name} 的连接并移除记录`}
                   onClick={() => onDisconnect(record.sessionId)}
                 >
-                  <IconCloseOutline16 size={12} />
+                  <IconCloseOutlineMedium size={12} />
                 </button>
               </div>
               {open && (

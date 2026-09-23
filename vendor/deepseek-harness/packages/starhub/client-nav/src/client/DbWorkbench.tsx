@@ -24,9 +24,9 @@ import { DbDataGrid, cellText } from './DbDataGrid.tsx'
 import { SqlEditor, type SqlCompletionSchema } from './SqlEditor.tsx'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
 import {
-  IconBrowseOutline16, IconChevronDownOutline14, IconChevronRightOutline14, IconCloseFill14,
-  IconCloseOutline16, IconCodeOutline16, IconDataOutline16, IconInspectOutline12,
-  IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14,
+  IconBrowseOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseFillMedium,
+  IconCloseOutlineMedium, IconCodeOutlineMedium, IconDataOutlineMedium, IconInspectOutlineMedium,
+  IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { NewTableDialog, ColumnListDialog, IndexListDialog } from './DbTableDialogs.tsx'
@@ -186,9 +186,9 @@ function TableRow({ table, selected, database, supportsAlter, expanded, columns,
             aria-label={expanded ? `收起 ${table} 字段` : `展开 ${table} 字段`}
             aria-expanded={expanded}
           >
-            {expanded ? <IconChevronDownOutline14 size={11} /> : <IconChevronRightOutline14 size={11} />}
+            {expanded ? <IconChevronDownOutlineMedium size={11} /> : <IconChevronRightOutlineMedium size={11} />}
           </button>
-          <span className={css.nodeIcon} aria-hidden="true"><IconBrowseOutline16 size={13} /></span>
+          <span className={css.nodeIcon} aria-hidden="true"><IconBrowseOutlineMedium size={13} /></span>
           <span>{table}</span>
           {loading && <span className={css.hint}>…</span>}
         </div>
@@ -252,9 +252,9 @@ function DatabaseRow({ node, children, actions }: {
         title={node.name}
       >
         <span className={css.chevron} aria-hidden="true">
-          {node.expanded ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
+          {node.expanded ? <IconChevronDownOutlineMedium size={12} /> : <IconChevronRightOutlineMedium size={12} />}
         </span>
-        <span className={css.nodeIcon} aria-hidden="true"><IconDataOutline16 size={14} /></span>
+        <span className={css.nodeIcon} aria-hidden="true"><IconDataOutlineMedium size={14} /></span>
         <span>{node.name}</span>
         {node.loading && <span className={css.hint}>…</span>}
       </button>
@@ -943,14 +943,14 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
             <span className={css.sub}>{dbTypeLabel} · {typeof asset.config.host === 'string' ? asset.config.host : '未配置主机'}</span>
           </div>
           <span className={css.spacer} />
-          <button type="button" className={css.iconButton} onClick={() => { const id = connRef.current; if (id !== null) void loadDatabases(id) }} title="刷新数据库" aria-label="刷新数据库"><IconRefreshOutline14 size={15} /></button>
-          <button type="button" className={css.iconButton} onClick={onClose} title="关闭工作区" aria-label="关闭工作区"><IconCloseOutline16 size={15} /></button>
+          <button type="button" className={css.iconButton} onClick={() => { const id = connRef.current; if (id !== null) void loadDatabases(id) }} title="刷新数据库" aria-label="刷新数据库"><IconRefreshOutlineMedium size={15} /></button>
+          <button type="button" className={css.iconButton} onClick={onClose} title="关闭工作区" aria-label="关闭工作区"><IconCloseOutlineMedium size={15} /></button>
         </header>
         <div className={css.body}>
           <aside className={css.tree}>
             <div className={css.treeToolbar}>
               <span className={css.treeTitle}>数据库对象</span>
-              <button type="button" className={css.treeRefresh} onClick={refreshDatabases} title="刷新数据库列表" aria-label="刷新数据库列表"><IconRefreshOutline14 size={14} /></button>
+              <button type="button" className={css.treeRefresh} onClick={refreshDatabases} title="刷新数据库列表" aria-label="刷新数据库列表"><IconRefreshOutlineMedium size={14} /></button>
             </div>
             <input
               type="search"
@@ -1040,7 +1040,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                         onClick={() =>{  closeQuery(tab.id) }}
                         title={`关闭 ${tab.name}`}
                         aria-label={`关闭 ${tab.name}`}
-                      ><IconCloseFill14 size={11} /></button>
+                      ><IconCloseFillMedium size={11} /></button>
                     )}
                   </div>
                 ))}
@@ -1066,11 +1066,11 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                       onClick={() =>{  closeTableTab(tab.key) }}
                       title={`关闭 ${tab.table}`}
                       aria-label={`关闭 ${tab.table}`}
-                    ><IconCloseFill14 size={11} /></button>
+                    ><IconCloseFillMedium size={11} /></button>
                   </div>
                 ))}
                 </div>
-                <button type="button" className={css.queryTabNew} onClick={newQuery} title="新建查询标签" aria-label="新建查询"><IconPlusOutline16 size={12} /> 新建查询</button>
+                <button type="button" className={css.queryTabNew} onClick={newQuery} title="新建查询标签" aria-label="新建查询"><IconPlusOutlineMedium size={12} /> 新建查询</button>
               </div>
               <span className={css.spacer} />
               {monitorSupported && (
@@ -1081,7 +1081,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                   title={showMonitor ? '收起监控面板' : '展开监控面板'}
                   aria-label="监控面板"
                   aria-pressed={showMonitor}
-                ><IconDataOutline16 size={15} /></button>
+                ><IconDataOutlineMedium size={15} /></button>
               )}
             </div>
             {connected ? (
@@ -1105,9 +1105,9 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                       <span className={css.hint}>Mod-Enter 执行 · Shift-Mod-e EXPLAIN · Tab 缩进</span>
                       {sqlLoading && <span className={css.hint}>执行中…</span>}
                       <span className={css.spacer} />
-                      <button type="button" className={css.sqlRunBtn} onClick={() => void executeSql(activeTab.sql, false)} disabled={sqlLoading || activeTab.sql.trim() === ''} title={activeTab.sql.trim() === '' ? '输入 SQL 后可执行' : '执行 SQL (Mod-Enter)'} aria-label="执行 SQL"><IconPlayOutline16 size={13} /></button>
-                      <button type="button" className={css.sqlBarBtn} onClick={() => void executeSql(activeTab.sql, true)} disabled={sqlLoading || activeTab.sql.trim() === ''} title={activeTab.sql.trim() === '' ? '输入 SQL 后可执行 EXPLAIN' : '执行 EXPLAIN (Shift-Mod-e)'} aria-label="执行 EXPLAIN"><IconInspectOutline12 size={13} /></button>
-                      <button type="button" className={css.sqlBarBtn} onClick={formatCurrentSql} title="格式化 SQL" aria-label="格式化 SQL"><IconCodeOutline16 size={13} /></button>
+                      <button type="button" className={css.sqlRunBtn} onClick={() => void executeSql(activeTab.sql, false)} disabled={sqlLoading || activeTab.sql.trim() === ''} title={activeTab.sql.trim() === '' ? '输入 SQL 后可执行' : '执行 SQL (Mod-Enter)'} aria-label="执行 SQL"><IconPlayOutlineMedium size={13} /></button>
+                      <button type="button" className={css.sqlBarBtn} onClick={() => void executeSql(activeTab.sql, true)} disabled={sqlLoading || activeTab.sql.trim() === ''} title={activeTab.sql.trim() === '' ? '输入 SQL 后可执行 EXPLAIN' : '执行 EXPLAIN (Shift-Mod-e)'} aria-label="执行 EXPLAIN"><IconInspectOutlineMedium size={13} /></button>
+                      <button type="button" className={css.sqlBarBtn} onClick={formatCurrentSql} title="格式化 SQL" aria-label="格式化 SQL"><IconCodeOutlineMedium size={13} /></button>
                       <button type="button" className={`${css.sqlBarBtn} ${historyOpen ? css.sqlBarBtnActive : ''}`} onClick={toggleHistory} title="查询历史" aria-label="查询历史"><MetricIcon name="clock" size={13} /></button>
                     </div>
                     {/* 查询/表标签条已上移到内容区头部(统一 tab 条)。 */}

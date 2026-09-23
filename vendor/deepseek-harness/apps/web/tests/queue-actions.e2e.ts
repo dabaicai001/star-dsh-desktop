@@ -27,12 +27,17 @@ const PRESERVED_EXPECTED = join(SNAPSHOT_DIR, 'preserved.expected.md')
 const PRESERVED_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'preserved-expanded.expected.md')
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
 const SENDING_EXPECTED = join(SNAPSHOT_DIR, 'sending.expected.md')
+const WRITER_HELD_EXPECTED = join(SNAPSHOT_DIR, 'writer-held.expected.md')
 const FAILED_EXPECTED = join(SNAPSHOT_DIR, 'failed.expected.md')
 const MODE = webSnapshotMode()
 
 const ACTIVE_PROMPT = 'Reply with a one-sentence description of event sourcing, then stop.'
 const REMOVE = 'Queue item to remove'
 const EDIT = 'Queue item to edit'
+// The edited value is deliberately multi-line: the inline editor must keep the
+// line breaks through the queue mutation and into the model-bound user message.
+const EDITED_CONTENT = 'Edited\nqueue item'
+// The dock preview flattens the queued text, so row locators match this form.
 const EDITED = 'Edited queue item'
 const TAIL = 'Queue item preserved after stop'
 const WAKE = 'Wake the preserved queue'
@@ -186,12 +191,28 @@ describe('web e2e: queue row actions', () => {
     const editRow = page.locator('[data-queue-dock] li', { hasText: EDIT })
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
-    await editor.fill(EDITED)
-    await page.getByRole('button', { name: 'Save queued message' }).hover()
-    await page.getByRole('tooltip', { name: 'Save queued message', exact: true }).waitFor()
+    await editor.fill(EDITED_CONTENT)
+    const save = page.getByRole('button', { name: 'Save queued message' })
+    await save.hover()
+    const saveTooltip = page.getByRole('tooltip', { name: 'Save queued message', exact: true })
+    await saveTooltip.waitFor()
+    const tooltipGeometry = await page.evaluate(() => {
+      const element = document.querySelector<HTMLElement>('[role="tooltip"]')
+      if (element === null) return null
+      const tooltip = element.getBoundingClientRect()
+      return {
+        declaredLeft: Number.parseFloat(element.style.left),
+        declaredTop: Number.parseFloat(element.style.top),
+        tooltipCenter: tooltip.left + tooltip.width / 2,
+        tooltipTop: tooltip.top,
+      }
+    })
+    expect(tooltipGeometry).not.toBeNull()
+    expect(Math.abs(tooltipGeometry!.tooltipCenter - tooltipGeometry!.declaredLeft)).toBeLessThan(2)
+    expect(Math.abs(tooltipGeometry!.tooltipTop - tooltipGeometry!.declaredTop)).toBeLessThan(2)
     const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
-    await settleQueueAction(() => page.getByRole('button', { name: 'Save queued message' }).click(), EDITED)
+    await settleQueueAction(() => save.click(), EDITED)
     await page.getByText(EDITED, { exact: true }).waitFor()
 
     const removeRow = page.locator('[data-queue-dock] li', { hasText: REMOVE })
@@ -232,6 +253,29 @@ describe('web e2e: queue row actions', () => {
     ].join('\n')
     await compareOrRefreshGolden(FAILED_EXPECTED, failed, MODE)
 
+    await page.route('**/api/session/prompt', async (route) => {
+      const envelope = route.request().postDataJSON() as { rpcId: string }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        json: {
+          type: 'server-response', rpcId: envelope.rpcId,
+          result: {
+            ok: false,
+            error: { code: 'session/writer-held', message: 'writer held', details: { sessionId: 'held-session' } },
+          },
+        },
+      })
+    }, { times: 1 })
+    await input.press('Enter')
+    const writerHeld = page.getByRole('alert').filter({ hasText: 'This session is already in use' })
+    await writerHeld.waitFor()
+    await expect.poll(() => input.textContent()).toBe(FAILED)
+    await compareOrRefreshGolden(WRITER_HELD_EXPECTED, [
+      await writerHeld.ariaSnapshot(),
+      await captureStableAria(page, '[data-composer-card]', scaffold.workspaceCwd),
+    ].join('\n'), MODE)
+
     await input.fill(TAIL)
     await input.press('Enter')
     await expect.poll(
@@ -268,7 +312,7 @@ describe('web e2e: queue row actions', () => {
       .toEqual(['aborted', 'completed', 'completed', 'completed'])
     expect(sessionEvents.flatMap(event => event.type === 'user/message' && event.data.source.kind === 'user'
       ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
-      : [])).toEqual([ACTIVE_PROMPT, EDITED, TAIL, WAKE])
+      : [])).toEqual([ACTIVE_PROMPT, EDITED_CONTENT, TAIL, WAKE])
     await expect.poll(() => page.locator('[data-queue-dock]').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -373,7 +417,7 @@ describe('web e2e: queue row actions', () => {
       [
         'collapsed.expected.md', 'editing.expected.md', 'layout.expected.md',
         'preserved.expected.md', 'preserved-expanded.expected.md', 'ui.expected.md',
-        'sending.expected.md', 'failed.expected.md',
+        'sending.expected.md', 'failed.expected.md', 'writer-held.expected.md',
       ],
     )
   })

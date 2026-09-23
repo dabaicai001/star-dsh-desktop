@@ -16,7 +16,7 @@
  * @module StarHub SSH/SFTP overlay (client)
  */
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { IconCheckOutline14, IconCloseFill14, IconCloseOutline16, IconCodeOutline16, IconFolderOpenOutline16, IconLinkOutline16, IconPaperclipOutline16, IconPlusOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, IconCloseFillMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconFolderOpenOutlineMedium, IconLinkOutlineMedium, IconPaperclipOutlineMedium, IconPlusOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -744,7 +744,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
             {!connected && closed && (
               <button type="button" className={css.reconnectAction} onClick={reconnect} title="重新建立 SSH 连接">重新连接</button>
             )}
-            <button type="button" className={css.iconButton} onClick={onClose} title="关闭" aria-label="关闭 SSH 工作区"><IconCloseOutline16 size={16} /></button>
+            <button type="button" className={css.iconButton} onClick={onClose} title="关闭" aria-label="关闭 SSH 工作区"><IconCloseOutlineMedium size={16} /></button>
             <button
               type="button"
               className={css.broadcastAction}
@@ -758,15 +758,15 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
         <input ref={quickImportRef} className={css.fileInput} type="file" accept=".qbl,.qblx" onChange={event => void importQuickCommandFile(event)} />
         {broadcastNotice !== null && (
           <div className={css.notice} role="status">
-            <span className={css.noticeMark} aria-hidden="true"><IconCheckOutline14 size={13} /></span>
+            <span className={css.noticeMark} aria-hidden="true"><IconCheckOutlineMedium size={13} /></span>
             <span>{broadcastNotice}</span>
-            <button type="button" className={css.noticeClose} onClick={() =>{  setBroadcastNotice(null) }} aria-label="关闭提示"><IconCloseFill14 size={11} /></button>
+            <button type="button" className={css.noticeClose} onClick={() =>{  setBroadcastNotice(null) }} aria-label="关闭提示"><IconCloseFillMedium size={11} /></button>
           </div>
         )}
         <div className={css.workspace}>
           <main className={css.terminalWorkspace} aria-label="SSH 终端">
             <div className={css.workspaceTabs} role="tablist" aria-label="SSH 工作区">
-              <span className={css.terminalTab} role="tab" aria-selected="true"><IconCodeOutline16 size={14} /> 终端</span>
+              <span className={css.terminalTab} role="tab" aria-selected="true"><IconCodeOutlineMedium size={14} /> 终端</span>
               <span className={css.spacer} />
               <button
                 type="button"
@@ -775,7 +775,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
                 title={connected ? '显示或隐藏 SFTP 文件面板' : '等待 SSH 连接后启用 SFTP'}
                 aria-pressed={sidePanel === 'sftp'}
               >
-                <IconFolderOpenOutline16 size={15} /> 文件
+                <IconFolderOpenOutlineMedium size={15} /> 文件
                 {transferTasks.activeCount > 0 && (
                   <span
                     className={css.tabBadge}
@@ -797,7 +797,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
                 }}
                 title={connected ? '在独立窗口打开网页访问(webview)' : '等待 SSH 连接后启用网页访问'}
                 aria-pressed={false}
-              ><IconLinkOutline16 size={15} /> 网页</button>
+              ><IconLinkOutlineMedium size={15} /> 网页</button>
               <span className={css.connectionState}><span className={connected ? css.connectionOnline : (closed ? css.connectionOffline : css.connectionPending)} />{connected ? '已连接' : (closed ? '已断开' : '连接中')}</span>
             </div>
             <div className={css.quickBar} aria-label="快捷命令">
@@ -808,8 +808,8 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
                 ))}
                 {quickCommands.length === 0 && <span className={css.quickEmpty}>添加常用 SSH 命令</span>}
               </div>
-              <button type="button" className={css.quickIconButton} onClick={() => quickImportRef.current?.click()} title="导入 Xshell .qbl / .qblx" aria-label="导入 Xshell 快捷命令"><IconPaperclipOutline16 size={14} /></button>
-              <button type="button" className={css.quickIconButton} onClick={() =>{  setQuickEditorOpen(true) }} title="管理快捷命令" aria-label="管理快捷命令"><IconPlusOutline16 size={14} /></button>
+              <button type="button" className={css.quickIconButton} onClick={() => quickImportRef.current?.click()} title="导入 Xshell .qbl / .qblx" aria-label="导入 Xshell 快捷命令"><IconPaperclipOutlineMedium size={14} /></button>
+              <button type="button" className={css.quickIconButton} onClick={() =>{  setQuickEditorOpen(true) }} title="管理快捷命令" aria-label="管理快捷命令"><IconPlusOutlineMedium size={14} /></button>
             </div>
             <input
               ref={zmodemInputRef} className={css.fileInput} type="file" multiple
@@ -1020,20 +1020,20 @@ function QuickCommandEditor({ commands, onChange, onClose }: {
       <section className={css.quickEditor}>
         <header className={css.quickEditorHeader}>
           <div><span className={css.quickEditorTitle}>快捷命令</span><span className={css.quickEditorHint}>点击命令将发送到当前 SSH 会话</span></div>
-          <button type="button" className={css.iconButton} onClick={onClose} title="关闭" aria-label="关闭"><IconCloseOutline16 size={15} /></button>
+          <button type="button" className={css.iconButton} onClick={onClose} title="关闭" aria-label="关闭"><IconCloseOutlineMedium size={15} /></button>
         </header>
         <div className={css.quickEditorList}>
           {commands.map(command => (
             <div className={css.quickEditorRow} key={command.id}>
               <input value={command.label} placeholder="名称" aria-label="快捷命令名称" onChange={(event) =>{  update(command.id, 'label', event.target.value) }} />
               <textarea value={command.cmd} placeholder="SSH 命令" aria-label="快捷命令内容" onChange={(event) =>{  update(command.id, 'cmd', event.target.value) }} />
-              <button type="button" className={css.quickDelete} onClick={() =>{  onChange(commands.filter(item => item.id !== command.id)) }} title="删除快捷命令" aria-label={`删除 ${command.label || '快捷命令'}`}><IconCloseFill14 size={12} /></button>
+              <button type="button" className={css.quickDelete} onClick={() =>{  onChange(commands.filter(item => item.id !== command.id)) }} title="删除快捷命令" aria-label={`删除 ${command.label || '快捷命令'}`}><IconCloseFillMedium size={12} /></button>
             </div>
           ))}
           {commands.length === 0 && <div className={css.quickEditorEmpty}>暂无快捷命令。可新增一条，或从 Xshell 导入 `.qbl` / `.qblx`。</div>}
         </div>
         <footer className={css.quickEditorFooter}>
-          <button type="button" className={css.quickAdd} onClick={() =>{  onChange([...commands, createQuickCommand()]) }}><IconPlusOutline16 size={14} /> 添加命令</button>
+          <button type="button" className={css.quickAdd} onClick={() =>{  onChange([...commands, createQuickCommand()]) }}><IconPlusOutlineMedium size={14} /> 添加命令</button>
           <span className={css.spacer} />
           <button type="button" className={css.quickDone} onClick={onClose}>完成</button>
         </footer>

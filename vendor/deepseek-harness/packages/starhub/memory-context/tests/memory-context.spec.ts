@@ -2,12 +2,13 @@
  * StarHub memory context:渲染、开关语义、pull 降级、pre-step 注入。
  */
 import { describe, expect, it, vi } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
 import {
   apply, composeMemoryContext, hasLiveInjection, isAutoReviewEnabled, isMemoryConfigured,
   MEMORY_TOOL_NAME, memoryRouteOf, recordInjection, renderMemoryContext, shouldInject,
+  type Config, type MemoryContextValue,
 } from '../src/index.ts'
 import { apply as applyInvariant } from '../src/invariant.ts'
 
@@ -37,6 +38,21 @@ function makeAgent(cwd?: string) {
   }
 }
 
+/** 测试用 Volatile 替身:值固定(各用例的 namespace 值本就不可变)。 */
+function volatileOf<T>(value: T): Volatile<T> {
+  return { get: () => value } as unknown as Volatile<T>
+}
+
+/** DSH 0.1.7:settings 命名空间改由插件 Config 的 volatile 字段派生。 */
+function makeConfig(namespaceValue: MemoryContextValue | undefined): Config {
+  return {
+    enabled: volatileOf(namespaceValue?.enabled ?? false),
+    autoReview: volatileOf(namespaceValue?.autoReview ?? false),
+    memoryProvider: volatileOf(namespaceValue?.memoryProvider ?? ''),
+    memoryModel: volatileOf(namespaceValue?.memoryModel ?? ''),
+  }
+}
+
 function makeCtx(services: Record<string, unknown>, namespaceValue: unknown) {
   const listeners: PreStepListener[] = []
   const on = vi.fn((_event: string, listener: PreStepListener) => {
@@ -44,14 +60,12 @@ function makeCtx(services: Record<string, unknown>, namespaceValue: unknown) {
     return () => undefined
   })
   const effect = vi.fn((callback: () => unknown) => callback())
-  const register = vi.fn(() => ({ get: () => namespaceValue }))
   const ctx = {
     get: (serviceName: string) => services[serviceName],
     on,
     effect,
-    settings: { register },
   } as unknown as Context
-  return { ctx, listeners, register }
+  return { ctx, config: makeConfig(namespaceValue as MemoryContextValue | undefined), listeners }
 }
 
 const ENTER: PreStepDecision = { kind: 'enter', messages: [] }
@@ -175,22 +189,22 @@ describe('apply (pre-step injection)', () => {
   }
 
   it('injects memory text with user/global/folder scopes when enabled and the route is configured', async () => {
-    const { ctx, listeners } = makeCtx(
+    const { ctx, config, listeners } = makeCtx(
       { 'sdk-transport': makeTransport(CARDS).transport },
       { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
     )
-    apply(ctx)
+    apply(ctx, config)
     const decision = await runListener(listeners, makeAgent('E:\\ws\\starhub'))
     expect(decision.kind).toBe('enter')
-    const messages = (decision as { messages: Array<{ content: Array<{ text?: string }> }> }).messages
+    const messages = (decision as unknown as { messages: Array<{ content: Array<{ text?: string }> }> }).messages
     expect(messages).toHaveLength(1)
     expect(messages[0]!.content[0]!.text).toContain('偏好中文回复')
   })
 
   it('does not inject when the namespace was never written (default off since v0.92.0)', async () => {
     const { transport, request } = makeTransport(CARDS)
-    const { ctx, listeners } = makeCtx({ 'sdk-transport': transport }, undefined)
-    apply(ctx)
+    const { ctx, config, listeners } = makeCtx({ 'sdk-transport': transport }, undefined)
+    apply(ctx, config)
     const decision = await runListener(listeners, makeAgent('/w'))
     expect(decision).toBe(ENTER)
     expect(request).not.toHaveBeenCalled()
@@ -198,11 +212,11 @@ describe('apply (pre-step injection)', () => {
 
   it('omits the folder scope for sessions without a cwd', async () => {
     const { transport, request } = makeTransport(CARDS)
-    const { ctx, listeners } = makeCtx(
+    const { ctx, config, listeners } = makeCtx(
       { 'sdk-transport': transport },
       { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
     )
-    apply(ctx)
+    apply(ctx, config)
     await runListener(listeners, makeAgent())
     expect(request).toHaveBeenCalledWith('starhub/memory.cards', {
       scopes: ['user', 'global'],
@@ -212,8 +226,8 @@ describe('apply (pre-step injection)', () => {
 
   it('does not inject when the master switch is off', async () => {
     const { transport, request } = makeTransport(CARDS)
-    const { ctx, listeners } = makeCtx({ 'sdk-transport': transport }, { enabled: false })
-    apply(ctx)
+    const { ctx, config, listeners } = makeCtx({ 'sdk-transport': transport }, { enabled: false })
+    apply(ctx, config)
     const decision = await runListener(listeners, makeAgent('/w'))
     expect(decision).toBe(ENTER)
     expect(request).not.toHaveBeenCalled()
@@ -223,8 +237,8 @@ describe('apply (pre-step injection)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const { transport, request } = makeTransport(CARDS)
-      const { ctx, listeners } = makeCtx({ 'sdk-transport': transport }, { enabled: true })
-      apply(ctx)
+      const { ctx, config, listeners } = makeCtx({ 'sdk-transport': transport }, { enabled: true })
+      apply(ctx, config)
       const decision = await runListener(listeners, makeAgent('/w'))
       expect(decision).toBe(ENTER)
       expect(request).not.toHaveBeenCalled()
@@ -236,8 +250,8 @@ describe('apply (pre-step injection)', () => {
 
   it('passes through rejected decisions untouched', async () => {
     const { transport, request } = makeTransport(CARDS)
-    const { ctx, listeners } = makeCtx({ 'sdk-transport': transport }, undefined)
-    apply(ctx)
+    const { ctx, config, listeners } = makeCtx({ 'sdk-transport': transport }, undefined)
+    apply(ctx, config)
     const rejected: PreStepDecision = { kind: 'reject' }
     const listener = listeners[0]!
     const decision = await listener(
@@ -251,11 +265,11 @@ describe('apply (pre-step injection)', () => {
   it('returns the decision untouched when every card comes back empty', async () => {
     const empty = { cards: [{ scope: 'user', content: '', char_count: 0, char_limit: 1375, entry_count: 0 }] }
     const { transport, request } = makeTransport(empty)
-    const { ctx, listeners } = makeCtx(
+    const { ctx, config, listeners } = makeCtx(
       { 'sdk-transport': transport },
       { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
     )
-    apply(ctx)
+    apply(ctx, config)
     const decision = await runListener(listeners, makeAgent('/w'))
     expect(decision).toBe(ENTER)
     expect(request).toHaveBeenCalledOnce()
@@ -263,8 +277,8 @@ describe('apply (pre-step injection)', () => {
 
   it('returns the decision untouched when the step signal is already aborted', async () => {
     const { transport, request } = makeTransport(CARDS)
-    const { ctx, listeners } = makeCtx({ 'sdk-transport': transport }, { enabled: true })
-    apply(ctx)
+    const { ctx, config, listeners } = makeCtx({ 'sdk-transport': transport }, { enabled: true })
+    apply(ctx, config)
     const controller = new AbortController()
     controller.abort()
     const decision = await listeners[0]!(
@@ -292,23 +306,23 @@ describe('memory tool lock gate (tools/pre-execute, v0.94.0)', () => {
   }
 
   it('denies memory tool calls when the route is missing', async () => {
-    const { ctx, listeners } = makeCtx({}, { enabled: true })
-    apply(ctx)
+    const { ctx, config, listeners } = makeCtx({}, { enabled: true })
+    apply(ctx, config)
     const decision = await gateListener(listeners)({ name: MEMORY_TOOL_NAME }, () => Promise.resolve(ALLOW))
     expect(decision.kind).toBe('deny')
     expect((decision as { reason: string }).reason).toContain('配置记忆模型')
   })
 
   it('allows memory tool calls once the route is configured', async () => {
-    const { ctx, listeners } = makeCtx({}, { memoryProvider: 'p', memoryModel: 'm' })
-    apply(ctx)
+    const { ctx, config, listeners } = makeCtx({}, { memoryProvider: 'p', memoryModel: 'm' })
+    apply(ctx, config)
     await expect(gateListener(listeners)({ name: MEMORY_TOOL_NAME }, () => Promise.resolve(ALLOW)))
       .resolves.toEqual(ALLOW)
   })
 
   it('passes non-memory tools through untouched even when unconfigured', async () => {
-    const { ctx, listeners } = makeCtx({}, undefined)
-    apply(ctx)
+    const { ctx, config, listeners } = makeCtx({}, undefined)
+    apply(ctx, config)
     await expect(gateListener(listeners)({ name: 'ssh_exec' }, () => Promise.resolve(ALLOW)))
       .resolves.toEqual(ALLOW)
   })
@@ -343,7 +357,7 @@ describe('v0.102.0 injection dedup', () => {
       type: 'user/message',
       data: {
         content: [{ type: 'text', text }],
-        source: { kind: 'plugin', plugin },
+        source: { kind: 'dsh-starhub-memory-context', plugin },
       },
     }
   }
@@ -452,18 +466,18 @@ describe('v0.102.0 injection dedup', () => {
 
     it('skips a second pre-step when text and live injection are both present', async () => {
       const { transport } = makeTransport(CARDS)
-      const { ctx, listeners } = makeCtx(
+      const { ctx, config, listeners } = makeCtx(
         { 'sdk-transport': transport },
         { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
       )
-      apply(ctx)
+      apply(ctx, config)
       const agent = makeAgent('/w')
       // 第一次注入:events 是空(模拟刚启动,日志还没追上)→ 仍注入。
       const first = await runStep(listeners, agent)
       expect(first.kind).toBe('enter')
-      expect((first as { messages: unknown[] }).messages).toHaveLength(1)
+      expect((first as unknown as { messages: unknown[] }).messages).toHaveLength(1)
       // 把本次注入文本回灌到 events(模拟 agent-loop 已写入日志)。
-      const injectedText = ((((first as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
+      const injectedText = ((((first as unknown as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
       ;(agent as { session: { events?: unknown[] } }).session.events = [injectionEvent(injectedText)]
       // 第二次 pre-step:内容 + 事件流都匹配 → 跳过。
       const second = await runStep(listeners, agent)
@@ -472,19 +486,19 @@ describe('v0.102.0 injection dedup', () => {
 
     it('re-injects when the live injection is gone from events (compaction clip)', async () => {
       const { transport } = makeTransport(CARDS)
-      const { ctx, listeners } = makeCtx(
+      const { ctx, config, listeners } = makeCtx(
         { 'sdk-transport': transport },
         { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
       )
-      apply(ctx)
+      apply(ctx, config)
       const agent = makeAgent('/w')
       const first = await runStep(listeners, agent)
-      const injectedText = ((((first as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
+      const injectedText = ((((first as unknown as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
       // 事件流里留一条无关 user/message(模拟 compaction 把上次注入裁掉)。
       ;(agent as { session: { events?: unknown[] } }).session.events = [{ type: 'user/message', data: { content: [{ type: 'text', text: 'unrelated' }] } }]
       const second = await runStep(listeners, agent)
       expect(second.kind).toBe('enter')
-      expect((second as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text).toBe(injectedText)
+      expect((second as unknown as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text).toBe(injectedText)
     })
 
     it('re-injects when the rendered memory text changes', async () => {
@@ -493,37 +507,37 @@ describe('v0.102.0 injection dedup', () => {
       const mutableResult = { current: { cards: [{ scope: 'user', content: 'A', char_count: 1, char_limit: 1375, entry_count: 1 }] } }
       const request = vi.fn(async () => mutableResult.current)
       const transport = { request } as unknown as JsonRpcTransportPeer
-      const { ctx, listeners } = makeCtx(
+      const { ctx, config, listeners } = makeCtx(
         { 'sdk-transport': transport },
         { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
       )
-      apply(ctx)
+      apply(ctx, config)
       const agent = makeAgent('/w')
       // 第一次注入,events 回灌本次文本。
       const first = await runStep(listeners, agent)
-      const firstText = ((((first as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
+      const firstText = ((((first as unknown as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
       expect(firstText).toContain('A')
       ;(agent as { session: { events?: unknown[] } }).session.events = [injectionEvent(firstText)]
       // 渲染文本变化 → 必须重新注入。
       mutableResult.current = { cards: [{ scope: 'user', content: 'B', char_count: 1, char_limit: 1375, entry_count: 1 }] }
       const second = await runStep(listeners, agent)
       expect(second.kind).toBe('enter')
-      const secondText = ((((second as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
+      const secondText = ((((second as unknown as { messages: Array<{ content: Array<{ text?: string }> }> }).messages[0]!.content[0]!.text) ?? '') as string)
       expect(secondText).not.toBe(firstText)
       expect(secondText).toContain('B')
     })
 
     it('dedupes by Map alone when session.events is absent', async () => {
       const { transport } = makeTransport(CARDS)
-      const { ctx, listeners } = makeCtx(
+      const { ctx, config, listeners } = makeCtx(
         { 'sdk-transport': transport },
         { enabled: true, memoryProvider: 'p', memoryModel: 'm' },
       )
-      apply(ctx)
+      apply(ctx, config)
       // 两次 pre-step,session.events 始终缺失(DSH web 会话就属此情形)。
       const agent = makeAgent('/w')
       const first = await runStep(listeners, agent)
-      expect((first as { messages: unknown[] }).messages).toHaveLength(1)
+      expect((first as unknown as { messages: unknown[] }).messages).toHaveLength(1)
       const second = await runStep(listeners, agent)
       expect(second).toBe(ENTER)
     })

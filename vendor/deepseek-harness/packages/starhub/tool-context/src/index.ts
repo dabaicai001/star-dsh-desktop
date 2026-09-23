@@ -13,19 +13,27 @@
  * @module @deepseek-ai/dsh-starhub-tool-context
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-settings'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'dsh-starhub-tool-context': { kind: 'dsh-starhub-tool-context', plugin: string } & ContextFormed
+  }
+}
 // Type-only: ctx.settings 的 Context 声明合并(register/get 类型化)。import type {} from '@deepseek-ai/dsh-settings'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'starhub-tool-context'
 
-/** The agent registry and settings service. */
-export const inject = ['agents', 'settings']
+/** The agent registry (settings 命名空间由 Config 派生,无需注入 settings 服务)。 */
+export const inject = ['agents']
 
-/** Settings namespace holding the current StarHub tool selection. */
+/** Settings namespace holding the current StarHub tool selection (profile entry id). */
 export const TOOL_CONTEXT_NAMESPACE = 'starhub-tool-context'
 
 /** Schema-validated shape written by client-nav. */
@@ -56,6 +64,45 @@ export const ToolContextSchema: z<StarHubToolContextValue> = z.object({
   assetType: z.string(),
   dbType: z.string(),
 })
+
+/**
+ * 插件 Config(DSH 0.1.7 起 settings 命名空间由插件 Config 的 volatile 字段派生,
+ * 旧 `ctx.settings.register` 面已移除)。client-nav 经 `settings.update` 写同一
+ * 命名空间的这些字段;volatile 引用由 Loader 热提交,pre-step 时 `.get()` 即活值。
+ */
+export interface Config {
+  sessionId: Volatile<string>
+  subcategory: Volatile<string>
+  assetId: Volatile<string>
+  assetName: Volatile<string>
+  routePrefix: Volatile<string>
+  assetType: Volatile<string>
+  dbType: Volatile<string>
+}
+
+/** Plugin Config: every GUI-editable namespace field as one live volatile reference. */
+export const Config = z.object({
+  sessionId: z.string().default('').volatile(),
+  subcategory: z.string().default('').volatile(),
+  assetId: z.string().default('').volatile(),
+  assetName: z.string().default('').volatile(),
+  routePrefix: z.string().default('').volatile(),
+  assetType: z.string().default('').volatile(),
+  dbType: z.string().default('').volatile(),
+})
+
+/** Detach the live config references into the plain value shape the injector renders. */
+export function readToolContext(config: Config): StarHubToolContextValue {
+  return {
+    sessionId: config.sessionId.get(),
+    subcategory: config.subcategory.get(),
+    assetId: config.assetId.get(),
+    assetName: config.assetName.get(),
+    routePrefix: config.routePrefix.get(),
+    assetType: config.assetType.get(),
+    dbType: config.dbType.get(),
+  }
+}
 
 /**
  * Render one injectable tool-context text from a non-empty selection.
@@ -111,26 +158,23 @@ function toolHintFor(value: StarHubToolContextValue): string | null {
 }
 
 /**
- * Register the plugin: declare the settings namespace once and inject the
- * current StarHub tool context on every agent pre-step.
+ * Register the plugin: settings 命名空间由本插件的 Config volatile 字段派生
+ * (DSH 0.1.7),pre-step 时按开关 + 当前 StarHub 工具选择注入上下文。
  * @param ctx - plugin context; the listener is disposed with it.
+ * @param config - live tool-context references (Loader 热提交)。
  */
-export function apply(ctx: Context): void {
-  const ns = TOOL_CONTEXT_NAMESPACE
-  // Declare the namespace once; the pre-step listener reads it per request.
-  const scope = ctx.settings.register(ns, ToolContextSchema)
-
+export function apply(ctx: Context, config: Config): void {
   ctx.on('agent/pre-step', async (
     { agent, signal },
     next,
   ): Promise<PreStepDecision> => {
     const decision = await next()
     if (decision.kind === 'reject' || signal.aborted) return decision
-    const value = scope.get()
+    const value = readToolContext(config)
     // 会话级作用域:仅当本次触发绑定的会话(agent.session.id)与 namespace
     // 里记录的 sessionId 一致时才注入;普通对话/其他会话不注入,避免全局粘性
     // 让每条对话都带上 starhub-tool-context 上下文。
-    if (value.sessionId === undefined || value.sessionId !== agent.session.id) return decision
+    if (value.sessionId === undefined || value.sessionId === '' || value.sessionId !== agent.session.id) return decision
     const text = renderToolContext(value)
     if (text === null) return decision
     return {
@@ -139,7 +183,7 @@ export function apply(ctx: Context): void {
         ...decision.messages,
         createUserMessage({
           content: [{ type: 'text', text }],
-          source: { kind: 'plugin', plugin: name, form: 'snapshot', sections: [{ name, text }] },
+          source: { kind: 'dsh-starhub-tool-context', plugin: name, form: 'snapshot', sections: [{ name, text }] },
         }),
       ],
     }

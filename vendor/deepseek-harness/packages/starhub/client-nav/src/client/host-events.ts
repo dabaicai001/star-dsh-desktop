@@ -8,6 +8,8 @@
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { IConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ISessions, IWorkspaces } from '@deepseek-ai/dsh-client-runtime/client'
+import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
+import { currentSessionId } from './current-session.ts'
 import { tauriListen, type TauriUnlisten } from './tauri.ts'
 import type { StarHubAsset } from './sections.ts'
 import type { StarHubAssets, ToolSelectionBridge } from './store.ts'
@@ -67,6 +69,8 @@ export interface AskAiDeps {
   selection: ToolSelectionBridge
   sessions: ISessions
   workspaces: IWorkspaces
+  /** 会话导航(0.1.7 起选择归 view owner 持有,经 uiWorkspace.openSession 聚焦)。 */
+  uiWorkspace: UiWorkspace
   /** 会话输入注册表;ui-conversation 未装载时为 undefined(prefill 退化为仅聚焦)。 */
   conversation: IConversation | undefined
 }
@@ -84,13 +88,13 @@ export function createAskAiHandler(deps: AskAiDeps): (payload: AskAiPayload) => 
     if (payload.assetId !== undefined) {
       // 取当前会话 id 作作用域:host 侧 tool-context 只对触发绑定(ask-ai)
       // 的会话注入,避免全局粘性扩散到普通对话。
-      const current = deps.sessions.list.getSnapshot().current
+      const current = currentSessionId(deps.sessions.list.getSnapshot())
       bindAssetContext(deps.writer, deps.selection.source.getSnapshot(), {
         id: payload.assetId,
         name: payload.assetName ?? '',
       }, current ?? '')
     }
-    void routeAskAi(payload.text, deps.sessions, deps.workspaces, deps.conversation)
+    void routeAskAi(payload.text, deps.sessions, deps.workspaces, deps.uiWorkspace, deps.conversation)
   }
 }
 
@@ -99,29 +103,30 @@ async function routeAskAi(
   text: string,
   sessions: ISessions,
   workspaces: IWorkspaces,
+  uiWorkspace: UiWorkspace,
   conversation: IConversation | undefined,
 ): Promise<void> {
-  const current = sessions.list.getSnapshot().current
+  const current = currentSessionId(sessions.list.getSnapshot())
   if (current !== undefined) {
-    // 优先聚焦已有会话:先写 draft 再重新选中(open 幂等)。
+    // 优先聚焦已有会话:先写 draft 再重新选中(openSession 幂等)。
     setDraft(sessions, conversation, current, text)
-    sessions.open(current)
+    uiWorkspace.openSession(current)
     return
   }
   // 0.1.6 起 IWorkspaces 不再有 recentWorkspaceId / connectWorkspace:
   // 「最近工作区」取列表首项(Host 侧按近用排序),新建会话走 sessions.create。
   const target = workspaces.list.getSnapshot().items[0]?.workspaceId
   if (target === undefined) {
-    // 没有任何工作区:清空选择落到新建会话视图,由用户自行开始。
-    sessions.clear()
+    // 没有任何工作区:0.1.7 无公开的「清空选择」面(导航归 view owner 持有),
+    // 维持现状由用户自行开始;无会话时本就没有选中可言。
     return
   }
   try {
     // create 的解析保证:返回的 id 已在 list 且 binding 可同步解析——
-    // 先写 draft 再 open,新会话的 composer 在打开前就拿到文本。
+    // 先写 draft 再导航,新会话的 composer 在打开前就拿到文本。
     const sessionId = await sessions.create({ workspaceId: target })
     setDraft(sessions, conversation, sessionId, text)
-    sessions.open(sessionId)
+    uiWorkspace.openSession(sessionId)
   } catch (error) {
     console.warn('starhub://ask-ai 新建会话失败:', error)
   }

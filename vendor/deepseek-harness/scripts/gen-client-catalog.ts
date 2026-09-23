@@ -208,7 +208,7 @@ export function validateSlotContracts(
     }
   }
   for (const registration of registrations) {
-    if (!byKey.has(registration.key)) {
+    if (registration.factory !== true && !byKey.has(registration.key)) {
       problems.push(`registration into '${registration.key}' (${registration.source}) targets a slot no SlotMap merge declares; either the scan has a blind spot or the registration is dead.`)
     }
     for (const child of registration.children) {
@@ -267,7 +267,8 @@ function entryOf(
   types: ReadonlyMap<string, TypeDeclaration>,
   kits: ReadonlyMap<string, readonly string[]>,
 ): SlotEntry {
-  const occupants = registrations.filter(registration => registration.key === declaration.key)
+  const occupants = registrations.filter(registration =>
+    registration.factory !== true && registration.key === declaration.key)
   const cellOccupied = occupants.some(occupant =>
     declaration.kind === 'single' || occupant.entryKey !== undefined)
   const doc = docProse(declaration.jsDoc)
@@ -287,7 +288,9 @@ function entryOf(
     slotInject: declaration.injectType ?? '',
     declaredBy: declaredBy === undefined
       ? 'the runtime itself (built in; always present)'
-      : `an entry in '${declaredBy.key}' (${shortPackage(declaredBy.package)}), so it exists while that entry is mounted`,
+      : declaredBy.factory === true
+        ? `factory '${declaredBy.key}' (${shortPackage(declaredBy.package)}), so it exists while that definition is registered`
+        : `an entry in '${declaredBy.key}' (${shortPackage(declaredBy.package)}), so it exists while that entry is mounted`,
     occupants: occupants.map(occupant => [
       shortPackage(occupant.package),
       occupant.component,
@@ -333,6 +336,8 @@ function keyDomainOf(declaration: SlotDeclaration, occupants: readonly SlotRegis
 
 /** A runnable minimal registration for one slot, per cardinality. */
 function exampleOf(declaration: SlotDeclaration): string {
+  const authored = blockTag(declaration.jsDoc, 'example')
+  if (authored !== undefined) return authored
   const options = [`name: '${declaration.key}'`, ...KIND_EXAMPLE[declaration.kind] ?? []].join(', ')
   return [
     'return {',
@@ -345,6 +350,21 @@ function exampleOf(declaration: SlotDeclaration): string {
     '  },',
     '}',
   ].join('\n')
+}
+
+/** One multiline JSDoc block tag, without comment decoration. */
+function blockTag(jsDoc: string, name: string): string | undefined {
+  const lines = jsDoc.replace(/^\/\*\*/, '').replace(/\*\/$/, '').split('\n')
+    .map(line => line.replace(/^\s*\*?\s?/, '').replace(/\s+$/, ''))
+  const start = lines.findIndex(line => line === `@${name}` || line.startsWith(`@${name} `))
+  if (start < 0) return undefined
+  const body = [lines[start]?.slice(name.length + 1).trimStart() ?? '']
+  for (const line of lines.slice(start + 1)) {
+    if (line.startsWith('@')) break
+    body.push(line)
+  }
+  const value = body.join('\n').trim()
+  return value === '' ? undefined : value
 }
 
 /** Extra example options per cardinality. */

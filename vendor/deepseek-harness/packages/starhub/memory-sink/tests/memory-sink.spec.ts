@@ -487,11 +487,11 @@ describe('apply (turn-stopping hook)', () => {
         return () => undefined
       },
       effect: (callback: () => unknown) => callback(),
+      // DSH 0.1.7:跨命名空间只读走 settings.describe()(旧 get/register 面已移除)。
       settings: {
-        get: () => namespaceValue,
-        // memory-context 已注册该 namespace;再 register 即 duplicate-registration
-        // 硬失败(v0.92.2 组合事故),这里让 register 抛错以断言本插件不再调用它。
-        register: () => { throw new Error('settings namespace "starhub-memory-context" is already registered') },
+        describe: () => (namespaceValue === undefined
+          ? []
+          : [{ ns: 'starhub-memory-context', value: namespaceValue }]),
       },
     } as unknown as Context
     return { ctx, listeners }

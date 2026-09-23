@@ -8,8 +8,8 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  IconDataOutline16, IconLinkOutline16, IconListPenOutline16, IconQueueOutline14,
-  IconRefreshOutline14, IconSendOutline14, IconWarningOutline16,
+  IconDataOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium, IconQueueOutlineMedium,
+  IconRefreshOutlineMedium, IconSendOutlineMedium, IconWarningOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RustAsset } from '../store.ts'
 import { loadBrokerOverview, type BrokerConnectParams, type BrokerKind, type BrokerOverview } from './service.ts'
@@ -134,13 +134,13 @@ export function BrokerView({ asset }: BrokerViewProps) {
           disabled={refreshing}
           onClick={() => { void refresh() }}
         >
-          <IconRefreshOutline14 size={14} className={refreshing ? css.spin : undefined} />
+          <IconRefreshOutlineMedium size={14} className={refreshing ? css.spin : undefined} />
         </button>
       </div>
 
       {error !== null && (
         <div className={css.error}>
-          <IconWarningOutline16 size={14} />
+          <IconWarningOutlineMedium size={14} />
           {error}
         </div>
       )}
@@ -148,7 +148,7 @@ export function BrokerView({ asset }: BrokerViewProps) {
       <div className={css.grid}>
         <DashboardCard
           title="连接状态"
-          icon={<IconLinkOutline16 size={16} />}
+          icon={<IconLinkOutlineMedium size={16} />}
           value={error !== null ? '异常' : overview.status === 'online' ? '在线' : '离线'}
           color={error !== null ? 'red' : 'green'}
           loading={loading}
@@ -158,7 +158,7 @@ export function BrokerView({ asset }: BrokerViewProps) {
         />
         <DashboardCard
           title={kind === 'kafka' ? 'Broker 节点' : 'NSQD 节点'}
-          icon={<IconDataOutline16 size={16} />}
+          icon={<IconDataOutlineMedium size={16} />}
           value={overview.nodeCount}
           color="cyan"
           loading={loading}
@@ -167,7 +167,7 @@ export function BrokerView({ asset }: BrokerViewProps) {
         />
         <DashboardCard
           title="Topic 数量"
-          icon={<IconListPenOutline16 size={16} />}
+          icon={<IconListPenOutlineMedium size={16} />}
           value={overview.resources.length}
           color="purple"
           loading={loading}
@@ -177,7 +177,7 @@ export function BrokerView({ asset }: BrokerViewProps) {
         />
         <DashboardCard
           title={kind === 'kafka' ? '分区总数' : '当前积压'}
-          icon={<IconQueueOutline14 size={16} />}
+          icon={<IconQueueOutlineMedium size={16} />}
           value={kind === 'kafka' ? totalPartitions : totalDepth}
           color={kind === 'nsq' && totalDepth > 0 ? 'yellow' : 'cyan'}
           loading={loading}
@@ -188,7 +188,7 @@ export function BrokerView({ asset }: BrokerViewProps) {
         {kind === 'nsq' && (
           <DashboardCard
             title="累计消息"
-            icon={<IconSendOutline14 size={16} />}
+            icon={<IconSendOutlineMedium size={16} />}
             value={totalMessages.toLocaleString()}
             color="green"
             loading={loading}

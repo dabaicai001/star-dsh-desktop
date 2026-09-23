@@ -7,7 +7,7 @@
  * afterPluginMutation 收尾(关 runtime 让变更下次对话生效)语义保留。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { tauriInvoke } from '../tauri.ts'
 import {
   fetchPluginMarket, installLocalPlugin, installPluginFromUrl, isTauriRuntime, listPlugins,
@@ -316,7 +316,7 @@ export function PluginsTab() {
                       disabled={pluginBusyId === plugin.id || plugin.builtin === true}
                       onClick={() => setUninstallDialogPlugin(plugin)}
                     >
-                      <IconCloseOutline16 size={13} />
+                      <IconCloseOutlineMedium size={13} />
                     </button>
                   </span>
                 </div>
@@ -487,7 +487,7 @@ export function ConfirmActionDialog(props: {
         <div className={s.dialogHead}>
           <span className={s.dialogTitle}>{props.title}</span>
           <button type="button" className={s.iconButton} aria-label="关闭" onClick={props.onCancel}>
-            <IconCloseOutline16 size={14} />
+            <IconCloseOutlineMedium size={14} />
           </button>
         </div>
         <pre className={`${s.hint} ${s.confirmMessage}`}>{props.message}</pre>

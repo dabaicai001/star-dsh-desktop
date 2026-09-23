@@ -7,7 +7,7 @@
  * 直写语义一致)。
  */
 import { useEffect, useMemo, useState } from 'react'
-import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   aiMemoryDelete, aiMemoryList, aiMemoryUpdate, logAudit,
@@ -293,7 +293,7 @@ export function AiTab({ remote }: { remote?: ClientRemote }) {
                 {memoryLoading ? '…' : '↻'}
               </button>
               <button type="button" className={s.iconButton} aria-label="关闭" onClick={() =>{  setMemoryDialog(false) }}>
-                <IconCloseOutline16 size={14} />
+                <IconCloseOutlineMedium size={14} />
               </button>
             </div>
             {memoryError !== '' && <div className={s.errorText}>{memoryError}</div>}
@@ -346,7 +346,7 @@ export function AiTab({ remote }: { remote?: ClientRemote }) {
                               type="button" className={s.iconButton} title="删除" aria-label="删除"
                               onClick={() =>{  setMemoryConfirmDeleteId(row.id) }}
                             >
-                              <IconCloseOutline16 size={13} />
+                              <IconCloseOutlineMedium size={13} />
                             </button>
                           </span>
                         </>

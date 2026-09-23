@@ -29,19 +29,27 @@
  * @module @deepseek-ai/dsh-starhub-memory-context
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { PreToolDecision } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
+import type {} from '@deepseek-ai/dsh-settings'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'dsh-starhub-memory-context': { kind: 'dsh-starhub-memory-context', plugin: string } & ContextFormed
+  }
+}
 // Type-only: ctx.settings 的 Context 声明合并(register/get 类型化)。import type {} from '@deepseek-ai/dsh-settings'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'starhub-memory-context'
 
-/** The agent registry and settings service. */
-export const inject = ['agents', 'settings']
+/** The agent registry(settings 命名空间由本插件 Config 派生,无需注入 settings 服务)。 */
+export const inject = ['agents']
 
 /** Settings namespace holding the memory master switch (written by client-nav 的设置开关). */
 export const MEMORY_CONTEXT_NAMESPACE = 'starhub-memory-context'
@@ -133,6 +141,37 @@ export const MemoryContextSchema: z<MemoryContextValue> = z.object({
   memoryModel: z.string().default(''),
 })
 
+/**
+ * 插件 Config(DSH 0.1.7 起 settings 命名空间由插件 Config 的 volatile 字段派生,
+ * 旧 `ctx.settings.register` 面已移除)。client-nav 的设置 → AI 助手开关经
+ * `settings.update` 写同一命名空间;volatile 引用由 Loader 热提交,pre-step /
+ * tools/pre-execute 时 `.get()` 即活值。
+ */
+export interface Config {
+  enabled: Volatile<boolean>
+  autoReview: Volatile<boolean>
+  memoryProvider: Volatile<string>
+  memoryModel: Volatile<string>
+}
+
+/** Plugin Config: every GUI-editable namespace field as one live volatile reference. */
+export const Config = z.object({
+  enabled: z.boolean().default(false).volatile(),
+  autoReview: z.boolean().default(false).volatile(),
+  memoryProvider: z.string().default('').volatile(),
+  memoryModel: z.string().default('').volatile(),
+})
+
+/** Detach the live config references into the plain value shape the gates read. */
+export function readMemoryContext(config: Config): MemoryContextValue {
+  return {
+    enabled: config.enabled.get(),
+    autoReview: config.autoReview.get(),
+    memoryProvider: config.memoryProvider.get(),
+    memoryModel: config.memoryModel.get(),
+  }
+}
+
 /** `starhub/memory.cards` 的单张记忆卡(与 Rust AiMemoryCard 序列化同形)。 */
 export interface MemoryCard {
   readonly scope: string
@@ -172,7 +211,8 @@ export function renderMemoryContext(cards: readonly MemoryCard[]): string | null
 
 /**
  * 会话事件流元素的窄化形状,只要找到「上次注入文本仍在事件流里」所需字段。
- * 注入消息的特征:`type==='user/message'` + `data.source.kind==='plugin'` +
+ * 注入消息的特征:`type==='user/message'` +
+ * `data.source.kind==='dsh-starhub-memory-context'` +
  * `data.source.plugin==='starhub-memory-context'`(本插件名),DSH 不变量保证
  * 模型可见的输入一定进入会话日志。
  *
@@ -209,7 +249,7 @@ export function hasLiveInjection(
     const source = dataRecord['source']
     if (source === undefined || source === null || typeof source !== 'object') continue
     const sourceRecord = source as Readonly<Record<string, unknown>>
-    if (sourceRecord['kind'] !== 'plugin' || sourceRecord['plugin'] !== pluginId) continue
+    if (sourceRecord['kind'] !== 'dsh-starhub-memory-context' || sourceRecord['plugin'] !== pluginId) continue
     const content = dataRecord['content']
     if (!Array.isArray(content)) continue
     for (const block of content) {
@@ -304,18 +344,16 @@ export async function composeMemoryContext(
 }
 
 /**
- * 注册插件:声明 settings 命名空间一次,并在每次 agent pre-step 按开关 + 记忆模型
- * 配置注入长期记忆(user + global + 当前工作区文件夹 + 绑定资产);同时挂
- * tools/pre-execute 锁死门,未配置记忆模型时拒绝 memory 工具调用。
+ * 注册插件:settings 命名空间由本插件 Config 的 volatile 字段派生(DSH 0.1.7),
+ * 在每次 agent pre-step 按开关 + 记忆模型配置注入长期记忆(user + global +
+ * 当前工作区文件夹 + 绑定资产);同时挂 tools/pre-execute 锁死门,未配置记忆
+ * 模型时拒绝 memory 工具调用。
  * v0.102.0 起:per-session Map 去重,「内容变化才重复」,compaction 裁掉旧注入
  * 时由事件流活体校验补回重新注入。
  * @param ctx - plugin context;监听器随插件 fiber 卸载。
+ * @param config - 活引用;Loader 热提交 volatile 变更。
  */
-export function apply(ctx: Context): void {
-  const ns = MEMORY_CONTEXT_NAMESPACE
-  // Declare the namespace once; the pre-step listener reads it per request.
-  const scope = ctx.settings.register(ns, MemoryContextSchema)
-
+export function apply(ctx: Context, config: Config): void {
   // per-session 最近一次注入文本;Fiber 内闭包,apply 卸载即丢;Map 容量
   // 兜底由 recordInjection(INJECTION_DEDUP_LIMIT)负责 FIFO。
   const injectionLog: Map<string, InjectionRecord> = new Map()
@@ -333,7 +371,7 @@ export function apply(ctx: Context): void {
       if (decision.kind === 'reject' || signal.aborted) return decision
       // 「启用长期记忆」开关(设置 → AI 助手);v0.92.0 起 namespace 未写过视为关闭,
       // 用户需在设置面板显式打开后才有记忆预读注入。
-      const value = scope.get() as MemoryContextValue | undefined
+      const value = readMemoryContext(config)
       if (value?.enabled !== true) return decision
       // v0.94.0:记忆模型是硬前置;开关打开但未配置,不注入(配置缺失不该静默)。
       if (!isMemoryConfigured(value)) {
@@ -360,7 +398,7 @@ export function apply(ctx: Context): void {
           ...decision.messages,
           createUserMessage({
             content: [{ type: 'text', text }],
-            source: { kind: 'plugin', plugin: name, form: 'snapshot', sections: [{ name, text }] },
+            source: { kind: 'dsh-starhub-memory-context', plugin: name, form: 'snapshot', sections: [{ name, text }] },
           }),
         ],
       }
@@ -372,7 +410,7 @@ export function apply(ctx: Context): void {
   // 的 ALWAYS_ASK 风险门负责逐条确认)。独立 effect,随插件 fiber 一并卸载。
   ctx.effect(() => ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
     if (exec.name !== MEMORY_TOOL_NAME) return next()
-    const value = scope.get() as MemoryContextValue | undefined
+    const value = readMemoryContext(config)
     if (isMemoryConfigured(value)) return next()
     return {
       kind: 'deny',

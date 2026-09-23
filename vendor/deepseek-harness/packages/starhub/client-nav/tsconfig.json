@@ -21,10 +21,10 @@
       "path": "../../client/ui-sidebar"
     },
     {
-      "path": "../../client/ui-conversation"
+      "path": "../../client/ui-conversation/tsconfig.client.json"
     },
     {
-      "path": "../../client/ui-chat"
+      "path": "../../client/ui-chat/tsconfig.client.json"
     },
     {
       "path": "../../client/ui-input-trigger"

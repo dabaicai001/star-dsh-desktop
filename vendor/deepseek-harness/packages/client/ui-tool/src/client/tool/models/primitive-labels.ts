@@ -1,6 +1,7 @@
 /** Localized copy adapters for Cordis-free UI primitives used by Tool cards. */
 
 import type {
+  CodeToolbarLabels,
   DiffBlockLabels,
   MarkdownLabels,
   ReadBlockLabels,
@@ -12,13 +13,22 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 type T = TranslateNS<'conversation'>
 
 /**
+ * Localize the shared code-card toolbar.
+ * @param t - Conversation locale seat.
+ * @returns Language fallback and wrapping actions.
+ */
+export function codeToolbarLabels(t: T): CodeToolbarLabels {
+  return { codeLabel: t('codeBlock.title'), wrapLabel: t('codeBlock.wrap'), unwrapLabel: t('codeBlock.unwrap') }
+}
+
+/**
  * Build localized Markdown chrome labels.
  * @param t - Conversation locale seat.
  * @returns Markdown chrome labels.
  */
 export function markdownLabels(t: T): MarkdownLabels {
   return {
-    code: { copyLabel: t('copy'), copiedLabel: t('copied') },
+    code: { copyLabel: t('copy'), copiedLabel: t('copied'), toolbarLabels: codeToolbarLabels(t) },
     footnotes: t('markdown.footnotes'),
   }
 }
@@ -30,6 +40,7 @@ export function markdownLabels(t: T): MarkdownLabels {
  */
 export function diffBlockLabels(t: T): DiffBlockLabels {
   return {
+    ...codeToolbarLabels(t),
     copy: t('copy'),
     copied: t('copied'),
     collapseAria: t('diff.collapseAria'),
@@ -49,6 +60,7 @@ export function diffBlockLabels(t: T): DiffBlockLabels {
  */
 export function readBlockLabels(t: T): ReadBlockLabels {
   return {
+    ...codeToolbarLabels(t),
     window: (shown, total) => t('read.window', { shown, total }),
     copy: t('copy'),
     copied: t('copied'),

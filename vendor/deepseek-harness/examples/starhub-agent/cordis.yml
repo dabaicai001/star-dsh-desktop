@@ -34,9 +34,12 @@
     personaPrefix: !!js process.env.DSH_SYSTEM_PROMPT ?? 'You are StarHub AI, an operations assistant embedded in the StarHub desktop app.'
     personaSuffix: Your working directory is {{cwd}}.
 
-- id: sessions
+# 会话持久化根:真实行 id 是 base bundle 的 `session-persistence-jsonl`
+# (0.1.6 同步时误写的 `- id: sessions` 匹配不到任何行,patch 机制仅 warn 跳过,
+#  env 注入一直没生效;升级 0.1.7 时修正)。StarHub Rust 桥默认注入应用数据目录;
+# 缺省会落到 $DSH_HOME/sessions,runtime 目录污染 vendor 树。
+- id: session-persistence-jsonl
   config:
-    # StarHub Rust 桥默认注入应用数据目录;缺省 ./.sessions 仅限独立调试。
     root: !!js process.env.DSH_SESSION_ROOT ?? './.sessions'
     compression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
 

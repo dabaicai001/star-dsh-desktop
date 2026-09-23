@@ -10,14 +10,17 @@ import {
   rmSync,
   symlinkSync,
   unlinkSync,
+  writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createDevelopmentProjectMetadata } from '../src/project-manager.ts'
 import type { DesktopRelease } from '../src/release.ts'
+import { DESKTOP_RUNTIME_FILE, type DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
 
 interface PackageManifest {
   readonly name?: string
   readonly version?: string
+  readonly dependencies?: Readonly<Record<string, string>>
 }
 
 /** Inputs whose locations differ between the launcher and isolated tests. */
@@ -62,7 +65,8 @@ function linkDirectory(source: string, destination: string): void {
   symlinkSync(realpathSync(source), destination, process.platform === 'win32' ? 'junction' : 'dir')
 }
 
-function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): void {
+function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): string[] {
+  const names: string[] = []
   for (const entry of readdirSync(sourceRoot, { withFileTypes: true })) {
     if (entry.name === '.bin') continue
     const source = join(sourceRoot, entry.name)
@@ -71,11 +75,42 @@ function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): voi
       for (const scoped of readdirSync(source, { withFileTypes: true })) {
         if (!scoped.isDirectory() && !scoped.isSymbolicLink()) continue
         linkDirectory(join(source, scoped.name), join(destinationRoot, entry.name, scoped.name))
+        names.push(`${entry.name}/${scoped.name}`)
       }
       continue
     }
-    if (entry.isDirectory() || entry.isSymbolicLink()) linkDirectory(source, join(destinationRoot, entry.name))
+    if (entry.isDirectory() || entry.isSymbolicLink()) {
+      linkDirectory(source, join(destinationRoot, entry.name))
+      names.push(entry.name)
+    }
   }
+  return names
+}
+
+/** Configured workspace plugins must resolve from the profile even when pnpm does not hoist them. */
+function mirrorWorkspaceDependencies(roots: readonly string[], destinationRoot: string): string[] {
+  const names: string[] = []
+  const visited = new Set<string>()
+  const visit = (directory: string): void => {
+    const source = realpathSync(directory)
+    if (visited.has(source)) return
+    visited.add(source)
+    const manifest = readManifest(join(source, 'package.json'))
+    for (const [name, specifier] of Object.entries(manifest.dependencies ?? {})) {
+      if (!specifier.startsWith('workspace:')) continue
+      const dependency = join(source, 'node_modules', ...name.split('/'))
+      if (!existsSync(dependency)) {
+        throw new Error(`desktop development: ${name} is missing from ${source}; run pnpm install`)
+      }
+      const destination = join(destinationRoot, ...name.split('/'))
+      removeOwnedPath(destination)
+      linkDirectory(dependency, destination)
+      names.push(name)
+      visit(dependency)
+    }
+  }
+  for (const directory of roots) visit(directory)
+  return names
 }
 
 /**
@@ -109,12 +144,22 @@ export function prepareDevelopmentProject(options: DevelopmentProjectOptions): s
   createDevelopmentProjectMetadata(options.projectDir, options.release)
   const destinationModules = join(options.projectDir, 'node_modules')
   mkdirSync(destinationModules, { recursive: true })
-  mirrorDependencyLinks(options.dependencyDir, destinationModules)
+  const names = [
+    ...mirrorDependencyLinks(options.dependencyDir, destinationModules),
+    ...mirrorWorkspaceDependencies([options.cliDir, options.hostDir], destinationModules),
+  ]
   const dshLink = join(destinationModules, '@deepseek-ai', 'dsh')
   removeOwnedPath(dshLink)
   linkDirectory(options.cliDir, dshLink)
   const hostLink = join(destinationModules, '@deepseek-ai', 'dsh-desktop-host')
   removeOwnedPath(hostLink)
   linkDirectory(options.hostDir, hostLink)
+  const sharedPackages = [...new Set([...names, '@deepseek-ai/dsh', '@deepseek-ai/dsh-desktop-host'])].flatMap((name) => {
+    const manifest = readManifest(join(destinationModules, name, 'package.json'))
+    return typeof manifest.version === 'string' ? [{ name, version: manifest.version, path: `node_modules/${name}` }] : []
+  })
+  const runtime: DesktopRuntimeDescriptor = { schemaVersion: 1, release: options.release,
+    platform: process.platform, arch: process.arch, sharedPackages, files: [] }
+  writeFileSync(join(options.projectDir, DESKTOP_RUNTIME_FILE), `${JSON.stringify(runtime, undefined, 2)}\n`)
   return options.projectDir
 }

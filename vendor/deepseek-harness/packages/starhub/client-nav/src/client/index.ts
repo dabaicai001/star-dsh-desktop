@@ -30,7 +30,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ISessions, IWorkspaces } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
+// Type-only:0.1.7 会话选择经 uiWorkspace.openSession 导航;ui-session 的
+// SessionReferenceSourceMap 合并提供 mainView 键(currentSessionId 读取前提)。
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import { currentSessionId } from './current-session.ts'
 import { createStarHubAssetSource, DOCKER_REFERENCE_TAG, STARHUB_ASSET_SOURCE } from './asset-source.ts'
 import { createAskAiHandler, createOpenAssetHandler, subscribeHostEvents } from './host-events.ts'
 import {
@@ -72,7 +77,7 @@ import { syncMemoryEnabled } from './settings/memory-context.ts'
  * throws `cannot get property "remote.<ns>" without inject` unless the
  * owning fiber declares the dotted name (v0.121.7 启动事故)。
  */
-export const inject = ['slots', 'connection', 'remote', 'remote.settings', 'remote.llm', 'inputTriggers', 'sessions', 'workspaces', 'conversation']
+export const inject = ['slots', 'connection', 'remote', 'remote.settings', 'remote.llm', 'inputTriggers', 'sessions', 'workspaces', 'conversation', 'uiWorkspace']
 
 /**
  * Client plugin body: one root-scope store handle (sidebar) plus the
@@ -120,7 +125,7 @@ export function apply(ctx: Context): void {
   // 「执行」角标、抽屉列表与「清空」都只作用于本会话,跨会话不再共用;
   // 首次同步立即写一次(不依赖切换事件才初始化)。
   ctx.effect(() => {
-    const sync = () => { execRecords.setConversation(sessions.list.getSnapshot().current) }
+    const sync = () => { execRecords.setConversation(currentSessionId(sessions.list.getSnapshot())) }
     sync()
     return sessions.list.subscribe(sync)
   }, 'starhub: exec records follow current session')
@@ -221,7 +226,7 @@ export function apply(ctx: Context): void {
     // 序列化为模型可读文本);输入机忙碌(非 plain/claimed 或 draftRev CAS 失败)
     // 时退化为纯文本追加。无当前会话时静默不动作。
     insertAssetReference: (asset: RustAsset) => {
-      const current = sessions.list.getSnapshot().current
+      const current = currentSessionId(sessions.list.getSnapshot())
       if (current === undefined) return
       const binding = sessions.binding(current)
       if (binding === undefined) return
@@ -323,7 +328,7 @@ export function apply(ctx: Context): void {
       // 无当前会话(session-maybe 空态)时 shell 不存在,addImages 置 undefined(按钮仍可截图,
       // 结果无处挂载时静默丢弃)。
       addImages: (files: readonly File[]): string | null => {
-        const current = sessions.list.getSnapshot().current
+        const current = currentSessionId(sessions.list.getSnapshot())
         if (current === undefined) return null
         const binding = sessions.binding(current)
         if (binding === undefined) return null
@@ -353,6 +358,7 @@ export function apply(ctx: Context): void {
       selection,
       sessions,
       workspaces,
+      uiWorkspace: ctx.get('uiWorkspace') as UiWorkspace,
       conversation,
     }),
   }), 'starhub: tauri host events')

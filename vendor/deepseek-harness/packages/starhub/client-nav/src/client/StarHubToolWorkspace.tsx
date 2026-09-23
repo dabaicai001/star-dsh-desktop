@@ -25,9 +25,10 @@ import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the 'shell.overlay' SlotMap row (declared by ui-layout).
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { currentSessionId } from './current-session.ts'
 import {
-  IconCloseOutline16, IconCopyOutline16, IconEditOutline16, IconLinkOutline16, IconPlusOutline16,
-  IconRefreshOutline14, IconRightUpOutline16, IconTrashOutline16,
+  IconCloseOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium, IconLinkOutlineMedium, IconPlusOutlineMedium,
+  IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconTrashOutlineMedium,
   writeClipboard, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { STARHUB_SUBCATEGORIES, assetRowBadge, assetSubtitle, type StarHubAsset, type StarHubSubcategory } from './sections.ts'
@@ -102,14 +103,14 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
   }, [copied])
   const subtitle = assetSubtitle(asset)
   const items: MenuEntry[] = [
-    { id: 'open', label: '打开', icon: <IconRightUpOutline16 /> },
-    { id: 'reference', label: '引用到当前对话框', icon: <IconLinkOutline16 /> },
-    { id: 'edit', label: '编辑', icon: <IconEditOutline16 /> },
-    { id: 'copy', label: copied ? '已复制' : '复制连接信息', icon: <IconCopyOutline16 /> },
+    { id: 'open', label: '打开', icon: <IconRightUpOutlineMedium /> },
+    { id: 'reference', label: '引用到当前对话框', icon: <IconLinkOutlineMedium /> },
+    { id: 'edit', label: '编辑', icon: <IconEditOutlineMedium /> },
+    { id: 'copy', label: copied ? '已复制' : '复制连接信息', icon: <IconCopyOutlineMedium /> },
     { type: 'separator', id: 'asset-delete-separator' },
     // 删除不直接执行:复用连接对话框编辑模式内的两步确认删除入口
     // (delete_asset 命令),避免右键菜单里的无确认破坏性操作。
-    { id: 'delete', label: '删除', icon: <IconTrashOutline16 />, danger: true },
+    { id: 'delete', label: '删除', icon: <IconTrashOutlineMedium />, danger: true },
   ]
   return (
     <div className={css.rowWrap} onContextMenu={menu.onContextMenu}>
@@ -132,7 +133,7 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
         aria-label={`编辑 ${asset.name}`}
         onClick={onEdit}
       >
-        <IconEditOutline16 size={13} />
+        <IconEditOutlineMedium size={13} />
       </button>
       <ContextMenu
         menu={menu}
@@ -200,7 +201,11 @@ export function StarHubToolWorkspace({
   const execRecords = useExecRecords?.(s => s.records) ?? []
   // 当前会话 cwd 经 root-scope 的 useSessions 响应式读取(shell.overlay 无
   // 框架注入 sessionId;注入期快照会过期,故此处订阅全局当前会话)。
-  const sessionCwd = useSessions?.(s => (s.current !== undefined ? s.byId[s.current]?.cwd : undefined))
+  // 0.1.7:list 快照不再带 current,当前会话 = mainView 保留的会话(currentSessionId)。
+  const sessionCwd = useSessions?.(s => {
+    const id = currentSessionId(s)
+    return id === undefined ? undefined : s.byId[id]?.cwd
+  })
 
   // 打开时(以及切换子类时)重新拉取(回调内部对并发拉取去重)。
   useEffect(() => { if (open) refreshAssets() }, [open, activeSubcategory, refreshAssets])
@@ -232,7 +237,7 @@ export function StarHubToolWorkspace({
                 aria-label="新建连接"
                 onClick={() =>{  openConnectionManager() }}
               >
-                <IconPlusOutline16 size={13} />
+                <IconPlusOutlineMedium size={13} />
               </button>
               <button
                 type="button"
@@ -242,7 +247,7 @@ export function StarHubToolWorkspace({
                 disabled={loading}
                 onClick={() =>{  refreshAssets() }}
               >
-                <IconRefreshOutline14 size={13} />
+                <IconRefreshOutlineMedium size={13} />
               </button>
               <button
                 type="button"
@@ -251,7 +256,7 @@ export function StarHubToolWorkspace({
                 aria-label="关闭工具面板"
                 onClick={closeTools}
               >
-                <IconCloseOutline16 size={14} />
+                <IconCloseOutlineMedium size={14} />
               </button>
             </header>
             <div className={css.tree}>
