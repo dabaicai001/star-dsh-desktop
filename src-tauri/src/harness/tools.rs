@@ -237,6 +237,8 @@ const AUDIT_ARG_WHITELIST: &[&str] = &[
     "url",
     "id",
     "key",
+    // AI 浏览器 Jev 决策:当前子目标(定位信息,便于回放「为什么点它」)
+    "goal",
     // Android 实体机:无线调试主机 / 文件传输路径(定位信息,非凭据)
     "host",
     "remotePath",

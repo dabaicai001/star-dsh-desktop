@@ -49,3 +49,32 @@ pub async fn browser_set_engine(
     app.state::<browser::obscura::ObscuraManager>().set_engine(engine);
     Ok(())
 }
+
+/// 读取 Jev 决策配置(设置 → AI 浏览器 的「Jev 决策」区;API key 走
+/// `get_ai_model_api_key`,此处只返回非密项)。缺省全关。
+#[tauri::command]
+pub async fn browser_get_jev_config(app: tauri::AppHandle) -> Result<browser::decide::JevConfig, String> {
+    Ok(browser::decide::jev_config(&app).await)
+}
+
+/// 保存 Jev 决策配置(启用开关/base_url/模型/阈值/超时)。值非法报错;
+/// API key 不走本命令,由前端调 `set_ai_model_api_key({id:"jev"})` 写入。
+#[tauri::command]
+pub async fn browser_set_jev_config(
+    app: tauri::AppHandle,
+    enabled: bool,
+    base_url: String,
+    model: String,
+    threshold: f64,
+    timeout_ms: u64,
+) -> Result<(), String> {
+    let config = browser::decide::JevConfig {
+        enabled,
+        base_url,
+        model,
+        threshold,
+        timeout_ms,
+    };
+    config.validate()?;
+    browser::decide::save_jev_config(&app, &config).await
+}

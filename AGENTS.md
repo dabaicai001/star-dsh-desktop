@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.122.1(**修复 linux-compat CI 在干净检出上 `build:window` 解析失败(`Failed to resolve entry for package "@deepseek-ai/dsh-util-workspace-path"`)**:`linux-compat.yml` 的步骤顺序是「install → `build:window`」,此时整棵 vendor 树**没有任何 lib 产物**(lib/ 被 gitignore,CI 全新检出不带);`apps/starhub-window/vite.config.ts` 的源码别名表是「窗口运行时实际到达的工作区包」的手工闭包,DSH 0.1.7 新增的值导入包没进表 → 解析落到 node_modules → `main: lib/index.js` 不存在 → vite 报错。修复:别名表补 0.1.7 新到达的两个包(`dsh-util-workspace-path`,经 ui-primitives `PathLabel.tsx` 值导入;`dsh-client-store`,经 client-nav 的 exec-records 桥值导入),与文件既有设计(源码别名、mirroring apps/web)一致;release.yml 的各 job 因先跑 `package:dsh-runtime`(有 lib)不受影响。验证:本地「把 335 个包的 lib 全部临时改名」净树模拟下 `build:window` 先复现 CI 同一报错、修复后通过,常规(有 lib)路径同样通过。硬约束见 `docs/踩坑记录.md` §51。) |
+| 当前版本 | v0.123.0(**`browser_decide` 工具:Jev(TypeSafe「System One」)决策层接入 AI 浏览器(Phase 1,调研报告 `docs/Jev决策模型-浏览器操作接入调研.md`)**:主模型每一步「从 extract 输出里挑编号元素」的封闭集判别,可卸载给只输出结构化判断 + 置信度的 Jev。新工具为**只读**(返回「click 元素[12] conf=0.87」建议文本,不执行任何动作),审批落 default ALLOW 档,真动作仍走 `browser_click`/`browser_type` 的软确认——风险边界不因决策来自谁而改变。实现:Rust 新增 `src-tauri/src/browser/decide.rs`(JevConfig/JevClient/请求构造/响应校验纯函数 + 14 个单测);`browser/mod.rs` 加 `BrowserAction::Decide`(snapshot 缺省时按当前引擎内部补一次 Extract,引擎解耦);新增 `browser_get_jev_config`/`browser_set_jev_config` 一对 Tauri 命令(非密配置走 settings 表 `ai.jev.*`,API key 走现成 keyring `model:jev`,三道同步补齐);vendor 侧 tools 加 spec、approval-bridge 显式登记 + risk-gate 断言、设置页「AI 浏览器」tab 新增 Jev 配置区(**默认关闭**,明文提示页面快照会外发至所配置端点)。Jev 官方接口是 `POST /v1/systemone`(state + questions/answers 结构,choice 带 probabilities + confidence),与 OpenAI Chat Completions 不同路径——直接用裸 HTTP(reqwest OnceLock 客户端),不套任何会自动追加 `/chat/completions` 的 SDK。置信度低于阈值返回 `[LOWCONF]` 前缀交还主模型兜底。另起 tools 包首个 spec(bridged-tools.spec.ts)把「vendor BRIDGED_TOOLS ↔ Rust BROWSER_TOOLS」钉成机械断言,补上调研发现的最大结构缺口(此前三张表只靠注释互引)。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-23 (v0.122.1)*
+*最后更新: 2026-09-23 (v0.123.0)*

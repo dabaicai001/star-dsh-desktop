@@ -7,6 +7,20 @@
 
 ---
 
+## 0. 落地回执(v0.123.0,Phase 1 已实现)
+
+本报告的推荐架构(§6 方案 A)已按 Phase 1 落地,实现期间从 TypeSafe 官方接口定义补齐了写作时【未核实】的字段级细节,**§2.5 / §10.3 中对应条目标记为「已核实」**:
+
+- **端点**:`POST {base_url}/v1/systemone`(`Authorization: Bearer <key>`)。与 OpenAI Chat Completions **不是同一路径**,不能套会自动追加 `/chat/completions` 的客户端/base_url——这正是实现里用裸 HTTP(reqwest)而不用任何 SDK 的原因。
+- **请求**:`{ model, state, questions }`;每个 question 是 `{ type: "choice"|"noul"|"score", instructions, criteria }`,`criteria` 是「候选键 → 说明」的封闭集。
+- **应答**:`{ model, answers, usage:{ input_tokens, output_tokens } }`;choice 答案 = `{ type, choice, probabilities:{…}, confidence }`,noul 答案 = `{ type, noul: 0..1 }`,score 答案 = `{ type, score, legend, probabilities, confidence }`。
+- 浏览器决策用两个 choice 问题:`action`(六原语白名单)+ `element`(criteria = extract 编号元素)。置信度阈值路由按 §6.5 实现(`[LOWCONF]` 前缀)。
+- 实现与验证细节见 `CHANGELOG.md` v0.123.0、`docs/技术方案.md` §6.5.1.1、`src-tauri/src/browser/decide.rs`。
+
+**仍未核实**(影响 Phase 2/3,不影响 Phase 1):延迟/价格量级、限流、低置信度的服务端确切行为、权重许可与本地部署可行性(APUS 复现性质)。
+
+---
+
 ## 1. 结论(TL;DR)
 
 1. **Jev 是 TypeSafe AI 的"System One"决策模型:只输出判断、不对话,结构化决策 + 置信度,主打低延迟、低成本**(标题级事实,来源见 §2 与附录 A)。它和 StarHub 浏览器操作里最高频的一步——「从页面元素列表里挑下一个动作」——是同一类问题。
@@ -50,6 +64,8 @@
 ### 2.5 未能核实清单(实现前必须实测,§10.3 展开)
 
 输入是否支持「结构化上下文(元素列表)+ 候选动作集」、输出字段(data/confidence 的确切名字)、延迟与价格量级、限流、权重许可与本地部署、是否有官方 UI/浏览器自动化用例。
+
+> **回填(v0.123.0)**:输入/输出 schema、置信度路由的最小形态已由 TypeSafe 官方接口定义核实(见 §0);延迟/价格/限流/权重许可仍未核实。
 
 ---
 
@@ -306,9 +322,9 @@ Phase 2:
 
 ### 10.3 实测清单(搜索端点恢复或 Phase 0 后逐项打勾)
 
-1. 请求字段:能否传结构化候选(元素列表),还是只有自然语言问句;
-2. 响应字段:决策字段名、置信度字段名与量纲(0-1?)；
-3. 低置信度的确切行为(升级?反问?默认动作?);
+1. 请求字段:能否传结构化候选(元素列表),还是只有自然语言问句;— **已核实(v0.123.0)**:`questions[].criteria` 即结构化候选集,`state` 传自然语言上下文;
+2. 响应字段:决策字段名、置信度字段名与量纲(0-1?)；— **已核实**:choice 答案为 `choice` + `probabilities` + `confidence`(0-1);
+3. 低置信度的确切行为(升级?反问?默认动作?）— **部分核实**:API 只回 confidence,升级/路由由调用方决定(StarHub 侧用阈值 + `[LOWCONF]` 交还主模型);
 4. 延迟(单次调用 p50/p99)与价格(每千次调用);
 5. 限流与并发;
 6. 官方是否有 UI/浏览器自动化/agent 动作选择用例与推荐 prompt;

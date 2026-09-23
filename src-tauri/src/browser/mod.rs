@@ -9,6 +9,7 @@
 //! 导航协议白名单见 [`script::normalize_url`]。obscura 后端为无头引擎,页面不经过
 //! Tauri IPC,由 CDP 触发,风险面由 CDP 命令白名单收窄。
 
+pub mod decide;
 pub mod obscura;
 pub mod script;
 pub mod web_shell;
@@ -53,6 +54,8 @@ pub const BROWSER_TOOLS: &[&str] = &[
     "browser_scroll",
     "browser_screenshot",
     "browser_eval",
+    // Jev 决策(只读:把目标+快照变成下一步动作建议,不执行;§docs/Jev 调研 §6)
+    "browser_decide",
 ];
 
 /// 引擎选择(持久化到 settings 表。webview 为默认)。
@@ -130,6 +133,8 @@ pub enum BrowserAction {
     Scroll { direction: String, amount: i64 },
     Screenshot,
     Eval { expression: String },
+    /// Jev 决策:只读。`snapshot` 缺省时内部先跑一次 Extract 再问 Jev。
+    Decide { goal: String, snapshot: Option<String> },
 }
 
 fn arg_str<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
@@ -214,6 +219,14 @@ pub fn parse_action(name: &str, args: &Value) -> Result<BrowserAction, String> {
         "browser_eval" => Ok(BrowserAction::Eval {
             expression: required_str(args, "expression")?,
         }),
+        "browser_decide" => {
+            let goal = required_str(args, "goal")?;
+            // snapshot 可缺省(Rust 内部补一次 Extract);显式传空串等同缺省。
+            let snapshot = arg_str(args, "snapshot")
+                .map(str::to_string)
+                .filter(|s| !s.trim().is_empty());
+            Ok(BrowserAction::Decide { goal, snapshot })
+        }
         other => Err(format!("unsupported browser tool: {other}")),
     }
 }
@@ -283,6 +296,24 @@ pub async fn execute_from_bridge(
     let engine = engine_setting(&app).await;
     let manager = app.state::<obscura::ObscuraManager>();
     manager.set_engine(engine); // 同步到缓存,供注入协议/查看器使用
+    // Jev 决策(browser_decide):只读。缺 snapshot 时按当前引擎内部补一次
+    // Extract(与浏览器自身进程序号一致,编号空间天然对齐),再问 Jev;
+    // 决策文本交还模型,执行仍走 click/type 等既有工具(审批链路不变)。
+    if let BrowserAction::Decide { goal, snapshot } = action {
+        let snapshot = match snapshot {
+            Some(snapshot) => snapshot,
+            None => {
+                let extract = BrowserAction::Extract {
+                    max_chars: script::DEFAULT_MAX_CHARS,
+                };
+                match engine {
+                    obscura::Engine::Webview => webview::execute_action(&app, extract).await,
+                    obscura::Engine::Obscura => obscura::execute_action(&app, extract).await,
+                }?
+            }
+        };
+        return decide::decide(&app, &goal, &snapshot).await;
+    }
     match engine {
         obscura::Engine::Webview => webview::execute_action(&app, action).await,
         obscura::Engine::Obscura => obscura::execute_action(&app, action).await,
@@ -429,6 +460,45 @@ mod tests {
         );
         assert!(parse_action("browser_eval", &json!({})).is_err());
         assert!(parse_action("browser_nope", &json!({})).is_err(), "未知工具报错");
+    }
+
+    #[test]
+    fn parse_decide_requires_goal_and_optional_snapshot() {
+        assert!(parse_action("browser_decide", &json!({})).is_err(), "缺 goal 报错");
+        assert!(
+            parse_action("browser_decide", &json!({"goal": "  "})).is_err(),
+            "goal 空白报错"
+        );
+        let action = parse_action("browser_decide", &json!({"goal": "找到登录并点击"})).expect("decide");
+        assert_eq!(
+            action,
+            BrowserAction::Decide {
+                goal: "找到登录并点击".to_string(),
+                snapshot: None,
+            }
+        );
+        let action = parse_action(
+            "browser_decide",
+            &json!({"goal": "找登录", "snapshot": "url: x\ntitle: y"}),
+        )
+        .expect("decide with snapshot");
+        assert_eq!(
+            action,
+            BrowserAction::Decide {
+                goal: "找登录".to_string(),
+                snapshot: Some("url: x\ntitle: y".to_string()),
+            }
+        );
+        // 显式空串等同缺省(内部补 Extract)。
+        let action = parse_action("browser_decide", &json!({"goal": "找登录", "snapshot": "  "}))
+            .expect("blank snapshot");
+        assert_eq!(
+            action,
+            BrowserAction::Decide {
+                goal: "找登录".to_string(),
+                snapshot: None,
+            }
+        );
     }
 
     #[test]

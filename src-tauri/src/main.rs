@@ -436,6 +436,9 @@ fn main() {
             // AI 浏览器引擎设置(webview | obscura,由设置页/宿主 UI 读写)
             commands::browser::browser_get_engine,
             commands::browser::browser_set_engine,
+            // Jev 决策配置(设置 → AI 浏览器 读写;API key 走 secret 命令)
+            commands::browser::browser_get_jev_config,
+            commands::browser::browser_set_jev_config,
             // 沙箱桌面(UI 状态读写;容器生命周期只走 AI 工具路径与 UI 生命周期命令)
             commands::android::android_ui_get_config,
             commands::android::android_ui_set_adb_path,

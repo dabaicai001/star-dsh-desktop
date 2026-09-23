@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.122.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.123.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,8 +48,9 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.122.1 (2026-09-23)
-- 🐛 **修复 linux-compat CI 在干净检出上 `build:window` 解析失败(`Failed to resolve entry for package "@deepseek-ai/dsh-util-workspace-path"`)**:`linux-compat.yml` 的步骤顺序是「install → `build:window`」,此时整棵 vendor 树**没有任何 lib 产物**(lib/ 被 gitignore,CI 全新检出不带);`apps/starhub-window/vite.config.ts` 的源码别名表是「窗口运行时实际到达的工作区包」的手工闭包,DSH 0.1.7 新增的值导入包没进表 → 解析落到 node_modules → `main: lib/index.js` 不存在 → vite 报错。修复:别名表补 0.1.7 新到达的两个包(`dsh-util-workspace-path`,经 ui-primitives `PathLabel.tsx` 值导入;`dsh-client-store`,经 client-nav 的 exec-records 桥值导入),与文件既有设计(源码别名、mirroring apps/web)一致;release.yml 的各 job 因先跑 `package:dsh-runtime`(有 lib)不受影响。验证:本地「把 335 个包的 lib 全部临时改名」净树模拟下 `build:window` 先复现 CI 同一报错、修复后通过,常规(有 lib)路径同样通过。硬约束见 `docs/踩坑记录.md` §51。
+### v0.123.0 (2026-09-23)
+- ✨ **`browser_decide` 工具:Jev(TypeSafe「System One」)决策层接入 AI 浏览器(Phase 1,调研报告 `docs/Jev决策模型-浏览器操作接入调研.md`)**:主模型每一步「从 extract 输出里挑编号元素」的封闭集判别,可卸载给只输出结构化判断 + 置信度的 Jev。新工具为**只读**(返回「click 元素[12] conf=0.87」建议文本,不执行任何动作),审批落 default ALLOW 档,真动作仍走 `browser_click`/`browser_type` 的软确认——风险边界不因决策来自谁而改变。实现:Rust 新增 `src-tauri/src/browser/decide.rs`(JevConfig/JevClient/请求构造/响应校验纯函数 + 14 个单测);`browser/mod.rs` 加 `BrowserAction::Decide`(snapshot 缺省时按当前引擎内部补一次 Extract,引擎解耦);新增 `browser_get_jev_config`/`browser_set_jev_config` 一对 Tauri 命令(非密配置走 settings 表 `ai.jev.*`,API key 走现成 keyring `model:jev`,三道同步补齐);vendor 侧 tools 加 spec、approval-bridge 显式登记 + risk-gate 断言、设置页「AI 浏览器」tab 新增 Jev 配置区(**默认关闭**,明文提示页面快照会外发至所配置端点)。Jev 官方接口是 `POST /v1/systemone`(state + questions/answers 结构,choice 带 probabilities + confidence),与 OpenAI Chat Completions 不同路径——直接用裸 HTTP(reqwest OnceLock 客户端),不套任何会自动追加 `/chat/completions` 的 SDK。置信度低于阈值返回 `[LOWCONF]` 前缀交还主模型兜底。另起 tools 包首个 spec(bridged-tools.spec.ts)把「vendor BRIDGED_TOOLS ↔ Rust BROWSER_TOOLS」钉成机械断言,补上调研发现的最大结构缺口(此前三张表只靠注释互引)。
+- 🐛 **obscura 无头浏览器后端中文/日韩文本渲染乱码(豆腐块)**:引擎 fontdb 只用内置 Liberation/DejaVu/Noto Emoji 三套字库且**明确不加载系统字体**(设计为跨主机布局确定),而这三套零 CJK 覆盖 → 中文页面全部渲染为方框。修复(vendor/obscura `obscura-render`):`TextEngine` 构造时在内置字库之后 `db.load_system_fonts()` 作为**缺字回退层**——cosmic-text 的 `Attrs::matches` 只按 style/stretch 过滤(db 内全部面都进匹配键),平台回退链(Windows:Han → Microsoft YaHei UI)即可命中宿主字库;SVG `<text>` 路径(`svg_font_database`)同样加载,并给 usvg 开启 `system-fonts`(fontdb/fs)。配套修正一个被该层暴露的既有缺陷:默认族解析此前不钉字体 id,权重 500 的英文 run 被系统符号字体 Marlett(weight class 恰为 500,匹配键按 weight_diff 排序第一)劫持、拉丁文本全按符号度量排版;**现在默认族解析钉住内置字体 id**,系统字体只做缺字回退,拉丁布局保持确定。验证:obscura-render 470 例 + 112 例单测全绿(新增 `han_glyphs_fall_back_to_host_faces`,修正被系统 emoji 字体接管的 `emoji_font_is_loaded_only_for_emoji_documents`),release 二进制重建,本地 CJK/日/韩/emoji/权重 500 混合页实测渲染正常。沉淀见 `docs/踩坑记录.md` §52。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
