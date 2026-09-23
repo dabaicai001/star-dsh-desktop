@@ -25,16 +25,14 @@ afterEach(cleanup)
  * the component's PropsRuntime requires (the component itself only reads the
  * injected face).
  */
-function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: boolean } = {}) {
+function workspaceProps(opts: { cwd?: string; sessionId?: string } = {}) {
   const assets = createSnapshotStore<StarHubAssetListState>({ assets: [], loading: false, error: null, preview: false })
   const bridge = createToolSelectionBridge()
   const gitWorkbench = createSnapshotStore<{ open: boolean; initialTab: 'changes' | 'history' | 'branches' }>({ open: false, initialTab: 'changes' })
-  const toolsPanel = createSnapshotStore<{ open: boolean }>({ open: opts.panelOpen ?? true })
   const execRecords = createSnapshotStore<ExecRecordsState>({ viewOpen: false, records: [] })
   const useAssets = <S,>(sel: (s: StarHubAssetListState) => S) => sel(assets.getSnapshot())
   const useSelection = <S,>(sel: (s: ToolSelection) => S) => sel(bridge.source.getSnapshot())
   const useGitWorkbench = <S,>(sel: (s: { open: boolean; initialTab: 'changes' | 'history' | 'branches' }) => S) => sel(gitWorkbench.getSnapshot())
-  const useToolsPanel = <S,>(sel: (s: { open: boolean }) => S) => sel(toolsPanel.getSnapshot())
   const useExecRecords = <S,>(sel: (s: ExecRecordsState) => S) => sel(execRecords.getSnapshot())
   const sessionId = opts.sessionId === undefined ? undefined : opts.sessionId as never
   const useSessions = ((sel: (s: { ids: string[]; byId: Record<string, { cwd?: string; retainedBy?: Record<string, number> } | undefined> }) => unknown) => {
@@ -51,7 +49,6 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
     assets,
     bridge,
     gitWorkbench,
-    toolsPanel,
     execRecords,
     refreshAssets: vi.fn(),
     openConnectionManager: vi.fn(),
@@ -65,7 +62,6 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string; panelOpen?: bo
     useAssets,
     useSelection,
     useGitWorkbench,
-    useToolsPanel,
     useSessions,
     useExecRecords,
     // settings.update stub: the tool-context sync effect calls it and must

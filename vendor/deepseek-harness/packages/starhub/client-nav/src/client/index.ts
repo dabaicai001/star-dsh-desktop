@@ -1,7 +1,8 @@
 /**
- * Browser StarHub navigation plugin(方案 P1,重构版):侧栏「工具」大类/子类
- * 导航 + shell.overlay(连接对话框)+ 右侧工具工作区列 + dsh
- * 设置面板的 StarHub 分区。
+ * Browser StarHub navigation plugin(方案 P1,重构版):侧栏「工具」主面板行
+ * (sidebar.panellist + main v0.123.2;此前为 footer.action + shell.overlay
+ * 浮层)+ shell.overlay(连接对话框 / 连接卡 / 沙箱横幅)+ dsh 设置面板的
+ * StarHub 分区。
  *
  * 状态拆分:nav store(root scope,仅大类展开态)挂在 sidebar.navigation
  * 上;资产列表、「当前子类 + 当前资产」与连接对话框开关由
@@ -26,6 +27,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: connection service merge 不再使用(0.1.6 起 connection.api 撤除,
 // Host RPC 走 ctx.remote);保留 dsh-client-connection 仅因 SessionId 经垫片转口。
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ISessions, IWorkspaces } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
@@ -39,7 +41,7 @@ import { createStarHubAssetSource, DOCKER_REFERENCE_TAG, STARHUB_ASSET_SOURCE } 
 import { createAskAiHandler, createOpenAssetHandler, subscribeHostEvents } from './host-events.ts'
 import {
   createConnectionManagerOverlay, createStarHubAssets, createToolSelectionBridge,
-  createToolsPanelOverlay, type RustAsset,
+  type RustAsset,
 } from './store.ts'
 import { StarHubConnCard } from './conn/StarHubConnCard.tsx'
 import { ExecDrawerButton } from './conn/ExecDrawerButton.tsx'
@@ -49,7 +51,7 @@ import { bindAssetContext } from './tool-context.ts'
 import { focusWindowByKey, openNewPage, tauriInvoke } from './tauri.ts'
 import { ScreenshotButton } from './screenshot/ScreenshotButton.tsx'
 import { StarHubOverlay } from './StarHubOverlay.tsx'
-import { StarHubFooterButton } from './StarHubFooterButton.tsx'
+import { ToolsPanelIcon } from './ToolsPanelIcon.tsx'
 import { GitBranchPill } from './git/GitBranchPill.tsx'
 import { createGitWorkbenchBridge } from './git/git-workbench-state.ts'
 import { StarHubToolWorkspace, type StarHubToolWorkspaceInjected } from './StarHubToolWorkspace.tsx'
@@ -71,7 +73,19 @@ import { AuditTab } from './settings/audit.tsx'
  * throws `cannot get property "remote.<ns>" without inject` unless the
  * owning fiber declares the dotted name (v0.121.7 启动事故)。
  */
-export const inject = ['slots', 'connection', 'remote', 'remote.settings', 'inputTriggers', 'sessions', 'workspaces', 'conversation', 'uiWorkspace']
+export const inject = ['slots', 'connection', 'remote', 'remote.settings', 'layout', 'inputTriggers', 'sessions', 'workspaces', 'conversation', 'uiWorkspace']
+
+/**
+ * 工具主面板的 panellist id / main keyed-slot key(v0.123.2 起):契约要求
+ * panellist 行的 id 必须在 layout 的 root-scope `main` keyed 槽有同名注册,
+ * 否则 layout.selectPanel 抛错(与 ui-plugin-manager 的 PANEL_ID 同机制)。
+ */
+const TOOLS_PANEL_ID = 'starhub-tools' as MainPanelId
+
+/** layout 服务窄化面:切主面板(null = 回会话视图)。 */
+interface LayoutPanelSwitch {
+  selectPanel: (panelId: string | null) => void
+}
 
 /**
  * Client plugin body: one root-scope store handle (sidebar) plus the
@@ -88,9 +102,7 @@ export function apply(ctx: Context): void {
   const assets = createStarHubAssets()
   const selection = createToolSelectionBridge()
   const connectionManager = createConnectionManagerOverlay()
-  // 工具面板(侧栏底部入口 → shell.overlay):footer 按钮写 open,overlay 席位读渲染。
-  const toolsPanel = createToolsPanelOverlay()
-  // Git 工作台视图开关(v0.118.0):会话头部分支胶囊(入口)与工具抽屉
+  // Git 工作台视图开关(v0.118.0):会话头部分支胶囊(入口)与工具面板
   // (视图承载)共享,与执行记录视图二向互斥。
   const gitWorkbench = createGitWorkbenchBridge()
   // SSH 执行记录桥(v0.100.0,v0.100.1 会话隔离):ssh:exec-done 事件在
@@ -107,6 +119,9 @@ export function apply(ctx: Context): void {
   // 0.1.6:apiproxy 的 connection.api 撤除,类型化 Host RPC 走 ctx.remote
   // (api-gateway 的 ClientRemote);settings 写入统一经 remote.settings。
   const settingsWriter = ctx.remote.settings
+  // 主面板切换(ui-layout 服务):工具入口从 footer.action 迁到 panellist 后,
+  // 侧栏行点击与头部 git/执行 按钮跳转都走它(null = 回会话视图)。
+  const layout = ctx.get('layout') as LayoutPanelSwitch
   const inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
   const sessions = ctx.get('sessions') as ISessions
   const workspaces = ctx.get('workspaces') as IWorkspaces
@@ -142,16 +157,6 @@ export function apply(ctx: Context): void {
       // 开窗失败(如 IPC 未授权)打日志,不阻断主壳交互
       .catch((e: unknown) => { console.error('打开资产页面失败:', e) })
   }
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action',
-    id: 'starhub-tools',
-    order: 10,
-    label: 'StarHub 工具',
-    inject: () => ({
-      // 打开工具面板(shell.overlay 席位承载的 StarHubToolWorkspace)。
-      openTools: () =>{  toolsPanel.open() },
-    }),
-  }, StarHubFooterButton))
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
     id: 'starhub-overlay',
@@ -201,13 +206,13 @@ export function apply(ctx: Context): void {
         console.error('关闭 SSH 连接失败:', sessionId, e)
       })
     },
-    // 关闭工具面板(footer 入口再点或面板右上角 ×,或点遮罩空白)。
-    // 一并复位两个视图开关:面板已关,若残留 true,下回点「分支/执行」
-    // 胶囊会走到 close 分支而非打开,看起来没反应。
+    // 关闭工具面板(面板右上角 ×):一并复位两个视图开关——面板虽回会话,
+    // 若残留 true,下回点「分支/执行」胶囊会走到 close 分支而非打开,
+    // 看起来没反应。主面板模式 × = 回会话视图(null = conversation)。
     closeTools: () => {
       gitWorkbench.close()
       execRecords.closeView()
-      toolsPanel.close()
+      layout.selectPanel(null)
     },
     // 选中一个子类:写入选择桥,面板展开该子类的资产列表。
     selectSubcategory: (key: string) => { selection.selectSubcategory(key) },
@@ -243,18 +248,23 @@ export function apply(ctx: Context): void {
       selection: selection.source,
       assets: assets.source,
       gitWorkbench: gitWorkbench.source,
-      toolsPanel: toolsPanel.source,
       execRecords: execRecords.source,
     },
   })
-  // 工具面板(rc.2 适配):`workspace`/`details.workspace` 槽在 rc.2 已不存在,
-  // 改挂 shell.overlay,由侧栏底部「工具」入口(footer.action → toolsPanel 桥)开。
-  // shell.overlay 是 list 槽、root scope:不开注册侧 store,全部经 hooks 舱位下发。
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'starhub-tools-panel',
-    order: 105,
-    label: 'StarHub 工具面板',
+  // 工具面板(v0.123.2):从侧栏底部 footer.action + shell.overlay 浮层迁到
+  // **主面板**——sidebar.panellist 行(order 1,紧随「插件」order 0 之下;
+  // 侧栏拥有按钮/标签/选中态,本行只出图标)+ main keyed 槽承载面板本体。
+  // 入口点击、git 分支胶囊、执行 按钮都经 layout.selectPanel 切换;开关桥
+  // (toolsPanel overlay)随之删除。
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+    name: 'sidebar.panellist',
+    id: TOOLS_PANEL_ID,
+    order: 1,
+    label: '工具',
+  }, ToolsPanelIcon))
+  ctx.slots.inject('main', () => ctx.slots.register({
+    name: 'main',
+    key: TOOLS_PANEL_ID,
     inject: workspaceInject,
   }, StarHubToolWorkspace))
   // 右下角 BastionExecPanel 浮层席位已在 v0.100.0 移除:静默执行记录改由
@@ -281,7 +291,7 @@ export function apply(ctx: Context): void {
       openWorkbench: () => {
         gitWorkbench.open('branches')
         execRecords.closeView()
-        toolsPanel.open()
+        layout.selectPanel(TOOLS_PANEL_ID)
       },
       hooks: { gitWorkbench: gitWorkbench.source },
     }),
@@ -299,7 +309,7 @@ export function apply(ctx: Context): void {
       openExecView: () => {
         execRecords.openView()
         gitWorkbench.close()
-        toolsPanel.open()
+        layout.selectPanel(TOOLS_PANEL_ID)
       },
       closeExecView: execRecords.closeView,
       hooks: { execRecords: execRecords.source },

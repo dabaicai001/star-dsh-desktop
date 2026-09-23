@@ -1,50 +1,23 @@
-/* StarHub tools side panel (rc.2 overlay form): full-viewport mask + a
-   right-edge drawer showing the subcategory/asset tree. Tokens follow the
-   dsw alias set. */
-
-.layer {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  pointer-events: none;
-}
-
-.layer > * {
-  pointer-events: auto;
-}
-
-.mask {
-  position: absolute;
-  inset: 0;
-  background: var(--dsw-alias-bg-mask-2);
-  animation: maskIn 0.14s ease-out;
-}
-
-@keyframes maskIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+/* StarHub tools main panel (v0.123.2): fills the layout's main area, with the
+   subcategory/asset tree scrolling inside. Tokens follow the dsw alias set. */
 
 .panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 320px;
-  max-width: 85vw;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
   overflow: hidden;
-  background: var(--dsw-alias-bg-layer-2);
-  border-left: 1px solid var(--dsw-alias-border-l3);
-  box-shadow: var(--dsw-shadow-lv3);
-  animation: slideIn 0.16s ease-out;
+  padding: 16px clamp(16px, 3vw, 32px) 20px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
   font-size: 13px;
 }
 
-@keyframes slideIn {
-  from { transform: translateX(24px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+/* Header and body share one centred measure so wide windows stay readable. */
+.panel > * {
+  width: 100%;
+  max-width: 960px;
+  margin-inline: auto;
 }
 
 .header {

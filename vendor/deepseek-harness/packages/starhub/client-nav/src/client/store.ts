@@ -8,8 +8,7 @@
  * ui-agent-preset 的 controller 范式):
  * - `createStarHubAssets`:资产列表(get_assets 结果)与拉取状态;
  * - `createToolSelectionBridge`:跨 scope 的「当前子类 + 打开的资产实例」;
- * - `createConnectionManagerOverlay`:连接管理 overlay 的开关;
- * - `createToolsPanelOverlay`:工具抽屉(shell.overlay 承载)的开关。
+ * - `createConnectionManagerOverlay`:连接管理 overlay 的开关。
  */
 import {
   createSnapshotStore, type SnapshotStore,
@@ -115,34 +114,6 @@ export function createConnectionManagerOverlay(): ConnectionManagerOverlay {
     source,
     open: (asset) => { source.set({ open: true, asset: asset ?? null }) },
     close: () => { source.set({ open: false, asset: null }) },
-  }
-}
-
-/** StarHub 工具面板(侧栏底部入口打开的 overlay)开关状态。 */
-export interface ToolsPanelState {
-  open: boolean
-}
-
-/** 工具面板开关桥:footer 按钮写 open,shell.overlay 席位读渲染。 */
-export interface ToolsPanelOverlay {
-  open: () => void
-  close: () => void
-  source: SnapshotStore<ToolsPanelState>
-}
-
-/**
- * Create the apply-owned tools-panel bridge. The footer action button opens
- * it (侧栏底部「工具」入口); the shell.overlay seat renders the workspace
- * surface — the same bare-source bridge pattern as the AI chat panel
- * (one-handle-one-scope).
- * @returns the bridge (bare source + open/close callbacks).
- */
-export function createToolsPanelOverlay(): ToolsPanelOverlay {
-  const source = createSnapshotStore<ToolsPanelState>({ open: false })
-  return {
-    open: () =>{  source.set({ open: true }) },
-    close: () =>{  source.set({ open: false }) },
-    source,
   }
 }
 

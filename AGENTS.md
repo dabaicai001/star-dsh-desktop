@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.123.1(**移除设置「插件市场」与「AI 助手」两个 tab 及各自后端栈,对齐 dsh 原生**)。①「插件市场」:dsh 首页「插件」面板(原生 Loader 体系)已覆盖已装列表启停 + 包名 / GitHub 仓库 / 本地目录安装 + 安装源选择,StarHub 自研的平行插件管理整体退场——前端删 `client-nav` 的 `settings/plugins.tsx` 与 `settings.section` 注册、`settings/services.ts` 的 8 个插件服务函数与 4 个类型;Rust 删 `commands/dsh_plugins.rs` 6 个命令 + `dsh_web_restart` + ACL 登记,`harness/plugins.rs` 精剪掉安装/市场/启停/卸载实现(约 500 行,含 `zip` 直接依赖)但**保留加载面**:registry / cordis.yml / peer junction / 包装配置 / 内置插件注册 / 坏插件自救禁用照旧,已装用户插件与 `dsh.client` UI 插件注入行为不变。②「AI 助手」:长期记忆整条栈退场(用户反馈不好用)——删前端 `settings/ai.tsx` / `aiSettings.ts` / `memory-context.ts`、记忆服务与 logAudit、tab 注册与启动同步(`remote.llm` inject 移除);vendor 删 `memory-context` / `memory-sink` 两个宿主插件包与 `memory` 工具 spec,同步 examples 组合 / tsconfig / 打包清单 / Rust `LOCAL_PACKAGES`;Rust 删 7 个 `ai_memory_*` 命令、`starhub/memory.cards` / `starhub/memory.write` 桥方法、memory 工具分支与记忆写入安全扫描(会话历史 `ai_conv_*` / `ai_msg_*` 保留)。`ai_memories` 表数据保留不删。详见 `CHANGELOG.md`[未发布];`docs/插件体系打通方案-dsh插件统一.md` 与 `docs/AI内核替换方案-deepseek-harness.md` §5.3 标注为已被本版本取代。) |
+| 当前版本 | v0.123.2(**侧栏「工具」入口迁主面板,排在「插件」之下**:`client-nav` 把工具入口从 `sidebar.footer.action` 底部按钮 + `shell.overlay` 320px 抽屉,改为 `sidebar.panellist` 行(order 1)+ `main` keyed 槽(`starhub-tools`)主面板;入口/git 胶囊/执行 按钮统一走 `layout.selectPanel`,× 回会话。抽屉窄栏限制解除,git 工作台/执行记录/沙箱/Android 面板获得整幅主区域。改动全在 StarHub 本地包(client-nav 槽位注册),DSH 内核零改动;`StarHubFooterButton` / toolsPanel 桥 / `ToolsPanelState` 死代码删除。历史:v0.123.1 移除设置「插件市场」与「AI 助手」及各自后端栈,详见 `CHANGELOG.md`。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-23 (v0.123.1)*
+*最后更新: 2026-09-23 (v0.123.2)*

@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.123.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.123.2-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,9 +48,8 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.123.1 (2026-09-23)
-- 🧹 **移除设置「插件市场」tab 与支线 B 插件安装/启停/卸载/市场命令面(与 dsh 主壳原生「插件」面板重复)**:dsh 首页侧边栏「插件」面板已提供已装插件列表 + 启停、包名 / GitHub 仓库 / 本地目录安装、安装源(默认 / 中国大陆镜像 / 私有源)选择,StarHub 自研的平行插件管理整体退场。前端删除 `client-nav` 的 `settings/plugins.tsx`(PluginsTab / ConfirmActionDialog)与「插件市场」settings.section 注册(余下 tab 顺次前移)、`settings/services.ts` 的 8 个插件服务函数与 4 个类型、settings.module.css 的 5 个市场专用类;Rust 删除 `commands/dsh_plugins.rs` 6 个命令(`dsh_plugin_list` / `dsh_plugin_install_local` / `dsh_plugin_install_url` / `dsh_plugin_set_enabled` / `dsh_plugin_uninstall` / `dsh_plugin_market_fetch`)+ `dsh_web_restart` + `DshWebManager::restart` + ACL 白名单登记;`harness/plugins.rs` 精剪掉安装 / 市场 / 启停 / 卸载实现(约 500 行,含 `zip` 直接依赖),**保留加载面**:registry / cordis.yml / peer junction / 包装配置生成 / 内置插件注册 / 坏插件自救禁用照旧——已装进 `app_data_dir/plugins/` 的用户插件与 `dsh.client` UI 插件注入(web.rs `sync_user_client_plugins`)行为不变。设计背景与退场说明见 `docs/插件体系打通方案-dsh插件统一.md`(已标注被本版本取代)。
-- 🧹 **移除设置「AI 助手」tab 与 StarHub 长期记忆整条栈(用户反馈不好用)**:删除前端 AiTab(记忆模型下拉 + 长期记忆总开关 + 记忆管理弹窗)、aiSettings / memory-context 两个桥模块、记忆服务与 logAudit;vendor 侧删除 `memory-context` / `memory-sink` 两个宿主插件包与 `memory` 模型工具,并同步 examples 组合、tsconfig、打包脚本清单、Rust `LOCAL_PACKAGES`;Rust 删除 7 个 `ai_memory_*` 命令、`starhub/memory.cards` / `starhub/memory.write` 两个 sdk 桥方法、memory 工具分支与记忆写入安全扫描(会话历史 `ai_conv_*` / `ai_msg_*` 命令保留)。**`ai_memories` 表数据保留在本地库中不再读写**(不删用户数据);`docs/AI内核替换方案-deepseek-harness.md` §5.3 标注为已移除。
+### v0.123.2 (2026-09-23)
+- ✨ **侧栏「工具」入口从底部按钮迁到主面板行(排在「插件」下面)**:原形态是侧栏底部 `sidebar.footer.action` 按钮 + `shell.overlay` 右侧抽屉(320px 浮层);现改为 `sidebar.panellist` 行(order 1,紧随「插件」之下)+ ui-layout `main` keyed 槽承载的工具主面板,点击与 git 分支胶囊 / 执行 按钮统一经 `layout.selectPanel` 切换,× 回会话视图。抽屉的 320px 窄栏限制解除,git 工作台 / 执行记录 / 沙箱 / Android 面板首次获得整幅主区域。改动全部在 StarHub 本地包 `client-nav`(槽位注册层面),DSH 内核零改动;toolsPanel 开关桥与 StarHubFooterButton 死代码一并删除。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

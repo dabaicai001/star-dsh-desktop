@@ -6,9 +6,11 @@
  * rc.2 注册面(v0.100.0 起右下角 BastionExecPanel 浮层席位移除;
  * v0.105.0 起沙箱桌面横幅 + 沙箱平台设置 tab 入列;v0.121.8 起文件树/
  * 文件查看/@ 文件源随「文件功能」移除;v0.123.1 起「插件市场」「AI 助手」
- * tab 移除——前者由壳内首页「插件」面板接管,后者(长期记忆)整条栈退场):
- * `sidebar.footer.action`(工具入口)+ `shell.overlay`×4(overlay /
- * AI 连接卡 / 沙箱横幅 / 工具面板)+ `conversation.session.
+ * tab 移除——前者由壳内首页「插件」面板接管,后者(长期记忆)整条栈退场;
+ * v0.123.2 起「工具」入口从 sidebar.footer.action + shell.overlay 浮层迁到
+ * sidebar.panellist 行 + main 主面板):
+ * `shell.overlay`×3(overlay / AI 连接卡 / 沙箱横幅)+ `sidebar.panellist`
+ * (工具行)+ `main`(工具面板)+ `conversation.session.
  * header.actions`×2(git / 执行)+ `conversation.input.left`(截图)
  * + `settings.section`×7。
  */
@@ -16,7 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { apply as applyHost } from '../src/index.ts'
 import { apply as applyPlugin, inject as injectList } from '../src/client/index.ts'
-import { StarHubFooterButton } from '../src/client/StarHubFooterButton.tsx'
+import { ToolsPanelIcon } from '../src/client/ToolsPanelIcon.tsx'
 import { StarHubOverlay } from '../src/client/StarHubOverlay.tsx'
 import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
 import { GitBranchPill } from '../src/client/git/GitBranchPill.tsx'
@@ -51,7 +53,7 @@ interface RegisterOptions {
 }
 
 /** 最小 ctx 替身:slots.inject 立即触发 register,layout/get/effect 打桩。 */
-function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; remote?: unknown } = {}) {
+function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; remote?: unknown; layout?: unknown } = {}) {
   const register = vi.fn((_options: RegisterOptions, _component: unknown) => () => {})
   const inject = vi.fn((_name: string, fn: () => unknown) => fn())
   const registerSource = vi.fn((_src: unknown) => () => {})
@@ -66,6 +68,8 @@ function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; re
 
       case 'inputTriggers':
         return { registerSource }
+      case 'layout':
+        return overrides.layout ?? { selectPanel: vi.fn() }
       case 'sessions':
         return overrides.sessions ?? {
           list: {
@@ -112,37 +116,56 @@ describe('client-nav apply (rc.2)', () => {
     const { ctx, inject, register } = fakeContext()
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
-      'sidebar.footer.action',
-      'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
+      'shell.overlay', 'shell.overlay', 'shell.overlay',
+      'sidebar.panellist', 'main',
       'conversation.session.header.actions', 'conversation.session.header.actions',
       'conversation.input.left',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
     ])
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
-      StarHubFooterButton,
-      StarHubOverlay, StarHubConnCard, SandboxUserActionBanner, StarHubToolWorkspace,
+      StarHubOverlay, StarHubConnCard, SandboxUserActionBanner,
+      ToolsPanelIcon, StarHubToolWorkspace,
       GitBranchPill, ExecDrawerButton,
       ScreenshotButton,
       AuditTab, AlertTab, SandboxSettingsTab, AndroidSettingsTab, BrowserSettingsTab, SshSettingsTab, AboutTab,
     ])
   })
 
-  it('footer inject opens the tools panel bridge', () => {
+  it('tools entry rides the panellist row above the main panel it selects', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const footerConfig = register.mock.calls[0]![0]
-    const injected = footerConfig.inject() as { openTools: () => void }
-    expect(injected.openTools).toBeTypeOf('function')
-    // toolsPanel 快照桥挂在工具面板(workspace)槽的 inject hooks 舱位,footer 只负责打开。
-    const panelConfig = register.mock.calls[4]![0]
-    const panelInjected = panelConfig.inject() as {
-      openTools?: never
-      hooks: { toolsPanel: { getSnapshot: () => { open: boolean } } }
-    }
-    expect(panelInjected.hooks.toolsPanel.getSnapshot()).toEqual({ open: false })
-    injected.openTools()
-    expect(panelInjected.hooks.toolsPanel.getSnapshot()).toEqual({ open: true })
+    // panellist 行:紧随「插件」(order 0)之下,侧栏拥有按钮/标签/选中态。
+    const rowConfig = register.mock.calls[3]![0] as RegisterOptions
+    expect(rowConfig.name).toBe('sidebar.panellist')
+    expect(rowConfig.id).toBe('starhub-tools')
+    expect(rowConfig.order).toBe(1)
+    expect(rowConfig.label).toBe('工具')
+    // main keyed 槽:契约要求同 id 注册,否则 layout.selectPanel 抛错。
+    const mainConfig = register.mock.calls[4]![0] as RegisterOptions
+    expect(mainConfig.name).toBe('main')
+    expect(mainConfig.key).toBe('starhub-tools')
+  })
+
+  it('git pill and exec drawer switch to the tools main panel; × returns to the session', () => {
+    const selectPanel = vi.fn()
+    const { ctx, register } = fakeContext({ layout: { selectPanel } })
+    applyPlugin(ctx)
+    const mainConfig = register.mock.calls[4]![0]
+    const mainInjected = mainConfig.inject() as { closeTools: () => void }
+    // 工具面板 × = 回会话视图(null = 默认 conversation 面板)。
+    mainInjected.closeTools()
+    expect(selectPanel).toHaveBeenCalledWith(null)
+    // git 分支胶囊:打开工作台并切到工具面板。
+    const gitConfig = register.mock.calls.find(c => (c[0] as RegisterOptions).id === 'starhub-git-branch')![0]
+    const gitInjected = gitConfig.inject() as { openWorkbench: () => void }
+    gitInjected.openWorkbench()
+    expect(selectPanel).toHaveBeenCalledWith('starhub-tools')
+    // 执行 按钮:打开执行记录视图并切到工具面板。
+    const execConfig = register.mock.calls.find(c => (c[0] as RegisterOptions).id === 'starhub-exec-drawer')![0]
+    const execInjected = execConfig.inject() as { openExecView: () => void }
+    execInjected.openExecView()
+    expect(selectPanel).toHaveBeenCalledTimes(3)
   })
 
   it('exec drawer pill opens and closes the records view', () => {
@@ -178,7 +201,7 @@ describe('client-nav apply (rc.2)', () => {
   it('overlay inject exposes the connection-dialog bridge face', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const overlayConfig = register.mock.calls[1]![0]
+    const overlayConfig = register.mock.calls.find(c => (c[0] as RegisterOptions).id === 'starhub-overlay')![0]
     const injected = overlayConfig.inject() as {
       openConnectionManager: () => void
       closeConnectionManager: () => void
@@ -191,15 +214,6 @@ describe('client-nav apply (rc.2)', () => {
     expect(injected.hooks.connectionManager.getSnapshot()).toEqual({ open: false, asset: null })
     injected.openConnectionManager()
     expect(injected.hooks.connectionManager.getSnapshot()).toEqual({ open: true, asset: null })
-  })
-
-  it('tools panel inject closes the panel through the bridge', () => {
-    const { ctx, register } = fakeContext()
-    applyPlugin(ctx)
-    const panelConfig = register.mock.calls[4]![0]
-    const injected = panelConfig.inject() as { closeTools: () => void; hooks: { toolsPanel: { getSnapshot: () => { open: boolean } } } }
-    injected.closeTools()
-    expect(injected.hooks.toolsPanel.getSnapshot()).toEqual({ open: false })
   })
 
   it('opens every asset page in a React window (preview: new tab), no shell overlay hooks', () => {
@@ -335,5 +349,7 @@ describe('client-nav apply (rc.2)', () => {
     // ctx.remote.<ns> 要求 fiber 声明点号全名,否则 apply 抛
     // "cannot get property … without inject"(v0.121.7 启动事故)。
     expect(injectList).toContain('remote.settings')
+    // v0.123.2:工具面板迁主面板,入口/git/执行 跳转走 ui-layout 的 layout 服务。
+    expect(injectList).toContain('layout')
   })
 })

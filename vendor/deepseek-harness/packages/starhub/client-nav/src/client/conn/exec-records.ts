@@ -2,9 +2,9 @@
  * SSH 执行记录状态桥(v0.100.0 重构,v0.100.1 按会话隔离):
  * 后端 `ssh_exec_core` 每次成功执行都广播通用 `ssh:exec-done`
  * (payload sessionId/command/output,输出已截断 4000 字符);头部「执行」
- * 按钮(conversation.session.header.actions)与工具抽屉的执行记录视图
+ * 按钮(conversation.session.header.actions)与工具面板的执行记录视图
  * (StarHubToolWorkspace 内)读同一份桥——裸 source 桥范式(one-handle-
- * one-scope,同 gitWorkbench / toolsPanel)。
+ * one-scope,同 gitWorkbench)。
  *
  * 会话隔离(2026-08-27):记录写入时打上「当时活跃会话」的标记(apply 层
  * 订阅 sessions.list 切换经 setConversation 喂入),状态里的 records 只暴露

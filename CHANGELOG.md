@@ -9,6 +9,13 @@
 
 ---
 
+## [0.123.2] - 2026-09-23
+
+### 新增
+- **侧栏「工具」入口迁主面板(排在「插件」之下)**:原形态是侧栏底部 `sidebar.footer.action` 按钮 + `shell.overlay` 右侧抽屉(320px 浮层 + toolsPanel 开关桥);现改为 `sidebar.panellist` 行(`order: 1`,紧随 ui-plugin-manager 的「插件」order 0 之下)+ ui-layout root-scope `main` keyed 槽(`starhub-tools`)承载的工具主面板。入口点击、git 分支胶囊、会话头部「执行」按钮统一经 `layout.selectPanel` 切换;面板右上角 × 改「返回会话」(`selectPanel(null)`)。抽屉 320px 窄栏限制解除,git 工作台 / 执行记录 / 沙箱桌面 / Android 面板首次获得整幅主区域。改动全部落在 StarHub 本地包 `client-nav` 的槽位注册与组件适配,DSH 内核(ui-sidebar / ui-layout)零改动;`StarHubFooterButton` 组件、`createToolsPanelOverlay` 桥与 `ToolsPanelState` 作为死代码一并删除。测试:vendor starhub 63 spec / 1002 例全绿,client-nav `tsc --noEmit` 零错误,oxlint 同口径错误数 33 → 20(无新增)。
+
+---
+
 ## [0.123.1] - 2026-09-23
 
 ### 移除
