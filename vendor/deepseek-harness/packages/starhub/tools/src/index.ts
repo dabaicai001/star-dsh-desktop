@@ -160,8 +160,15 @@ function registerBridged(ctx: Context, getTransport: () => JsonRpcTransportPeer,
   }))
 }
 
-/** 全域桥接工具清单(schema 移植自旧前端 src/utils/aiTools.ts 与 aiSftpTools.ts)。 */
-const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
+/**
+ * 全部桥接工具规格(schema 声明在此,执行统一走 callHost)。
+ *
+ * 导出供 tools 包 spec 机械校验:调用方名单必须与 Rust 侧
+ * `src-tauri/src/browser/mod.rs` 的 `BROWSER_TOOLS`(以及 approval-bridge 的
+ * `STARHUB_DOMAIN_TOOLS`)保持一致——三张表此前只靠注释互引,没有任何机械
+ * 校验,加新工具时漏登记某一张表的代价是风险门失效或分发 404。
+ */
+export const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
   // ── SSH(会话绑定 SSH 资产)──
   {
     toolName: 'ssh_exec',
@@ -430,6 +437,14 @@ const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
     description: '在 AI 浏览器当前页面执行任意 JavaScript(函数体形态,末尾用 return 返回结果;支持 await,结果需可 JSON 序列化,输出截断至 8000 字符)。执行会写入审计日志,但不弹确认卡。优先使用 browser_extract/click/type 等结构化工具,只在它们不够用时才用本工具。',
     parameters: {
       expression: { type: 'string', required: true, description: 'JS 函数体,例如 "return document.querySelectorAll(\'img\').length;"' },
+    },
+  },
+  {
+    toolName: 'browser_decide',
+    description: 'Jev 决策(只读,需在 设置 → AI 浏览器 启用并配置):把「当前子目标 + 页面快照」发给 TypeSafe Jev 决策模型,返回下一步动作建议(click/type/scroll/press_key/select_option/done + 元素编号 + 置信度)。本工具不执行任何动作,也不弹确认卡;当页面候选元素较多、目标明确时优先用它代替自己从 extract 输出里挑编号,再按建议调用 browser_click/browser_type 等。未配置时返回软错误,照常改用 browser_extract 即可。快照缺省时自动内部提取。',
+    parameters: {
+      goal: { type: 'string', required: true, description: '当前子目标,例如「找到登录按钮并点击」或「在搜索框输入关键词」' },
+      snapshot: { type: 'string', description: '可选,直接提供 browser_extract 的原文(编号元素列表);不传则内部自动提取一次' },
     },
   },
   // ── Excel(当前工作簿,前端执行)──

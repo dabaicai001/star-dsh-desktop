@@ -343,6 +343,8 @@ const STARHUB_DOMAIN_TOOLS: ReadonlySet<string> = new Set([
   'browser_reload', 'browser_state', 'browser_extract', 'browser_click',
   'browser_type', 'browser_press_key', 'browser_select_option',
   'browser_scroll', 'browser_screenshot', 'browser_eval',
+  // Jev 决策(只读建议,不执行动作 → default ALLOW 档)
+  'browser_decide',
   // 沙箱桌面(Ubuntu 容器沙箱平台)
   'desktop_list_templates', 'desktop_build_template', 'desktop_create_sandbox',
   'desktop_sandbox_status', 'desktop_pause_sandbox', 'desktop_resume_sandbox',

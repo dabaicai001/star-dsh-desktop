@@ -156,6 +156,8 @@ describe('browser_* gate(AI 浏览器,无痕独立窗口)', () => {
     for (const tool of [
       'browser_state', 'browser_extract', 'browser_screenshot',
       'browser_scroll', 'browser_back', 'browser_forward', 'browser_reload',
+      // Jev 决策:只读建议(不执行动作),与 extract 同级放行
+      'browser_decide',
     ]) {
       expect(classifyStarHubCall(tool, {})).toEqual({ ask: false })
     }
@@ -186,7 +188,7 @@ describe('browser_* gate(AI 浏览器,无痕独立窗口)', () => {
       'browser_open', 'browser_navigate', 'browser_back', 'browser_forward',
       'browser_reload', 'browser_state', 'browser_extract', 'browser_click',
       'browser_type', 'browser_press_key', 'browser_select_option',
-      'browser_scroll', 'browser_screenshot', 'browser_eval',
+      'browser_scroll', 'browser_screenshot', 'browser_eval', 'browser_decide',
     ]) {
       expect(classifyStarHubCall(tool, {}), tool).not.toBeNull()
     }
