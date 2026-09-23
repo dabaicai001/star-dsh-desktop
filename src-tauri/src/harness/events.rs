@@ -301,7 +301,7 @@ mod tests {
         assert_eq!(kind_for_tool("sftp_upload"), "sftp.transfer_completed");
         assert_eq!(kind_for_tool("sftp_download"), "sftp.transfer_completed");
         assert_eq!(kind_for_tool("docker_logs"), "tool.executed");
-        assert_eq!(kind_for_tool("memory"), "tool.executed");
+        assert_eq!(kind_for_tool("excel_get_context"), "tool.executed");
         assert_eq!(kind_for_tool("no_such_tool"), "tool.executed");
     }
 

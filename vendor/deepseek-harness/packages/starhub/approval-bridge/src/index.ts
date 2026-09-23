@@ -217,7 +217,6 @@ const ALWAYS_ASK_TOOLS: ReadonlySet<string> = new Set([
   'es_index_document',
   'es_delete_document',
   'es_delete_index',
-  'memory',
   // 沙箱桌面:箱内任意命令是沙箱与「外界逻辑」的交换口,不在任务级授权内
   'desktop_exec',
   // Android 实体机:真实设备上的任意 shell 命令(实体机不可销毁,比沙箱更严)

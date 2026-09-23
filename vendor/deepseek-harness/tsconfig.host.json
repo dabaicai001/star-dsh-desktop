@@ -454,8 +454,6 @@
     { "path": "./packages/starhub/domain-events" },
     { "path": "./packages/starhub/host-static" },
     { "path": "./packages/starhub/live-context" },
-    { "path": "./packages/starhub/memory-context" },
-    { "path": "./packages/starhub/memory-sink" },
     { "path": "./packages/starhub/session-registry" },
     { "path": "./packages/starhub/tool-context" },
     { "path": "./packages/starhub/tools" },

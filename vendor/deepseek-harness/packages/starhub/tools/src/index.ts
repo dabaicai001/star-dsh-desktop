@@ -4,8 +4,7 @@
  * 而是经 SDK stdio JSON-RPC 的双向 request(方法 `starhub/tool.execute`,参数
  * `{ sessionId, name, args }`,结果为模型可读文本)桥回 StarHub 主进程,
  * 再由主进程分发给拥有该会话的前端面板执行(SSH/DB/Redis/ES/Docker/Excel/MCP
- * 等域工具)或在 Rust 内直接执行(全局工具:list_capabilities / list_assets /
- * memory)。
+ * 等域工具)或在 Rust 内直接执行(全局工具:list_capabilities / list_assets)。
  *
  * 确认语义:本包不做确认;`starhub-approval-bridge` 插件在 tools/pre-execute 上按
  * 只读/风险分级把调用升级为 ask,经 ctx.approval 桥到前端确认卡(方案 5.2)。
@@ -956,8 +955,8 @@ export const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
 ]
 
 /**
- * 注册 StarHub 工具:全域桥接工具 + 四个 Rust 侧全局工具
- * (starhub_list_capabilities / starhub_list_assets / memory)。
+ * 注册 StarHub 工具:全域桥接工具 + 两个 Rust 侧全局工具
+ * (starhub_list_capabilities / starhub_list_assets)。
  * @param ctx - registrant context carrying the tool registry.
  */
 export function apply(ctx: Context): void {
@@ -999,40 +998,6 @@ export function apply(ctx: Context): void {
     output: TEXT_OUTPUT,
     async execute(args, exec) {
       return callHost(getTransport(), exec, 'starhub_list_assets', args)
-    },
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'memory',
-    description:
-      '管理长期记忆(跨会话持久)。三个动作:add 新增条目;replace 用 old_text 唯一子串定位并替换条目;'
-      + 'remove 用 old_text 唯一子串删除条目。target:user=用户偏好与习惯;global=跨资产的通用环境事实与经验;'
-      + 'asset=当前绑定资产的专属事实(如"这台是生产库,DDL 前必须备份");'
-      + 'folder=当前工作区文件夹的专属事实(项目约定、构建方式、目录结构,按工作区独立)。'
-      + '记忆内容会在以后的会话开始时就出现在你的上下文里。'
-      + '该存:用户偏好、环境事实(系统/端口/拓扑)、用户纠正、项目约定、已完成的重要工作;'
-      + '不该存:琐碎信息、可重新查到的知识、原始数据(日志/大段代码)、会话临时状态、任何密码/密钥/令牌。'
-      + '写入 user/global(跨项目作用域)时:只属于当前项目的工作区目录的事实,必须在条目内标注项目名'
-      + '(取工作区目录名,例如 "[starhub] 生产库在 10.0.0.5");跨项目通用的偏好/经验可不标注。'
-      + '记忆功能未在「设置 → AI 助手」配置记忆模型时本工具不可用。',
-    parameters: {
-      action: { type: 'string', required: true, enum: ['add', 'replace', 'remove'] },
-      target: { type: 'string', required: true, enum: ['user', 'global', 'asset', 'folder'] },
-      content: { type: 'string', description: 'add/replace 的新条目内容,信息密度要高,可多条事实合并成一条' },
-      old_text: { type: 'string', description: 'replace/remove 用:能唯一定位目标条目的短子串' },
-    },
-    output: TEXT_OUTPUT,
-    async execute(args, exec) {
-      // folder 目标:工作区文件夹独立记忆,scope 路径取会话 header.cwd
-      // (Rust 桥不知道 web 会话的工作区,由这里解析后经 args.folder 传入)。
-      if (args.target === 'folder') {
-        const cwd = exec.agent?.session.header.cwd
-        if (cwd === undefined) {
-          return { text: '当前会话没有工作区文件夹,无法写入文件夹级记忆' }
-        }
-        return callHost(getTransport(), exec, 'memory', { ...args, folder: cwd })
-      }
-      return callHost(getTransport(), exec, 'memory', args)
     },
   }))
 

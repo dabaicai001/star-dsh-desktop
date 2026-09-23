@@ -1,6 +1,10 @@
-//! plugins.rs 单测:manifest 校验 / cordis.yml 生成 / 市场 README 解析 /
-//! Zip Slip 防护 / install→list→set_enabled→uninstall 链路。
+//! plugins.rs 单测:manifest id 清洗 / cordis.yml 生成 / 包装配置渲染 /
+//! peer junction 与依赖 junction(两种布局)/ registry 与启停状态机 /
+//! 内置插件注册幂等 / 坏插件自救禁用。
 //! 全部在临时目录内运行,不依赖 Tauri AppHandle。
+//! v0.123.1 起安装/启停/卸载/市场命令面移除(插件管理转 dsh 原生「插件」
+//! 面板),原 install→list→set_enabled→uninstall 链路与市场解析用例删除,
+//! 改为直接构造 registry 覆盖保留的加载面行为。
 
 use super::*;
 
@@ -54,93 +58,6 @@ fn sanitize_id_cases() {
 }
 
 #[test]
-fn validate_manifest_accepts_zero_dep_plugin() {
-    let root = std::env::temp_dir().join(format!("starhub-pv-{}", uuid::Uuid::new_v4()));
-    let dir = root.join("ok");
-    write_minimal_plugin(&dir, "dsh-tool-demo");
-    let manifest = validate_plugin_dir(&dir).expect("零依赖插件应通过校验");
-    assert_eq!(manifest.id, "dsh-tool-demo");
-    assert_eq!(manifest.version, "1.2.3");
-    assert_eq!(manifest.entry, "lib/index.js");
-    assert_eq!(manifest.license.as_deref(), Some("MIT"));
-    let _ = fs::remove_dir_all(&root);
-}
-
-#[test]
-fn validate_manifest_accepts_dependencies() {
-    let root = std::env::temp_dir().join(format!("starhub-pv-{}", uuid::Uuid::new_v4()));
-    let dir = root.join("with-deps");
-    write_minimal_plugin(&dir, "dsh-tool-deps");
-    // 覆写 package.json:带 dependencies(打通后允许,依赖分层解析)
-    fs::write(
-        dir.join("package.json"),
-        r#"{"name": "dsh-tool-deps", "main": "lib/index.js",
-            "dependencies": {"@deepseek-ai/dsh-client-runtime": "workspace:^", "lodash": "^4.0.0"},
-            "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}}"#,
-    )
-    .unwrap();
-    let manifest = validate_plugin_dir(&dir).expect("带依赖的插件应通过校验");
-    assert!(!manifest.dsh_client);
-    let _ = fs::remove_dir_all(&root);
-}
-
-#[test]
-fn validate_manifest_accepts_client_and_ui_names() {
-    let root = std::env::temp_dir().join(format!("starhub-pv-{}", uuid::Uuid::new_v4()));
-    // dsh.client 字段 → 标记为 UI 插件,不拒装
-    let dir = root.join("client-field");
-    write_minimal_plugin(&dir, "dsh-something");
-    fs::write(
-        dir.join("package.json"),
-        r#"{"name": "dsh-something", "main": "lib/index.js",
-            "dsh": {"bundle": {"patch": "./p.yml"}, "client": {"entry": "./ui.js"}}}"#,
-    )
-    .unwrap();
-    let manifest = validate_plugin_dir(&dir).expect("dsh.client 应通过校验");
-    assert!(manifest.dsh_client, "应标记为 UI 插件");
-    // 包名含 ui 词:通过校验(不拒装)
-    let dir2 = root.join("skin-name");
-    write_minimal_plugin(&dir2, "dsh-skin-maid");
-    let manifest2 = validate_plugin_dir(&dir2).expect("skin 包名应通过校验");
-    assert!(!manifest2.dsh_client);
-    let _ = fs::remove_dir_all(&root);
-}
-
-#[test]
-fn validate_manifest_requires_bundle_field_and_entry() {
-    let root = std::env::temp_dir().join(format!("starhub-pv-{}", uuid::Uuid::new_v4()));
-    // 缺 dsh.bundle
-    let dir = root.join("no-bundle");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("package.json"), r#"{"name": "plain-lib"}"#).unwrap();
-    let error = validate_plugin_dir(&dir).expect_err("缺 dsh.bundle 应被拒绝");
-    assert!(error.to_string().contains("dsh.bundle"), "{error}");
-    // 入口文件不存在
-    let dir2 = root.join("no-entry");
-    fs::create_dir_all(&dir2).unwrap();
-    fs::write(
-        dir2.join("package.json"),
-        r#"{"name": "dsh-no-entry", "main": "lib/missing.js",
-            "dsh": {"bundle": {"patch": "./p.yml"}}}"#,
-    )
-    .unwrap();
-    let error = validate_plugin_dir(&dir2).expect_err("入口缺失应被拒绝");
-    assert!(error.to_string().contains("入口文件不存在"), "{error}");
-    // 入口路径穿越
-    let dir3 = root.join("evil-entry");
-    fs::create_dir_all(&dir3).unwrap();
-    fs::write(
-        dir3.join("package.json"),
-        r#"{"name": "dsh-evil", "main": "../outside.js",
-            "dsh": {"bundle": {"patch": "./p.yml"}}}"#,
-    )
-    .unwrap();
-    let error = validate_plugin_dir(&dir3).expect_err("路径穿越入口应被拒绝");
-    assert!(error.to_string().contains("入口文件路径非法"), "{error}");
-    let _ = fs::remove_dir_all(&root);
-}
-
-#[test]
 fn render_entries_yml_quotes_and_empty() {
     assert!(render_entries_yml(&[]).contains("[]"));
     let record = PluginRecord {
@@ -150,7 +67,7 @@ fn render_entries_yml_quotes_and_empty() {
         description: None,
         license: None,
         source: PluginSource {
-            kind: "local-dir".into(),
+            kind: "url".into(),
             location: None,
         },
         entry: "lib/index.js".into(),
@@ -178,191 +95,6 @@ fn render_entries_yml_quotes_and_empty() {
 }
 
 #[test]
-fn parse_market_readme_categories_and_filter() {
-    let sample = r#"# awesome-dsh-plugin
-
-## 分类
-
-### 工具与能力
-
-- [foo/dsh-tool-alpha](https://github.com/foo/dsh-tool-alpha) — Alpha 工具
-- [bar/dsh-tool-beta](https://github.com/bar/dsh-tool-beta) - Beta 工具
-- [not-a-repo](https://example.com/elsewhere) — 非 GitHub 链接,丢弃
-
-### UI 增强 / 主题
-
-- [someone/dsh-skin-x](https://github.com/someone/dsh-skin-x) — 皮肤,打通后收录
-
-### 模型与 Provider
-
-- [baz/dsh-polyglot](https://github.com/baz/dsh-polyglot) — 多 provider
-"#;
-    let mut categories = parse_market_readme(sample);
-    assert_eq!(categories.len(), 3, "UI 分类打通后应收录: {categories:?}");
-    assert_eq!(categories[0].name, "工具与能力");
-    assert_eq!(categories[0].plugins.len(), 2, "非 GitHub 链接应被丢弃");
-    assert_eq!(categories[0].plugins[0].name, "foo/dsh-tool-alpha");
-    assert_eq!(categories[0].plugins[0].description, "Alpha 工具");
-    assert_eq!(categories[1].name, "UI 增强 / 主题");
-    assert_eq!(categories[1].plugins[0].name, "someone/dsh-skin-x");
-    assert_eq!(categories[2].plugins[0].name, "baz/dsh-polyglot");
-
-    // join npm-map / stars(以 GitHub URL 为 key)
-    let npm_map = serde_json::json!({"https://github.com/foo/dsh-tool-alpha": "dsh-tool-alpha"});
-    let stars = serde_json::json!({"https://github.com/foo/dsh-tool-alpha": 42});
-    join_market_data(&mut categories, &[npm_map, stars]);
-    assert_eq!(
-        categories[0].plugins[0].npm.as_deref(),
-        Some("dsh-tool-alpha")
-    );
-    assert_eq!(categories[0].plugins[0].stars, Some(42));
-    assert_eq!(categories[0].plugins[1].stars, None);
-}
-
-/// 构造一个内存 zip:entries 为 (路径, 内容)。
-fn build_zip(entries: &[(&str, &str)]) -> Vec<u8> {
-    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-    let options = zip::write::SimpleFileOptions::default();
-    for (name, content) in entries {
-        writer.start_file(name, options).unwrap();
-        use std::io::Write;
-        writer.write_all(content.as_bytes()).unwrap();
-    }
-    writer.finish().unwrap().into_inner()
-}
-
-const ZIP_MANIFEST: &str = r#"{"name": "dsh-tool-zip", "version": "0.1.0", "main": "lib/index.js",
-    "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}}"#;
-
-#[test]
-fn zip_install_strips_top_level_dir() {
-    let (app_data, vendor_root) = test_roots("zip");
-    let paths = PluginPaths::at(app_data.clone());
-    paths.ensure_layout().unwrap();
-    let bytes = build_zip(&[
-        ("dsh-tool-zip-main/package.json", ZIP_MANIFEST),
-        ("dsh-tool-zip-main/lib/index.js", "export default {}\n"),
-    ]);
-    let record = install_zip_bytes(
-        &paths,
-        &bytes,
-        PluginSource {
-            kind: "url".into(),
-            location: Some("https://github.com/x/dsh-tool-zip".into()),
-        },
-        &vendor_root,
-    )
-    .expect("正常 zip 应安装成功");
-    assert_eq!(record.id, "dsh-tool-zip");
-    // 顶层 <repo>-<branch>/ 已剥掉
-    assert!(paths
-        .plugin_dir("dsh-tool-zip")
-        .join("package.json")
-        .exists());
-    assert!(paths
-        .plugin_dir("dsh-tool-zip")
-        .join("lib/index.js")
-        .exists());
-    // peer junction 已建立
-    assert!(
-        paths
-            .plugins_dir()
-            .join("node_modules/@deepseek-ai/cordis")
-            .exists(),
-        "peer junction 应存在"
-    );
-    // 新装默认关闭
-    let yml = fs::read_to_string(paths.entries_path()).unwrap();
-    assert!(yml.contains("disabled: true"), "{yml}");
-    let _ = fs::remove_dir_all(app_data.parent().unwrap());
-}
-
-#[test]
-fn zip_install_rejects_zip_slip() {
-    let (app_data, vendor_root) = test_roots("slip");
-    let paths = PluginPaths::at(app_data.clone());
-    paths.ensure_layout().unwrap();
-    let bytes = build_zip(&[
-        ("pkg/package.json", ZIP_MANIFEST),
-        ("pkg/../evil.txt", "pwned"),
-    ]);
-    let error = install_zip_bytes(
-        &paths,
-        &bytes,
-        PluginSource {
-            kind: "local-zip".into(),
-            location: None,
-        },
-        &vendor_root,
-    )
-    .expect_err("Zip Slip 应被拒绝");
-    assert!(error.to_string().contains("Zip Slip"), "{error}");
-    let _ = fs::remove_dir_all(app_data.parent().unwrap());
-}
-
-#[test]
-fn install_list_enable_uninstall_chain() {
-    let (app_data, vendor_root) = test_roots("chain");
-    let paths = PluginPaths::at(app_data.clone());
-    paths.ensure_layout().unwrap();
-
-    // 本地目录导入
-    let src = app_data.parent().unwrap().join("src-plugin");
-    write_minimal_plugin(&src, "dsh-tool-chain");
-    let record = install_local_dir(&paths, &src, &vendor_root).expect("安装本地目录");
-    assert!(!record.enabled, "新装默认关闭");
-
-    // list
-    let listed = list_plugins(&paths).unwrap();
-    let array = listed.as_array().unwrap();
-    assert_eq!(array.len(), 1);
-    assert_eq!(array[0]["id"], "dsh-tool-chain");
-    assert_eq!(array[0]["missing"], false);
-
-    // 重复安装拒绝
-    let error = install_local_dir(&paths, &src, &vendor_root).expect_err("重复安装应拒绝");
-    assert!(matches!(error, PluginError::AlreadyInstalled(_)));
-
-    // 启停 → yml 内容联动
-    set_enabled(&paths, "dsh-tool-chain", true).unwrap();
-    let yml = fs::read_to_string(paths.entries_path()).unwrap();
-    assert!(yml.contains("disabled: false"), "{yml}");
-    set_enabled(&paths, "dsh-tool-chain", false).unwrap();
-    let yml = fs::read_to_string(paths.entries_path()).unwrap();
-    assert!(yml.contains("disabled: true"), "{yml}");
-    // registry 持久化
-    let registry = load_registry(&paths).unwrap();
-    assert_eq!(registry.plugins.len(), 1);
-    assert_eq!(registry.plugins[0].source.kind, "local-dir");
-
-    // 卸载:目录与记录都消失,entries 回到空数组
-    uninstall(&paths, "dsh-tool-chain").unwrap();
-    assert!(!paths.plugin_dir("dsh-tool-chain").exists());
-    let yml = fs::read_to_string(paths.entries_path()).unwrap();
-    assert!(yml.contains("[]"), "{yml}");
-    let error = uninstall(&paths, "dsh-tool-chain").expect_err("重复卸载应报不存在");
-    assert!(matches!(error, PluginError::NotFound(_)));
-    let _ = fs::remove_dir_all(app_data.parent().unwrap());
-}
-
-#[test]
-fn github_url_parsing() {
-    assert_eq!(
-        parse_github_repo_url("https://github.com/foo/bar"),
-        Some(("foo".into(), "bar".into(), None))
-    );
-    assert_eq!(
-        parse_github_repo_url("https://github.com/foo/bar/tree/dev"),
-        Some(("foo".into(), "bar".into(), Some("dev".into())))
-    );
-    assert_eq!(
-        parse_github_repo_url("https://github.com/foo/bar.git/"),
-        Some(("foo".into(), "bar".into(), None))
-    );
-    assert_eq!(parse_github_repo_url("https://example.com/x.zip"), None);
-}
-
-#[test]
 fn file_url_and_wrapper_rendering() {
     // Windows 盘符 + 空格 + 非 ASCII:反斜杠转正斜杠、空格与汉字 percent-encode
     let url = path_to_file_url(Path::new(r"C:\Users\测试 User\AppData\plugins\cordis.yml"));
@@ -386,8 +118,29 @@ fn file_url_and_wrapper_rendering() {
     assert!(wrapper.contains("initial: []"), "{wrapper}");
 }
 
+/// 两种布局都定位不到任何 peer 包时,ensure_peer_links 必须报错(fail-loud)。
 #[test]
-fn install_resolves_vendor_dependencies_via_junction() {
+fn ensure_peer_links_fails_when_no_layout_matches() {
+    let root = std::env::temp_dir().join(format!(
+        "starhub-plugin-test-nopeer-{}-{}",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let plugins_dir = root.join("plugins");
+    let runtime_root = root.join("empty-runtime");
+    fs::create_dir_all(&runtime_root).unwrap();
+    let error = ensure_peer_links(&plugins_dir, &runtime_root).expect_err("应报错");
+    assert!(
+        matches!(error, PluginError::PathResolve(_)),
+        "应为 PathResolve: {error}"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// dev 布局:插件依赖的 @deepseek-ai 包经 find_vendor_package 在
+/// packages/*/* 里按包名命中,junction 进指定 link_base。
+#[test]
+fn dependency_resolution_junctions_vendor_package() {
     let (app_data, vendor_root) = test_roots("deps");
     let paths = PluginPaths::at(app_data.clone());
     paths.ensure_layout().unwrap();
@@ -409,22 +162,21 @@ fn install_resolves_vendor_dependencies_via_junction() {
             "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}}"#,
     )
     .unwrap();
-    let record = install_local_dir(&paths, &src, &vendor_root).expect("安装带依赖插件");
-    assert_eq!(record.id, "dsh-tool-deps");
+    let link_base = paths.plugins_dir().join("node_modules");
+    let unresolved =
+        resolve_plugin_dependencies_into(&src, &vendor_root, &link_base).expect("依赖解析");
+    assert!(unresolved.is_empty(), "应全部解析: {unresolved:?}");
     assert!(
-        paths
-            .plugins_dir()
-            .join("node_modules/@deepseek-ai/dsh-client-runtime")
-            .exists(),
+        link_base.join("@deepseek-ai/dsh-client-runtime").exists(),
         "vendor 依赖应经 junction 提供"
     );
     let _ = fs::remove_dir_all(app_data.parent().unwrap());
 }
 
 /// 打包布局(prod 闭包):无 vendor/ 源码树,peer 包与 @deepseek-ai 依赖
-/// 都从 node_modules/@deepseek-ai/ 直接命中(v0.101.x 前打包版装插件必报错)。
+/// 都从 node_modules/@deepseek-ai/ 直接命中(v0.101.x 前打包版必报错)。
 #[test]
-fn install_works_against_packaged_runtime_layout() {
+fn dependency_resolution_hits_packaged_runtime_layout() {
     let root = std::env::temp_dir().join(format!(
         "starhub-plugin-test-packaged-{}-{}",
         std::process::id(),
@@ -461,9 +213,12 @@ fn install_works_against_packaged_runtime_layout() {
             "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}}"#,
     )
     .unwrap();
-
-    let record = install_local_dir(&paths, &src, &runtime_root).expect("打包布局应可安装");
-    assert_eq!(record.id, "dsh-tool-packaged");
+    let link_base = paths.plugins_dir().join("node_modules");
+    // peer junction 同样从 prod 闭包定位(与加载期 ensure_peer_links 同策略)
+    ensure_peer_links(&paths.plugins_dir(), &runtime_root).expect("peer 链接应建成");
+    let unresolved =
+        resolve_plugin_dependencies_into(&src, &runtime_root, &link_base).expect("依赖解析");
+    assert!(unresolved.is_empty(), "应全部解析: {unresolved:?}");
     let nm = paths.plugins_dir().join("node_modules/@deepseek-ai");
     assert!(nm.join("cordis").exists(), "peer junction 应来自 prod 闭包");
     assert!(
@@ -473,49 +228,10 @@ fn install_works_against_packaged_runtime_layout() {
     let _ = fs::remove_dir_all(&root);
 }
 
-/// 两种布局都定位不到任何 peer 包时,ensure_peer_links 必须报错(fail-loud)。
+/// 内置插件只进 registry,不进 runtime entries yml(web 侧由
+/// LOCAL_PACKAGES junction 提供)。
 #[test]
-fn ensure_peer_links_fails_when_no_layout_matches() {
-    let root = std::env::temp_dir().join(format!(
-        "starhub-plugin-test-nopeer-{}-{}",
-        std::process::id(),
-        uuid::Uuid::new_v4()
-    ));
-    let plugins_dir = root.join("plugins");
-    let runtime_root = root.join("empty-runtime");
-    fs::create_dir_all(&runtime_root).unwrap();
-    let error = ensure_peer_links(&plugins_dir, &runtime_root).expect_err("应报错");
-    assert!(
-        matches!(error, PluginError::PathResolve(_)),
-        "应为 PathResolve: {error}"
-    );
-    let _ = fs::remove_dir_all(&root);
-}
-
-#[test]
-fn install_client_plugin_marks_dsh_client() {
-    let (app_data, vendor_root) = test_roots("client");
-    let paths = PluginPaths::at(app_data.clone());
-    paths.ensure_layout().unwrap();
-    let src = app_data.parent().unwrap().join("src-ui");
-    write_minimal_plugin(&src, "dsh-ui-panel");
-    fs::write(
-        src.join("package.json"),
-        r#"{"name": "dsh-ui-panel", "main": "lib/index.js",
-            "dsh": {"bundle": {"patch": "./p.yml"}, "client": {"entry": "./ui.js"}}}"#,
-    )
-    .unwrap();
-    let record = install_local_dir(&paths, &src, &vendor_root).expect("UI 插件应可安装");
-    assert!(record.dsh_client, "registry 应记录 dshClient 标志");
-    assert!(!record.builtin);
-    // list 透出 dshClient 字段
-    let listed = list_plugins(&paths).unwrap();
-    assert_eq!(listed[0]["dshClient"], true);
-    let _ = fs::remove_dir_all(app_data.parent().unwrap());
-}
-
-#[test]
-fn builtin_plugin_cannot_disable_or_uninstall() {
+fn builtin_plugins_stay_out_of_entries_yml() {
     let (app_data, _vendor_root) = test_roots("builtin");
     let paths = PluginPaths::at(app_data.clone());
     paths.ensure_layout().unwrap();
@@ -537,17 +253,12 @@ fn builtin_plugin_cannot_disable_or_uninstall() {
         installed_at: now_rfc3339(),
     });
     save_registry(&paths, &registry).unwrap();
-
-    let error = set_enabled(&paths, "dsh-starhub-client-nav", false).expect_err("内置不可禁用");
-    assert!(error.to_string().contains("内置插件"), "{error}");
-    let error = uninstall(&paths, "dsh-starhub-client-nav").expect_err("内置不可卸载");
-    assert!(error.to_string().contains("内置插件"), "{error}");
-    // 内置插件不标 missing(list 只看非 builtin)
-    let listed = list_plugins(&paths).unwrap();
-    assert_eq!(listed[0]["missing"], false);
-    // 内置插件不进 runtime entries yml(web 侧由 LOCAL_PACKAGES junction 提供)
     let yml = fs::read_to_string(paths.entries_path()).unwrap();
     assert!(yml.contains("[]"), "内置插件不应出现在 entries yml: {yml}");
+    // registry 侧持久化,可再读回
+    let reloaded = load_registry(&paths).unwrap();
+    assert_eq!(reloaded.plugins.len(), 1);
+    assert!(reloaded.plugins[0].builtin);
     let _ = fs::remove_dir_all(app_data.parent().unwrap());
 }
 
@@ -573,46 +284,57 @@ fn ensure_builtin_plugins_seeds_registry_idempotently() {
         fs::write(pkg.join("lib/index.js"), "export default {}\n").unwrap();
     }
     ensure_builtin_plugins(&paths, &vendor_root).unwrap();
-    let listed = list_plugins(&paths).unwrap();
-    let array = listed.as_array().unwrap();
-    assert_eq!(array.len(), 2);
-    let client_nav = array
+    let registry = load_registry(&paths).unwrap();
+    assert_eq!(registry.plugins.len(), 2);
+    let client_nav = registry
+        .plugins
         .iter()
-        .find(|v| v["id"] == "dsh-starhub-client-nav")
+        .find(|p| p.id == "dsh-starhub-client-nav")
         .expect("client-nav 内置记录");
-    assert_eq!(client_nav["builtin"], true);
-    assert_eq!(client_nav["dshClient"], true);
-    assert_eq!(client_nav["missing"], false);
-    assert_eq!(client_nav["enabled"], true);
-    let tools = array
+    assert!(client_nav.builtin);
+    assert!(client_nav.dsh_client);
+    assert!(client_nav.enabled);
+    let tools = registry
+        .plugins
         .iter()
-        .find(|v| v["id"] == "dsh-starhub-tools")
+        .find(|p| p.id == "dsh-starhub-tools")
         .expect("tools 内置记录");
-    // dshClient=false 被 skip_serializing_if 跳过,索引得 Null
-    assert_eq!(tools["dshClient"], serde_json::Value::Null);
+    assert!(!tools.dsh_client);
     // 幂等:重复调用不重复登记
     ensure_builtin_plugins(&paths, &vendor_root).unwrap();
-    assert_eq!(list_plugins(&paths).unwrap().as_array().unwrap().len(), 2);
+    assert_eq!(load_registry(&paths).unwrap().plugins.len(), 2);
     let _ = fs::remove_dir_all(app_data.parent().unwrap());
 }
 
 #[test]
 fn user_client_plugins_filters_enabled_client_only() {
-    let (app_data, vendor_root) = test_roots("user-client");
+    let (app_data, _vendor_root) = test_roots("user-client");
     let paths = PluginPaths::at(app_data.clone());
     paths.ensure_layout().unwrap();
     let src = app_data.parent().unwrap().join("src-ui");
     write_minimal_plugin(&src, "dsh-ui-a");
-    fs::write(
-        src.join("package.json"),
-        r#"{"name": "dsh-ui-a", "main": "lib/index.js",
-            "dsh": {"bundle": {"patch": "./p.yml"}, "client": {"entry": "./ui.js"}}}"#,
-    )
-    .unwrap();
-    install_local_dir(&paths, &src, &vendor_root).unwrap();
-    // 未启用 → 不返回
-    assert!(user_client_plugins(&paths).unwrap().is_empty());
-    set_enabled(&paths, "dsh-ui-a", true).unwrap();
+    // 直接构造 registry:一条启用的 UI 插件 + 一条禁用的普通插件
+    let mut registry = load_registry(&paths).unwrap();
+    for (id, enabled, dsh_client) in [("dsh-ui-a", true, true), ("dsh-tool-a", false, false)] {
+        registry.plugins.push(PluginRecord {
+            id: id.into(),
+            name: format!("{id}-name"),
+            version: "1.0.0".into(),
+            description: None,
+            license: None,
+            source: PluginSource {
+                kind: "url".into(),
+                location: None,
+            },
+            entry: "lib/index.js".into(),
+            enabled,
+            dsh_client,
+            builtin: false,
+            installed_at: now_rfc3339(),
+        });
+    }
+    save_registry(&paths, &registry).unwrap();
+
     let clients = user_client_plugins(&paths).unwrap();
     assert_eq!(clients.len(), 1);
     assert_eq!(clients[0].id, "dsh-ui-a");
@@ -621,23 +343,43 @@ fn user_client_plugins_filters_enabled_client_only() {
 
 #[test]
 fn disable_user_plugins_only_disables_enabled_non_builtin() {
-    let (app_data, vendor_root) = test_roots("bad-plugin");
+    let (app_data, _vendor_root) = test_roots("bad-plugin");
     let paths = PluginPaths::at(app_data.clone());
     paths.ensure_layout().unwrap();
-    // 两个用户插件:一个启用、一个已禁用 → 只禁用启用者
-    for (name, enabled) in [("dsh-bad-a", true), ("dsh-bad-b", false)] {
-        let src = app_data.parent().unwrap().join(format!("src-{name}"));
-        write_minimal_plugin(&src, name);
-        install_local_dir(&paths, &src, &vendor_root).unwrap();
-        set_enabled(&paths, name, enabled).unwrap();
+    // 两个用户插件:一个启用、一个已禁用 → 只禁用启用者;内置不动
+    let mut registry = load_registry(&paths).unwrap();
+    for (id, enabled, builtin) in [
+        ("dsh-bad-a", true, false),
+        ("dsh-bad-b", false, false),
+        ("dsh-starhub-client-nav", true, true),
+    ] {
+        registry.plugins.push(PluginRecord {
+            id: id.into(),
+            name: format!("{id}-name"),
+            version: "1.0.0".into(),
+            description: None,
+            license: None,
+            source: PluginSource {
+                kind: "builtin".into(),
+                location: None,
+            },
+            entry: "lib/index.js".into(),
+            enabled,
+            dsh_client: false,
+            builtin,
+            installed_at: now_rfc3339(),
+        });
     }
+    save_registry(&paths, &registry).unwrap();
+
     let disabled = disable_user_plugins(&paths).unwrap();
     assert_eq!(disabled, vec!["dsh-bad-a".to_string()]);
-    // registry 中 dsh-bad-a 已禁用,dsh-bad-b 保持禁用
+    // registry 中 dsh-bad-a 已禁用,dsh-bad-b 保持禁用,内置保持启用
     let registry = load_registry(&paths).unwrap();
     let get = |id: &str| registry.plugins.iter().find(|p| p.id == id).unwrap();
     assert!(!get("dsh-bad-a").enabled);
     assert!(!get("dsh-bad-b").enabled);
+    assert!(get("dsh-starhub-client-nav").enabled);
     // 幂等:再次调用不再产生新禁用
     assert!(disable_user_plugins(&paths).unwrap().is_empty());
     let _ = fs::remove_dir_all(app_data.parent().unwrap());

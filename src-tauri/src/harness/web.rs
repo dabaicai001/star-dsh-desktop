@@ -61,15 +61,14 @@ const CLI_BIN_REL: &str = "apps/cli/lib/bin.js";
 /// tool-context 自 v0.71 起被 examples/starhub-web/cordis.patch.yml 引用;
 /// 2026-08-18 起壳内会话可调 starhub 工具,starhub-tools / approval-bridge /
 /// session-registry / domain-events / live-context 一并入列;
-/// 2026-08-21 起 memory-context 入列(pre-step 长期记忆注入);
 /// 2026-08-22 起 commit-message 入列(分支胶囊「AI 生成提交信息」的
-/// host 侧 one-shot LLM HTTP 端点);
-/// 2026-08-22 起 memory-sink 入列(agent/turn-stopping 自动沉淀;与
-/// package-dsh-runtime.ts 的 WEB_LOCAL_PACKAGE_DIRS 对齐,漏列即安装包
-/// 启动 ERR_MODULE_NOT_FOUND —— v0.92.2 事故)。
+/// host 侧 one-shot LLM HTTP 端点)。
+/// 本清单必须与 examples/starhub-web/cordis.patch.yml 的 insert 块、
+/// package-dsh-runtime.ts 的 WEB_LOCAL_PACKAGE_DIRS 三方对齐,漏列即安装包
+/// 启动 ERR_MODULE_NOT_FOUND(v0.92.2 事故)。
 /// 2026-09-20(DSH 0.1.6 适配)起,同一清单同时供内嵌 runtime 的 sdk profile
 /// 建链(plugins::ensure_runtime_local_package_links 复用)。
-pub(crate) const LOCAL_PACKAGES: [&str; 11] = [
+pub(crate) const LOCAL_PACKAGES: [&str; 9] = [
     "client-nav",
     "host-static",
     "tool-context",
@@ -78,8 +77,6 @@ pub(crate) const LOCAL_PACKAGES: [&str; 11] = [
     "session-registry",
     "domain-events",
     "live-context",
-    "memory-context",
-    "memory-sink",
     "commit-message",
 ];
 
@@ -552,19 +549,6 @@ impl DshWebManager {
         if let Some(mut handle) = self.handle.lock().await.take() {
             let _ = handle.child.start_kill();
         }
-    }
-
-    /// 重启 dsh web 进程: kill 现有子进程并清空单例,随后重新 spawn。
-    /// 用于用户插件增删/启停后让 `sync_user_client_plugins` 重新执行,
-    /// 把新启用的 `dsh.client` 插件接进 web 运行时(否则「插件列表」查不到)。
-    /// 复用 `ensure_started` 的幂等与 start_lock 串行化。
-    pub async fn restart(
-        &self,
-        app: &tauri::AppHandle,
-        bridge: Arc<HostBridgeState>,
-    ) -> Result<String, DshWebError> {
-        self.shutdown().await;
-        self.ensure_started(app, bridge).await
     }
 }
 
@@ -1066,7 +1050,7 @@ mod tests {
     /// 用户 UI 插件注入:建 junction、追加 patch entry、清理失效 junction。
     #[test]
     fn sync_user_client_plugins_injects_and_cleans() {
-        use super::plugins::{self, PluginPaths};
+        use super::plugins::PluginPaths;
         use std::fs;
         let root = std::env::temp_dir().join(format!(
             "starhub-web-sync-{}-{}",
@@ -1075,7 +1059,7 @@ mod tests {
         ));
         let app_data = root.join("app-data");
         let vendor_root = root.join("vendor/deepseek-harness");
-        // 假 vendor peer 布局(install_local_dir 会建 peer junction)
+        // 假 vendor peer 布局(依赖 junction 与 peer 链接的定位目标)
         for pkg in ["cordis", "cosmokit", "schemastery"] {
             let dir = vendor_root.join("vendor").join(pkg);
             fs::create_dir_all(&dir).unwrap();
@@ -1088,26 +1072,45 @@ mod tests {
         let paths = PluginPaths::at(app_data.clone());
         paths.ensure_layout().unwrap();
 
-        // 安装两个 UI 插件:一个启用、一个禁用
-        let write_ui_plugin = |dir: &Path, name: &str| {
+        // 直接构造加载面输入(安装命令面已移除,v0.123.1):两个 UI 插件,
+        // 一个启用、一个禁用;插件目录 + registry.json 即加载事实源。
+        let write_registry = |a_enabled: bool| {
+            let entry = |id: &str, enabled: bool| {
+                serde_json::json!({
+                    "id": id,
+                    "name": id,
+                    "version": "1.0.0",
+                    "source": { "kind": "url" },
+                    "entry": "lib/index.js",
+                    "enabled": enabled,
+                    "dshClient": true,
+                    "installedAt": "2026-09-23T00:00:00Z",
+                })
+            };
+            let registry = serde_json::json!({ "plugins": [
+                entry("dsh-ui-a", a_enabled),
+                entry("dsh-ui-b", false),
+            ]});
+            fs::write(
+                paths.plugins_dir().join("registry.json"),
+                serde_json::to_string(&registry).unwrap(),
+            )
+            .unwrap();
+        };
+        for id in ["dsh-ui-a", "dsh-ui-b"] {
+            let dir = paths.plugin_dir(id);
             fs::create_dir_all(dir.join("lib")).unwrap();
             fs::write(
                 dir.join("package.json"),
                 format!(
-                    r#"{{"name": "{name}", "main": "lib/index.js",
+                    r#"{{"name": "{id}", "main": "lib/index.js",
                         "dsh": {{"bundle": {{"patch": "./p.yml"}}, "client": {{"entry": "./ui.js"}}}}}}"#
                 ),
             )
             .unwrap();
             fs::write(dir.join("lib/index.js"), "export default {}\n").unwrap();
-        };
-        let src_a = root.join("src-ui-a");
-        write_ui_plugin(&src_a, "dsh-ui-a");
-        let src_b = root.join("src-ui-b");
-        write_ui_plugin(&src_b, "dsh-ui-b");
-        plugins::install_local_dir(&paths, &src_a, &vendor_root).unwrap();
-        plugins::install_local_dir(&paths, &src_b, &vendor_root).unwrap();
-        plugins::set_enabled(&paths, "dsh-ui-a", true).unwrap();
+        }
+        write_registry(true);
 
         let node_modules_root = root.join("profiles").join("node_modules");
         fs::create_dir_all(&node_modules_root).unwrap();
@@ -1129,7 +1132,7 @@ mod tests {
         );
 
         // 禁用后再次同步 → junction 清理
-        plugins::set_enabled(&paths, "dsh-ui-a", false).unwrap();
+        write_registry(false);
         let mut patch2 = String::from("- insert:\n");
         sync_user_client_plugins(&paths, &node_modules_root, &vendor_root, &mut patch2).unwrap();
         assert!(

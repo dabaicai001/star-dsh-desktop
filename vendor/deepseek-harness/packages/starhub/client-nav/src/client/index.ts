@@ -17,7 +17,6 @@
  * routePrefix),供工具上下文(AI 注入)同步使用。
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { createElement } from 'react'
 import type { JSX } from 'react'
 // Type-only: the SlotMap rows of the target slots must be in the program for
 // the register calls to type (declared by the slots' owning packages).
@@ -60,24 +59,19 @@ import { BrowserSettingsTab } from './settings/browser.tsx'
 import { SandboxSettingsTab } from './settings/sandbox.tsx'
 import { SshSettingsTab } from './settings/ssh.tsx'
 import { SandboxUserActionBanner } from './sandbox/SandboxUserActionBanner.tsx'
-import { AiTab } from './settings/ai.tsx'
 import { AlertTab } from './settings/alert.tsx'
 import { AuditTab } from './settings/audit.tsx'
-import { PluginsTab } from './settings/plugins.tsx'
-import { loadAiSettings } from './settings/aiSettings.ts'
-import { syncMemoryEnabled } from './settings/memory-context.ts'
 
 /**
  * Required services: the slot registry, the connection wire, the input-trigger
  * pipeline (for the `@` source), the session/workspace/conversation services
- * (for `starhub://ask-ai`), and the typed Remote namespaces this plugin reads
- * or writes: `remote.settings` (tool-context / memory switches) and
- * `remote.llm` (AI tab model catalog). Since the 0.1.6 Typert gateway each
+ * (for `starhub://ask-ai`), and the typed Remote namespace this plugin writes:
+ * `remote.settings` (tool-context). Since the 0.1.6 Typert gateway each
  * Remote namespace is its own `remote.<ns>` service, and `ctx.remote.<ns>`
  * throws `cannot get property "remote.<ns>" without inject` unless the
  * owning fiber declares the dotted name (v0.121.7 启动事故)。
  */
-export const inject = ['slots', 'connection', 'remote', 'remote.settings', 'remote.llm', 'inputTriggers', 'sessions', 'workspaces', 'conversation', 'uiWorkspace']
+export const inject = ['slots', 'connection', 'remote', 'remote.settings', 'inputTriggers', 'sessions', 'workspaces', 'conversation', 'uiWorkspace']
 
 /**
  * Client plugin body: one root-scope store handle (sidebar) plus the
@@ -113,9 +107,6 @@ export function apply(ctx: Context): void {
   // 0.1.6:apiproxy 的 connection.api 撤除,类型化 Host RPC 走 ctx.remote
   // (api-gateway 的 ClientRemote);settings 写入统一经 remote.settings。
   const settingsWriter = ctx.remote.settings
-  // 「启用长期记忆」初始同步:host 侧 memory-context 插件的 namespace 未写过
-  // 视为开启;若用户此前关过(localStorage false),启动时补写一次关闭态。
-  syncMemoryEnabled(settingsWriter, loadAiSettings().memoryEnabled)
   const inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
   const sessions = ctx.get('sessions') as ISessions
   const workspaces = ctx.get('workspaces') as IWorkspaces
@@ -363,24 +354,23 @@ export function apply(ctx: Context): void {
     }),
   }), 'starhub: tauri host events')
   // 设置融入底部设置齿轮:dsh 设置面板侧栏的 StarHub 分区(平铺,rc.2 上游
-  // SettingsSectionRow 只支持 id/order/label,无分组字段——5 个 tab 直接
-  // 以平铺 section 呈现;order 30 起排在通用(0)/模型(10)/插件(15)/
-  // Agent 预设(20)之后)。
+  // SettingsSectionRow 只支持 id/order/label,无分组字段——各 tab 直接
+  // 以平铺 section 呈现;order 30 起排在通用(0)/模型(10)/内置插件(15)/
+  // Agent 预设(20)之后。v0.123.1 起「插件市场」与「AI 助手」tab 移除:
+  // 前者由壳内首页「插件」面板接管,后者(长期记忆)整条栈退场)。
   const starhubTabs: ReadonlyArray<{
     id: string
     order: number
     label: string
     component: () => JSX.Element
   }> = [
-    { id: 'starhub-ai', order: 30, label: 'AI 助手', component: () => createElement(AiTab, { remote: ctx.remote }) },
-    { id: 'starhub-plugins', order: 31, label: '插件市场', component: PluginsTab },
-    { id: 'starhub-audit', order: 32, label: '审计日志', component: AuditTab },
-    { id: 'starhub-alert', order: 33, label: '告警规则', component: AlertTab },
-    { id: 'starhub-sandbox', order: 34, label: '沙箱平台', component: SandboxSettingsTab },
-    { id: 'starhub-android', order: 35, label: 'Android 设备', component: AndroidSettingsTab },
-    { id: 'starhub-browser', order: 36, label: 'AI 浏览器', component: BrowserSettingsTab },
-    { id: 'starhub-ssh', order: 37, label: 'SSH', component: SshSettingsTab },
-    { id: 'starhub-about', order: 38, label: '关于', component: AboutTab },
+    { id: 'starhub-audit', order: 30, label: '审计日志', component: AuditTab },
+    { id: 'starhub-alert', order: 31, label: '告警规则', component: AlertTab },
+    { id: 'starhub-sandbox', order: 32, label: '沙箱平台', component: SandboxSettingsTab },
+    { id: 'starhub-android', order: 33, label: 'Android 设备', component: AndroidSettingsTab },
+    { id: 'starhub-browser', order: 34, label: 'AI 浏览器', component: BrowserSettingsTab },
+    { id: 'starhub-ssh', order: 35, label: 'SSH', component: SshSettingsTab },
+    { id: 'starhub-about', order: 36, label: '关于', component: AboutTab },
   ]
   for (const tab of starhubTabs) {
     ctx.slots.inject('settings.section', () => ctx.slots.register({

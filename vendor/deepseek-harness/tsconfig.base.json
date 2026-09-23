@@ -223,8 +223,6 @@
       "@deepseek-ai/dsh-starhub-tool-context": ["./packages/starhub/tool-context/src"],
       "@deepseek-ai/dsh-starhub-client-nav": ["./packages/starhub/client-nav/src"],
       "@deepseek-ai/dsh-starhub-commit-message": ["./packages/starhub/commit-message/src"],
-      "@deepseek-ai/dsh-starhub-memory-context": ["./packages/starhub/memory-context/src"],
-      "@deepseek-ai/dsh-starhub-memory-sink": ["./packages/starhub/memory-sink/src"],
       // StarHub 自有 client 包(非上游):web-react / schema-form / runtime(兼容垫片)。
       "@deepseek-ai/dsh-client-web-react": ["./packages/client/web-react/src"],
       "@deepseek-ai/dsh-client-web-react/invariant": ["./packages/client/web-react/src/invariant.ts"],

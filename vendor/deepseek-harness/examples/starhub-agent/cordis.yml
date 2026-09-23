@@ -60,7 +60,7 @@
     openAt: first-search
 
 # StarHub 域工具与联动插件(bundle 层没有,全部追加):
-# - starhub-tools:list_capabilities / list_assets / memory 等宿主工具;
+# - starhub-tools:list_capabilities / list_assets 等宿主工具;
 #   执行经 sdk-jsonrpc-server 暴露的 sdk-transport(本地补丁)桥回 Rust
 #   主进程,工具体不在 dsh 进程内。sdk-jsonrpc-server 由 sdk-app bundle 注入,
 #   服务可用性驱动激活,无需显式排序。
@@ -70,10 +70,6 @@
 # - session-registry / domain-events:经 sdk-notifications 订阅 Rust 推送的
 #   注册表快照与领域事件流;live-context 在 agent/pre-step 消费这两个服务 +
 #   经 sdk-transport 反向 pull starhub/live.snapshot,注入「当前在发生什么」。
-# - memory-context:pre-step 经 sdk-transport 反向 pull `starhub/memory.cards`
-#   (user + global + 工作区文件夹 + 绑定资产);开关走 `starhub-memory-context`
-#   settings namespace(与 web GUI 的设置 → AI 助手「启用长期记忆」共享同一份
-#   settings.yaml)。
 # - approval-bridge:消费共享 settings.yaml 的 permission preset(策略本体在 dsh
 #   侧)+ starhub_* 工具风险门 + approval/request 应答桥(前端确认卡)。
 - insert:
@@ -103,9 +99,6 @@
 
     - id: starhub-live-context
       name: '@deepseek-ai/dsh-starhub-live-context'
-
-    - id: starhub-memory-context
-      name: '@deepseek-ai/dsh-starhub-memory-context'
 
     - id: starhub-approval-bridge
       name: '@deepseek-ai/dsh-starhub-approval-bridge'

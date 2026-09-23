@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.123.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.123.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,9 +48,9 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.123.0 (2026-09-23)
-- ✨ **`browser_decide` 工具:Jev(TypeSafe「System One」)决策层接入 AI 浏览器(Phase 1,调研报告 `docs/Jev决策模型-浏览器操作接入调研.md`)**:主模型每一步「从 extract 输出里挑编号元素」的封闭集判别,可卸载给只输出结构化判断 + 置信度的 Jev。新工具为**只读**(返回「click 元素[12] conf=0.87」建议文本,不执行任何动作),审批落 default ALLOW 档,真动作仍走 `browser_click`/`browser_type` 的软确认——风险边界不因决策来自谁而改变。实现:Rust 新增 `src-tauri/src/browser/decide.rs`(JevConfig/JevClient/请求构造/响应校验纯函数 + 14 个单测);`browser/mod.rs` 加 `BrowserAction::Decide`(snapshot 缺省时按当前引擎内部补一次 Extract,引擎解耦);新增 `browser_get_jev_config`/`browser_set_jev_config` 一对 Tauri 命令(非密配置走 settings 表 `ai.jev.*`,API key 走现成 keyring `model:jev`,三道同步补齐);vendor 侧 tools 加 spec、approval-bridge 显式登记 + risk-gate 断言、设置页「AI 浏览器」tab 新增 Jev 配置区(**默认关闭**,明文提示页面快照会外发至所配置端点)。Jev 官方接口是 `POST /v1/systemone`(state + questions/answers 结构,choice 带 probabilities + confidence),与 OpenAI Chat Completions 不同路径——直接用裸 HTTP(reqwest OnceLock 客户端),不套任何会自动追加 `/chat/completions` 的 SDK。置信度低于阈值返回 `[LOWCONF]` 前缀交还主模型兜底。另起 tools 包首个 spec(bridged-tools.spec.ts)把「vendor BRIDGED_TOOLS ↔ Rust BROWSER_TOOLS」钉成机械断言,补上调研发现的最大结构缺口(此前三张表只靠注释互引)。
-- 🐛 **obscura 无头浏览器后端中文/日韩文本渲染乱码(豆腐块)**:引擎 fontdb 只用内置 Liberation/DejaVu/Noto Emoji 三套字库且**明确不加载系统字体**(设计为跨主机布局确定),而这三套零 CJK 覆盖 → 中文页面全部渲染为方框。修复(vendor/obscura `obscura-render`):`TextEngine` 构造时在内置字库之后 `db.load_system_fonts()` 作为**缺字回退层**——cosmic-text 的 `Attrs::matches` 只按 style/stretch 过滤(db 内全部面都进匹配键),平台回退链(Windows:Han → Microsoft YaHei UI)即可命中宿主字库;SVG `<text>` 路径(`svg_font_database`)同样加载,并给 usvg 开启 `system-fonts`(fontdb/fs)。配套修正一个被该层暴露的既有缺陷:默认族解析此前不钉字体 id,权重 500 的英文 run 被系统符号字体 Marlett(weight class 恰为 500,匹配键按 weight_diff 排序第一)劫持、拉丁文本全按符号度量排版;**现在默认族解析钉住内置字体 id**,系统字体只做缺字回退,拉丁布局保持确定。验证:obscura-render 470 例 + 112 例单测全绿(新增 `han_glyphs_fall_back_to_host_faces`,修正被系统 emoji 字体接管的 `emoji_font_is_loaded_only_for_emoji_documents`),release 二进制重建,本地 CJK/日/韩/emoji/权重 500 混合页实测渲染正常。沉淀见 `docs/踩坑记录.md` §52。
+### v0.123.1 (2026-09-23)
+- 🧹 **移除设置「插件市场」tab 与支线 B 插件安装/启停/卸载/市场命令面(与 dsh 主壳原生「插件」面板重复)**:dsh 首页侧边栏「插件」面板已提供已装插件列表 + 启停、包名 / GitHub 仓库 / 本地目录安装、安装源(默认 / 中国大陆镜像 / 私有源)选择,StarHub 自研的平行插件管理整体退场。前端删除 `client-nav` 的 `settings/plugins.tsx`(PluginsTab / ConfirmActionDialog)与「插件市场」settings.section 注册(余下 tab 顺次前移)、`settings/services.ts` 的 8 个插件服务函数与 4 个类型、settings.module.css 的 5 个市场专用类;Rust 删除 `commands/dsh_plugins.rs` 6 个命令(`dsh_plugin_list` / `dsh_plugin_install_local` / `dsh_plugin_install_url` / `dsh_plugin_set_enabled` / `dsh_plugin_uninstall` / `dsh_plugin_market_fetch`)+ `dsh_web_restart` + `DshWebManager::restart` + ACL 白名单登记;`harness/plugins.rs` 精剪掉安装 / 市场 / 启停 / 卸载实现(约 500 行,含 `zip` 直接依赖),**保留加载面**:registry / cordis.yml / peer junction / 包装配置生成 / 内置插件注册 / 坏插件自救禁用照旧——已装进 `app_data_dir/plugins/` 的用户插件与 `dsh.client` UI 插件注入(web.rs `sync_user_client_plugins`)行为不变。设计背景与退场说明见 `docs/插件体系打通方案-dsh插件统一.md`(已标注被本版本取代)。
+- 🧹 **移除设置「AI 助手」tab 与 StarHub 长期记忆整条栈(用户反馈不好用)**:删除前端 AiTab(记忆模型下拉 + 长期记忆总开关 + 记忆管理弹窗)、aiSettings / memory-context 两个桥模块、记忆服务与 logAudit;vendor 侧删除 `memory-context` / `memory-sink` 两个宿主插件包与 `memory` 模型工具,并同步 examples 组合、tsconfig、打包脚本清单、Rust `LOCAL_PACKAGES`;Rust 删除 7 个 `ai_memory_*` 命令、`starhub/memory.cards` / `starhub/memory.write` 两个 sdk 桥方法、memory 工具分支与记忆写入安全扫描(会话历史 `ai_conv_*` / `ai_msg_*` 命令保留)。**`ai_memories` 表数据保留在本地库中不再读写**(不删用户数据);`docs/AI内核替换方案-deepseek-harness.md` §5.3 标注为已移除。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

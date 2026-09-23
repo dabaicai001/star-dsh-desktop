@@ -1,6 +1,6 @@
 [package]
 name = "starhub"
-version = "0.123.0"
+version = "0.123.1"
 edition = "2021"
 
 [dependencies]
@@ -34,8 +34,6 @@ webpki-roots = "1"
 futures = "0.3"
 bytes = "1"
 keyring-core = "1.0.0"
-# dsh 用户插件安装(支线 B):GitHub codeload zip 解包;只开 deflate,关掉其余压缩格式
-zip = { version = "2", default-features = false, features = ["deflate"] }
 # AI 对话截图(区域):跨平台屏幕捕获(Windows WGC / macOS ScreenCaptureKit / Linux X11+Wayland)。
 # 仅在 `screenshot` 特性开启时引入:Linux 上 xcap → pipewire/libspa 0.10.1 需要系统
 # PipeWire/spa 头 ≥ 1.0(Ubuntu 24.04+),Ubuntu 22.04(glibc 2.35)无法编译/运行该链,

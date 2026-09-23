@@ -1,21 +1,16 @@
 // @vitest-environment jsdom
 /**
- * Settings 各 tab 组件行为:审计加载/清空、告警 CRUD 弹窗、插件安装入口/
- * 市场(「已安装插件」列表已按用户要求移除,已装列表仅静默服务市场
- * 「已安装」标记)、关于更新状态机、AI 白名单/记忆(含记忆管理弹窗)。
- * 五个 tab 以独立 settings.section 注册(dsh 设置侧栏 StarHub 可展开分组
+ * Settings 各 tab 组件行为:审计加载/清空、告警 CRUD 弹窗、关于更新状态机。
+ * (v0.123.1 起「插件市场」「AI 助手」tab 移除。)
+ * 各 tab 以独立 settings.section 注册(dsh 设置侧栏 StarHub 可展开分组
  * 直渲,无面板内部嵌套列);IPC 走 window.__TAURI_INTERNALS__ stub;
  * 浏览器预览分支(无 Tauri)一并覆盖。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import { AuditTab, formatAuditDetail, formatAuditTime } from '../src/client/settings/audit.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
-import { PluginsTab } from '../src/client/settings/plugins.tsx'
 import { AboutTab } from '../src/client/settings/about.tsx'
-import { AiTab } from '../src/client/settings/ai.tsx'
-import { AI_STORAGE_KEY } from '../src/client/settings/aiSettings.ts'
 
 /** jsdom 全局下的 Tauri IPC stub:按命令返回 map 里的值。 */
 function stubTauriInternals(handlers: Record<string, (args?: unknown) => unknown>): () => void {
@@ -178,75 +173,6 @@ describe('AlertTab', () => {
   })
 })
 
-describe('PluginsTab', () => {
-  it('shows install entry and empty market in browser preview (installed-list empty)', async () => {
-    render(<PluginsTab />)
-    expect(screen.getByText('已安装插件')).toBeTruthy()
-    expect(screen.getByText('暂无已安装插件。')).toBeTruthy()
-    expect(screen.getByText('安装插件')).toBeTruthy()
-    expect(screen.getByText('暂无市场插件。')).toBeTruthy()
-  })
-
-  it('installs by URL, filters the market and marks installed entries', async () => {
-    const installUrl = vi.fn((..._args: unknown[]) => ({ id: 'p9', name: 'installed', version: '1.0.0', source: { kind: 'url' }, entry: 'index.js', enabled: false }))
-    const restore = stubTauriInternals({
-      dsh_plugin_list: () => [
-        { id: 'p1-cool', name: 'demo', version: '1.0.0', source: { kind: 'market' }, entry: 'index.js', enabled: true },
-      ],
-      dsh_plugin_market_fetch: () => ({
-        fetchedAt: '2026-01-01', stale: false,
-        categories: [{
-          name: '工具',
-          plugins: [
-            { name: 'Cool Plugin', url: 'https://github.com/x/p1-cool', description: 'cool', stars: 5, npm: 'cool-pkg' },
-            { name: 'Fresh Plugin', url: 'https://github.com/x/fresh', description: 'new', stars: 1 },
-          ],
-        }],
-      }),
-      dsh_plugin_install_url: args => installUrl(args),
-      dsh_shutdown: () => null,
-    })
-    try {
-      render(<PluginsTab />)
-      expect(await screen.findByText('Cool Plugin')).toBeTruthy()
-      // 已装标记:市场项 url 含已装插件 id → 按钮显示「已安装」且禁用
-      const installedButton = await screen.findByText('已安装')
-      expect(installedButton.hasAttribute('disabled')).toBe(true)
-      // URL 安装
-      fireEvent.change(screen.getByPlaceholderText(/GitHub 仓库 URL/), { target: { value: 'https://github.com/a/b' } })
-      fireEvent.click(screen.getByText('URL 安装'))
-      await vi.waitFor(() =>{  expect(installUrl).toHaveBeenCalledWith({ url: 'https://github.com/a/b' }) })
-      await vi.waitFor(() =>{  expect((screen.getByPlaceholderText<HTMLInputElement>(/GitHub 仓库 URL/)).value).toBe('') })
-      // 市场安装
-      fireEvent.click(screen.getByText('安装'))
-      await vi.waitFor(() =>{  expect(installUrl).toHaveBeenCalledWith({ url: 'https://github.com/x/fresh' }) })
-      // 市场:搜索过滤
-      fireEvent.change(screen.getByPlaceholderText('搜索插件…'), { target: { value: 'Cool' } })
-      expect(await screen.findByText('Cool Plugin')).toBeTruthy()
-      expect(screen.queryByText('Fresh Plugin')).toBeNull()
-    } finally {
-      restore()
-    }
-  })
-
-  it('imports a local directory through the native dialog', async () => {
-    const install = vi.fn((..._args: unknown[]) => ({ id: 'p1', name: 'n', version: '1', source: { kind: 'local-dir' }, entry: 'i.js', enabled: false }))
-    const restore = stubTauriInternals({
-      'plugin:dialog|open': () => 'C:/plugins/my-plugin',
-      dsh_plugin_install_local: args => install(args),
-      dsh_shutdown: () => null,
-    })
-    try {
-      render(<PluginsTab />)
-      fireEvent.click(await screen.findByText('导入目录'))
-      await act(async () => { await Promise.resolve() })
-      expect(install).toHaveBeenCalledWith({ path: 'C:/plugins/my-plugin' })
-    } finally {
-      restore()
-    }
-  })
-})
-
 describe('AboutTab', () => {
   it('shows the version placeholder and no-update state in preview', async () => {
     render(<AboutTab />)
@@ -300,168 +226,6 @@ describe('AboutTab', () => {
       render(<AboutTab />)
       fireEvent.click(screen.getByText('检查更新'))
       expect(await screen.findByText('no network')).toBeTruthy()
-    } finally {
-      restore()
-    }
-  })
-})
-
-describe('AiTab', () => {
-  it('renders memory settings in preview (whitelist removed); memory manager is openable', async () => {
-    // v0.92.0: 不再整体禁用「管理记忆」按钮;浏览器预览下 ai_memory_list 的 IPC
-    // 失败会以错误文本形式展示而非弹窗被吞。测试只验证 dialog 能打开(IPC
-    // 错误文本的渲染形态依赖 stub 实现,不强断言)。
-    render(<AiTab />)
-    expect(screen.queryByText('命令白名单')).toBeNull()
-    expect(screen.getByText('记忆与上下文')).toBeTruthy()
-    fireEvent.click(screen.getByText('管理记忆'))
-    expect(await screen.findByRole('dialog', { name: '长期记忆管理' })).toBeTruthy()
-  })
-
-  it('ignores legacy whitelist entries from stored data and keeps memory toggles', async () => {
-    localStorage.setItem(AI_STORAGE_KEY, JSON.stringify({
-      settings: { commandWhitelist: ['ls'], commandWhitelistVersion: 3 },
-    }))
-    render(<AiTab />)
-    expect(screen.queryByText('ls')).toBeNull()
-    expect(screen.queryByPlaceholderText(/输入命令前缀/)).toBeNull()
-    expect(screen.getByText('启用长期记忆与自动沉淀')).toBeTruthy()
-  })
-
-  it('writes memory toggles immediately', async () => {
-    // v0.94.0:记忆模型是硬前置;预置路由后开关才可用。
-    localStorage.setItem(AI_STORAGE_KEY, JSON.stringify({
-      settings: { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
-    }))
-    render(<AiTab />)
-    // v0.92.0 起 memoryEnabled 默认 false,点击后变 true → 写入 localStorage。
-    fireEvent.click(screen.getByText('启用长期记忆与自动沉淀'))
-    const stored = () => JSON.parse(localStorage.getItem(AI_STORAGE_KEY) ?? '{}') as {
-      settings: { memoryEnabled: boolean }
-    }
-    expect(stored().settings.memoryEnabled).toBe(true)
-    // 上下文预算/迭代步数/压缩阈值由 dsh harness 接管,AI tab 不再出现
-    expect(screen.queryByLabelText(/上下文预算/)).toBeNull()
-    expect(screen.queryByLabelText(/最大工具迭代步数/)).toBeNull()
-    expect(screen.queryByLabelText(/压缩触发阈值/)).toBeNull()
-  })
-
-  it('disables memory toggles until the memory model is configured (v0.94.0)', async () => {
-    localStorage.clear()
-    render(<AiTab />)
-    const inputOf = (text: string) => {
-      const label = screen.getByText(text).closest('label')
-      expect(label).not.toBeNull()
-      return label!.querySelector('input')!
-    }
-    // 未配置模型:长期记忆总开关禁用。
-    // (「即使勾选也会被归一化强制归零」的兜底由 settings-services 的
-    // normalizeAiSettings 硬门测试覆盖。)
-    expect(inputOf('启用长期记忆与自动沉淀').disabled).toBe(true)
-    expect(screen.queryByText('存档 tool 消息与工具调用')).toBeNull()
-    expect(screen.queryByText('记忆写入需逐条确认')).toBeNull()
-  })
-
-  it('configures the memory model via the catalog dropdowns and syncs to the namespace', async () => {
-    const update = vi.fn(() => Promise.resolve())
-    const remote = {
-      settings: { update },
-      llm: {
-        listConfigurableProviders: vi.fn(async () => ({
-          ok: true as const,
-          value: [{ provider: 'deepseek-official', settingsNs: 'model.deepseek-official', displayName: 'DeepSeek' }],
-        })),
-        discoverModels: vi.fn(async () => ({
-          ok: true as const,
-          value: [
-            { id: 'deepseek-chat', name: 'DeepSeek Chat' },
-            { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' },
-          ],
-        })),
-      },
-    } as unknown as ClientRemote
-    // 已有历史内存写入习惯的旧 localStorage(未配模型)不受影响。
-    localStorage.setItem(AI_STORAGE_KEY, JSON.stringify({
-      settings: { memoryEnabled: true },
-    }))
-    render(<AiTab remote={remote} />)
-    await act(async () => { await Promise.resolve() })
-    // 未配置时「启用长期记忆」被归一化回 false 且禁用。
-    expect(screen.getByText('启用长期记忆与自动沉淀').closest('label')!.querySelector('input')!.disabled).toBe(true)
-    // 下拉选 provider + model
-    fireEvent.change(screen.getByLabelText('记忆模型 provider'), { target: { value: 'deepseek-official' } })
-    await act(async () => { await Promise.resolve() })
-    fireEvent.change(screen.getByLabelText('记忆模型 model'), { target: { value: 'deepseek-chat' } })
-    await act(async () => { await Promise.resolve() })
-    const stored = () => JSON.parse(localStorage.getItem(AI_STORAGE_KEY) ?? '{}') as {
-      settings: { memoryProvider: string; memoryModel: string }
-    }
-    expect(stored().settings.memoryProvider).toBe('deepseek-official')
-    expect(stored().settings.memoryModel).toBe('deepseek-chat')
-    expect(update).toHaveBeenCalledWith(
-      'starhub-memory-context',
-      { memoryProvider: 'deepseek-official', memoryModel: 'deepseek-chat' },
-      undefined,
-    )
-    // 配置后开关可用
-    expect(screen.getByText('启用长期记忆与自动沉淀').closest('label')!.querySelector('input')!.disabled).toBe(false)
-    fireEvent.click(screen.getByText('启用长期记忆与自动沉淀'))
-    await act(async () => { await Promise.resolve() })
-    expect(update).toHaveBeenCalledWith('starhub-memory-context', { enabled: true, autoReview: true }, undefined)
-  })
-
-  it('manages memories: group by scope, edit with audit, two-step delete', async () => {
-    const invoke = vi.fn((_cmd: string, _args?: unknown) => undefined)
-    const restore = stubTauriInternals({
-      ai_memory_list: () => [
-        { id: 'm1', scope: 'user', content: '用户偏好', created_at: 0, updated_at: 0 },
-        { id: 'm2', scope: 'global', content: '环境事实', created_at: 0, updated_at: 0 },
-      ],
-      ai_memory_update: (args) => { invoke('update', args) },
-      ai_memory_delete: (args) => { invoke('delete', args) },
-      audit_log: (args) => { invoke('audit', args) },
-    })
-    try {
-      render(<AiTab />)
-      fireEvent.click(screen.getByText('管理记忆'))
-      expect(await screen.findByText('USER — 用户画像')).toBeTruthy()
-      expect(screen.getByText('GLOBAL — 环境与经验')).toBeTruthy()
-      // 编辑
-      fireEvent.click(screen.getAllByLabelText('编辑')[0]!)
-      fireEvent.change(screen.getByDisplayValue('用户偏好'), { target: { value: '新偏好' } })
-      fireEvent.click(within(screen.getByRole('dialog', { name: '长期记忆管理' })).getByText('保存'))
-      await act(async () => { await Promise.resolve() })
-      expect(invoke).toHaveBeenCalledWith('update', { id: 'm1', content: '新偏好' })
-      expect(invoke).toHaveBeenCalledWith('audit', expect.objectContaining({ action: 'memory_update', target: 'user' }))
-      // 两段删除
-      fireEvent.click(screen.getAllByLabelText('删除')[1]!)
-      expect(screen.getByText(/确认删除这条记忆/)).toBeTruthy()
-      fireEvent.click(screen.getByText('删除'))
-      await act(async () => { await Promise.resolve() })
-      expect(invoke).toHaveBeenCalledWith('delete', { id: 'm2' })
-      expect(invoke).toHaveBeenCalledWith('audit', expect.objectContaining({ action: 'memory_remove', target: 'global' }))
-    } finally {
-      restore()
-    }
-  })
-
-  it('shows memory errors and rejects empty edits', async () => {
-    const restore = stubTauriInternals({
-      ai_memory_list: () => [{ id: 'm1', scope: 'user', content: '内容', created_at: 0, updated_at: 0 }],
-      ai_memory_update: () => { throw new Error('容量超限') },
-    })
-    try {
-      render(<AiTab />)
-      fireEvent.click(screen.getByText('管理记忆'))
-      const dialog = () => screen.getByRole('dialog', { name: '长期记忆管理' })
-      fireEvent.click(await screen.findByLabelText('编辑'))
-      const textarea = () => within(dialog()).getByRole('textbox')
-      fireEvent.change(textarea(), { target: { value: '   ' } })
-      fireEvent.click(within(dialog()).getByText('保存'))
-      expect(await screen.findByText('记忆内容不能为空')).toBeTruthy()
-      fireEvent.change(textarea(), { target: { value: '新内容' } })
-      fireEvent.click(within(dialog()).getByText('保存'))
-      expect(await screen.findByText('容量超限')).toBeTruthy()
     } finally {
       restore()
     }

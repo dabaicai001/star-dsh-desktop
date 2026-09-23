@@ -93,7 +93,7 @@ export function saveTerminalSettings(settings: TerminalSettings): void {
   try {
     localStorage.setItem(TERMINAL_SETTINGS_KEY, JSON.stringify(normalizeTerminalSettings(settings)))
   } catch {
-    // localStorage 不可用(隐私模式等):静默降级,与 aiSettings 持久化语义一致
+    // localStorage 不可用(隐私模式等):静默降级
   }
   refresh()
 }

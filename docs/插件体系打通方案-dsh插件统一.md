@@ -1,7 +1,13 @@
 # 插件体系打通方案:StarHub 插件 = dsh 插件
 
-> 状态:方案稿(用户决策:插件 tab 管理的插件就是 dsh 插件,插件市场就是 dsh 的
-> 市场,用户要从市场快速安装——包括 UI 类插件)
+> 状态:**已落定并被 v0.123.1 取代**。原方案(插件 tab 自管插件 + 自办市场)的
+> 安装/启停/卸载/市场命令面已移除:dsh 主壳自带首页「插件」面板(原生 Loader
+> 体系:已装列表启停 + 包名/GitHub 仓库/本地目录安装 + 安装源选择),两边插件
+> store 不同,StarHub 不再平行建设。本文件保留作设计史料。
+> v0.123.1 后仍有效的部分:已装进 `app_data_dir/plugins/` 的用户插件照常加载
+> (`harness/plugins.rs` 的 registry/cordis.yml/peer junction/包装配置链路),
+> `dsh.client` UI 插件仍由 `harness/web.rs::sync_user_client_plugins` 注入
+> dsh web 进程。
 > 关联:`docs/重构方案-B-壳内React插件化.md`、
 > `src-tauri/src/harness/plugins.rs`、`src-tauri/src/harness/web.rs`
 

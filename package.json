@@ -1,6 +1,6 @@
 {
   "name": "starhub",
-  "version": "0.123.0",
+  "version": "0.123.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,9 +15,7 @@
     "cargo:check": "scripts\\cargo-env.bat check",
     "cargo:test": "scripts\\cargo-env.bat test",
     "test:ssh-bg": "node --test tests/ssh-background-task.test.mjs",
-    "test:memory-guard": "node --test tests/memory-guard.test.mjs",
-    "test:ai-memory-review": "node --test tests/ai-memory-review.test.mjs",
-    "test:utils": "node --test tests/utils/crypto.test.mjs tests/utils/ddlGenerator.test.mjs tests/utils/sqlHistory.test.mjs tests/utils/commandGuard.test.mjs tests/utils/sqlTables.test.mjs tests/utils/xshellQuickCommand.test.mjs tests/utils/aiMention.test.mjs tests/utils/aiCompaction.test.mjs && npm run test:memory-guard && npm run test:ai-memory-review",
+    "test:utils": "node --test tests/utils/crypto.test.mjs tests/utils/ddlGenerator.test.mjs tests/utils/sqlHistory.test.mjs tests/utils/commandGuard.test.mjs tests/utils/sqlTables.test.mjs tests/utils/xshellQuickCommand.test.mjs tests/utils/aiMention.test.mjs tests/utils/aiCompaction.test.mjs",
     "version": "node scripts/bump-version.mjs",
     "tauri": "tauri",
     "sidecar:build": "node scripts/build-sidecar.mjs",

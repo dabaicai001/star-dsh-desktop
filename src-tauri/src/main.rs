@@ -484,14 +484,6 @@ fn main() {
             commands::ssh::ssh_detach,
             // dsh web GUI 管理器(主壳融合 P1)
             commands::harness::dsh_web_url,
-            commands::harness::dsh_web_restart,
-            // dsh 用户插件(支线 B):市场 / URL / 本地三入口 + 逐项启停
-            commands::dsh_plugins::dsh_plugin_list,
-            commands::dsh_plugins::dsh_plugin_install_local,
-            commands::dsh_plugins::dsh_plugin_install_url,
-            commands::dsh_plugins::dsh_plugin_set_enabled,
-            commands::dsh_plugins::dsh_plugin_uninstall,
-            commands::dsh_plugins::dsh_plugin_market_fetch,
             // 审计日志
             commands::audit::audit_log,
             commands::audit::audit_list,
@@ -504,7 +496,7 @@ fn main() {
             commands::alert::alert_list,
             commands::alert::alert_check,
             commands::alert::alert_test_webhook,
-            // AI 记忆
+            // AI 会话历史
             commands::ai_memory::ai_conv_upsert,
             commands::ai_memory::ai_conv_list,
             commands::ai_memory::ai_conv_get,
@@ -513,14 +505,6 @@ fn main() {
             commands::ai_memory::ai_conv_delete,
             commands::ai_memory::ai_msg_sync,
             commands::ai_memory::ai_msg_search,
-            // AI 记忆:L1 热记忆
-            commands::ai_memory::ai_memory_list,
-            commands::ai_memory::ai_memory_cards,
-            commands::ai_memory::ai_memory_add,
-            commands::ai_memory::ai_memory_replace,
-            commands::ai_memory::ai_memory_remove,
-            commands::ai_memory::ai_memory_delete,
-            commands::ai_memory::ai_memory_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

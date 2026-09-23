@@ -83,13 +83,6 @@ pub const OPEN_ASSET_METHOD: &str = "starhub/open.asset";
 pub const FOCUS_TOOL_METHOD: &str = "starhub/focus.tool";
 /// 仅绑定当前 AI 会话到资产,不触发任何窗口操作。
 pub const BIND_ASSET_METHOD: &str = "starhub/bind.asset";
-/// 长期记忆卡拉取:`{ scopes, sessionId? }` → `{ cards }`(memory-context 插件
-/// pre-step 注入用;sessionId 用于沿 subagent 父链解析资产绑定追加 asset 卡)。
-pub const MEMORY_CARDS_METHOD: &str = "starhub/memory.cards";
-/// 长期记忆写入(2026-08-22,memory-sink 沉淀路径):`{ scope, content }` → `{ row }`
-/// (memory-sink 钩子 agent/turn-stopping 后调一次 LLM 抽取本轮持久事实,
-/// 落 ai_memories;UI 不直接走它,UI 仍走 `ai_memory_add` Tauri command 经 approval 门)。
-pub const MEMORY_WRITE_METHOD: &str = "starhub/memory.write";
 // §3 Tauri 事件(Rust → 前端)。
 /// 领域事件广播(全部窗口)。
 pub const DOMAIN_EVENT_EVENT: &str = "starhub://domain-event";
@@ -414,23 +407,6 @@ impl HostBridgeState {
             let parent = self.subagent_parents.lock().unwrap().get(&current)?.clone();
             current = parent;
         }
-    }
-
-    /// 严格按**会话自身**解析资产绑定(不沿 subagent 父链继承)。
-    ///
-    /// `resolve_asset`(沿父链)供**写路径**用——memory 工具写入 asset 级记忆时
-    /// 子代理继承父会话绑定是合理语义;但**读路径**(memory-context 的 pre-step
-    /// 注入)若也沿父链,会把旧会话绑定的资产记忆卡带进一个全新会话(无 `@` 也
-    /// 出现)。为满足「严格按会话隔离」,注入路径改用本方法:只命中当前会话
-    /// **精确**绑定的资产,未绑定则不加 asset 卡。
-    ///
-    /// @returns 仅当 session_id 本身已绑定资产时返回 (asset_type, asset_id)。
-    pub fn resolve_asset_strict(&self, session_id: &str) -> Option<(String, String)> {
-        self.bindings
-            .lock()
-            .unwrap()
-            .get(session_id)
-            .cloned()
     }
 
     /// resolve 一条审批应答;未知 requestId(已超时/重复应答)记日志并返回 false。
@@ -930,8 +906,6 @@ pub(crate) async fn handle_inbound_request(
             .await
             .map_err(InboundError::Failed),
         LIVE_SNAPSHOT_METHOD => handle_live_snapshot(bridge).await,
-        MEMORY_CARDS_METHOD => handle_memory_cards(params, bridge).await,
-        MEMORY_WRITE_METHOD => handle_memory_write(params, bridge).await,
         BIND_ASSET_METHOD => handle_bind_asset(params, bridge).await,
         OPEN_ASSET_METHOD => handle_open_asset(params, bridge, false).await,
         FOCUS_TOOL_METHOD => handle_open_asset(params, bridge, true).await,
@@ -989,80 +963,6 @@ async fn handle_live_snapshot(
         "recentExecs": recent_execs,
         "taskTrails": bridge.task_trails(),
     }))
-}
-
-/// `starhub/memory.cards`:按 scopes 拉取长期记忆卡(dsh memory-context 插件
-/// pre-step 注入用)。传了 sessionId 时沿 subagent 父链解析会话资产绑定,
-/// 追加 `asset:{id}` 卡;数据库不可用或查询失败按 Failed 上报(调用方降级为不注入)。
-async fn handle_memory_cards(
-    params: serde_json::Value,
-    bridge: Arc<HostBridgeState>,
-) -> Result<serde_json::Value, InboundError> {
-    let mut scopes: Vec<String> = params
-        .get("scopes")
-        .and_then(serde_json::Value::as_array)
-        .map(|list| {
-            list.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    if scopes.is_empty() {
-        return Err(InboundError::Failed(format!(
-            "{MEMORY_CARDS_METHOD} 缺少 scopes"
-        )));
-    }
-    if let Some(session_id) = params
-        .get("sessionId")
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-    {
-        // 严格按会话自身解析资产绑定:注入路径不沿 subagent 父链继承,避免
-        // 把旧会话绑定的资产记忆卡带进全新会话(无 `@` 也出现)。memory 工具
-        // 的写入路径沿用 resolve_asset(保留父链继承),两者语义不同。
-        if let Some((_asset_type, asset_id)) = bridge.resolve_asset_strict(session_id) {
-            scopes.push(format!("asset:{asset_id}"));
-        }
-    }
-    let pool = crate::db::get_pool().map_err(InboundError::Failed)?;
-    let cards = crate::commands::ai_memory::build_memory_cards(pool, &scopes)
-        .await
-        .map_err(|error| InboundError::Failed(format!("读取记忆卡失败: {error}")))?;
-    Ok(serde_json::json!({ "cards": cards }))
-}
-
-/// `starhub/memory.write`(2026-08-22,memory-sink 自动沉淀路径):
-/// `memory-sink` 钩子在 `agent/turn-stopping` 后调 LLM 抽本轮持久事实,
-/// 再调本方法落 ai_memories。`scope` 取 `user` / `global` / `folder:<path>` /
-/// `asset:<id>`,空内容或超长直接报 Failed(由 memory-sink 自行回退)。
-/// 不写 audit(避免后台高频沉淀污染审计面板);`memory_add` 命令(UI 直调)
-/// 路径仍走 approval-bridge 与 audit,与本路径解耦。
-async fn handle_memory_write(
-    params: serde_json::Value,
-    _bridge: Arc<HostBridgeState>,
-) -> Result<serde_json::Value, InboundError> {
-    let scope = params
-        .get("scope")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| InboundError::Failed(format!("{MEMORY_WRITE_METHOD} 缺少 scope")))?;
-    let content = params
-        .get("content")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| InboundError::Failed(format!("{MEMORY_WRITE_METHOD} 缺少 content")))?;
-    let pool = crate::db::get_pool().map_err(InboundError::Failed)?;
-    let row = crate::commands::ai_memory::add_memory(pool, scope, content)
-        .await
-        .map_err(|error| {
-            // Rust 侧 add_memory 失败原因含 [FULL] / [DUPLICATE] / [AMBIGUOUS] /
-            // [NOMATCH] / 容量上限 / DB 错;原样上抛,前端(memory-sink)解析后
-            // 当轮合并重试或忽略。
-            InboundError::Failed(error)
-        })?;
-    Ok(serde_json::json!({ "row": row }))
 }
 
 /// 从 SQLite 资产表解析真实资产类型。UI 工具名不能作为域工具路由类型。
@@ -2305,25 +2205,6 @@ mod tests {
         );
     }
 
-    /// 严格解析(注入路径):只命中当前会话自身的绑定,**不**沿 subagent 父链继承。
-    /// 全新会话(无 @)即使父会话绑定了资产,也不会解析出 asset 卡。
-    #[test]
-    fn resolve_asset_strict_does_not_inherit_parent_binding() {
-        let bridge = HostBridgeState::default();
-        bridge.bind_session("root", "db", "a1");
-        bridge.record_subagent_parent("child-1", "root");
-
-        // 自身已绑定:精确命中。
-        assert_eq!(
-            bridge.resolve_asset_strict("root"),
-            Some(("db".into(), "a1".into()))
-        );
-        // 子会话未绑定:即使父会话(root)有绑定,严格解析也应返回 None。
-        assert_eq!(bridge.resolve_asset_strict("child-1"), None);
-        // 未绑定会话:None。
-        assert_eq!(bridge.resolve_asset_strict("unknown"), None);
-    }
-
     // ---------- 联动:live.snapshot / open.asset / focus.tool(契约 §2.2) ----------
 
     /// live.snapshot 在无 AppHandle(测试环境)时:sessions/transfers 为空数组,
@@ -2346,30 +2227,6 @@ mod tests {
         assert_eq!(recents[0]["assetId"], "a1");
         assert_eq!(recents[0]["toolName"], "ssh_exec");
         assert_eq!(recents[0]["tail"], "file1\nfile2");
-    }
-
-    /// memory.cards 缺 scopes:硬错误(参数校验在读取数据库之前)。
-    #[tokio::test]
-    async fn memory_cards_requires_scopes() {
-        let bridge = Arc::new(HostBridgeState::default());
-        let err = handle_memory_cards(serde_json::json!({}), bridge)
-            .await
-            .expect_err("缺 scopes 应报错");
-        assert!(err.to_string().contains("scopes"), "{err}");
-    }
-
-    /// memory.cards 在数据库未初始化(测试环境)时:Failed 而非 panic,
-    /// 调用方(dsh memory-context 插件)据此降级为不注入。
-    #[tokio::test]
-    async fn memory_cards_without_db_fails_soft() {
-        let bridge = Arc::new(HostBridgeState::default());
-        let err = handle_memory_cards(
-            serde_json::json!({ "scopes": ["user", "global"] }),
-            bridge,
-        )
-        .await
-        .expect_err("未初始化数据库应报 Failed");
-        assert!(!err.to_string().is_empty());
     }
 
     /// open.asset 缺 assetId:硬错误(契约 §2.2 参数校验)。
@@ -2395,7 +2252,6 @@ mod tests {
         .expect_err("focus.tool 缺 tool 应报错");
         assert!(err.to_string().contains("tool"), "{err}");
     }
-
 
     /// 未注册的入站方法:JSON-RPC method-not-found(-32601,由 dispatch_frame 映射)。
     #[tokio::test]

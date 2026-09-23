@@ -5,11 +5,12 @@
  * 与工具树子类选中语义(selectSubcategory 写选择桥,不再联动布局开关)。
  * rc.2 注册面(v0.100.0 起右下角 BastionExecPanel 浮层席位移除;
  * v0.105.0 起沙箱桌面横幅 + 沙箱平台设置 tab 入列;v0.121.8 起文件树/
- * 文件查看/@ 文件源随「文件功能」移除):
+ * 文件查看/@ 文件源随「文件功能」移除;v0.123.1 起「插件市场」「AI 助手」
+ * tab 移除——前者由壳内首页「插件」面板接管,后者(长期记忆)整条栈退场):
  * `sidebar.footer.action`(工具入口)+ `shell.overlay`×4(overlay /
  * AI 连接卡 / 沙箱横幅 / 工具面板)+ `conversation.session.
  * header.actions`×2(git / 执行)+ `conversation.input.left`(截图)
- * + `settings.section`×9。
+ * + `settings.section`×7。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
@@ -31,7 +32,6 @@ import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
 import { AboutTab } from '../src/client/settings/about.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
 import { AuditTab } from '../src/client/settings/audit.tsx'
-import { PluginsTab } from '../src/client/settings/plugins.tsx'
 import { apply as applyInvariant } from '../src/invariant.ts'
 
 afterEach(() => {
@@ -116,7 +116,7 @@ describe('client-nav apply (rc.2)', () => {
       'shell.overlay', 'shell.overlay', 'shell.overlay', 'shell.overlay',
       'conversation.session.header.actions', 'conversation.session.header.actions',
       'conversation.input.left',
-      'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
+      'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
     ])
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
@@ -124,8 +124,7 @@ describe('client-nav apply (rc.2)', () => {
       StarHubOverlay, StarHubConnCard, SandboxUserActionBanner, StarHubToolWorkspace,
       GitBranchPill, ExecDrawerButton,
       ScreenshotButton,
-      // AiTab 经 () => createElement(AiTab, { api }) 包装,按函数断言。
-      expect.any(Function), PluginsTab, AuditTab, AlertTab, SandboxSettingsTab, AndroidSettingsTab, BrowserSettingsTab, SshSettingsTab, AboutTab,
+      AuditTab, AlertTab, SandboxSettingsTab, AndroidSettingsTab, BrowserSettingsTab, SshSettingsTab, AboutTab,
     ])
   })
 
@@ -336,6 +335,5 @@ describe('client-nav apply (rc.2)', () => {
     // ctx.remote.<ns> 要求 fiber 声明点号全名,否则 apply 抛
     // "cannot get property … without inject"(v0.121.7 启动事故)。
     expect(injectList).toContain('remote.settings')
-    expect(injectList).toContain('remote.llm')
   })
 })

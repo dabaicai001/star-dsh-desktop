@@ -100,18 +100,6 @@
       name: '@deepseek-ai/dsh-starhub-domain-events'
     - id: starhub-live-context
       name: '@deepseek-ai/dsh-starhub-live-context'
-    # 长期记忆注入(2026-08-21):pre-step 经 sdk-transport 反向 pull
-    # `starhub/memory.cards`(user + global + 工作区文件夹 + 绑定资产),注入
-    # 每个 agent 请求;开关走 `starhub-memory-context` settings namespace
-    # (设置 → AI 助手「启用长期记忆」,client-nav 写入)。
-    - id: starhub-memory-context
-      name: '@deepseek-ai/dsh-starhub-memory-context'
-    # 长期记忆自动沉淀(2026-08-22,v0.92.0):agent/turn-stopping 钩子调一次
-    # LLM 抽取当轮持久事实,经 sdk-transport 反向 RPC `starhub/memory.write`
-    # 落 ai_memories;默认开,kill switch 走 `starhub-memory-context.autoReview`
-    # namespace 字段(设置 → AI 助手「自动沉淀记忆」,client-nav 写入)。
-    - id: starhub-memory-sink
-      name: '@deepseek-ai/dsh-starhub-memory-sink'
     # AI 生成提交信息(2026-08-22):分支胶囊「AI」按钮的 host 端点
     # (POST /starhub/git/commit-message),经 agentDefaultModel 当前路由做
     # one-shot LLM 调用;输入/输出/超时预算在此显式配置。

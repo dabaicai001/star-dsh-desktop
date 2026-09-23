@@ -8,7 +8,6 @@ pub mod browser;
 pub mod db;
 pub mod desktop;
 pub mod docker;
-pub mod dsh_plugins;
 pub mod harness;
 pub mod local;
 pub mod mcp;

@@ -118,22 +118,6 @@ fn navigate_main_to(app: &AppHandle, url: &str) {
     }
 }
 
-/// 重启 dsh web 进程。用户插件增删/启停后,web 运行时的「插件列表」读的是
-/// 当前 Loader 快照,而 `sync_user_client_plugins` 只在 spawn 时跑一次;
-/// 变更插件后须重启 web 才能把新启用的 `dsh.client` 插件接进运行时。
-/// 前端「重启 dsh web」按钮调用(方案 B);返回重启后的实际 URL。
-#[tauri::command]
-pub async fn dsh_web_restart(
-    app: AppHandle,
-    manager: State<'_, crate::harness::web::DshWebManager>,
-) -> Result<String, String> {
-    let bridge = app.state::<HarnessManager>().bridge();
-    manager
-        .restart(&app, bridge)
-        .await
-        .map_err(|e| e.to_string())
-}
-
 /// 应答一条 `dsh://approval` 事件对应的审批请求(requestId 来自事件 payload)。
 /// approved=true → 桥返回 `{outcome: "allowed-once"}`,false → `"rejected"`;
 /// 已超时/未知 requestId 时幂等成功(前端可能重复应答或应答晚到)。

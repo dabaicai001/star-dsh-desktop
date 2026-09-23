@@ -9,6 +9,14 @@
 
 ---
 
+## [0.123.1] - 2026-09-23
+
+### 移除
+- **设置「插件市场」tab 及支线 B 插件安装/启停/卸载/市场命令面(与 dsh 主壳原生「插件」面板重复)**:dsh 首页侧边栏「插件」面板已提供已装插件列表 + 启停、包名 / GitHub 仓库 / 本地目录安装、安装源(默认 / 中国大陆镜像 / 私有源)选择,StarHub 自研的平行插件管理整体退场。删除:前端 `client-nav` 的 `settings/plugins.tsx`(PluginsTab / ConfirmActionDialog)与 `settings.section` 注册(id `starhub-plugins`,order 31,余下 tab 顺次前移)、`settings/services.ts` 的 8 个插件服务函数与 4 个类型、settings.module.css 的 5 个市场专用类;Rust `commands/dsh_plugins.rs` 6 个命令(`dsh_plugin_list/install_local/install_url/set_enabled/uninstall/market_fetch`)+ `commands/harness.rs::dsh_web_restart` + `DshWebManager::restart` + ACL 白名单登记;`harness/plugins.rs` 精剪掉安装/市场/启停/卸载实现(约 500 行,含 `zip` 直接依赖),**保留加载面**:registry / cordis.yml / peer junction / 包装配置生成 / 内置插件注册 / 坏插件自救禁用照旧,已装进 `app_data_dir/plugins/` 的用户插件与 `dsh.client` UI 插件注入(web.rs `sync_user_client_plugins`)行为不变。测试:client-nav 53 个 spec(932 例)、Rust 226 例全绿,插件单测改为直接构造 registry 覆盖保留的加载面。
+- **设置「AI 助手」tab 与 StarHub 长期记忆整条栈(用户反馈不好用;记忆模型配置无原生替代、功能整体下线)**:删除前端 `client-nav` 的 `settings/ai.tsx`(AiTab:记忆模型下拉 + 长期记忆总开关 + 记忆管理弹窗)、`settings/aiSettings.ts`(localStorage 桥)、`settings/memory-context.ts`(namespace 同步)、`settings/services.ts` 的记忆服务(aiMemoryList/Update/Delete + AiMemoryRow)与 logAudit、index.ts 的 tab 注册与启动同步(`remote.llm` inject 随之移除);vendor 侧删 `packages/starhub/memory-context` 与 `packages/starhub/memory-sink` 两个宿主插件包、`tools` 包的 `memory` 工具 spec、approval-bridge 的 ALWAYS_ASK 条目,并同步 `examples/starhub-web`(cordis.patch.yml + package.json)、`examples/starhub-agent/cordis.yml`、`examples/package.json`、`tsconfig.base/host.json`、`scripts/package-dsh-runtime.ts`(WEB_LOCAL_PACKAGE_DIRS)、`harness/web.rs`(LOCAL_PACKAGES 11→9)、pnpm-lock;Rust 删 `commands/ai_memory.rs` 的 L1 热记忆整节(7 个 `ai_memory_*` 命令 + 内部读写函数,其余 ai_conv_*/ai_msg_* 会话历史命令保留)、`harness/mod.rs` 的 `starhub/memory.cards` / `starhub/memory.write` 两个 sdk 桥方法与 handler、`harness/tools.rs` 的 memory 工具分支与记忆写入安全扫描(含 `resolve_asset_strict`)、对应 ACL 登记与全部相关单测。**`ai_memories` 表数据保留在本地库中不再读写**(不删用户数据);`docs/AI内核替换方案-deepseek-harness.md` §5.3 标注为已移除。测试:vendor starhub 63 spec / 1002 例、Rust 209 例全绿。
+
+---
+
 ## [0.123.0] - 2026-09-23
 
 ### 新增

@@ -1,13 +1,13 @@
 // StarHub host 包:package.json exports/main 指向 tsc 直出产物(lib/types/*.js),
 // 不再依赖 tsdown 转换(lib/index.js 由 bundling 产物,tsc 只出 lib/types)。
-// 覆盖 6 个 host 包:session-registry / memory-context / live-context / memory-sink /
-// domain-events / approval-bridge(commit-message / host-static / tool-context / tools 检查同类)。
+// 覆盖 8 个 host 包:session-registry / live-context / domain-events /
+// approval-bridge / commit-message / host-static / tool-context / tools。
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 const root = process.cwd()
 const pkgs = [
-  'session-registry', 'memory-context', 'live-context', 'memory-sink',
+  'session-registry', 'live-context',
   'domain-events', 'approval-bridge', 'commit-message', 'host-static',
   'tool-context', 'tools',
 ]

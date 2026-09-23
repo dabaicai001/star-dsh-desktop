@@ -183,7 +183,12 @@ dsh 的 Web UI 支持纯展示层客户端插件(覆盖 `--dsw-*` token + DOM �
 - `approval/policy` per 会话 `'ask' | 'never'` 与 StarHub 的 session 白名单语义对齐。
 - 审计:`approval/asked` / `approval/decided` 落日志(dsh 自带)。
 
-### 5.3 记忆系统(确定保留)
+### 5.3 记忆系统(**v0.123.1 起已整栈移除,以下为历史方案**)
+
+> 2026-09-23 v0.123.1:用户决定删除设置「AI 助手」tab,长期记忆整条栈退场——
+> 前端 AiTab/aiSettings/memory-context 桥、宿主插件 memory-context / memory-sink、
+> `memory` 工具与 Rust `ai_memory_*` 命令(含 ACL)全部移除;`ai_memories` 表数据
+> 保留在库中不再读写。加载侧连带清理:`commands/ai_memory.rs` 只剩会话历史命令。
 
 现有三级记忆卡(user / global / asset:{id},SQLite + FTS5)+ 会话级记忆注入 + 压缩前 flush / 回合后 review 的自动沉淀,**整体保留**,只改注入通道与载体:
 
@@ -294,7 +299,7 @@ dsh 的 Web UI 支持纯展示层客户端插件(覆盖 `--dsw-*` token + DOM �
 1. 只引入运行时类插件,逐个评审:许可(优先 MIT/Apache;NC/无许可一律不引入)、依赖重量、对 dsh 内部 seam 的耦合点是否在我们裁剪的子集内。
 2. 引入方式与内核一致——**源码拷入 vendor 自行维护**,不走 `dsh plugin add` / npm 依赖;加载机制(cordis patch / `dsh.bundle` manifest)在 vendor 副本中保留即可。
 3. 生态极年轻(多数仓库创建仅数日,awesome 列表自带"安全性无保证"免责声明),默认不信任,引入前必读源码。
-4. **用户自行引入:支持,作为 P2 能力,仅限运行时类插件,默认关闭。前端快捷导入,不要求用户手动操作目录。**(支线 B 已实现,2026-08-14,见实施任务清单)
+4. **用户自行引入:支持,作为 P2 能力,仅限运行时类插件,默认关闭。前端快捷导入,不要求用户手动操作目录。**(支线 B 加载面已实现,2026-08-14,见实施任务清单;v0.123.1 起安装/启停/卸载/市场目录的命令面移除,改由 dsh 主壳首页「插件」面板管理,已装插件照常加载)
    - **导入方式(Settings → 插件页,Vue 前端操作)**:
      - **插件市场(主路径)**:内嵌社区目录浏览——数据源用 awesome-dsh-plugin 的精选索引(纯数据、CC0;目录本体 `README.zh.md`,`data/npm-map.json` / `data/stars.json` 以 GitHub URL 为 key 补 stars/npm 名),Rust 侧 reqwest 拉 raw 文件解析,**解析/抓取失败降级为空目录或缓存(`plugins/market-cache.json`,带抓取时间),不报错**;按分类浏览/搜索,一键安装;UI/主题/皮肤/客户端/娱乐类分类在市场侧直接不收录;
      - **URL 导入**:粘贴 GitHub 仓库地址(可带 `/tree/<branch>`),reqwest 拉 `codeload.github.com` zip(分支顺序:指定 > main > master),也支持 zip 直链;`zip` crate 解包,`enclosed_name()` + 剥离后二次组件校验防 Zip Slip,剥掉 `<repo>-<branch>/` 顶层目录;

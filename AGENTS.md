@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.123.0(**`browser_decide` 工具:Jev(TypeSafe「System One」)决策层接入 AI 浏览器(Phase 1,调研报告 `docs/Jev决策模型-浏览器操作接入调研.md`)**:主模型每一步「从 extract 输出里挑编号元素」的封闭集判别,可卸载给只输出结构化判断 + 置信度的 Jev。新工具为**只读**(返回「click 元素[12] conf=0.87」建议文本,不执行任何动作),审批落 default ALLOW 档,真动作仍走 `browser_click`/`browser_type` 的软确认——风险边界不因决策来自谁而改变。实现:Rust 新增 `src-tauri/src/browser/decide.rs`(JevConfig/JevClient/请求构造/响应校验纯函数 + 14 个单测);`browser/mod.rs` 加 `BrowserAction::Decide`(snapshot 缺省时按当前引擎内部补一次 Extract,引擎解耦);新增 `browser_get_jev_config`/`browser_set_jev_config` 一对 Tauri 命令(非密配置走 settings 表 `ai.jev.*`,API key 走现成 keyring `model:jev`,三道同步补齐);vendor 侧 tools 加 spec、approval-bridge 显式登记 + risk-gate 断言、设置页「AI 浏览器」tab 新增 Jev 配置区(**默认关闭**,明文提示页面快照会外发至所配置端点)。Jev 官方接口是 `POST /v1/systemone`(state + questions/answers 结构,choice 带 probabilities + confidence),与 OpenAI Chat Completions 不同路径——直接用裸 HTTP(reqwest OnceLock 客户端),不套任何会自动追加 `/chat/completions` 的 SDK。置信度低于阈值返回 `[LOWCONF]` 前缀交还主模型兜底。另起 tools 包首个 spec(bridged-tools.spec.ts)把「vendor BRIDGED_TOOLS ↔ Rust BROWSER_TOOLS」钉成机械断言,补上调研发现的最大结构缺口(此前三张表只靠注释互引)。) |
+| 当前版本 | v0.123.1(**移除设置「插件市场」与「AI 助手」两个 tab 及各自后端栈,对齐 dsh 原生**)。①「插件市场」:dsh 首页「插件」面板(原生 Loader 体系)已覆盖已装列表启停 + 包名 / GitHub 仓库 / 本地目录安装 + 安装源选择,StarHub 自研的平行插件管理整体退场——前端删 `client-nav` 的 `settings/plugins.tsx` 与 `settings.section` 注册、`settings/services.ts` 的 8 个插件服务函数与 4 个类型;Rust 删 `commands/dsh_plugins.rs` 6 个命令 + `dsh_web_restart` + ACL 登记,`harness/plugins.rs` 精剪掉安装/市场/启停/卸载实现(约 500 行,含 `zip` 直接依赖)但**保留加载面**:registry / cordis.yml / peer junction / 包装配置 / 内置插件注册 / 坏插件自救禁用照旧,已装用户插件与 `dsh.client` UI 插件注入行为不变。②「AI 助手」:长期记忆整条栈退场(用户反馈不好用)——删前端 `settings/ai.tsx` / `aiSettings.ts` / `memory-context.ts`、记忆服务与 logAudit、tab 注册与启动同步(`remote.llm` inject 移除);vendor 删 `memory-context` / `memory-sink` 两个宿主插件包与 `memory` 工具 spec,同步 examples 组合 / tsconfig / 打包清单 / Rust `LOCAL_PACKAGES`;Rust 删 7 个 `ai_memory_*` 命令、`starhub/memory.cards` / `starhub/memory.write` 桥方法、memory 工具分支与记忆写入安全扫描(会话历史 `ai_conv_*` / `ai_msg_*` 保留)。`ai_memories` 表数据保留不删。详见 `CHANGELOG.md`[未发布];`docs/插件体系打通方案-dsh插件统一.md` 与 `docs/AI内核替换方案-deepseek-harness.md` §5.3 标注为已被本版本取代。) |
 
 ## 架构一句话
 
@@ -26,7 +26,7 @@ starhub/
 │   │   ├── main.rs           # 入口(主窗口关闭联动销毁其余窗口)
 │   │   ├── commands/         # 全部 Tauri Command:ssh / sftp / db / docker / ai_memory /
 │   │   │                     # android(Android 设备设置)/ asset / audit / alert / broker /
-│   │   │                     # browser / desktop(沙箱桌面 UI)/ dsh_plugins / harness /
+│   │   │                     # browser / desktop(沙箱桌面 UI)/ harness /
 │   │   │                     # local(仅 local_shell_exec)/ mcp / screenshot / secret / sidecar
 │   │   ├── ssh/              # SSH 会话(russh):auth / session / known_hosts / sftp_transport
 │   │   ├── sftp/             # SFTP 会话与传输(russh-sftp)
@@ -51,9 +51,9 @@ starhub/
 │   ├── apps/
 │   │   ├── starhub-window/   # StarHub 资产工作台构建入口(产物 dist-starhub-react/)
 │   │   ├── web/  cli/        # DSH 自身应用
-│   └── packages/starhub/     # 11 个内置插件:approval-bridge / client-nav / commit-message /
-│                             # domain-events / host-static / live-context / memory-context /
-│                             # memory-sink / session-registry / tool-context / tools
+│   └── packages/starhub/     # 9 个内置插件:approval-bridge / client-nav / commit-message /
+│                             # domain-events / host-static / live-context /
+│                             # session-registry / tool-context / tools
 │
 ├── legacy-core/             # 脱离前端的纯 TS 工具与服务(node --test 覆盖)
 ├── scripts/                 # 构建脚本:build-sidecar / build-window / dev-dsh-shell /
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-23 (v0.123.0)*
+*最后更新: 2026-09-23 (v0.123.1)*
