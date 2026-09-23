@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.122.0(**vendored DeepSeek Harness 整体升级到上游 master `dsh-v0.1.7-alpha.2`(commit `0010283`,2026-09-23;上一版基线 `0d1f500` = 0.1.6-alpha.1)**:`vendor/deepseek-harness` 整树替换(上游 13244 个文件),342 个 StarHub 本地独有文件(`packages/starhub/*` 11 包、`apps/starhub-window`、`examples/starhub-*`、本地脚本与 Agent Notes)原样保留,32 处补丁逐项重放或退役(`UPSTREAM_COMMIT.txt` 同步更新);host/client 双面 `build:lib`、starhub 单测 1146 例、Rust 221 例、root node 套件、`build:window` / `build:web` 全绿。) |
+| 当前版本 | v0.122.1(**修复 linux-compat CI 在干净检出上 `build:window` 解析失败(`Failed to resolve entry for package "@deepseek-ai/dsh-util-workspace-path"`)**:`linux-compat.yml` 的步骤顺序是「install → `build:window`」,此时整棵 vendor 树**没有任何 lib 产物**(lib/ 被 gitignore,CI 全新检出不带);`apps/starhub-window/vite.config.ts` 的源码别名表是「窗口运行时实际到达的工作区包」的手工闭包,DSH 0.1.7 新增的值导入包没进表 → 解析落到 node_modules → `main: lib/index.js` 不存在 → vite 报错。修复:别名表补 0.1.7 新到达的两个包(`dsh-util-workspace-path`,经 ui-primitives `PathLabel.tsx` 值导入;`dsh-client-store`,经 client-nav 的 exec-records 桥值导入),与文件既有设计(源码别名、mirroring apps/web)一致;release.yml 的各 job 因先跑 `package:dsh-runtime`(有 lib)不受影响。验证:本地「把 335 个包的 lib 全部临时改名」净树模拟下 `build:window` 先复现 CI 同一报错、修复后通过,常规(有 lib)路径同样通过。硬约束见 `docs/踩坑记录.md` §51。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-23 (v0.122.0)*
+*最后更新: 2026-09-23 (v0.122.1)*

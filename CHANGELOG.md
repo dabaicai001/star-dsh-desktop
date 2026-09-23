@@ -9,6 +9,11 @@
 
 ---
 
+## [0.122.1] - 2026-09-23
+
+### 修复
+- **修复 linux-compat CI 在干净检出上 `build:window` 解析失败(`Failed to resolve entry for package "@deepseek-ai/dsh-util-workspace-path"`)**:`linux-compat.yml` 的步骤顺序是「install → `build:window`」,此时整棵 vendor 树**没有任何 lib 产物**(lib/ 被 gitignore,CI 全新检出不带);`apps/starhub-window/vite.config.ts` 的源码别名表是「窗口运行时实际到达的工作区包」的手工闭包,DSH 0.1.7 新增的值导入包没进表 → 解析落到 node_modules → `main: lib/index.js` 不存在 → vite 报错。修复:别名表补 0.1.7 新到达的两个包(`dsh-util-workspace-path`,经 ui-primitives `PathLabel.tsx` 值导入;`dsh-client-store`,经 client-nav 的 exec-records 桥值导入),与文件既有设计(源码别名、mirroring apps/web)一致;release.yml 的各 job 因先跑 `package:dsh-runtime`(有 lib)不受影响。验证:本地「把 335 个包的 lib 全部临时改名」净树模拟下 `build:window` 先复现 CI 同一报错、修复后通过,常规(有 lib)路径同样通过。硬约束见 `docs/踩坑记录.md` §51。
+
 ## [0.122.0] - 2026-09-23
 
 ### 升级

@@ -17,7 +17,13 @@ const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url)
  *
  * Workspace packages are aliased to SOURCE so CSS rides Vite's pipeline (the
  * lib bundles externalize CSS) — mirroring apps/web. Only the packages the
- * workbenches actually reach are aliased.
+ * workbenches actually reach are aliased. This file's alias list is a manual
+ * closure of that reach: linux-compat CI runs `build:window` on a CLEAN
+ * checkout (no lib/ artifacts anywhere), so any workspace package that becomes
+ * value-reached through an aliased package's source must be added here —
+ * otherwise resolution falls through to node_modules → `main: lib/index.js`
+ * → vite "Failed to resolve entry for package" (v0.122.0: DSH 0.1.7's new
+ * `dsh-util-workspace-path` reached through ui-primitives/PathLabel).
  */
 export default defineConfig({
   plugins: [
@@ -45,6 +51,8 @@ export default defineConfig({
       { find: /^@deepseek-ai\/dsh-client-runtime$/, replacement: src('../../packages/client/runtime/src/index.ts') },
       { find: /^@deepseek-ai\/dsh-client-ui-layout$/, replacement: src('../../packages/client/ui-layout/src/index.ts') },
       { find: /^@deepseek-ai\/dsh-client-ui-sidebar$/, replacement: src('../../packages/client/ui-sidebar/src/index.ts') },
+      { find: /^@deepseek-ai\/dsh-util-workspace-path$/, replacement: src('../../packages/util/workspace-path/src/index.ts') },
+      { find: /^@deepseek-ai\/dsh-client-store$/, replacement: src('../../packages/client/store/src/index.ts') },
     ],
   },
 })
