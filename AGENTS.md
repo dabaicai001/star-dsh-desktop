@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.123.4(**修复 CI `build:lib` 聚合 tsc 失败(TS2339 × 4)**:browser-settings.client.spec.tsx 对 testing-library 返回的 `HTMLElement` 直接取 `.value`/`.checked`,补 `as HTMLSelectElement`/`as HTMLInputElement` 窄化(同包 ssh-settings 等同款写法),client-nav 54 spec / 913 例全绿。**修复 Jev 决策 base_url 缺省为空**:Rust `JevConfig::default().base_url` 空串经前端 `{...JEV_DEFAULT, ...value}` 展开覆盖默认官方地址,启用 Jev 后 `browser_decide` 必然软失败;缺省值改 `DEFAULT_BASE_URL`(https://api.typesafe.ai),已落空值的库读取时自愈。**Jev 决策可观测**:decide 完成写 tracing info(starhub.log 可 grep「Jev 决策」),与审计 AI 类别 action=`browser_decide` 明细行双通道核对。) |
+| 当前版本 | v0.124.0(**Jev 决策启用后改为强制(行为变更)**:此前 `browser_decide` 按需调用形同虚设(实测 AI 操作浏览器 0 次调用);现 `ai.jev.enabled=1` 后每个页面动作(click/type/scroll/press_key/select_option)执行前必须先调 `browser_decide` 拿新决策,否则执行层拒绝(软错误);一次动作一次决策,页面变化类工具(navigate/open/back/forward/reload/extract/eval)吊销旧令牌;实现为 `browser/mod.rs` 会话级决策令牌状态机 `JevGate` + 门控/吊销表单测;Jev 不可用时动作门保持关闭(fail loud),关开关即退回按需。v0.123.4 已修 CI tsc TS2339 与 Jev base_url 缺省为空、加决策 tracing 日志。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-24 (v0.123.4)*
+*最后更新: 2026-09-24 (v0.124.0)*

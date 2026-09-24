@@ -9,6 +9,13 @@
 
 ---
 
+## [0.124.0] - 2026-09-24
+
+### 变更
+- **Jev 决策启用后改为强制(v0.124.0,行为变更)**:此前 `browser_decide` 是 Phase 1 的按需卸载——是否调用全凭主模型自行决定,实测中 AI 操作浏览器时一次都不会调(审计 0 次),「开启 Jev」形同虚设。现改为**启用即强制**:`ai.jev.enabled=1` 后,主模型的每个页面动作(`browser_click`/`browser_type`/`browser_scroll`/`browser_press_key`/`browser_select_option`)执行前必须先调 `browser_decide` 拿到一次新决策,否则动作在执行层被拒(软错误,提示先决策);一次动作一次决策,页面变化类工具(`navigate`/`open`/`back`/`forward`/`reload`/`extract`/`eval`)自动吊销旧决策;只读观察(`state`/`screenshot`)不影响。实现为 `browser/mod.rs` 的会话级「决策令牌」状态机 `JevGate`(decide 成功授予 → 动作消费 → 页面变化吊销),门控/吊销两张表与 `BROWSER_TOOLS` 的单测钉住漏登记;Jev 未配 key / 端点不通时动作门保持关闭(fail loud),关闭开关即整体退回按需模式。工具 spec 描述与设置页提示同步改为「启用即强制」文案。风险边界不变:Jev 仍只读(不执行),审批链路仍走 `browser_click` 等的软确认。
+
+---
+
 ## [0.123.4] - 2026-09-24
 
 ### 修复

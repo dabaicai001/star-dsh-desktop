@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.123.4-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.124.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,8 +48,9 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.123.4 (2026-09-24)
-- 🐛 **修复 CI `build:lib` 聚合 tsc 失败(TS2339 × 4)**:设置「AI 浏览器」tab 单测对 testing-library 返回的 `HTMLElement` 直接取 `.value` / `.checked`,补 `as HTMLSelectElement` / `as HTMLInputElement` 窄化;client-nav 54 spec / 913 例全绿。
+### v0.124.0 (2026-09-24)
+- ⚡ **Jev 决策启用后改为强制(行为变更)**:此前 `browser_decide` 是否调用全凭主模型自行决定,实测 AI 操作浏览器时一次都不会调(审计 0 次),「开启 Jev」形同虚设。现启用后,AI 的每个浏览器动作(点击/输入/滚动/按键/下拉选择)执行前必须先经 Jev 决策拿到新建议,否则动作在执行层被拒;一次动作一次决策,页面变化(导航/刷新/重新提取/eval)后旧决策自动失效。Jev 不可用(未填 Key 或端点不通)时浏览器动作整体暂停(fail loud),关闭开关即退回按需模式。Jev 仍只读不执行,审批链路不变。
+- 🐛 **修复 CI `build:lib` 聚合 tsc 失败(TS2339 × 4)**:设置「AI 浏览器」tab 单测对 testing-library 返回的 `HTMLElement` 直接取 `.value` / `.checked`,补 `as HTMLSelectElement` / `as HTMLInputElement` 窄化;client-nav 56 spec / 941 例全绿。
 - 🐛 **修复 Jev 决策 base_url 缺省为空**:Rust 默认空串经 `{...JEV_DEFAULT, ...value}` 展开覆盖前端默认的官方地址,启用 Jev 后 `browser_decide` 必然软失败;缺省值改回官方端点 https://api.typesafe.ai,已落空值的本地库读取时自动自愈。
 - 🔧 **Jev 决策可观测**:decide 完成写 tracing 日志(`%LOCALAPPDATA%\starhub\starhub.log` 可 grep「Jev 决策」),审计表 AI 类别另有 action=`browser_decide` 明细行(goal / durationMs / success),双通道核对浏览器任务是否走过 Jev。
 
