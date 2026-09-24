@@ -11,6 +11,10 @@
  * `browser_get_jev_config`/`browser_set_jev_config`(settings 表),API key 走
  * keyring 的 `set/get_ai_model_api_key`(id = "jev")。默认关闭:页面快照会
  * 外发到所配置端点,私有部署场景请确认合规后再开启。
+ * **启用即强制**:勾选并保存后,AI 的每个浏览器动作(click/type/scroll/
+ * press_key/select_option)执行前都必须先经 `browser_decide` 拿到新决策
+ * (一次动作一次决策;页面变化后旧决策失效),否则动作被拒绝——Jev 不可用
+ * (未配 key/端点不通)时浏览器动作整体暂停,属于 fail loud。
  *
  * 引擎与 Jev 配置都是本地草稿:只有点击底部「保存」才经 browser_set_engine /
  * browser_set_jev_config 落库;未点保存的任何修改都不生效。API key 是 keyring
@@ -166,8 +170,12 @@ export function BrowserSettingsTab() {
       <h3>Jev 决策</h3>
       <p className={s.hint}>
         TypeSafe Jev 决策模型:AI 调 browser_decide 时,把「目标 + 页面快照」发给 Jev,
-        返回下一步动作建议(元素编号 + 置信度)。Jev 只做判断,不执行任何操作;
-        未启用时 browser_decide 返回提示,AI 照常用 browser_extract。
+        返回下一步动作建议(元素编号 + 置信度)。Jev 只做判断,不执行任何操作。
+      </p>
+      <p className={s.hint}>
+        启用即强制:保存后,AI 的每个浏览器动作(点击/输入/滚动/按键/下拉选择)执行前
+        都必须先经 Jev 决策(一次动作一次决策;页面变化后旧决策失效),否则动作会被拒绝。
+        Jev 不可用(未填 API Key 或端点不通)时浏览器动作会整体暂停,请确认配置可用后再启用。
       </p>
       <p className={s.hint}>
         注意:启用后,页面快照与目标文本会发送到下方配置的第三方端点(默认 TypeSafe 官方 API)。

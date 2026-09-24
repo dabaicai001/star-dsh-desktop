@@ -440,7 +440,7 @@ export const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
   },
   {
     toolName: 'browser_decide',
-    description: 'Jev 决策(只读,需在 设置 → AI 浏览器 启用并配置):把「当前子目标 + 页面快照」发给 TypeSafe Jev 决策模型,返回下一步动作建议(click/type/scroll/press_key/select_option/done + 元素编号 + 置信度)。本工具不执行任何动作,也不弹确认卡;当页面候选元素较多、目标明确时优先用它代替自己从 extract 输出里挑编号,再按建议调用 browser_click/browser_type 等。未配置时返回软错误,照常改用 browser_extract 即可。快照缺省时自动内部提取。',
+    description: 'Jev 决策(只读,需在 设置 → AI 浏览器 启用并配置):把「当前子目标 + 页面快照」发给 TypeSafe Jev 决策模型,返回下一步动作建议(click/type/scroll/press_key/select_option/done + 元素编号 + 置信度)。本工具不执行任何动作,也不弹确认卡。Jev 决策启用后,每次浏览器动作(click/type/scroll/press_key/select_option)执行前必须先调用本工具拿到新决策,否则动作会被拒绝;页面变化(导航/刷新/重新 extract/eval)后旧决策自动失效,需重新决策。当页面候选元素较多、目标明确时优先用它代替自己从 extract 输出里挑编号,再按建议调用 browser_click/browser_type 等。未配置时返回软错误,照常改用 browser_extract 即可。快照缺省时自动内部提取。',
     parameters: {
       goal: { type: 'string', required: true, description: '当前子目标,例如「找到登录按钮并点击」或「在搜索框输入关键词」' },
       snapshot: { type: 'string', description: '可选,直接提供 browser_extract 的原文(编号元素列表);不传则内部自动提取一次' },

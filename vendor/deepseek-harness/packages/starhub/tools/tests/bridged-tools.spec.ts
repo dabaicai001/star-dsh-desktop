@@ -57,6 +57,7 @@ describe('BRIDGED_TOOLS registry', () => {
     const decide = BRIDGED_TOOLS.find(spec => spec.toolName === 'browser_decide')
     expect(decide).toBeDefined()
     expect(decide?.description).toContain('不执行')
+    expect(decide?.description).toContain('必须先调用本工具')
     expect(decide?.parameters).toMatchObject({
       goal: { type: 'string', required: true },
       snapshot: { type: 'string' },
