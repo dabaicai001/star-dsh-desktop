@@ -9,6 +9,17 @@
 
 ---
 
+## [0.123.4] - 2026-09-24
+
+### 修复
+- **CI `build:lib` 聚合 tsc 失败(TS2339 × 4)**:`packages/starhub/client-nav/tests/browser-settings.client.spec.tsx` 直接对 testing-library 返回的 `HTMLElement` 取 `.value` / `.checked`,host/client 双面聚合 tsc 报 4 处 TS2339(vitest 运行时不做类型检查,所以本地全绿、CI 才红)。按同包既有 spec(ssh-settings 等)的写法补 `as HTMLSelectElement` / `as HTMLInputElement` 窄化,行为零变化;client-nav 54 spec / 913 例复跑全绿,`tsc -b tsconfig.client.json` 零错误。
+- **Jev 决策 base_url 缺省为空 → `browser_decide` 必然软失败**:Rust `JevConfig::default().base_url` 是空串,而前端 `JEV_DEFAULT.baseUrl` 是官方地址,`{...JEV_DEFAULT, ...value}` 的展开让 Rust 空串覆盖前端默认 → 设置页 base_url 字段显示为空、用户启用 Jev 保存后 `ai.jev.base_url` 落空,模型即使调用 `browser_decide` 也只会拿到「[Error] Jev base_url 未配置」(线上实测:`ai.jev.enabled=1`、keyring `model:jev` 密钥已在,唯 base_url 为空,且审计显示 0 次 `browser_decide` 调用)。缺省值改为 `DEFAULT_BASE_URL`(https://api.typesafe.ai),设置页加载即回显官方地址;已落空值的库在读取时被 `setting()` 空值过滤,自动回落到官方端点(自愈,无需手动修库);`validate()` 仍允许显式置空。补默认值回归单测(decide 15 例全绿)。
+
+### 变更
+- **Jev 决策可观测**:`decide()` 完成时写一条 `tracing::info!`(action / element / confidence / elapsed_ms),`%LOCALAPPDATA%\starhub\starhub.log` 可 grep「Jev 决策」核对某次浏览器任务到底有没有走 Jev;与审计表(设置 → 审计,AI 类别,action=`browser_decide`,detail 带 goal / durationMs / success)构成双通道。注意 `browser_decide` 是 Phase 1 的按需卸载设计——由主模型自行决定何时调用,并非每次浏览器操作都自动过 Jev。
+
+---
+
 ## [0.123.3] - 2026-09-24
 
 ### 新增

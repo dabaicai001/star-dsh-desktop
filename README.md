@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.123.3-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.123.4-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,9 +48,10 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.123.3 (2026-09-24)
-- ✨ **AI 浏览器空闲自动关闭(webview 引擎)**:AI 用完浏览器后,无痕窗口原本一直挂到用户手动关闭或主窗口退出联动销毁。新增空闲看门狗(`src-tauri/src/browser/idle.rs`):`ai-browser` 窗口存在、无在途 `browser_*` 调用、无在途 eval、且连续 60s(`IDLE_CLOSE_SECS`)没有新调用时自动关闭;走与用户手动关闭同一路径(Destroyed 时在途 eval 失败收口),下一次 `browser_open`/`browser_navigate` 自动重建窗口(页面状态不保留)。活动的判定挂在 `BrowserManager`:每次桥调用 `begin_call()` 刷新活动时刻并持在途计数(返回的守卫 panic/提前返回也递减),看门狗在 app setup 启动、5s 轮询;仅 webview 引擎(`ai-browser` 窗口只由 webview 后端创建),obscura 无头引擎(进程 + 直播查看器窗口另一套生命周期)不在范围内。测试:`should_idle_close` 边界单测(窗口未开/在途调用/在途 eval/未调用过/差 1ms 均不关)+ 管理器计数单测,browser 模块 33 例全绿。
-- 🔧 **设置「AI 浏览器」tab 改单一保存入口**:引擎下拉与 Jev 决策配置(启用开关 / base_url / 模型 / 阈值 / 超时)全部为本地草稿——删除引擎下的「保存」与 Jev 区的「保存配置」两个分区按钮,改为 tab 底部唯一「保存」:点击才经 `browser_set_engine` + `browser_set_jev_config` 一起落库,未点击的任何修改都不生效;有未保存修改时提示「有未保存的修改,点击「保存」后生效。」,保存成功显示「已保存。」,失败照旧出错误条。API Key 仍是独立 keyring 写入,保留「保存密钥 / 删除密钥」。新增 `client-nav` tab 单测(browser-settings.client.spec.tsx,6 例:加载回填 / 编辑不落库 / 点击保存合并落库并 trim / 保存失败留脏并报错 / 密钥保存与删除 / 无 Tauri 桥预览报错)。
+### v0.123.4 (2026-09-24)
+- 🐛 **修复 CI `build:lib` 聚合 tsc 失败(TS2339 × 4)**:设置「AI 浏览器」tab 单测对 testing-library 返回的 `HTMLElement` 直接取 `.value` / `.checked`,补 `as HTMLSelectElement` / `as HTMLInputElement` 窄化;client-nav 54 spec / 913 例全绿。
+- 🐛 **修复 Jev 决策 base_url 缺省为空**:Rust 默认空串经 `{...JEV_DEFAULT, ...value}` 展开覆盖前端默认的官方地址,启用 Jev 后 `browser_decide` 必然软失败;缺省值改回官方端点 https://api.typesafe.ai,已落空值的本地库读取时自动自愈。
+- 🔧 **Jev 决策可观测**:decide 完成写 tracing 日志(`%LOCALAPPDATA%\starhub\starhub.log` 可 grep「Jev 决策」),审计表 AI 类别另有 action=`browser_decide` 明细行(goal / durationMs / success),双通道核对浏览器任务是否走过 Jev。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.123.3(**AI 浏览器空闲自动关闭(webview 引擎)**:AI 用完浏览器后,无痕窗口原本一直挂到用户手动关闭或主窗口退出联动销毁。新增空闲看门狗(`src-tauri/src/browser/idle.rs`):`ai-browser` 窗口存在、无在途 `browser_*` 调用、无在途 eval、且连续 60s(`IDLE_CLOSE_SECS`)没有新调用时自动关闭;走与用户手动关闭同一路径(Destroyed 时在途 eval 失败收口),下一次 `browser_open`/`browser_navigate` 自动重建窗口(页面状态不保留)。活动的判定挂在 `BrowserManager`:每次桥调用 `begin_call()` 刷新活动时刻并持在途计数(返回的守卫 panic/提前返回也递减),看门狗在 app setup 启动、5s 轮询;仅 webview 引擎(`ai-browser` 窗口只由 webview 后端创建),obscura 无头引擎(进程 + 直播查看器窗口另一套生命周期)不在范围内。测试:`should_idle_close` 边界单测(窗口未开/在途调用/在途 eval/未调用过/差 1ms 均不关)+ 管理器计数单测,browser 模块 33 例全绿。**设置「AI 浏览器」tab 改单一保存入口**:引擎与 Jev 决策配置全部为本地草稿,删除引擎下的「保存」与 Jev 区的「保存配置」,改为 tab 底部唯一「保存」(点击才经 `browser_set_engine` + `browser_set_jev_config` 一起落库,未保存修改有提示);API Key 保留独立的「保存密钥 / 删除密钥」。新增 client-nav 单测 6 例。) |
+| 当前版本 | v0.123.4(**修复 CI `build:lib` 聚合 tsc 失败(TS2339 × 4)**:browser-settings.client.spec.tsx 对 testing-library 返回的 `HTMLElement` 直接取 `.value`/`.checked`,补 `as HTMLSelectElement`/`as HTMLInputElement` 窄化(同包 ssh-settings 等同款写法),client-nav 54 spec / 913 例全绿。**修复 Jev 决策 base_url 缺省为空**:Rust `JevConfig::default().base_url` 空串经前端 `{...JEV_DEFAULT, ...value}` 展开覆盖默认官方地址,启用 Jev 后 `browser_decide` 必然软失败;缺省值改 `DEFAULT_BASE_URL`(https://api.typesafe.ai),已落空值的库读取时自愈。**Jev 决策可观测**:decide 完成写 tracing info(starhub.log 可 grep「Jev 决策」),与审计 AI 类别 action=`browser_decide` 明细行双通道核对。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-24 (v0.123.3)*
+*最后更新: 2026-09-24 (v0.123.4)*
