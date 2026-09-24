@@ -48,6 +48,8 @@ interface RegisterOptions {
   id?: string
   order?: number
   label?: string
+  /** keyed 槽(main)的 entry key;list 槽注册不带。 */
+  key?: string
   store?: { create: () => unknown }
   inject: () => Record<string, unknown>
 }
