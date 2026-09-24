@@ -4,6 +4,10 @@
 //! 1. 物化 `$DSH_HOME/profiles/web/`(默认 `<app_data_dir>/dsh-web-home`,
 //!    可用 STARHUB_DSH_WEB_HOME 覆盖)——拷 profile package.json,并把
 //!    cordis.patch.yml 的 webserver 端口改写为实际选定端口;
+//!    **该文件同时是 dsh 设置体系的落盘目标**(DSH 0.1.7 起 GUI「通用 / 模型 /
+//!    权限」设置经 `ConfigEditor` 直接写它),因此用「模板行补齐 + 用户行保留」
+//!    的幂等物化(`materialize_profile_patch`)取代早先的每次启动整体覆盖——
+//!    后者会把用户设置全部重置(v0.122.0 回归,见 `docs/踩坑记录.md` §53);
 //! 2. 为本地包(client-nav / host-static)在 `$DSH_HOME/profiles/node_modules`
 //!    下补 junction(healProfilesModuleFallback 不会链接依赖闭包之外的本地包);
 //! 3. spawn 便携 Node + `apps/cli/lib/bin.js web`,kill_on_drop 随应用退出回收
@@ -208,6 +212,141 @@ fn rewrite_patch_port(template: &str, port: u16) -> Result<String, DshWebError> 
     Ok(out)
 }
 
+/// patch 顶层行的身份:`- insert:` 追加块,或 `- id: <name>` 配置行。
+/// 两者都不是的异常行不参与补齐(见 [`PatchRowId::Unknown`])。
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PatchRowId {
+    /// `- insert:` 块:向组合里追加新 entry。
+    Insert,
+    /// `- id: <name>` 行:整段替换该 entry 的 config。
+    Id(String),
+    /// 既非 insert 也非 id 行(模板异常):跳过,不猜语义。
+    Unknown,
+}
+
+/// 从一行 `- ...` 取出该顶层行的身份。
+fn patch_row_id(line: &str) -> PatchRowId {
+    let rest = line
+        .trim_start()
+        .strip_prefix('-')
+        .unwrap_or_default()
+        .trim_start();
+    if rest.starts_with("insert:") {
+        return PatchRowId::Insert;
+    }
+    if let Some(value) = rest.strip_prefix("id:") {
+        let name = value.trim();
+        // 去掉行尾注释,再去掉 YAML 引号
+        let name = name.split(" #").next().unwrap_or(name).trim();
+        let name = name.trim_matches('"').trim_matches('\'');
+        if name.is_empty() {
+            return PatchRowId::Unknown;
+        }
+        return PatchRowId::Id(name.to_string());
+    }
+    PatchRowId::Unknown
+}
+
+/// 把 patch 文本切成顶层行块。块从缩进为 0 的 `- ` 行开始,并向前吸走连续的
+/// 注释/空行(它们属于下一块的说明文字)。`- insert:` 块内部的 entry 行缩进为
+/// 4 空格,不会被误判成顶层行。
+fn split_patch_rows(text: &str) -> Vec<(PatchRowId, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut rows: Vec<(PatchRowId, Vec<usize>)> = Vec::new();
+    let mut leading: Vec<usize> = Vec::new();
+    let mut current: Option<(PatchRowId, Vec<usize>)> = None;
+    for (index, line) in lines.iter().enumerate() {
+        if line.starts_with("- ") || line.trim_end() == "-" {
+            if let Some(row) = current.take() {
+                rows.push(row);
+            }
+            let mut indices = std::mem::take(&mut leading);
+            indices.push(index);
+            current = Some((patch_row_id(line), indices));
+        } else if let Some(row) = &mut current {
+            row.1.push(index);
+        } else if line.trim_start().starts_with('#') || line.trim().is_empty() {
+            leading.push(index);
+        }
+    }
+    if let Some(row) = current.take() {
+        rows.push(row);
+    }
+    rows.into_iter()
+        .map(|(id, indices)| {
+            let body = indices
+                .iter()
+                .map(|&index| lines[index])
+                .collect::<Vec<_>>()
+                .join("\n");
+            (id, body)
+        })
+        .collect()
+}
+
+/// 物化 profile 用户层 `cordis.patch.yml`(幂等,不丢用户行)。
+///
+/// DSH 0.1.7 起 GUI 设置页(通用 / 模型 / 权限…)经 `ConfigEditor` 直接写这个
+/// 文件(`documentPath = profileContext.patchPath`,见 vendor 的
+/// `packages/boot/config-editor/src/index.ts`),所以它同时承载「Rust 的结构层」
+/// (webserver 端口、本地包 insert 块)和「用户的设置层」。合并语义:
+///
+/// 1. webserver 行的端口就地改写(端口每次启动重新挑选);
+/// 2. 模板有、磁盘没有的顶层行按原样补齐;
+/// 3. 磁盘有、模板没有的行(设置页写入的 `llm-pi-ai` / `agent-default-model` /
+///    `ui-settings-general`,以及用户改过的 `permission.defaultPreset` 等)全部保留;
+/// 4. `- insert:` 块规范为最后一块——`sync_user_client_plugins` 固定往文件末尾
+///    按 4 空格缩进追加 entry 行,若 insert 块之前还有别的顶层行,追加结果就是
+///    非法 YAML(实测 `bad indentation of a mapping entry`),dsh web 组合直接
+///    boot 失败。设置页的新行经 `document.add` 落在文件末尾,天然会跑到 insert
+///    块后面,所以每次物化都要把它挪回末尾。
+///
+/// `existing` 里找不到 webserver 端口行时,说明它不是本模板的产物(损坏或被
+/// 第三方改写),返回 Err 由调用方备份后按模板重建。
+fn materialize_profile_patch(
+    existing: &str,
+    template: &str,
+    port: u16,
+) -> Result<String, DshWebError> {
+    let mut merged = rewrite_patch_port(existing, port)?;
+    let mut present = split_patch_rows(&merged);
+    let template_rows = split_patch_rows(template);
+    let missing: Vec<&str> = template_rows
+        .iter()
+        .filter(|(id, _)| {
+            !matches!(id, PatchRowId::Unknown) && !present.iter().any(|(have, _)| have == id)
+        })
+        .map(|(_, body)| body.as_str())
+        .collect();
+    if !missing.is_empty() {
+        let addition = missing.join("\n");
+        if !merged.ends_with('\n') {
+            merged.push('\n');
+        }
+        merged.push_str(&addition);
+        merged.push('\n');
+        present = split_patch_rows(&merged);
+    }
+    // insert 块挪到末尾(sync_user_client_plugins 的追加前提)。
+    if let Some(position) = present.iter().position(|(id, _)| *id == PatchRowId::Insert) {
+        if position + 1 != present.len() {
+            let row = present.remove(position);
+            present.push(row);
+            let body = present
+                .iter()
+                .map(|(_, body)| body.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let mut out = body;
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            return Ok(out);
+        }
+    }
+    Ok(merged)
+}
+
 /// StarHub 独立 React 窗口 app dist(starhub-window 构建,base /starhub-react/)。
 /// 与 embed dist 同理,这里经 STARHUB_WINDOW_DIST 显式钉死,避免 host-static
 /// 的 repo-root 发现(沿模块位置向上找 vendor/deepseek-harness)在打包部署
@@ -328,15 +467,52 @@ impl DshWebManager {
             start: DEFAULT_PORT,
             end: DEFAULT_PORT + MAX_PORT_OFFSET,
         })?;
+        let patch_path = profile_dir.join("cordis.patch.yml");
         let patch_template = std::fs::read_to_string(example_dir.join("cordis.patch.yml"))
             .map_err(|e| {
                 DshWebError::PathResolve(format!("读取 cordis.patch.yml 模板失败: {e}"))
             })?;
-        std::fs::write(
-            profile_dir.join("cordis.patch.yml"),
-            rewrite_patch_port(&patch_template, port)?,
-        )
-        .map_err(|e| DshWebError::PathResolve(format!("物化 cordis.patch.yml 失败: {e}")))?;
+        // 用户层是 dsh 设置体系的落盘目标(ConfigEditor.documentPath =
+        // profileContext.patchPath;DSH 0.1.7 起「通用 / 模型 / 权限」等 GUI
+        // 设置直接写进这个文件),因此不能每次启动都用模板整体覆盖——那会让所有
+        // 设置只在当次会话有效(v0.122.0 回归)。这里改为「模板行补齐 + 端口
+        // 就地改写」,用户行一律保留。
+        let patch_content = match std::fs::read_to_string(&patch_path) {
+            Ok(existing) => match materialize_profile_patch(&existing, &patch_template, port) {
+                Ok(merged) => merged,
+                Err(error) => {
+                    // 不是本模板的产物(损坏 / 被第三方改写):备份后按模板重建,
+                    // 与 dsh 的 profile-sanitize 同构,不静默丢数据。
+                    let backup = PathBuf::from(format!(
+                        "{}.bak-{}",
+                        patch_path.display(),
+                        chrono::Local::now().format("%Y%m%d-%H%M%S-%3f")
+                    ));
+                    match std::fs::rename(&patch_path, &backup) {
+                        Ok(()) => tracing::warn!(
+                            "cordis.patch.yml 无法与模板合并({error}),已备份到 {}",
+                            backup.display()
+                        ),
+                        Err(rename_error) => tracing::warn!(
+                            "cordis.patch.yml 无法与模板合并({error}),备份也失败({} → {}): {rename_error}",
+                            patch_path.display(),
+                            backup.display()
+                        ),
+                    }
+                    rewrite_patch_port(&patch_template, port)?
+                }
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                rewrite_patch_port(&patch_template, port)?
+            }
+            Err(error) => {
+                return Err(DshWebError::PathResolve(format!(
+                    "读取 cordis.patch.yml 失败: {error}"
+                )))
+            }
+        };
+        std::fs::write(&patch_path, patch_content)
+            .map_err(|e| DshWebError::PathResolve(format!("物化 cordis.patch.yml 失败: {e}")))?;
 
         // 3. 本地包 junction(目标随 runtime_dir 漂移:升级换安装目录、
         //    dev⇄release 共用同一 app data 都会让旧 junction 钉死上一次的
@@ -1022,6 +1198,147 @@ mod tests {
             .local_addr()
             .unwrap()
             .port()
+    }
+
+    /// 回归:v0.122.0(DSH 0.1.7 升级)起 GUI 设置直接写
+    /// `$DSH_HOME/profiles/web/cordis.patch.yml`,而 web.rs 每次启动都用模板
+    /// 整体覆盖该文件,导致「通用 / 模型 / 权限」设置在重启后全部回到默认值
+    /// (写入成功但当次有效)。materialize 必须保留用户行、只补齐模板行。
+    #[test]
+    fn materialize_profile_patch_preserves_user_rows() {
+        let template = "# head comment\n\
+                        - id: webserver\n  config:\n    host: 127.0.0.1\n    port: 3185\n\n\
+                        - id: session-query-sqlite\n  config:\n    path: ':memory:'\n\n\
+                        # insert 说明\n\
+                        - insert:\n    - id: client-nav\n      name: '@x'\n";
+        // 磁盘内容 = 模板 + 设置页写入的用户行 + 用户改过的 permission
+        let existing = "# head comment\n\
+                        - id: webserver\n  config:\n    host: 127.0.0.1\n    port: 3085\n\n\
+                        - id: permission\n  config:\n    defaultPreset: workspace-write\n\n\
+                        - id: llm-pi-ai\n  config:\n    providers:\n      stepcoding:\n        apiKeyEnv: STEPCODING_API_KEY\n\n\
+                        - id: agent-default-model\n  config:\n    provider: stepcoding\n    model: step-5-preview\n\n\
+                        # insert 说明\n\
+                        - insert:\n    - id: client-nav\n      name: '@x'\n";
+        let out = materialize_profile_patch(existing, template, 3187).unwrap();
+
+        // 1. 端口就地改写
+        assert!(out.contains("port: 3187"), "端口应改写: {out}");
+        assert!(!out.contains("port: 3085"), "旧端口应被替换: {out}");
+        // 2. 用户行全部保留
+        for row in [
+            "- id: permission",
+            "defaultPreset: workspace-write",
+            "- id: llm-pi-ai",
+            "STEPCODING_API_KEY",
+            "- id: agent-default-model",
+            "model: step-5-preview",
+        ] {
+            assert!(out.contains(row), "用户行 {row} 应保留: {out}");
+        }
+        // 3. 模板有、磁盘没有的行补齐
+        assert!(
+            out.contains("- id: session-query-sqlite"),
+            "模板行应补齐: {out}"
+        );
+        // 4. insert 块被规范为最后一块(设置页的新行会落到它后面,必须挪回)
+        let insert_at = out.find("- insert:").expect("insert 块应存在");
+        assert!(
+            insert_at > out.find("- id: session-query-sqlite").unwrap(),
+            "补齐的模板行应在 insert 块之前: {out}"
+        );
+        assert!(
+            insert_at > out.find("- id: llm-pi-ai").unwrap(),
+            "用户行应在 insert 块之前: {out}"
+        );
+        assert!(
+            insert_at > out.find("- id: agent-default-model").unwrap(),
+            "用户行应在 insert 块之前: {out}"
+        );
+        // insert 块之后只剩它自己的 entry 行(4 空格缩进)
+        let tail = &out[insert_at..];
+        for line in tail.lines().skip(1) {
+            assert!(
+                line.starts_with(' ')
+                    || line.trim().is_empty()
+                    || line.trim_start().starts_with('#'),
+                "insert 块之后不应再有顶层行: {line:?}"
+            );
+        }
+    }
+
+    /// insert 块不在末尾时(设置页把新行追加到文件末尾之后)必须被挪回末尾,
+    /// 否则随后 `sync_user_client_plugins` 的 4 空格缩进追加会生成非法 YAML。
+    #[test]
+    fn materialize_profile_patch_moves_insert_block_last() {
+        let template = "- id: webserver\n  config:\n    port: 3185\n";
+        let existing = "- id: webserver\n  config:\n    port: 3085\n\n\
+                        - insert:\n    - id: client-nav\n      name: '@x'\n\n\
+                        - id: llm-pi-ai\n  config:\n    providers: {}\n";
+        let out = materialize_profile_patch(existing, template, 3186).unwrap();
+        assert!(out.contains("- id: llm-pi-ai"), "用户行应保留: {out}");
+        assert!(out.contains("- insert:"), "insert 块应保留: {out}");
+        assert!(out.contains("- id: client-nav"), "insert 内容应保留: {out}");
+        let insert_at = out.find("- insert:").unwrap();
+        assert!(
+            out.find("- id: llm-pi-ai").unwrap() < insert_at,
+            "insert 块应被挪到末尾: {out}"
+        );
+        // 追加一个插件 entry 后仍是合法 YAML 形状(顶层行只有 insert 在最后)
+        let mut patched = out.clone();
+        patched.push_str("    - id: 'dsh-ui-a'\n      name: 'dsh-ui-a'\n");
+        let rows = split_patch_rows(&patched);
+        assert_eq!(
+            rows.last().map(|(id, _)| id.clone()),
+            Some(PatchRowId::Insert),
+            "追加后 insert 块仍应是最后一个顶层行: {rows:?}"
+        );
+    }
+
+    /// 幂等:第二次物化不应重复追加已存在的行,也不应改变 insert 块位置。
+    #[test]
+    fn materialize_profile_patch_is_idempotent() {
+        let template = "- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 3185\n\n\
+                        - insert:\n    - id: client-nav\n      name: '@x'\n";
+        let first = materialize_profile_patch(template, template, 3186).unwrap();
+        let second = materialize_profile_patch(&first, template, 3186).unwrap();
+        assert_eq!(first, second, "二次物化应无变化");
+        assert_eq!(
+            first.matches("- id: webserver").count(),
+            1,
+            "不应重复追加: {first}"
+        );
+    }
+
+    /// 用户行已把 insert 块挤到中间时,重复物化必须稳定收敛(不再抖动)。
+    #[test]
+    fn materialize_profile_patch_converges_when_rows_follow_insert() {
+        let template = "- id: webserver\n  config:\n    port: 3185\n\n\
+                        - insert:\n    - id: client-nav\n      name: '@x'\n";
+        let existing = "- id: webserver\n  config:\n    port: 3085\n\n\
+                        - insert:\n    - id: client-nav\n      name: '@x'\n\n\
+                        - id: llm-pi-ai\n  config:\n    providers: {}\n";
+        let first = materialize_profile_patch(existing, template, 3186).unwrap();
+        let second = materialize_profile_patch(&first, template, 3186).unwrap();
+        assert_eq!(first, second, "insert 归位后应稳定: {first:?}");
+    }
+
+    /// 磁盘文件不是本模板的产物(没有 webserver 端口行)时报错,由调用方备份重建。
+    #[test]
+    fn materialize_profile_patch_rejects_foreign_document() {
+        let template = "- id: webserver\n  config:\n    port: 3185\n";
+        assert!(materialize_profile_patch("[]\n", template, 3185).is_err());
+        assert!(materialize_profile_patch("- id: other\n  config: {}\n", template, 3185).is_err());
+    }
+
+    /// insert 块内部缩进行不应被当成顶层行,否则 insert 块会被误判「已存在」。
+    #[test]
+    fn split_patch_rows_ignores_indented_insert_entries() {
+        let text = "- id: webserver\n  config:\n    port: 3185\n\n\
+                    - insert:\n    - id: client-nav\n      name: '@x'\n    - id: other\n      name: '@y'\n";
+        let rows = split_patch_rows(text);
+        assert_eq!(rows.len(), 2, "应只有两个顶层行: {rows:?}");
+        assert_eq!(rows[0].0, PatchRowId::Id("webserver".into()));
+        assert_eq!(rows[1].0, PatchRowId::Insert);
     }
 
     #[test]
