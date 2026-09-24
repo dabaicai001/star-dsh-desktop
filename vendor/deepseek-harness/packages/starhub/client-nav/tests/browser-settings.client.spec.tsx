@@ -56,11 +56,11 @@ describe('BrowserSettingsTab', () => {
     })
     try {
       render(<BrowserSettingsTab />)
-      const select = await screen.findByRole('combobox')
+      const select = await screen.findByRole('combobox') as HTMLSelectElement
       expect(select.value).toBe('obscura')
-      expect((screen.getByDisplayValue('https://gateway.internal')).value).toBe('https://gateway.internal')
-      expect((screen.getByDisplayValue('jev-pro')).value).toBe('jev-pro')
-      expect((screen.getByRole('checkbox')).checked).toBe(true)
+      expect((screen.getByDisplayValue('https://gateway.internal') as HTMLInputElement).value).toBe('https://gateway.internal')
+      expect((screen.getByDisplayValue('jev-pro') as HTMLInputElement).value).toBe('jev-pro')
+      expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
       expect(screen.getByText('已配置')).toBeTruthy()
     } finally {
       restore()
