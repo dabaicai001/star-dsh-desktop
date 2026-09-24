@@ -9,6 +9,16 @@
 
 ---
 
+## [0.125.0] - 2026-09-24
+
+### 变更
+- **DSH 内核整体升级到上游 `dsh-v0.1.7-rc.1`(commit `46a7f68b`,上游 master HEAD)**:`vendor/deepseek-harness` 从 `dsh-v0.1.7-alpha.2`(`00102833`)整树替换到 rc.1。差异盘点:上游新增 66 文件、上游演进 886 文件、本地独有 322 文件(`packages/starhub/*` 207 + `packages/typert/*` 87 + 三个上游早已删除的兼容垫片包 + 品牌资产 + 脚本)。**`packages/starhub/*`、`apps/starhub-window`、`examples/starhub-web` 在「上游演进」清单里为 0 条**——StarHub 定制面与上游演进面完全不相交,解耦目标继续成立。重贴四张根配置补丁(`package.json` 的 `gen:typert` 前置 + `unrun` devDep、`tsconfig.base.json` 的 starhub 别名组、`tsconfig.client.json` 4 条 refs、`tsconfig.host.json` 9 条 refs),`UPSTREAM_COMMIT.txt` 同步。清理上游已迁走的死文件:`ui-attachment` 的 `ImageLightbox.{tsx,module.css}` 及 spec(上游 rc.1 把该组件迁到 `ui-primitives`,ui-attachment 改为从 baseline external 导入)与误提交的 `runtime-diagnostics/invariants/src/index.{js,map,d.ts}` 构建产物。适配清单见 `docs/DSH升级适配清单-v0.1.7-rc.1.md`。
+- **上游 `llm-deepseek` 删除 `protocol` 配置项 → 退役 StarHub 测试补丁**:上游 rc.1 让 `resolveAdapterOptions` 见到 `protocol` 字段直接 throw「protocol is not configurable; remove it and use a Messages-compatible baseURL」,provider 固定走 Messages 协议(`/v1/messages`),mock server 同步改为服务该端点。此前为把 mock 的 chat/completions 扮成 DeepSeek 默认 messages 协议而生成的 `test-protocol.patch.yml` 因此会让 llm-deepseek 整个 entry 激活失败(boot 日志 "3 entries did not activate")、agent loop 拿不到 LLM。删除该 patch 生成,`setup_test_dsh_home` 只返回 DSH_HOME,三个端到端用例的 `patch_files` 相应去掉一项。
+- **重放 `sdk-jsonrpc-server` 本地补丁(整树替换时被上游同名文件覆盖)**:补丁内容(`ctx.provide('sdk-transport')` / `ctx.provide('sdk-notifications')` + `transport.onNotification` 多路分发)与升级前逐字节一致;`notifications.ts` 补丁文件本身因是「上游包内新增文件」而未丢失,但 `index.ts` 里的 import/provide/onNotification 三处接线被上游新版覆盖,已按原样重贴并校验 diff 为空。这是「上游包内新增文件」式补丁的固有代价:新增文件不会丢,接线会丢,每次升级必须重放。
+
+### 修复
+- **设置重启后全部失效(通用 / 模型 / 权限):web.rs 每次启动整体覆盖 dsh 设置落盘的同一个文件**:GUI 设置改动经 `ctx.remote.settings` → `SettingsController` → `ConfigEditor.edit()` 落盘到 `$DSH_HOME/profiles/web/cordis.patch.yml`(DSH 0.1.7 起设置体系改 Config schema 派生,`documentPath = profileContext.patchPath`),写入本身成功、无「保存」按钮。但 `src-tauri/src/harness/web.rs` 自 v0.95.x 起每次启动都用 `examples/starhub-web/cordis.patch.yml` 模板**无条件整体覆写**该文件(只为改 webserver 端口),覆写前不读、不备份、不合并 → 0.1.7 之前设置写在 `web.rs` 从不碰的 `settings.yaml` 时这个覆写无害,0.1.7 之后变成每次重启清空用户设置(用户描述「像是没有保存上」)。修复为幂等物化 `materialize_profile_patch(existing, template, port)`:① webserver 端口就地改写(唯一必须每次变的值);② 模板有、磁盘没有的顶层行按原样补齐;③ 磁盘有、模板没有的行**全部保留**(即设置页写入的一切);④ `- insert:` 块规范为最后一块——设置页新行经 `document.add` 落在文件末尾会把 insert 挤到中间,而 `sync_user_client_plugins` 固定往末尾按 4 空格缩进追加插件 entry,insert 不在最后时追加结果就是非法 YAML(实测 `bad indentation of a mapping entry`)、dsh web 组合直接 boot 失败;⑤ 找不到 webserver 端口行(损坏/被第三方改写)时 `.bak-<时间戳>` 备份后按模板重建,与 dsh 自己的 `profile-sanitize` 同构。另用 Node 镜像同一算法对**真实线上文件 + 真实模板**做端到端校验:7 行 → 7 行无丢失、端口改写、insert 在末、追加插件 entry 后 YAML 仍合法。新增 5 个单测(保留用户行 / insert 归位 / 幂等 / 收敛 / 拒绝异物文档),`harness::web` 17 例全绿。沉淀见 `docs/踩坑记录.md` §53。
+
 ## [0.124.0] - 2026-09-24
 
 ### 变更

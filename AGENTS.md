@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.124.0(**Jev 决策启用后改为强制(行为变更)**:此前 `browser_decide` 按需调用形同虚设(实测 AI 操作浏览器 0 次调用);现 `ai.jev.enabled=1` 后每个页面动作(click/type/scroll/press_key/select_option)执行前必须先调 `browser_decide` 拿新决策,否则执行层拒绝(软错误);一次动作一次决策,页面变化类工具(navigate/open/back/forward/reload/extract/eval)吊销旧令牌;实现为 `browser/mod.rs` 会话级决策令牌状态机 `JevGate` + 门控/吊销表单测;Jev 不可用时动作门保持关闭(fail loud),关开关即退回按需。v0.123.4 已修 CI tsc TS2339 与 Jev base_url 缺省为空、加决策 tracing 日志。) |
+| 当前版本 | v0.125.0(**DSH 内核整体升级到上游 `dsh-v0.1.7-rc.1`(commit `46a7f68b`,上游 master HEAD)**:`vendor/deepseek-harness` 从 `dsh-v0.1.7-alpha.2`(`00102833`)整树替换到 rc.1。差异盘点:上游新增 66 文件、上游演进 886 文件、本地独有 322 文件(`packages/starhub/*` 207 + `packages/typert/*` 87 + 三个上游早已删除的兼容垫片包 + 品牌资产 + 脚本)。**`packages/starhub/*`、`apps/starhub-window`、`examples/starhub-web` 在「上游演进」清单里为 0 条**——StarHub 定制面与上游演进面完全不相交,解耦目标继续成立。重贴四张根配置补丁(`package.json` 的 `gen:typert` 前置 + `unrun` devDep、`tsconfig.base.json` 的 starhub 别名组、`tsconfig.client.json` 4 条 refs、`tsconfig.host.json` 9 条 refs),`UPSTREAM_COMMIT.txt` 同步。清理上游已迁走的死文件:`ui-attachment` 的 `ImageLightbox.{tsx,module.css}` 及 spec(上游 rc.1 把该组件迁到 `ui-primitives`,ui-attachment 改为从 baseline external 导入)与误提交的 `runtime-diagnostics/invariants/src/index.{js,map,d.ts}` 构建产物。适配清单见 `docs/DSH升级适配清单-v0.1.7-rc.1.md`。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-24 (v0.124.0)*
+*最后更新: 2026-09-24 (v0.125.0)*
