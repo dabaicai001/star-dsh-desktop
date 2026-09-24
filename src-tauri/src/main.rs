@@ -225,6 +225,10 @@ fn main() {
             #[cfg(feature = "screenshot")]
             app.manage(commands::screenshot::ScreenshotSession::default());
 
+            // AI 浏览器空闲自动关闭:webview 窗口 60s 无新 browser_* 调用
+            // 且无在途命令时自动关闭,下次调用重建(见 browser::idle)。
+            browser::idle::spawn_idle_watchdog(app.handle().clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

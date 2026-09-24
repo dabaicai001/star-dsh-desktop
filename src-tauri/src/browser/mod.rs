@@ -10,6 +10,7 @@
 //! Tauri IPC,由 CDP 触发,风险面由 CDP 命令白名单收窄。
 
 pub mod decide;
+pub mod idle;
 pub mod obscura;
 pub mod script;
 pub mod web_shell;
@@ -28,7 +29,9 @@ mod keymap;
 
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
 
@@ -66,14 +69,42 @@ type EvalOutcome = (bool, Option<String>);
 
 /// 在途 eval 请求登记表(browser_internal_result 命令按 id 应答)。
 /// 仅 webview 后端使用;obscura 后端经 CDP Runtime.evaluate 直取结果。
+///
+/// 另持两份空闲看门狗(`idle`)所需的状态:最后一次 `browser_*` 调用的时刻
+/// (按调用进入计时,长轮询/慢页面加载也算活动中)与在途调用数。
 #[derive(Default)]
 pub struct BrowserManager {
     pending: Mutex<HashMap<String, oneshot::Sender<EvalOutcome>>>,
+    /// 最后一次 browser_* 调用进入的时刻(未调用过为 None)。
+    last_activity: Mutex<Option<Instant>>,
+    /// 在途 browser_* 调用数(含其内部的 Extract/CDP 等待)。
+    in_flight: AtomicUsize,
 }
 
 impl BrowserManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 登记一次 browser_* 调用:刷新活动时刻并计数;返回的守卫在调用结束
+    /// (含提前返回/报错)时递减,供空闲看门狗判断「没有进行中调用」。
+    pub fn begin_call(&self) -> CallGuard<'_> {
+        self.in_flight.fetch_add(1, Ordering::SeqCst);
+        *self.last_activity.lock().expect("browser activity stamp") = Some(Instant::now());
+        CallGuard(self)
+    }
+
+    /// 距最后一次 browser_* 调用的空闲时长(从未调用过为 None)。
+    pub fn idle_for(&self) -> Option<Duration> {
+        self.last_activity
+            .lock()
+            .expect("browser activity stamp")
+            .map(|at| at.elapsed())
+    }
+
+    /// 在途 browser_* 调用数。
+    pub fn in_flight(&self) -> usize {
+        self.in_flight.load(Ordering::SeqCst)
     }
 
     /// 页面 JS 回传:应答按 id 配对;未知 id(导航后迟到的旧应答)丢弃并记日志。
@@ -106,9 +137,18 @@ impl BrowserManager {
         count
     }
 
-    #[cfg(test)]
+    /// 在途 eval 请求数(空闲看门狗与单测共用)。
     pub fn pending_count(&self) -> usize {
         self.pending.lock().expect("browser pending map").len()
+    }
+}
+
+/// browser_* 调用生命周期守卫:drop 时递减在途计数。
+pub struct CallGuard<'a>(&'a BrowserManager);
+
+impl Drop for CallGuard<'_> {
+    fn drop(&mut self) {
+        self.0.in_flight.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -291,6 +331,10 @@ pub async fn execute_from_bridge(
     let app = bridge
         .app()
         .ok_or_else(|| "应用句柄未就绪(启动序列未完成)".to_string())?;
+    // 调用登记(活动时刻 + 在途计数):空闲看门狗据此判断窗口可否自动关闭。
+    // 守卫覆盖整个调用(含内部 Extract/Jev HTTP),drop 时计数递减。
+    let manager = app.state::<BrowserManager>();
+    let _call = manager.begin_call();
     let action = parse_action(name, args)?;
     // 运行时决定后端:每次查询设置(轻量 SQLite),避免引擎与设置脱节。
     let engine = engine_setting(&app).await;

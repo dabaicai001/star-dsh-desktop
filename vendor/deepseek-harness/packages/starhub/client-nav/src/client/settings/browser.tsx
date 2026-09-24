@@ -12,7 +12,10 @@
  * keyring 的 `set/get_ai_model_api_key`(id = "jev")。默认关闭:页面快照会
  * 外发到所配置端点,私有部署场景请确认合规后再开启。
  *
- * 保存经 browser_set_engine 写 settings 表;AI 下一次 browser_* 调用即按新值生效。
+ * 引擎与 Jev 配置都是本地草稿:只有点击底部「保存」才经 browser_set_engine /
+ * browser_set_jev_config 落库;未点保存的任何修改都不生效。API key 是 keyring
+ * 写入(敏感),保留独立的「保存密钥 / 删除密钥」按钮。保存后 AI 下一次
+ * browser_* 调用即按新值生效。
  */
 import { useEffect, useState } from 'react'
 import { tauriInvoke } from '../tauri.ts'
@@ -43,21 +46,32 @@ const JEV_KEY_ID = 'jev'
 
 type KeyPresence = 'unknown' | 'set' | 'missing'
 
-/** AI 浏览器设置 tab 内容。 */
+/** 草稿与已落库快照一致 → 无待保存修改。 */
+function sameJev(a: JevConfig, b: JevConfig): boolean {
+  return a.enabled === b.enabled
+    && a.baseUrl === b.baseUrl
+    && a.model === b.model
+    && a.threshold === b.threshold
+    && a.timeoutMs === b.timeoutMs
+}
+
+/** AI 浏览器设置 tab 内容(单一「保存」入口,引擎 + Jev 配置一起落库)。 */
 export function BrowserSettingsTab() {
   const [engine, setEngine] = useState<BrowserEngine>('webview')
+  const [persistedEngine, setPersistedEngine] = useState<BrowserEngine>('webview')
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const [jev, setJev] = useState<JevConfig>(JEV_DEFAULT)
-  const [jevSaved, setJevSaved] = useState(false)
+  const [persistedJev, setPersistedJev] = useState<JevConfig>(JEV_DEFAULT)
   const [keyPresence, setKeyPresence] = useState<KeyPresence>('unknown')
   const [keyDraft, setKeyDraft] = useState('')
   const [keySaving, setKeySaving] = useState(false)
 
   useEffect(() => {
     void tauriInvoke<BrowserEngine>('browser_get_engine')
-      .then(value => setEngine(value))
+      .then(value => { setEngine(value); setPersistedEngine(value) })
       .catch((cause: unknown) => {
         setError(cause instanceof Error ? cause.message : String(cause))
       })
@@ -65,7 +79,11 @@ export function BrowserSettingsTab() {
 
   useEffect(() => {
     void tauriInvoke<JevConfig>('browser_get_jev_config')
-      .then(value => setJev({ ...JEV_DEFAULT, ...value }))
+      .then((value) => {
+        const next = { ...JEV_DEFAULT, ...value }
+        setJev(next)
+        setPersistedJev(next)
+      })
       .catch((cause: unknown) => {
         setError(cause instanceof Error ? cause.message : String(cause))
       })
@@ -74,20 +92,14 @@ export function BrowserSettingsTab() {
       .catch(() => setKeyPresence('missing'))
   }, [])
 
+  /** 引擎或 Jev 任一字段与已落库值不同 → 有待保存修改。 */
+  const dirty = engine !== persistedEngine || !sameJev(jev, persistedJev)
+
   const onSave = async () => {
+    setSaving(true)
     setSaved(false)
     try {
       await tauriInvoke('browser_set_engine', { engine })
-      setError(null)
-      setSaved(true)
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    }
-  }
-
-  const onSaveJev = async () => {
-    setJevSaved(false)
-    try {
       await tauriInvoke('browser_set_jev_config', {
         enabled: jev.enabled,
         baseUrl: jev.baseUrl.trim(),
@@ -95,10 +107,14 @@ export function BrowserSettingsTab() {
         threshold: jev.threshold,
         timeoutMs: jev.timeoutMs,
       })
+      setPersistedEngine(engine)
+      setPersistedJev(jev)
       setError(null)
-      setJevSaved(true)
+      setSaved(true)
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -146,11 +162,6 @@ export function BrowserSettingsTab() {
           <option value="obscura">obscura(无头引擎,低内存,反指纹,直播查看器窗口)</option>
         </select>
       </label>
-      <div>
-        <button className={css.button} onClick={() => { void onSave() }}>保存</button>
-      </div>
-      {saved && <div className={s.hint}>已保存。</div>}
-      {error !== null && <div className={css.errorBanner}>{error}</div>}
 
       <h3>Jev 决策</h3>
       <p className={s.hint}>
@@ -166,7 +177,7 @@ export function BrowserSettingsTab() {
         <input
           type="checkbox"
           checked={jev.enabled}
-          onChange={event => { setJev({ ...jev, enabled: event.target.checked }); setJevSaved(false) }}
+          onChange={event => { setJev({ ...jev, enabled: event.target.checked }); setSaved(false) }}
         />
         启用 Jev 决策(默认关闭)
       </label>
@@ -177,7 +188,7 @@ export function BrowserSettingsTab() {
           type="text"
           value={jev.baseUrl}
           placeholder="https://api.typesafe.ai"
-          onChange={event => { setJev({ ...jev, baseUrl: event.target.value }); setJevSaved(false) }}
+          onChange={event => { setJev({ ...jev, baseUrl: event.target.value }); setSaved(false) }}
         />
       </label>
       <label className={css.field}>
@@ -187,7 +198,7 @@ export function BrowserSettingsTab() {
           type="text"
           value={jev.model}
           placeholder="jev-latest"
-          onChange={event => { setJev({ ...jev, model: event.target.value }); setJevSaved(false) }}
+          onChange={event => { setJev({ ...jev, model: event.target.value }); setSaved(false) }}
         />
       </label>
       <label className={css.field}>
@@ -199,7 +210,7 @@ export function BrowserSettingsTab() {
           max={1}
           step={0.05}
           value={jev.threshold}
-          onChange={event => { setJev({ ...jev, threshold: Number(event.target.value) }); setJevSaved(false) }}
+          onChange={event => { setJev({ ...jev, threshold: Number(event.target.value) }); setSaved(false) }}
         />
       </label>
       <label className={css.field}>
@@ -211,13 +222,9 @@ export function BrowserSettingsTab() {
           max={60000}
           step={500}
           value={jev.timeoutMs}
-          onChange={event => { setJev({ ...jev, timeoutMs: Number(event.target.value) }); setJevSaved(false) }}
+          onChange={event => { setJev({ ...jev, timeoutMs: Number(event.target.value) }); setSaved(false) }}
         />
       </label>
-      <div>
-        <button className={css.button} onClick={() => { void onSaveJev() }}>保存配置</button>
-      </div>
-      {jevSaved && <div className={s.hint}>Jev 配置已保存,下一次 browser_decide 生效。</div>}
 
       <label className={css.field}>
         <span className={s.fieldLabel}>API Key(存系统钥匙串,不留明文)</span>
@@ -246,6 +253,19 @@ export function BrowserSettingsTab() {
           </button>
         )}
       </div>
+
+      <div>
+        <button
+          className={css.button}
+          disabled={saving}
+          onClick={() => { void onSave() }}
+        >
+          保存
+        </button>
+      </div>
+      {error !== null && <div className={css.errorBanner}>{error}</div>}
+      {saved && <div className={s.hint}>已保存。</div>}
+      {!saved && dirty && <div className={s.hint}>有未保存的修改,点击「保存」后生效。</div>}
     </div>
   )
 }
