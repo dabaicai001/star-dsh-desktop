@@ -8,7 +8,7 @@
 ## [未发布]
 
 ### 文档
-- 📝 docs(browser): Jev 调研报告补「结构化决策契约」实证(§2.1:请求/应答 JSON 节选——`criteria` 封闭集由调用方定义,Jev 只做「选一个」)与「为什么快:输出空间决定延迟量级」链路对比(§4.2:传统 截图/DOM → 文本生成 → 解析 → 执行 vs Jev DOM → choice → 直接映射 `BrowserAction`;标注延迟 p50/p99 仍未实测,§10.3 #4)。新增 `docs/browser_auto-连续执行循环-立项设计.md`——Phase 2 立项:工具规格(`goal` 必填、`max_steps` 默认 8 硬上限 20、`stop_on_lowconf`、`input_text`)、Rust 内 extract → decide → 执行循环(引擎解耦、防震荡、JevGate 交互:进吊销表不进门控表)、授权态(v1「一次调用一次软确认 + 循环内步骤继承」,与 desktop/android 任务级授权同构;「N 分钟免重复确认」降级 v1.1 及机制成本分析)、能力划界(Jev 不生成自由文本:`type` 需调用方提供 `input_text`、`select_option` 交还主模型)、文件级改动清单、测试计划与实测关(延迟先实测再开工)。
+- 📝 docs(browser): Jev 调研报告补「结构化决策契约」实证(§2.1:请求/应答 JSON 节选——`criteria` 封闭集由调用方定义,Jev 只做「选一个」)与「为什么快:输出空间决定延迟量级」链路对比(§4.2:传统 截图/DOM → 文本生成 → 解析 → 执行 vs Jev DOM → choice → 直接映射 `BrowserAction`;标注延迟 p50/p99 仍未实测,§10.3 #4)。新增 `docs/browser_auto-连续执行循环-立项设计.md`——Phase 2 立项:工具规格(`goal` 必填、`max_steps` 默认 8 硬上限 20、`stop_on_lowconf`、`input_text`)、Rust 内 extract → decide → 执行循环(引擎解耦、防震荡、JevGate 交互:进吊销表不进门控表)、授权态(定时授权,已定:approval-bridge 从会话日志的 `approval/asked` + `approval/decided` 审计对派生授予——首次软确认后 N 分钟(Config `autoGrantMinutes`,默认 10)内本会话后续 `browser_auto` 不再逐一弹卡;无状态、零 Rust 改动;机制选型留档设计文档 §4.3)、能力划界(Jev 不生成自由文本:`type` 需调用方提供 `input_text`、`select_option` 交还主模型)、文件级改动清单、测试计划与实测关(延迟先实测再开工)。
 
 ---
 

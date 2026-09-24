@@ -10,7 +10,7 @@
 
 1. **目标**:把 Jev 的毫秒级结构化决策从「每步一问」升级为「循环内自治」——主模型一次工具往返,Rust 内部完成最多 N 步 extract → decide → 执行。这是兑现「Jev 做网页操作特别快」的唯一形态:Phase 1 每个动作仍要主模型一次完整 round-trip(调研报告 §4.1),毫秒级决策被秒级往返淹没。
 2. **形态**:新工具 `browser_auto { goal, max_steps?, stop_on_lowconf?, input_text?, snapshot? }`;步数默认 8、硬上限 20;循环在 Rust 内、引擎解耦(webview / obscura 共用)。
-3. **授权态(v1)**:「一次调用一次软确认,循环内步骤继承该确认」——与 `desktop_create_sandbox` / `android_connect` 的既有任务级授权同构(确认即授权本次爆炸半径)。调研报告 §6.7 的「N 分钟免重复确认」**降级为 v1.1**,原因见 §4.3。
+3. **授权态(已定:定时授权,会话日志派生,无状态)**:`browser_auto` 首次调用弹软确认卡;确认后 N 分钟(Config 字段 `autoGrantMinutes`,默认 10,cordis.yml 可配)内,本会话后续 `browser_auto` 不再逐一弹卡。授予不新建任何状态——直接从 session 日志的 `approval/asked` + `approval/decided` 审计对派生(与 `sessionPreset()` 读 `permission/preset` 同一模式),**零 Rust 改动、零新 Tauri command**;爆炸半径仍由 `max_steps` 帽死。机制选型见 §4.3。
 4. **能力划界(由 Jev 的结构化决策本质决定,不是妥协)**:`click`/`scroll`/`press_key`/`done` 全自动;`type` 需调用方提供 `input_text`;`select_option` 及任何需要「新文本」的步骤 → 交接回主模型。Jev 不生成自由文本——这正是它快的原因(调研报告 §4.2),自动循环必须按这个边界设计。
 5. **风险 TOP3**:循环震荡(防震荡判定 + 步数帽)、无逐步人工确认的爆炸半径(步数帽 + 确认卡明示范围)、延迟/成本未实测(§7.4 先实测再开工)。
 
@@ -115,28 +115,37 @@ return 汇总(终止原因 + 每步一行 + 最终 url/title)
 
 ## 4. 授权态与审批
 
-### 4.1 现状事实(代码)
+### 4.1 现状事实(代码,已核实)
 
-- approval-bridge `classifyStarHubCall`(同步纯函数):`browser_click/type/press_key/select_option/open/navigate` → 软 ask;`browser_decide` → default ALLOW;`desktop_create_sandbox` / `android_connect` → ask,且理由文本即任务级授权宣告;**箱内 / 设备内操作 → default ALLOW,由宿主在执行点强制**。
-- 即仓库既有范式:**确认承载调用建立授权,细粒度操作不再逐次确认,执行点在 Rust 强制**。
-- 另注:`danger-full-access` 预设下软 ask 被静默放行(调研报告 §3.4)——审批层在该预设下不是硬边界,爆炸半径控制必须靠 Rust 侧的步数帽与白名单。
+- approval-bridge `classifyStarHubCall`(同步纯函数):`browser_click/type/press_key/select_option/open/navigate` → 软 ask;`browser_decide` → default ALLOW;`desktop_create_sandbox` / `android_connect` → ask,且理由文本即任务级授权宣告;**箱内 / 设备内操作 → default ALLOW,由宿主在执行点强制**(Rust 侧 `authz: HashMap<session_id, {sandbox_id|serial, expires_at}>`,TTL 60 分钟,`require_authz` 三连校验:无授权 / 过期 / 目标不匹配)。
+- **审批结局在会话日志里(本立项选型依据)**:`approval/asked`(`{id, toolName, callId?, reason?}`)与 `approval/decided`(`{id, outcome}`)是 `user-approval` 的 `ApprovalService.request()` 自己 append 的审计对,**与 answerer 配置无关**——starhub-web 组合里 approval-bridge 是 `answerer: false`(应答交 web 自己的确认框),插件的 `approval/request` 处理器根本不注册,但审计对照样落日志。插件用现成的 `session.eventAt()` 倒序扫描即可读到(与 `sessionPreset()` 读 `permission/preset`、`overrideOf()` 读 `approval/policy` 同一模式)。`'allowed-once'` 是唯一的授予结局。
+- 另注:`danger-full-access` 预设下软 ask 被静默放行(approval-bridge L459)——审批层在该预设下不是硬边界,爆炸半径控制必须靠 Rust 侧的步数帽与白名单。
 
-### 4.2 v1 设计(推荐)
+### 4.2 设计:定时授权(会话日志派生,无状态)
 
 - `browser_auto` 显式登记 `STARHUB_DOMAIN_TOOLS`(**必须**,否则风险门返回 null = 完全不确认,调研报告 §6.6.1 踩过坑)+ switch case → **软 ask**,理由文本:
-  「连续执行循环:确认后 AI 将在当前页面自动执行最多 N 步真实操作(每步等同于一次 browser_click/type/scroll/press_key),可能点击链接、提交表单」。
-- 循环内步骤不经桥 → 不触发逐动作 ask,**继承本次调用的授权**(与 desktop 箱内操作同构)。
-- 爆炸半径 = `max_steps`(默认 8,硬上限 20)次既有单步原语;动作白名单、编号纯数字校验、confidence ∈ [0,1] 全部沿用 Phase 1 现成逻辑。
-- **零新增状态**:v1 不加 Rust 授权态(map / 过期时间)、不加 Tauri command、不动设置 UI。
+  「连续执行循环:确认后 AI 将在当前页面自动执行最多 N 步真实操作(每步等同于一次 browser_click/type/scroll/press_key),可能点击链接、提交表单;确认后 N 分钟内本会话的后续 browser_auto 不再逐一确认」。
+- **授予判定(日志派生)**:pre-execute 门对 `browser_auto` 分类出 ask 后,倒序扫描本会话日志:
+  1. 找**最近一条** `approval/asked` 且 `toolName === 'browser_auto'`(取它的 `id` 与事件头 `time`);
+  2. 倒序途中已记录的 `approval/decided`(按 `id` 配对;decided 必随 asked 之后,倒序时先遇到)取 `outcome`;
+  3. `outcome === 'allowed-once'` 且 `now - time ≤ autoGrantMinutes × 60_000` → **不当 ask,直接放行**;其余(没有 / 被拒 / 取消 / unavailable / 超时)→ 照弹。
+- **TTL**:Config 字段 `autoGrantMinutes`(默认 10,cordis.yml 可配;desktop/android 任务级授权为 60 分钟先例——浏览器操作打到外部站点、效应更外溢,默认取更短的 10 分钟)。TTL 从 `approval/asked` 的事件时间起算(与 decided 只差用户点那几下)。
+- **范围**:会话级。浏览器窗口与应用 1:1(`ai-browser` 单 label / obscura 单引擎),无需更细粒度;授予只抑制卡片,**不扩大单次爆炸半径**(仍由 `max_steps` 帽死)。
+- **循环内步骤**:不经桥 → 不触发逐动作 ask,继承本次调用的授权(与 desktop 箱内操作同构);任何预设下都成立,与授予判定无关。
+- **无状态**:不建 map、不过期清理、不管生命周期——授予判定每次从日志现算,天然可重放、可审计;会话从日志恢复后判定一致。
+- **零 Rust 改动、零新 Tauri command、零设置 UI**(TTL 暴露到「AI 浏览器」tab 是抛光项,见 §9)。
 
-### 4.3 为什么把「N 分钟免重复确认」降级 v1.1
+### 4.3 机制选型:为什么是日志派生
 
-调研报告 §6.7 原设计「一次确认 = 本会话 N 分钟内免重复确认」需要 approval-bridge 在读得到 Rust 授权态的前提下才 skip;而 `classifyStarHubCall` 是同步纯函数,拿不到异步状态。两条可行机制都有成本:
+候选三条(结论已定,留档备查):
 
-1. **session 事件同步**:Rust 授信时发事件,插件仿现成 `sessionPreset()`(按 seq 倒序读 `permission/preset` 事件)倒序读授权事件—— vendor 侧要改读取逻辑 + Rust 侧发事件,且事件模型属于模型可见面,改动面超出「一个新工具」;
-2. **状态命令 + 设置 UI**:新增 `browser_*` Tauri command(三道同步)+ 确认卡动作按钮——多一处 ACL / 命令面 / UI 面。
+| 机制 | 成本 | 结论 |
+|---|---|---|
+| **会话日志派生**(选定) | approval-bridge 内一个倒序扫描纯函数 + Config 字段 + 单测;零 Rust、零命令、零新事件类型 | **采用**:审计对本来就落在日志里,插件是现成读者(`sessionPreset` 先例);无状态、可重放 |
+| 插件内 map + `approval/request` 观察结局 | 要 map 与生命周期管理;且 starhub-web 是 `answerer: false`,该组合里处理器不注册 → 直接失效 | 否:在主力组合里不成立 |
+| Rust 侧 authz + 状态命令 + 确认卡按钮 | 新 Tauri command(三道同步)+ capabilities/ACL + client-nav UI | 否:命令面 / UI 面成本最高,且对「抑制卡片」没有额外约束力 |
 
-v1 的「每次调用一卡」并非不可接受:auto 的定位是**一次任务一轮**,卡上文本就是授权范围;真正的频繁调用是 Phase 3 之后的事。先零状态上线,用真实使用数据(审计里 auto 调用频次)决定要不要 v1.1。
+判定要点:授予判定唯一职责是「本会话 N 分钟内别再问」——这是**审批层的 UX 状态**,不是安全边界(安全边界是白名单 / 编号校验 / 步数帽 / 审批层本身,§4.1 末)。UX 状态放在产生 ask 的插件里、从既有审计日志派生,是所有权与成本的最小解。
 
 ---
 
@@ -172,7 +181,7 @@ Jev 的输出是被 `criteria` 钉死的封闭集选择(调研报告 §4.2)—�
 | 文件 | 改动 |
 |---|---|
 | `packages/starhub/tools/src/index.ts` | `BRIDGED_TOOLS` 浏览器段追加 `browser_auto` spec(description 写明:步数上限、确认范围、`[HANDOFF]`/`[LOWCONF]` 语义) |
-| `packages/starhub/approval-bridge/src/index.ts` | `STARHUB_DOMAIN_TOOLS` 加 `'browser_auto'`(**必须**)+ switch case → 软 ask(§4.2 理由文本) |
+| `packages/starhub/approval-bridge/src/index.ts` | `STARHUB_DOMAIN_TOOLS` 加 `'browser_auto'`(**必须**)+ switch case → 软 ask(§4.2 理由文本);**定时授权**:pre-execute 门内对 browser_auto 先做日志派生判定(§4.2),Config 增字段 `autoGrantMinutes`(默认 10);扫描判定抽纯函数助手(单测覆盖);包 README 与 JSDoc 同批更新(vendor 纪律) |
 | `packages/starhub/tools/tests/bridged-tools.spec.ts` | 零改动(机械对齐断言自动覆盖新工具) |
 | `packages/starhub/approval-bridge/tests/risk-gate.spec.ts` | 补 `browser_auto` 档位断言(软 ask、reason 含步数范围) |
 
@@ -192,12 +201,13 @@ Jev 的输出是被 `criteria` 钉死的封闭集选择(调研报告 §4.2)—�
 | 层 | 内容 |
 |---|---|
 | Rust(cargo) | `parse_action`:goal 空值拒绝、max_steps 越界钳制(0 / 21 / 非数字)、stop_on_lowconf 缺省 true;防震荡纯函数(重复 3 次触发 / 2 次不触发 / snapshot 连续一致);汇总渲染(终止原因 + 截断);表分区测试自动纳入 browser_auto 位置 |
-| vendor(vitest) | risk-gate:`browser_auto` 落软 ask 档、reason 文本;bridged-tools 机械对齐自动覆盖 |
+| vendor(vitest) | risk-gate:`browser_auto` 落软 ask 档、reason 文本;bridged-tools 机械对齐自动覆盖;授予判定纯函数(最近一次 allowed-once 且在 TTL 内 → 放行 / 超时 → ask / 最近一次 rejected → ask / 只有 asked 没有 decided(未决)→ ask / 更早的 allowed-once 被 recent rejected 覆盖 → ask / 非 browser_auto 的 asked 不影响) |
+| vendor(真实组合) | 审批行为属产品可见变更,按 vendor 测试政策补**非单元真实组合测试**(test-only cordis.yml 过 Loader 起进程):一次 allowed-once 后 TTL 内第二次 `browser_auto` 不再 ask;TTL 外(或调小 `autoGrantMinutes`)恢复 ask |
 | 构建 | `npm run build:window`、`npm run cargo:check` |
 
 ### 7.2 真实回归(`npm run tauri:dev`,AGENTS.md 强制)
 
-① Jev 关闭 → auto 软错误;② 开启后「找到登录并点击」自动跑通,审计一行 + starhub.log 每步 info 行;③ LOWCONF 中断交接;④ 确认卡弹出一次、循环内多步不再弹;⑤ 元素失效(页面跳转后编号作废)中断交接;⑥ 防震荡触发(构造重复页面);⑦ `type` 无 input_text → `[HANDOFF]`,补 `input_text` 后跑通;⑧ 达到 max_steps 正常收口。
+① Jev 关闭 → auto 软错误;② 开启后「找到登录并点击」自动跑通,审计一行 + starhub.log 每步 info 行;③ LOWCONF 中断交接;④ 首次 auto 弹一次卡;TTL 内第二次 auto 不弹卡;把 `autoGrantMinutes` 调小后恢复弹卡;⑤ 元素失效(页面跳转后编号作废)中断交接;⑥ 防震荡触发(构造重复页面);⑦ `type` 无 input_text → `[HANDOFF]`,补 `input_text` 后跑通;⑧ 达到 max_steps 正常收口。
 
 ### 7.3 关账
 
@@ -217,21 +227,23 @@ Jev 的输出是被 `criteria` 钉死的封闭集选择(调研报告 §4.2)—�
 | A2 | 无逐步人工确认,注入面放大(页面文本诱导点击) | 真实站点误操作 | 步数帽;确认卡明示范围;白名单/编号校验延续;页面文本只能影响「选哪个候选」,不能创造候选(decide.rs 安全边界) |
 | A3 | 延迟/成本不达预期(循环放大) | 自动化收益归零 | §7.4 实测关;步数默认 8 可调 |
 | A4 | 与 JevGate 交互出错(死锁或令牌泄漏) | auto 不可用或门失效 | 表分区单测机械钉住;循环内不过桥(§3.2) |
-| A5 | 审批疲劳(每 call 一卡) | 用户体验 | v1.1 定时授权(§4.3 两机制);先用审计频次数据决策 |
+| A5 | 审批疲劳 | 用户体验 | 定时授权(§4.2):TTL 默认 10 分钟、可配;按审计频次调 TTL |
+| A8 | 授权期内模型反复 auto | 额度 / 外部站点负担 | TTL 短 + 步数帽;授予只抑卡、不扩半径;审计频次可观察 |
 | A6 | auto 中途页面跳转,元素编号失效 | 步骤失败 | 软错误中断交接(现成语义);v1.1 可加「失效重取一次」 |
 | A7 | `danger-full-access` 预设下软 ask 静默放行 | 该预设下 auto 无卡 | 既有预设语义(用户已全局授信);Rust 侧步数帽是硬边界 |
 
 **未决问题(需拍板)**:
 
-1. 授权态是否做 v1.1 定时授权?若做,§4.3 两机制选哪个(建议:先看 v1 审计频次再定)。
-2. `max_steps` 硬上限 20 是否够(长表单场景)?
-3. `select_option` 两段式(v1.1)优先级。
-4. §7.4 实测的执行人与时间(建议:实现开工前一周,curl 50 次即可)。
+1. `max_steps` 硬上限 20 是否够(长表单场景)?
+2. `select_option` 两段式优先级。
+3. §7.4 实测的执行人与时间(建议:实现开工前一周,curl 50 次即可)。
+
+已定(用户拍板):授权态采用定时授权——机制为**会话日志派生**(§4.2 / §4.3),无状态、零 Rust 面。
 
 ---
 
 ## 9. 路线图
 
-- **v1(本立项)**:循环 + 防震荡 + per-call 软确认 + 能力划界(§5)+ 单测/回归。
-- **v1.1(按数据启动)**:定时授权态(§4.3)、`select_option` 两段式、元素失效重取一次。
+- **v1(本立项)**:循环 + 防震荡 + 能力划界(§5)+ 定时授权(§4.2,vendor 侧小改动,建议同版交付;发布节奏若需要可拆后一步,但机制已定、不再悬置)+ 单测/回归。
+- **v1.1(按数据启动)**:`select_option` 两段式、元素失效重取一次、TTL 暴露到「AI 浏览器」设置 tab。
 - **Phase 3(调研报告 §6.8)**:路由质量统计(decide 命中率 / LOWCONF 率 / 平均置信度 / 每任务步数分布——数据已在审计行,只需聚合);同一决策层复用至 `desktop_*` / `android_*`(换原语词表);内网自建端点(数据不出域)。
