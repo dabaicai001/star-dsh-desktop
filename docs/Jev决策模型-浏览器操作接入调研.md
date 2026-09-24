@@ -44,6 +44,31 @@
 | 卖点:更快、更便宜的 LLM 替代;**结构化决策** | [TechTarget](https://www.techtarget.com/it-infrastructure/news/366650696/Jev-decision-model-touted-as-quicker-cheaper-LLM-alternative)、[Spring 官方博客 2026-09-21](https://spring.io/blog/2026/09/21/spring-ai-typesafe-structured-judgment) |
 | 热度:被韩媒称为"史上用户量增长最快的付费模型";官方"今天向所有人开放,送 1.2 亿 token" | [ZDNet Korea](https://zdnet.co.kr/view/?no=20260920215302)、[今日头条](https://www.toutiao.com/article/7687890766747681321/) |
 
+**决策契约(v0.123.0 实现回填,已核实)**:Jev 的 API 本身就是「结构化进、结构化出」,没有对话式自由文本往返——
+
+- 请求 `POST {base_url}/v1/systemone`:`{ model, state, questions }`;每个 question 是 `{ type: "choice", instructions, criteria }`,`criteria` 是「候选键 → 说明」的**封闭集**;
+- 应答 `{ model, answers, usage }`;choice 答案 = `{ type, choice, probabilities, confidence }`。
+
+浏览器场景的一次往返(字段节选,完整定义见 `src-tauri/src/browser/decide.rs`):
+
+```json
+请求:{ "model": "jev-latest",
+  "state": "目标:找到登录并进入\n当前页面:示例站 (https://example.com)\n页面快照:[1] <a> 登录 href=/login …",
+  "questions": {
+    "action":  { "type": "choice", "instructions": "为了达成目标,下一步应对页面做什么?",
+                 "criteria": { "click": "点击某个编号元素", "scroll": "滚动页面以看到更多元素", "done": "目标已完成" } },
+    "element": { "type": "choice", "instructions": "如果动作是 click/type/select_option,应操作哪个元素?",
+                 "criteria": { "1": "<a> 登录 href=/login", "15": "<button> Sign in" } } } }
+
+应答:{ "model": "jev-1.13.0",
+  "answers": {
+    "action":  { "type": "choice", "choice": "click", "probabilities": { "click": 0.87, "done": 0.09, "scroll": 0.04 }, "confidence": 0.87 },
+    "element": { "type": "choice", "choice": "1",    "probabilities": { "1": 0.82, "15": 0.11 }, "confidence": 0.82 } },
+  "usage": { "input_tokens": 912, "output_tokens": 6 } }
+```
+
+候选集(六原语白名单 `ACTION_CRITERIA` + ≤60 个元素编号 `MAX_ELEMENT_CANDIDATES`)由**调用方**定义,Jev 只做「选一个」:输出空间被 `criteria` 钉死,不生成自由文本,调用方也无需解析文本——`choice` 直接映射 `BrowserAction`。这正是它快的根本原因(链路对比见 §4.2);代价是它不能产出任何"新文本"(§4.2 末)。
+
 ### 2.2 接入渠道(标题级事实)
 
 - **官方 API**:申请 API Key 即可调用(七牛云指南标题:「从申请 API Key 到置信度路由,把 TypeSafe 决策模型接进自己的代码」)。
@@ -140,8 +165,24 @@ DSH 主壳(模型 agent loop)
 
 - **输入**:目标(goal)+ 编号元素列表;正是 extract 的输出格式。
 - **输出**:结构化决策(click/type/scroll/select/press_key/navigate/done + 参数)+ 置信度;可直接映射 `BrowserAction`。
-- **特征**:毫秒级低延迟 + 远低于 LLM 的成本 → 适合"每步一调"的 agent 循环;置信度 → 可做路由(低置信度交还主模型)。
+- **特征**:毫秒级低延迟(标题级来源一致;p50/p99 实测仍缺,§10.3 #4)+ 远低于 LLM 的成本 → 适合"每步一调"的 agent 循环;置信度 → 可做路由(低置信度交还主模型)。
 - **即便 Jev 只是"更快的分类器"**:封闭集选择恰好是分类任务——怀疑者的质疑(Jev=分类器)对本场景不构成否定。
+
+#### 为什么快:输出空间决定延迟量级
+
+同一件事(「页面上下一步点什么」)两条链路的对比:
+
+| 环节 | 传统 Browser Agent | Jev |
+|---|---|---|
+| 输入 | 截图 / DOM 树 | DOM(extract 的编号元素列表) |
+| 模型任务 | 开放生成:分析页面 → 产出动作描述 | 封闭集判别:从 `criteria` 候选里选一个 |
+| 输出 | 一大段文字 / JSON 字符串 | `choice`(候选键)+ `probabilities` + `confidence` |
+| 调用方后续 | 解析文字、容错、校验字段 | 直接映射 `BrowserAction`,零解析 |
+| 延迟量级 | 秒级(随输出 token 数增长) | 毫秒级(标题级来源;未实测,§10.3 #4) |
+
+生成式链路的延迟随输出 token 数线性增长,且「生成 → 解析」两段都要容错;Jev 的输出被候选集约束为一次选择,概率分布与置信度还是解析好的结构化字段。同理,"Jev 是分类器吗"的质疑在此无关紧要——封闭集判别正是分类任务,而浏览器选元素恰恰是封闭集判别。
+
+**边界(快的代价)**:Jev 不生成自由文本,任何需要"新文本"的步骤都无法由它产出——`type` 的输入内容、`select_option` 的选项值,必须由调用方提供或交还主模型。Phase 2 的自动执行循环已按此划界(见 `docs/browser_auto-连续执行循环-立项设计.md` §5)。
 
 ### 4.3 不适合 / 要谨慎的地方
 
