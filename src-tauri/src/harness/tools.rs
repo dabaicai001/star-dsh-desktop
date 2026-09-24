@@ -181,7 +181,7 @@ async fn dispatch_tool(
     // AI 浏览器(browser_*):Rust 主进程持有无痕窗口与 eval 通道,进程内执行;
     // 窗口被用户关闭时在途 eval 立即失败收口(BrowserManager.fail_all_pending)。
     if crate::browser::BROWSER_TOOLS.contains(&name) {
-        let text = crate::browser::execute_from_bridge(bridge, name, args).await?;
+        let text = crate::browser::execute_from_bridge(bridge, session_id, name, args).await?;
         on_ai_tool_success(bridge, session_id, name, args, &text).await;
         return Ok(text);
     }

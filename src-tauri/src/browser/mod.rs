@@ -64,6 +64,33 @@ pub const BROWSER_TOOLS: &[&str] = &[
 /// 引擎选择(持久化到 settings 表。webview 为默认)。
 pub const ENGINE_SETTING_KEY: &str = "browser.engine";
 
+/// Jev 强制决策门(`ai.jev.enabled=1` 时生效):启用后每个页面动作都必须先
+/// 拿到一次**新鲜**决策——动作工具消费令牌,一次动作一次决策;页面可能变化
+/// 的工具吊销令牌(旧决策引用的元素编号不再可信)。只读观察类
+/// (state/screenshot)不影响令牌。语义见 [`JevGate`]。
+const JEV_GATED_ACTIONS: &[&str] = &[
+    "browser_click",
+    "browser_type",
+    "browser_scroll",
+    "browser_press_key",
+    "browser_select_option",
+];
+
+/// 使 Jev 决策令牌失效的工具:导航/重新加载/重新 extract 都会换掉页面,
+/// `browser_eval` 可执行任意 JS 改动 DOM,同样按页面变化处理。
+const JEV_REVOKING_TOOLS: &[&str] = &[
+    "browser_open",
+    "browser_navigate",
+    "browser_back",
+    "browser_forward",
+    "browser_reload",
+    "browser_extract",
+    "browser_eval",
+];
+
+/// 动作工具被 Jev 决策门拒绝时的软错误文本(模型可纠正重试)。
+const JEV_GATE_DENIAL: &str = "[Error] Jev 决策已启用:执行浏览器动作前必须先调用 browser_decide 获取下一步建议(每次动作都需要一次新决策;页面变化后旧决策自动失效)。如需临时跳过,请在 设置 → AI 浏览器 关闭「启用 Jev 决策」后重试";
+
 /// 页面 eval 的一次应答:ok + JSON 字符串载荷(页面侧已 JSON.stringify)。
 type EvalOutcome = (bool, Option<String>);
 
@@ -79,6 +106,8 @@ pub struct BrowserManager {
     last_activity: Mutex<Option<Instant>>,
     /// 在途 browser_* 调用数(含其内部的 Extract/CDP 等待)。
     in_flight: AtomicUsize,
+    /// Jev 强制决策门(会话级决策令牌;`ai.jev.enabled` 才参与判定)。
+    jev_gate: JevGate,
 }
 
 impl BrowserManager {
@@ -140,6 +169,72 @@ impl BrowserManager {
     /// 在途 eval 请求数(空闲看门狗与单测共用)。
     pub fn pending_count(&self) -> usize {
         self.pending.lock().expect("browser pending map").len()
+    }
+
+    /// Jev 强制决策门(启用 Jev 后动作工具的先决条件)。
+    pub fn jev_gate(&self) -> &JevGate {
+        &self.jev_gate
+    }
+}
+
+/// Jev 强制决策门:会话(session id)级「决策令牌」状态机。
+///
+/// 启用 Jev 决策(`ai.jev.enabled=1`)后,主模型对页面的每个动作都必须先经
+/// `browser_decide` 拿到一次决策——Jev 只判断不执行,动作仍由主模型调
+/// `browser_click`/`browser_type` 等完成,审批链路原样保留。令牌规则:
+///
+/// - [`JevGate::grant`]:`browser_decide` **成功返回后**授予(失败不授,
+///   配置/HTTP 错误时动作门保持关闭,fail loud);
+/// - [`JevGate::consume`]:动作工具执行前消费,一次动作一次决策;
+/// - [`JevGate::revoke`]:页面可能变化的工具(navigate/reload/extract/eval
+///   等)吊销,旧决策的元素编号不再可信。
+///
+/// 状态只在进程内(Jev 关闭即整个门不参与判定),会话结束由 map 自然遗留,
+/// 条目仅一个 bool,不做主动清理。
+#[derive(Default)]
+pub struct JevGate {
+    granted: Mutex<HashMap<String, bool>>,
+}
+
+impl JevGate {
+    /// 授予会话一个有效决策(覆盖旧值;重复 decide 即续期)。
+    pub fn grant(&self, session_id: &str) {
+        self.granted
+            .lock()
+            .expect("jev gate map")
+            .insert(session_id.to_string(), true);
+    }
+
+    /// 尝试消费会话的决策令牌:持有时消费并返回 `true`(动作放行);
+    /// 未持有时返回 `false`(调用方应拒绝动作并提示先 decide)。
+    pub fn consume(&self, session_id: &str) -> bool {
+        let mut granted = self.granted.lock().expect("jev gate map");
+        match granted.get_mut(session_id) {
+            Some(flag) => {
+                let fresh = *flag;
+                *flag = false;
+                fresh
+            }
+            None => false,
+        }
+    }
+
+    /// 吊销会话的决策令牌(页面可能已变化)。
+    pub fn revoke(&self, session_id: &str) {
+        self.granted
+            .lock()
+            .expect("jev gate map")
+            .insert(session_id.to_string(), false);
+    }
+
+    /// 会话当前是否持有效决策(单测/诊断用)。
+    pub fn is_granted(&self, session_id: &str) -> bool {
+        self.granted
+            .lock()
+            .expect("jev gate map")
+            .get(session_id)
+            .copied()
+            .unwrap_or(false)
     }
 }
 
@@ -323,8 +418,10 @@ pub async fn save_engine_setting(_app: &AppHandle, engine: obscura::Engine) -> R
 // ============================================================
 
 /// harness 桥入口:browser_* 工具在此分发执行,返回模型可读文本。
+/// `session_id` 用于 Jev 强制决策门的会话级令牌(见 [`JevGate`])。
 pub async fn execute_from_bridge(
     bridge: &HostBridgeState,
+    session_id: &str,
     name: &str,
     args: &Value,
 ) -> Result<String, String> {
@@ -333,8 +430,20 @@ pub async fn execute_from_bridge(
         .ok_or_else(|| "应用句柄未就绪(启动序列未完成)".to_string())?;
     // 调用登记(活动时刻 + 在途计数):空闲看门狗据此判断窗口可否自动关闭。
     // 守卫覆盖整个调用(含内部 Extract/Jev HTTP),drop 时计数递减。
-    let manager = app.state::<BrowserManager>();
-    let _call = manager.begin_call();
+    let browser_manager = app.state::<BrowserManager>();
+    let _call = browser_manager.begin_call();
+    // Jev 强制决策门(启用后):动作工具须持有效决策令牌,一次动作一次决策;
+    // 页面变化类工具吊销令牌。判定在执行前完成,与引擎/参数校验解耦。
+    // 配置读取失败按未启用处理(不阻断浏览器本身)。
+    let jev_enabled = decide::jev_config(&app).await.enabled;
+    if jev_enabled {
+        if JEV_GATED_ACTIONS.contains(&name) && !browser_manager.jev_gate().consume(session_id) {
+            return Err(JEV_GATE_DENIAL.to_string());
+        }
+        if JEV_REVOKING_TOOLS.contains(&name) {
+            browser_manager.jev_gate().revoke(session_id);
+        }
+    }
     let action = parse_action(name, args)?;
     // 运行时决定后端:每次查询设置(轻量 SQLite),避免引擎与设置脱节。
     let engine = engine_setting(&app).await;
@@ -356,7 +465,13 @@ pub async fn execute_from_bridge(
                 }?
             }
         };
-        return decide::decide(&app, &goal, &snapshot).await;
+        let text = decide::decide(&app, &goal, &snapshot).await?;
+        // 决策成功才授予令牌:Jev 未配置/HTTP 失败时动作门保持关闭(fail loud),
+        // 主模型收到软错误后要么修配置,要么明确请求用户关闭 Jev。
+        if jev_enabled {
+            browser_manager.jev_gate().grant(session_id);
+        }
+        return Ok(text);
     }
     match engine {
         obscura::Engine::Webview => webview::execute_action(&app, action).await,
@@ -553,6 +668,52 @@ mod tests {
                 Err(e) => !e.starts_with("unsupported browser tool"),
             };
             assert!(probe, "{name} 未接入 parse_action");
+        }
+    }
+
+    // ---------- JevGate 决策令牌状态机 ----------
+
+    #[test]
+    fn jev_gate_grants_one_action_per_decision() {
+        let gate = JevGate::default();
+        assert!(!gate.is_granted("s1"), "新会话无令牌");
+        assert!(!gate.consume("s1"), "无决策时动作被拒");
+        gate.grant("s1");
+        assert!(gate.is_granted("s1"));
+        assert!(gate.consume("s1"), "持令牌时第一个动作放行");
+        assert!(!gate.consume("s1"), "一次动作一次决策,令牌已消费");
+        assert!(!gate.is_granted("s1"));
+        // 重新 decide 后续期
+        gate.grant("s1");
+        assert!(gate.consume("s1"));
+    }
+
+    #[test]
+    fn jev_gate_revokes_on_page_change_and_isolates_sessions() {
+        let gate = JevGate::default();
+        gate.grant("s1");
+        gate.grant("s2");
+        gate.revoke("s1");
+        assert!(!gate.is_granted("s1"), "页面变化吊销 s1 令牌");
+        assert!(gate.is_granted("s2"), "不影响其它会话");
+        assert!(gate.consume("s2"));
+        assert!(!gate.consume("s2"), "s2 令牌同样一次一消费");
+    }
+
+    #[test]
+    fn jev_gate_tables_partition_browser_tools() {
+        // 门控表与吊销表不相交、且都落在 BROWSER_TOOLS 内(漏登记 = 门失效)。
+        for name in JEV_GATED_ACTIONS {
+            assert!(BROWSER_TOOLS.contains(name), "{name} 不在 BROWSER_TOOLS");
+            assert!(!JEV_REVOKING_TOOLS.contains(name), "{name} 同时是门控与吊销");
+        }
+        for name in JEV_REVOKING_TOOLS {
+            assert!(BROWSER_TOOLS.contains(name), "{name} 不在 BROWSER_TOOLS");
+        }
+        // 只读观察类不碰令牌(既不放行也不吊销)。
+        for name in ["browser_state", "browser_screenshot"] {
+            assert!(!JEV_GATED_ACTIONS.contains(&name));
+            assert!(!JEV_REVOKING_TOOLS.contains(&name));
         }
     }
 
