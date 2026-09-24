@@ -75,7 +75,12 @@ impl Default for JevConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            base_url: String::new(),
+            // 官方端点为缺省值:设置页加载即回显官方地址,用户启用后直接可用。
+            // 历史上这里是空串,而前端 JEV_DEFAULT 是官方地址、`{...JEV_DEFAULT,
+            // ...value}` 的展开让 Rust 空串覆盖前端默认 → 字段显示为空、保存后
+            // `ai.jev.base_url` 落空,browser_decide 必然软失败(空值在 setting()
+            // 读取时被过滤,同样回落到本默认,自愈)。validate() 仍允许显式置空。
+            base_url: DEFAULT_BASE_URL.to_string(),
             model: DEFAULT_MODEL.to_string(),
             threshold: DEFAULT_THRESHOLD,
             timeout_ms: DEFAULT_TIMEOUT_MS,
@@ -533,7 +538,17 @@ pub async fn decide(app: &AppHandle, goal: &str, snapshot: &str) -> Result<Strin
             return Err("[Error] 未配置 Jev API key:请在 设置 → AI 浏览器 填写".to_string());
         }
     };
+    let started = std::time::Instant::now();
     let decision = decide_with(&config, &api_key, goal, snapshot).await?;
+    // 落一条日志:starhub.log 可 grep「Jev 决策」核对「这次浏览器任务到底有没有
+    // 走 Jev」(审计表另有 action=browser_decide 的行,双通道可对照)。
+    tracing::info!(
+        action = %decision.action,
+        element = %decision.element_id.as_deref().unwrap_or("-"),
+        confidence = %decision.confidence,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "Jev 决策完成"
+    );
     Ok(render_decision(&config, &decision, snapshot))
 }
 
@@ -751,6 +766,14 @@ mod tests {
     }
 
     // ---------- config validate ----------
+
+    #[test]
+    fn default_config_falls_back_to_official_base_url() {
+        // 缺省 base_url 必须是官方端点:历史上默认空串会让设置页显示空字段、
+        // 保存后 browser_decide 必然软失败(base_url 未配置)。
+        assert_eq!(JevConfig::default().base_url, DEFAULT_BASE_URL);
+        assert!(!JevConfig::default().enabled, "启用开关仍默认关");
+    }
 
     #[test]
     fn config_validate_ranges_and_url() {
