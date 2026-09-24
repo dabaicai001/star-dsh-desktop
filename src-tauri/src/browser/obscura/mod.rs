@@ -646,10 +646,13 @@ pub async fn execute_action(app: &AppHandle, action: BrowserAction) -> Result<St
                 Ok(text)
             }
         }
-        // Decide 由 browser::execute_from_bridge 在引擎分发前处理(内部 Extract
-        // + Jev HTTP,引擎解耦),不应到达后端执行层。
+        // Decide / Auto 由 browser::execute_from_bridge 在引擎分发前处理
+        // (内部 Extract + Jev HTTP,引擎解耦),不应到达后端执行层。
         BrowserAction::Decide { .. } => Err(
             "browser_decide 应由 execute_from_bridge 处理,不应到达 obscura 执行层".to_string(),
+        ),
+        BrowserAction::Auto { .. } => Err(
+            "browser_auto 应由 execute_from_bridge 处理,不应到达 obscura 执行层".to_string(),
         ),
     }
 }

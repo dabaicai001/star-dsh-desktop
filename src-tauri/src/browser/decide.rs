@@ -33,6 +33,8 @@ pub const CONFIG_MODEL: &str = "ai.jev.model";
 pub const CONFIG_THRESHOLD: &str = "ai.jev.threshold";
 /// 单次决策超时(毫秒);决策对延迟敏感,默认 8s。
 pub const CONFIG_TIMEOUT_MS: &str = "ai.jev.timeout_ms";
+/// `browser_auto` 单次循环的步数上限(模型参数 `max_steps` 钳制到它)。
+pub const CONFIG_AUTO_MAX_STEPS: &str = "ai.jev.auto_max_steps";
 
 /// keyring 条目 id(entry key = `model:` + 本值,见 keyring::ai_model_api_key_id)。
 pub const API_KEY_ID: &str = "jev";
@@ -41,6 +43,10 @@ pub const DEFAULT_BASE_URL: &str = "https://api.typesafe.ai";
 pub const DEFAULT_MODEL: &str = "jev-latest";
 pub const DEFAULT_THRESHOLD: f64 = 0.60;
 pub const DEFAULT_TIMEOUT_MS: u64 = 8_000;
+/// 单次自动执行循环步数上限的缺省值(自定义入口:设置 → AI 浏览器)。
+pub const DEFAULT_AUTO_MAX_STEPS: u64 = 50;
+/// 步数上限的许可区间(设置页校验与读取钳制共用)。
+pub const AUTO_MAX_STEPS_RANGE: std::ops::RangeInclusive<u64> = 1..=500;
 
 /// 决策面(候选动作白名单):Jev 只能从这个封闭集里选,自由文本一律拒收。
 pub(crate) const ACTION_CRITERIA: &[(&str, &str)] = &[
@@ -69,6 +75,8 @@ pub struct JevConfig {
     pub threshold: f64,
     /// 单次请求超时(毫秒)。
     pub timeout_ms: u64,
+    /// `browser_auto` 单次循环步数上限(1–500;模型参数 `max_steps` 钳制到它)。
+    pub auto_max_steps: u64,
 }
 
 impl Default for JevConfig {
@@ -84,6 +92,7 @@ impl Default for JevConfig {
             model: DEFAULT_MODEL.to_string(),
             threshold: DEFAULT_THRESHOLD,
             timeout_ms: DEFAULT_TIMEOUT_MS,
+            auto_max_steps: DEFAULT_AUTO_MAX_STEPS,
         }
     }
 }
@@ -101,6 +110,12 @@ impl JevConfig {
             return Err(format!(
                 "超时必须在 500–60000 毫秒之间,收到 {}",
                 self.timeout_ms
+            ));
+        }
+        if !AUTO_MAX_STEPS_RANGE.contains(&self.auto_max_steps) {
+            return Err(format!(
+                "单次自动执行步数上限必须在 1–500 之间,收到 {}",
+                self.auto_max_steps
             ));
         }
         let url = self.base_url.trim();
@@ -149,10 +164,18 @@ pub async fn jev_config(_app: &AppHandle) -> JevConfig {
             config.timeout_ms = ms.clamp(500, 60_000);
         }
     }
+    if let Some(value) = setting(CONFIG_AUTO_MAX_STEPS).await {
+        if let Ok(steps) = value.trim().parse::<u64>() {
+            config.auto_max_steps = steps.clamp(
+                *AUTO_MAX_STEPS_RANGE.start(),
+                *AUTO_MAX_STEPS_RANGE.end(),
+            );
+        }
+    }
     config
 }
 
-/// 写入 Jev 决策配置(5 个 settings 键;调用方先过 [`JevConfig::validate`])。
+/// 写入 Jev 决策配置(6 个 settings 键;调用方先过 [`JevConfig::validate`])。
 pub async fn save_jev_config(_app: &AppHandle, config: &JevConfig) -> Result<(), String> {
     let pool = crate::db::get_pool().map_err(|e| e.to_string())?;
     let entries = [
@@ -161,6 +184,7 @@ pub async fn save_jev_config(_app: &AppHandle, config: &JevConfig) -> Result<(),
         (CONFIG_MODEL, config.model.trim().to_string()),
         (CONFIG_THRESHOLD, format!("{:.2}", config.threshold)),
         (CONFIG_TIMEOUT_MS, config.timeout_ms.to_string()),
+        (CONFIG_AUTO_MAX_STEPS, config.auto_max_steps.to_string()),
     ];
     for (key, value) in entries {
         sqlx::query(
@@ -236,7 +260,7 @@ fn parse_element_line(line: &str) -> Option<(&str, &str)> {
 }
 
 /// 取快照头两行的 url/title(extract 输出固定以 `url:`/`title:` 开头)。
-fn snapshot_url_title(snapshot: &str) -> (String, String) {
+pub(crate) fn snapshot_url_title(snapshot: &str) -> (String, String) {
     let mut url = String::new();
     let mut title = String::new();
     for line in snapshot.lines().take(2) {
@@ -523,6 +547,18 @@ pub(crate) async fn decide_with(
 /// 桥入口(`browser_decide` 工具在 mod.rs 的 Decide 分支调用):
 /// 配置门 → 密钥 → HTTP → 决策文本。任何失败都是软错误(模型可纠正重试)。
 pub async fn decide(app: &AppHandle, goal: &str, snapshot: &str) -> Result<String, String> {
+    let (config, decision) = decide_struct(app, goal, snapshot).await?;
+    Ok(render_decision(&config, &decision, snapshot))
+}
+
+/// 配置门 → 密钥 → HTTP → 结构化决策(`browser_decide` 与 `browser_auto`
+/// 循环共用)。失败均为软错误;成功时落 `Jev 决策` info 行(循环内每一步
+/// 各一条,starhub.log 可 grep 还原整条自动轨迹)。
+pub(crate) async fn decide_struct(
+    app: &AppHandle,
+    goal: &str,
+    snapshot: &str,
+) -> Result<(JevConfig, Decision), String> {
     let config = jev_config(app).await;
     if !config.enabled {
         return Err("[Error] Jev 决策未启用:请在 设置 → AI 浏览器 打开「Jev 决策」并保存".to_string());
@@ -549,7 +585,7 @@ pub async fn decide(app: &AppHandle, goal: &str, snapshot: &str) -> Result<Strin
         elapsed_ms = started.elapsed().as_millis() as u64,
         "Jev 决策完成"
     );
-    Ok(render_decision(&config, &decision, snapshot))
+    Ok((config, decision))
 }
 
 #[cfg(test)]
@@ -563,6 +599,7 @@ mod tests {
             model: "jev-latest".to_string(),
             threshold: 0.60,
             timeout_ms: 8_000,
+            auto_max_steps: 50,
         }
     }
 
@@ -790,5 +827,25 @@ mod tests {
         ok.base_url = String::new();
         assert!(ok.validate().is_ok(), "空 base_url 允许(等于未配置)");
         assert!(config().validate().is_ok());
+    }
+
+    #[test]
+    fn auto_max_steps_default_validate_and_clamp_range() {
+        assert_eq!(JevConfig::default().auto_max_steps, DEFAULT_AUTO_MAX_STEPS);
+        for bad in [0u64, 501] {
+            let mut config = config();
+            config.auto_max_steps = bad;
+            assert!(config.validate().is_err(), "步数上限 {bad} 必须拒绝");
+        }
+        for ok in [1u64, 50, 500] {
+            let mut config = config();
+            config.auto_max_steps = ok;
+            assert!(config.validate().is_ok(), "步数上限 {ok} 必须允许");
+        }
+        assert_eq!(
+            (*AUTO_MAX_STEPS_RANGE.start(), *AUTO_MAX_STEPS_RANGE.end()),
+            (1, 500),
+            "区间端点即设置页 min/max"
+        );
     }
 }

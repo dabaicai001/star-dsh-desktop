@@ -2,14 +2,14 @@
 
 > 立项对象:Phase 1 `browser_decide`(v0.123.0 落地)之后的**连续执行层**。
 > 上游依据:`docs/Jev决策模型-浏览器操作接入调研.md` §6.7(循环形态)/ §6.6.3(授权态)/ §4.1(瓶颈分析)。
-> 本文只做设计与立项,不含实现;**实现开工前需先过 §7.4 实测关**(延迟 p50/p99 仍是调研报告 §10.3 #4 的未决项,循环会把它放大)。
+> **状态:v0.126.0 已按本文实现并发布**(Rust 循环 + approval-bridge 定时授权 + 设置页步数上限);§7.4 延迟实测(p50/p99)仍待办。
 
 ---
 
 ## 0. 结论(TL;DR)
 
 1. **目标**:把 Jev 的毫秒级结构化决策从「每步一问」升级为「循环内自治」——主模型一次工具往返,Rust 内部完成最多 N 步 extract → decide → 执行。这是兑现「Jev 做网页操作特别快」的唯一形态:Phase 1 每个动作仍要主模型一次完整 round-trip(调研报告 §4.1),毫秒级决策被秒级往返淹没。
-2. **形态**:新工具 `browser_auto { goal, max_steps?, stop_on_lowconf?, input_text?, snapshot? }`;步数默认 8、硬上限 20;循环在 Rust 内、引擎解耦(webview / obscura 共用)。
+2. **形态**:新工具 `browser_auto { goal, max_steps?, stop_on_lowconf?, input_text?, snapshot? }`;步数默认 8,上限可配(settings `ai.jev.auto_max_steps`,默认 50、区间 1–500,设置 → AI 浏览器);循环在 Rust 内、引擎解耦(webview / obscura 共用)。
 3. **授权态(已定:定时授权,会话日志派生,无状态)**:`browser_auto` 首次调用弹软确认卡;确认后 N 分钟(Config 字段 `autoGrantMinutes`,默认 10,cordis.yml 可配)内,本会话后续 `browser_auto` 不再逐一弹卡。授予不新建任何状态——直接从 session 日志的 `approval/asked` + `approval/decided` 审计对派生(与 `sessionPreset()` 读 `permission/preset` 同一模式),**零 Rust 改动、零新 Tauri command**;爆炸半径仍由 `max_steps` 帽死。机制选型见 §4.3。
 4. **能力划界(由 Jev 的结构化决策本质决定,不是妥协)**:`click`/`scroll`/`press_key`/`done` 全自动;`type` 需调用方提供 `input_text`;`select_option` 及任何需要「新文本」的步骤 → 交接回主模型。Jev 不生成自由文本——这正是它快的原因(调研报告 §4.2),自动循环必须按这个边界设计。
 5. **风险 TOP3**:循环震荡(防震荡判定 + 步数帽)、无逐步人工确认的爆炸半径(步数帽 + 确认卡明示范围)、延迟/成本未实测(§7.4 先实测再开工)。
@@ -40,7 +40,7 @@ Phase 2 把循环收进 **Rust 内一次工具调用**:主模型 1 次往返 →
 | 参数 | 类型 | 默认 | 约束 |
 |---|---|---|---|
 | `goal` | string | 必填 | 非空;≤500 字符(与审计白名单截断一致) |
-| `max_steps` | int | `8` | 钳制到 `[1, 20]`(硬上限 20,超出按 20) |
+| `max_steps` | int | `8` | 钳制到 `[1, ai.jev.auto_max_steps]`(默认 50、区间 1–500,设置 → AI 浏览器可改;超出按上限执行,汇总首行披露) |
 | `stop_on_lowconf` | bool | `true` | false 时低置信度也继续执行(不推荐) |
 | `input_text` | string | 无 | 循环遇到 `type` 动作时输入的内容;缺省 → 交接(§5) |
 | `snapshot` | string | 无 | 首屏快照;缺省时循环内部自取(与 `browser_decide` 同语义) |
@@ -109,7 +109,12 @@ return 汇总(终止原因 + 每步一行 + 最终 url/title)
 
 ### 3.3 防震荡(调研报告 R7)
 
-同一 `(action, element_id)` 组合出现 **3 次**,或连续两步 snapshot 完全一致(页面无进展)→ `[STALL]` 中断。步数帽(硬上限 20)是最后防线。判定与汇总渲染抽成纯函数,单测覆盖(§7.1)。
+**同一页面、同一动作、同一元素编号的决策,与上一条完全相同** → `[STALL]` 中断
+(在执行前判定)——即上一步执行没有产生任何页面变化,继续只会无限重复。该规则
+两个方向都安全:翻页/滚动等「合法重复」(页面已变,三元组不同)不受影响;`type`
+之后 extract 文本可能不变、但下一步决策不同(如 `press_key`)也不误伤。步数帽是
+最后防线。判定(`is_repeat`)、汇总渲染(`render_summary`)、步数钳制
+(`effective_cap`)均为纯函数,单测覆盖(§7.1)。
 
 ---
 
@@ -166,56 +171,59 @@ Jev 的输出是被 `criteria` 钉死的封闭集选择(调研报告 §4.2)—�
 
 ## 6. 改动清单(文件级)
 
-### 6.1 Rust(`src-tauri/`)
+### 6.1 Rust(`src-tauri/`,v0.126.0 已按此落地)
 
 | 文件 | 改动 |
 |---|---|
-| `src/browser/mod.rs` | ① `BROWSER_TOOLS` 加 `"browser_auto"`;② `BrowserAction` 加 `Auto{…}`;③ `parse_action` 加 arm(goal 必填、max_steps 钳制、stop_on_lowconf/input_text/snapshot 校验);④ 新增循环函数(§3.1,含防震荡纯函数 + 汇总渲染纯函数);⑤ `JEV_REVOKING_TOOLS` 加 `"browser_auto"`;⑥ tests:parse 覆盖 + 防震荡/汇总单测 + 表分区测试自动纳入 |
-| `src/browser/decide.rs` | 零改动(循环复用 `decide()`;`input_text` 只在调用方提供时出现,不进 Jev 请求) |
-| `src/browser/webview.rs`、`obscura/mod.rs` | 零改动(复用 `execute_action`;Decide 分支已证明引擎解耦) |
+| `src/browser/auto.rs` | **新增**:循环主体 `run()` + 防震荡(`is_repeat`)/ 汇总渲染(`render_summary`)/ 步数钳制(`effective_cap`)/ `parse_max_steps` 纯函数 + 8 个单测 |
+| `src/browser/decide.rs` | `JevConfig` 增 `auto_max_steps`(settings `ai.jev.auto_max_steps`,默认 50、区间 1–500;`validate`/`save`/`jev_config` 同步,2 个新单测);`decide()` 重构出 `decide_struct()`(结构化决策,循环与单步共用;成功落 `Jev 决策` info 行);`snapshot_url_title` 升为 `pub(crate)` 供汇总复用 |
+| `src/browser/mod.rs` | ① `BROWSER_TOOLS` 加 `"browser_auto"`;② `BrowserAction` 加 `Auto{…}`;③ `parse_action` 加 arm(goal 必填;max_steps 非法/缺省回落 8;stop_on_lowconf 缺省 true;input_text/snapshot 空串等同缺省);④ `execute_from_bridge` 加 Auto 分支(引擎分发前、Decide 分支之后);⑤ `JEV_REVOKING_TOOLS` 加 `"browser_auto"`;⑥ tests:parse 覆盖(缺省/全量/非法/空串)+ 表分区测试自动纳入 |
+| `src/browser/webview.rs`、`obscura/mod.rs` | `Decide` 的 unreachable 分支扩为 `Decide`/`Auto` 并列(循环与 Decide 都不过后端执行层) |
+| `src/commands/browser.rs` | `browser_set_jev_config` 增 `auto_max_steps` 参数(桥命令签名与前端同步) |
 | `src/harness/tools.rs` | 零改动(BROWSER_TOOLS 分发通用;`goal` 已在审计白名单) |
-| `capabilities/`、`permissions/commands.toml`、`main.rs generate_handler!` | 零改动(桥工具不是 Tauri command) |
+| `capabilities/`、`permissions/commands.toml`、`main.rs generate_handler!` | 零改动(桥工具不是 Tauri command;Jev 配置命令 0.123.0 已注册) |
 
-### 6.2 vendor(submodule,仅动 `packages/starhub/*`)
+### 6.2 vendor(本检出中 `vendor/deepseek-harness` 为普通目录,一次提交覆盖)
 
 | 文件 | 改动 |
 |---|---|
-| `packages/starhub/tools/src/index.ts` | `BRIDGED_TOOLS` 浏览器段追加 `browser_auto` spec(description 写明:步数上限、确认范围、`[HANDOFF]`/`[LOWCONF]` 语义) |
-| `packages/starhub/approval-bridge/src/index.ts` | `STARHUB_DOMAIN_TOOLS` 加 `'browser_auto'`(**必须**)+ switch case → 软 ask(§4.2 理由文本);**定时授权**:pre-execute 门内对 browser_auto 先做日志派生判定(§4.2),Config 增字段 `autoGrantMinutes`(默认 10);扫描判定抽纯函数助手(单测覆盖);包 README 与 JSDoc 同批更新(vendor 纪律) |
-| `packages/starhub/tools/tests/bridged-tools.spec.ts` | 零改动(机械对齐断言自动覆盖新工具) |
-| `packages/starhub/approval-bridge/tests/risk-gate.spec.ts` | 补 `browser_auto` 档位断言(软 ask、reason 含步数范围) |
+| `packages/starhub/tools/src/index.ts` | `BRIDGED_TOOLS` 浏览器段追加 `browser_auto` spec(description 写明:步数上限、确认范围、`[HANDOFF]`/`[LOWCONF]`/`[STALL]` 语义) |
+| `packages/starhub/approval-bridge/src/index.ts` | `STARHUB_DOMAIN_TOOLS` 加 `'browser_auto'`(**必须**)+ switch case → 软 ask(§4.2 理由文本);**定时授权**:pre-execute 门内对 browser_auto 先做日志派生判定(§4.2),Config 增字段 `autoGrantMinutes`(schemastery 默认 10),新增导出纯函数 `autoGrantActive()`(JSDoc 齐全);包 README 与模块头同批更新(vendor 纪律) |
+| `packages/starhub/tools/tests/bridged-tools.spec.ts` | `RUST_BROWSER_TOOLS` 钉名单追加 `'browser_auto'`(顺序对齐 Rust `BROWSER_TOOLS`) |
+| `packages/starhub/approval-bridge/tests/risk-gate.spec.ts` | 补 `browser_auto` 档位断言(软 ask、reason 含循环范围)+ 域工具识别名单;新增 9 个真实 `Session` 驱动的授予判定用例(TTL 边界、各结局、未决、最近一次说了算、跨工具隔离、空会话) |
+| `packages/starhub/client-nav/src/client/settings/browser.tsx` | Jev 配置区增「自动执行步数上限(1–500)」数字输入;`JevConfig` 类型 / `JEV_DEFAULT` / `sameJev` / 保存载荷同步 `autoMaxSteps` |
+| `packages/starhub/client-nav/tests/browser-settings.client.spec.tsx` | 夹具与保存断言补 `autoMaxSteps`(加载回填 120 / 保存默认 50) |
 
-### 6.3 文档与版本纪律
+### 6.3 文档与版本纪律(已执行)
 
-- 升版(新功能 → **次版本**,如 `0.125.0 → 0.126.0`),七处同步:`package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/tauri.conf.json`、`CHANGELOG.md`、`AGENTS.md`(当前版本行)、`README.md`(badge + 当前版本章节整节替换)。
-- `docs/技术方案.md` §6.5.1.1:Phase 2 段落从「另行立项」改为已实现描述(链路、步数上限、授权态、审批档)。
+- 已升版 `0.125.0 → 0.126.0`(新功能 → 次版本),七处同步:`package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/tauri.conf.json`、`CHANGELOG.md`、`AGENTS.md`(当前版本行)、`README.md`(badge + 当前版本章节整节替换)。
+- `docs/技术方案.md` §6.5.1.2 新增「browser_auto 连续执行循环」小节;工具清单 15 → 16。
 - `docs/架构图.html` AI 描述行工具数 **15 → 16**。
-- submodule 流程:`packages/starhub/*` 改动在 `vendor/deepseek-harness` 内提交,回父仓库更新指针后一起 commit/push。
 
 ---
 
-## 7. 测试计划
+## 7. 测试
 
-### 7.1 单测
+### 7.1 单测(v0.126.0 已执行,全绿)
 
-| 层 | 内容 |
-|---|---|
-| Rust(cargo) | `parse_action`:goal 空值拒绝、max_steps 越界钳制(0 / 21 / 非数字)、stop_on_lowconf 缺省 true;防震荡纯函数(重复 3 次触发 / 2 次不触发 / snapshot 连续一致);汇总渲染(终止原因 + 截断);表分区测试自动纳入 browser_auto 位置 |
-| vendor(vitest) | risk-gate:`browser_auto` 落软 ask 档、reason 文本;bridged-tools 机械对齐自动覆盖;授予判定纯函数(最近一次 allowed-once 且在 TTL 内 → 放行 / 超时 → ask / 最近一次 rejected → ask / 只有 asked 没有 decided(未决)→ ask / 更早的 allowed-once 被 recent rejected 覆盖 → ask / 非 browser_auto 的 asked 不影响) |
-| vendor(真实组合) | 审批行为属产品可见变更,按 vendor 测试政策补**非单元真实组合测试**(test-only cordis.yml 过 Loader 起进程):一次 allowed-once 后 TTL 内第二次 `browser_auto` 不再 ask;TTL 外(或调小 `autoGrantMinutes`)恢复 ask |
-| 构建 | `npm run build:window`、`npm run cargo:check` |
+| 层 | 内容 | 结果 |
+|---|---|---|
+| Rust(cargo) | `parse_action`:goal 空值拒绝、缺省值(max_steps=8 / stop_on_lowconf=true)、全量参数、非法 max_steps 回落、空串可选参数等同缺省;防震荡(`is_repeat`:首条/同三元组/异动作/异页面);汇总渲染(done/LOWCONF/HANDOFF/STALL + 截断 + 多字节安全);步数钳制(`effective_cap` 六边界);`auto_max_steps` 默认/校验/区间;表分区测试自动纳入 browser_auto 位置 | `browser::` 46 通过;全量 `cargo test` 230 通过 |
+| vendor(vitest) | risk-gate:`browser_auto` 软 ask 档 + reason + 域工具识别;授予判定 9 例(真实 Session + 真实审批审计事件:TTL 边界、rejected/cancelled/unavailable、未决、最近一次说了算、跨工具隔离、空会话);bridged-tools 机械对齐;browser-settings 夹具与保存断言 | 3 个套件 44 通过 |
+| vendor(真实组合) | 审批行为属产品可见变更,按 vendor 测试政策需 Loader 启动的真实组合测试;starhub 包内暂无该基建(现行为真实 Session 驱动的 fixture 测试),已登记 approval-bridge README「Known Limitations and Deferred Work」待补 | 待补(不阻塞:v1 已交付) |
+| 构建 | vendor `pnpm run typecheck`(host + client 双面)、`pnpm exec tsx scripts/run-oxlint.ts`(改动文件零新增违规,仅存量) | 通过 |
 
-### 7.2 真实回归(`npm run tauri:dev`,AGENTS.md 强制)
+### 7.2 真实回归(`npm run tauri:dev`,待手工)
 
-① Jev 关闭 → auto 软错误;② 开启后「找到登录并点击」自动跑通,审计一行 + starhub.log 每步 info 行;③ LOWCONF 中断交接;④ 首次 auto 弹一次卡;TTL 内第二次 auto 不弹卡;把 `autoGrantMinutes` 调小后恢复弹卡;⑤ 元素失效(页面跳转后编号作废)中断交接;⑥ 防震荡触发(构造重复页面);⑦ `type` 无 input_text → `[HANDOFF]`,补 `input_text` 后跑通;⑧ 达到 max_steps 正常收口。
+① Jev 关闭 → auto 软错误;② 开启后「找到登录并点击」自动跑通,审计一行 + starhub.log 每步 info 行;③ LOWCONF 中断交接;④ 首次 auto 弹一次卡;TTL 内第二次 auto 不弹卡;把 `autoGrantMinutes` 调小后恢复弹卡;⑤ 元素失效(页面跳转后编号作废)中断交接;⑥ 防震荡触发(构造重复页面);⑦ `type` 无 input_text → `[HANDOFF]`,补 `input_text` 后跑通;⑧ 达到 max_steps 正常收口;⑨ 设置页改「自动执行步数上限」后,模型传更大 max_steps 按新上限执行。
 
 ### 7.3 关账
 
 审计面板见 `browser.action` 事件(auto 行带 goal / 步数 / 终止原因);领域事件 `starhub://domain-event` 正常。
 
-### 7.4 实测关(开工前必须)
+### 7.4 实测关(仍待办)
 
-调研报告 §10.3 #4「延迟(单次调用 p50/p99)与价格」至今未核实(`web_search` 端点 402,标题级来源只到「毫秒级」)。**auto 把 decide 从「每步一次人工触发」变成「每步必调」,延迟与成本被循环放大**——开工前用 curl 打 50 次真实请求拿 p50/p99 与每千次价格,填回调研报告 §10.3;若 p99 × 20 步超出可接受范围,先调 `ai.jev.timeout_ms` 与步数默认值再开工。
+调研报告 §10.3 #4「延迟(单次调用 p50/p99)与价格」至今未核实(`web_search` 端点 402,标题级来源只到「毫秒级」)。**auto 把 decide 从「每步一次人工触发」变成「每步必调」,延迟与成本被循环放大**——用 curl 打 50 次真实请求拿 p50/p99 与每千次价格,填回调研报告 §10.3;若 p99 × 步数上限超出可接受范围,先调 `ai.jev.timeout_ms` 与步数默认值。
 
 ---
 
@@ -234,16 +242,15 @@ Jev 的输出是被 `criteria` 钉死的封闭集选择(调研报告 §4.2)—�
 
 **未决问题(需拍板)**:
 
-1. `max_steps` 硬上限 20 是否够(长表单场景)?
-2. `select_option` 两段式优先级。
-3. §7.4 实测的执行人与时间(建议:实现开工前一周,curl 50 次即可)。
+1. `select_option` 两段式优先级。
+2. §7.4 实测的执行人与时间(建议:实现开工前一周,curl 50 次即可)。
 
-已定(用户拍板):授权态采用定时授权——机制为**会话日志派生**(§4.2 / §4.3),无状态、零 Rust 面。
+已定(用户拍板):授权态采用定时授权——机制为**会话日志派生**(§4.2 / §4.3),无状态、零 Rust 面;`max_steps` 上限支持自定义(settings `ai.jev.auto_max_steps`,默认 50、区间 1–500,设置 → AI 浏览器)。
 
 ---
 
 ## 9. 路线图
 
-- **v1(本立项)**:循环 + 防震荡 + 能力划界(§5)+ 定时授权(§4.2,vendor 侧小改动,建议同版交付;发布节奏若需要可拆后一步,但机制已定、不再悬置)+ 单测/回归。
+- **v1(本立项,v0.126.0 已实现)**:循环 + 防震荡 + 能力划界(§5)+ 定时授权(§4.2)+ 步数上限可配 + 单测/回归。
 - **v1.1(按数据启动)**:`select_option` 两段式、元素失效重取一次、TTL 暴露到「AI 浏览器」设置 tab。
 - **Phase 3(调研报告 §6.8)**:路由质量统计(decide 命中率 / LOWCONF 率 / 平均置信度 / 每任务步数分布——数据已在审计行,只需聚合);同一决策层复用至 `desktop_*` / `android_*`(换原语词表);内网自建端点(数据不出域)。

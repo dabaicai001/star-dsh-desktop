@@ -17,7 +17,11 @@
  *    任何预设下都弹确认卡,绝不静默放行;普通写操作档在 danger-full-access
  *    (全访问)预设下静默放行——「全访问 = 只有删除/高危才确认」,与 dsh 自家
  *    「全访问不弹审批」语义对齐。注意:preset 只提供策略,「哪些调用该问」的
- *    决定只由本门产生——删除本门 = 域工具不再有任何确认。
+ *    决定只由本门产生——删除本门 = 域工具不再有任何确认。`browser_auto`
+ *    (连续执行循环)另挂**定时授权**:首次软确认后 N 分钟(Config
+ *    `autoGrantMinutes`,默认 10)内本会话的后续调用不再逐一弹卡;授予判定从
+ *    会话日志的 `approval/asked`+`approval/decided` 审计对派生
+ *    ({@link autoGrantActive},无状态),只抑卡、不扩大爆炸半径。
  * 3. 审批应答桥:approval/request 经 SDK stdio 双向 request
  *    (方法 `starhub/approval.request`)桥回 StarHub Rust 主进程,由前端
  *    确认卡给出 allowed-once / rejected;桥不可用一律 fail closed。
@@ -38,6 +42,7 @@ import { SessionSeq, type Session } from '@deepseek-ai/dsh-session'
 import {
   setApprovalPolicy,
   type ApprovalOutcome,
+  type ApprovalRequestId,
 } from '@deepseek-ai/dsh-user-approval'
 
 export const name = 'starhub-approval-bridge'
@@ -48,10 +53,13 @@ export const inject = ['approval', 'settings']
  * ownsPermissionSettings 自 DSH 0.1.7 起仅为兼容占位(命名空间改由上游
  * permission-presets 的 Config volatile 字段持有,本桥一律经 settings.describe()
  * 只读消费),配置里保留该字段不影响行为。
+ * autoGrantMinutes:browser_auto 定时授权时长(分钟)——首次软确认后,本会话
+ * N 分钟内的后续 browser_auto 不再逐一弹卡(授予判定见 autoGrantActive)。
  */
-export const Config: z<{ answerer?: boolean; ownsPermissionSettings?: boolean }> = z.object({
+export const Config: z<{ answerer?: boolean; ownsPermissionSettings?: boolean; autoGrantMinutes?: number }> = z.object({
   answerer: z.boolean().default(true),
   ownsPermissionSettings: z.boolean().default(true),
+  autoGrantMinutes: z.number().min(1).default(10),
 })
 
 /** 桥方法名;Rust 侧实现见 src-tauri/src/harness/mod.rs。 */
@@ -305,6 +313,12 @@ export function classifyStarHubCall(toolName: string, args: unknown): GateVerdic
     case 'browser_press_key':
     case 'browser_select_option':
       return { ask: true, reason: '浏览器动作会对外部站点产生真实操作,需要确认' }
+    // AI 浏览器连续执行循环(Phase 2):一次确认授权循环内全部步骤(每步等同于
+    // 一次 browser_click/type/scroll/press_key);确认后 N 分钟内本会话的后续
+    // browser_auto 由定时授权免逐一确认(授予判定在 pre-execute 门里,见
+    // autoGrantActive——分类函数是纯函数,读不到会话日志)。
+    case 'browser_auto':
+      return { ask: true, reason: '连续执行循环:确认后 AI 将在当前页面自动执行最多 N 步真实操作(每步等同于一次 browser_click/type/scroll/press_key),可能点击链接、提交表单;确认后 N 分钟内本会话的后续 browser_auto 不再逐一确认' }
     // 沙箱桌面(设计 §5.1):create_sandbox 的确认 = 任务级授权,之后箱内
     // 截图/键鼠由宿主按授权在执行点放行;管理类(构建/暂停/恢复/销毁/固化)
     // 软确认;desktop_exec 在 ALWAYS_ASK + hard 档。
@@ -344,6 +358,8 @@ const STARHUB_DOMAIN_TOOLS: ReadonlySet<string> = new Set([
   'browser_scroll', 'browser_screenshot', 'browser_eval',
   // Jev 决策(只读建议,不执行动作 → default ALLOW 档)
   'browser_decide',
+  // Jev 连续执行循环(Phase 2:一次确认授权循环内全部步骤,软 ask 档)
+  'browser_auto',
   // 沙箱桌面(Ubuntu 容器沙箱平台)
   'desktop_list_templates', 'desktop_build_template', 'desktop_create_sandbox',
   'desktop_sandbox_status', 'desktop_pause_sandbox', 'desktop_resume_sandbox',
@@ -394,6 +410,48 @@ export interface ApprovalBridgeConfig {
   readonly answerer?: boolean
   /** 是否由本桥注册 `permission` 设置命名空间。 */
   readonly ownsPermissionSettings?: boolean
+  /** browser_auto 定时授权时长(分钟);schemastery 默认 10。 */
+  readonly autoGrantMinutes?: number
+}
+
+/**
+ * browser_auto 定时授权判定(会话日志派生,无状态):本会话**最近一次**对
+ * `browser_auto` 的审批结局是 `allowed-once`,且距该次 `approval/asked` 的
+ * 事件时间(Unix epoch ms)不超过 `ttlMinutes` → `true`(门不再升级 ask)。
+ *
+ * 审计对(`approval/asked` + `approval/decided`,按 `id` 配对)由
+ * `user-approval` 的 `ApprovalService.request()` 自己写入会话日志,**与
+ * answerer 配置无关**——`answerer: false` 的组合(如 starhub-web,应答交 web
+ * 自己的确认框)里照样落日志,所以授权判定不依赖本包的应答桥。倒序扫描:
+ * 先记录途经的 `approval/decided`(按 id 记结局),遇到最近一条
+ * `toolName === 'browser_auto'` 的 `approval/asked` 即定论——最近一次决策
+ * 说了算;其 decided 在更高 seq,倒序时已被记录。
+ *
+ * 判定只抑制确认卡(UX 状态),不扩大任何单次调用的爆炸半径——循环步数上限
+ * 由 Rust 执行层钳制。没有ask / 被拒 / 取消 / unavailable / 超过 TTL /
+ * 事件缺 `time` 一律 `false`(照弹)。
+ *
+ * @param session - 目标会话(日志来源)。
+ * @param ttlMinutes - 授权时长(分钟)。
+ * @param now - 当前 epoch ms(测试注入;缺省 `Date.now()`)。
+ * @returns TTL 内存在有效授权为 `true`,否则 `false`。
+ */
+export function autoGrantActive(session: Session, ttlMinutes: number, now: number = Date.now()): boolean {
+  const outcomes = new Map<ApprovalRequestId, ApprovalOutcome>()
+  for (let index = session.seq - 1; index >= 0; index -= 1) {
+    // oxlint-disable-next-line typescript/no-deprecated -- 既有 Session 历史读取;迁移待上游。
+    const event = session.eventAt(SessionSeq(index))
+    if (event === undefined) continue
+    if (event.type === 'approval/decided') {
+      outcomes.set(event.data.id, event.data.outcome)
+      continue
+    }
+    if (event.type === 'approval/asked' && event.data.toolName === 'browser_auto') {
+      if (outcomes.get(event.data.id) !== 'allowed-once') return false
+      return typeof event.time === 'number' && now - event.time <= ttlMinutes * 60_000
+    }
+  }
+  return false
 }
 
 /**
@@ -404,6 +462,11 @@ export interface ApprovalBridgeConfig {
  */
 export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
   const answerer = config.answerer !== false
+  // browser_auto 定时授权时长:Config(schemastery)默认 10;这里只把可选 JS
+  // 类型收窄成number,非法值(0/负数)视为关闭授权、照弹。
+  const autoGrantMinutes = typeof config.autoGrantMinutes === 'number' && config.autoGrantMinutes >= 1
+    ? config.autoGrantMinutes
+    : 0
   // sdk-transport 由 sdk-jsonrpc-server 在 apply 时同步 provide;两个插件
   // fiber 并行加载,启动期同步 ctx.get 可能取不到(服务尚未 provide),导致
   // 偶发 fail loud(与 starhub-tools 同款问题)。改为懒解析:仅审批应答
@@ -448,6 +511,9 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
   //    确认卡;普通写操作档(软确认)只在 danger-full-access(全访问)预设下
   //    静默放行,其余预设照弹。「当前预设」取会话里最后一次 /permission 切换
   //    (permission/preset 事件),没有过切换用 settings.yaml 的 defaultPreset。
+  //    browser_auto 另有时定授权:本会话 N 分钟内已 allowed-once 过 → 不当
+  //    ask(授予判定从会话日志的审批审计对派生,无状态;设计见 StarHub
+  //    docs/browser_auto-连续执行循环-立项设计.md §4.2)。
   ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
     const decision = await next()
     if (decision.kind !== 'allow') return decision
@@ -457,6 +523,9 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
     if (verdict === null || !verdict.ask) return decision
     const preset = sessionPreset(agent.session, readDefaultPreset)
     if (preset === 'danger-full-access' && verdict.hard !== true) return decision
+    if (exec.name === 'browser_auto' && autoGrantActive(agent.session, autoGrantMinutes)) {
+      return decision
+    }
     return verdict.reason === undefined ? { kind: 'ask' } : { kind: 'ask', reason: verdict.reason }
   })
 

@@ -31,6 +31,7 @@ const RUST_BROWSER_TOOLS = [
   'browser_screenshot',
   'browser_eval',
   'browser_decide',
+  'browser_auto',
 ]
 
 const browserSpecs = () => BRIDGED_TOOLS.filter(spec => spec.toolName.startsWith('browser_'))

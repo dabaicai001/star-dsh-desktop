@@ -446,6 +446,17 @@ export const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
       snapshot: { type: 'string', description: '可选,直接提供 browser_extract 的原文(编号元素列表);不传则内部自动提取一次' },
     },
   },
+  {
+    toolName: 'browser_auto',
+    description: 'Jev 连续执行循环(需在 设置 → AI 浏览器 启用并配置):把「目标」交给 Jev 在 Rust 内部循环执行——每步自动 extract → Jev 决策 → 执行,主模型一次调用完成最多 N 步真实页面操作,返回逐步汇总。适合步骤多、目标明确的连续操作(如「找到登录并进入」「在搜索框输入关键词并回车」)。会弹一次确认卡:确认即授权本次循环内的全部步骤;确认后一段时间内(默认 10 分钟,可配)本会话的后续 browser_auto 不再逐一确认。终止原因写入汇总:done(目标达成)/ 达到步数上限 / [LOWCONF](置信度低,交还主模型判断)/ [HANDOFF](Jev 不生成自由文本:select_option 或未提供 input_text 的 type 交还主模型)/ [STALL](页面无进展)/ [Error](元素失效等软错误)。步数上限可在 设置 → AI 浏览器 自定义(默认 50),max_steps 超过上限时按上限执行。',
+    parameters: {
+      goal: { type: 'string', required: true, description: '当前子目标,例如「找到登录按钮并点击」或「在搜索框输入关键词并回车」' },
+      max_steps: { type: 'number', description: '本次循环最多执行多少步,默认 8;超过设置里的步数上限时按上限执行' },
+      stop_on_lowconf: { type: 'boolean', description: '置信度低于阈值时是否中断并交还主模型,默认 true' },
+      input_text: { type: 'string', description: '循环遇到「输入」动作时要键入的文本(Jev 只做判断不生成文本);不提供则遇到输入时交接回主模型' },
+      snapshot: { type: 'string', description: '可选,直接提供首屏 browser_extract 原文;不传则内部自动提取' },
+    },
+  },
   // ── Excel(当前工作簿,前端执行)──
   {
     toolName: 'excel_get_context',

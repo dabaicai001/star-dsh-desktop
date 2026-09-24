@@ -28,6 +28,11 @@ dsh 权限 preset(`settings.yaml` 的 `permission.defaultPreset`,dsh web GUI
   注意:dsh preset 只提供策略(ask/never),不产生「哪些调用该问」的
   决定——本门是 starhub 域工具唯一的 ask 来源,删除它意味着
   `DROP TABLE` / `rm -rf` 不再有任何确认。
+  `browser_auto`(AI 浏览器连续执行循环)另挂**定时授权**:首次软确认后 N 分钟
+  内本会话的后续调用不再逐一弹卡;授予判定从会话日志的
+  `approval/asked`+`approval/decided` 审计对派生(`autoGrantActive`,
+  无状态、与 answerer 配置无关),只抑制确认卡,不扩大单次爆炸半径(循环步数
+  上限由 Rust 执行点强制)。
 - **应答桥**:`approval/request` 经 SDK stdio 双向 request
   (`starhub/approval.request`)桥回 StarHub Rust 主进程,由前端确认卡给出
   `allowed-once`/`rejected`;桥不可用 fail closed(`unavailable`)。
@@ -49,6 +54,10 @@ sdk/server 的本地补丁)、`user-approval` 服务与 `settings` 服务
   duplicate-registration 硬失败,先注册的本桥胜出后 permission-presets
   静默失效,GUI 权限行读到无 `base`/无 `defaultPreset` 的裸注册报
   「permission settings has no defaultPreset value」。
+- `autoGrantMinutes`(默认 `10`):`browser_auto` 定时授权时长(分钟)。首次
+  对该工具的软确认(`allowed-once`)后,本会话 N 分钟内的后续 `browser_auto`
+  不再逐一弹卡;授权判定从会话日志的审批审计对派生(无状态)。设为 `0` 或
+  负值等于关闭(恢复每次一问)。
 
 ## Model Experience
 
@@ -68,8 +77,13 @@ Not applicable — the package never participates in model requests.
 
 ## Known Limitations and Deferred Work
 
-- 授权一律 one-shot(`allowed-once`),没有「本次会话不再询问」记忆——dsh 的
-  策略层(preset)承担持久豁免,会话级记忆授权待上游 seam。
+- 授权默认仍是一事一议(`allowed-once`);唯一的会话级记忆是 `browser_auto` 的
+  定时授权(N 分钟、日志派生,见 `autoGrantActive`)——通用「本次会话不再询问」
+  记忆仍待上游 seam。
 - 风险分级:只读放行 / 普通写 ask(全访问预设下静默放行)/ 删除高危 hard ask
   (死规定,任何预设下都弹)三档;L0-L3 精细分级(影响面前置、二次确认、执行前
   备份)见 `docs/联动设计-dsh中枢-2026-08-17.md` 讨论,待立项。
+- starhub 包内尚无 Loader 启动的真实组合测试(风险门与授予判定的行为测试用
+  真实 `Session` + 真实审批审计事件驱动,但 ctx 为手写 fixture);按 vendor
+  测试政策,审批行为的产品可见变更需要一个 test-only cordis.yml 过 Loader
+  的组合测试,待补。

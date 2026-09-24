@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.125.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.126.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -36,9 +36,9 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 **Docker**:容器/镜像管理、交互式 Exec TTY、日志查看、Compose、支持经 SSH 通道连远程 Docker 主机。
 
-**AI 助手**:OpenAI 兼容协议(可接 GPT / Claude / DeepSeek / Ollama 等),Function Calling 直接驱动 SSH / 数据库 / SFTP / Docker / 本地文件 / 浏览器等工具;`@` 绑定资产、`#` 绑定上下文;无痕 AI 浏览器(14 个 `browser_*` 工具,Windows 走 CDP 可信输入);三级记忆卡 + 会话全文存档;MCP Server 挂载;所有 AI 发起的写操作都要经过确认卡审批并落审计日志。
+**AI 助手**:OpenAI 兼容协议(可接 GPT / Claude / DeepSeek / Ollama 等),Function Calling 直接驱动 SSH / 数据库 / SFTP / Docker / 本地文件 / 浏览器等工具;`@` 绑定资产、`#` 绑定上下文;无痕 AI 浏览器(16 个 `browser_*` 工具,Windows 走 CDP 可信输入;含 Jev 只读决策 `browser_decide` 与连续执行循环 `browser_auto`);三级记忆卡 + 会话全文存档;MCP Server 挂载;所有 AI 发起的写操作都要经过确认卡审批并落审计日志。
 
-**AI 助手**:OpenAI 兼容协议(可接 GPT / Claude / DeepSeek / Ollama 等),Function Calling 直接驱动 SSH / 数据库 / SFTP / Docker / 本地文件 / 浏览器等工具;`@` 绑定资产、`#` 绑定上下文;无痕 AI 浏览器(14 个 `browser_*` 工具,Windows 走 CDP 可信输入);三级记忆卡 + 会话全文存档;MCP Server 挂载;所有 AI 发起的写操作都要经过确认卡审批并落审计日志。
+**AI 助手**:OpenAI 兼容协议(可接 GPT / Claude / DeepSeek / Ollama 等),Function Calling 直接驱动 SSH / 数据库 / SFTP / Docker / 本地文件 / 浏览器等工具;`@` 绑定资产、`#` 绑定上下文;无痕 AI 浏览器(16 个 `browser_*` 工具,Windows 走 CDP 可信输入;含 Jev 只读决策 `browser_decide` 与连续执行循环 `browser_auto`);三级记忆卡 + 会话全文存档;MCP Server 挂载;所有 AI 发起的写操作都要经过确认卡审批并落审计日志。
 
 **AI 沙箱桌面**(E2B 式):AI 在一次性 Ubuntu 24.04 桌面容器(Xvfb + Xfce + noVNC)里操作任意 Linux 桌面应用——截图回灌、窗口管理、键鼠操作、箱内命令,全程 23 个 `desktop_*` 工具;模板 → 实例 → 销毁,登录态可固化为新模板;画面在独立直播窗口对用户全程可见,用户可随时「接管」亲手操作(接管期间 AI 写操作自动暂停),扫码登录/输密码时可一键请人工出手。
 
@@ -48,11 +48,11 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.125.0 (2026-09-24)
-- 🔧 **DSH 内核整体升级到上游 `dsh-v0.1.7-rc.1`(commit `46a7f68b`,上游 master HEAD)**:`vendor/deepseek-harness` 从 `dsh-v0.1.7-alpha.2`(`00102833`)整树替换到 rc.1。差异盘点:上游新增 66 文件、上游演进 886 文件、本地独有 322 文件(`packages/starhub/*` 207 + `packages/typert/*` 87 + 三个上游早已删除的兼容垫片包 + 品牌资产 + 脚本)。**`packages/starhub/*`、`apps/starhub-window`、`examples/starhub-web` 在「上游演进」清单里为 0 条**——StarHub 定制面与上游演进面完全不相交,解耦目标继续成立。重贴四张根配置补丁(`package.json` 的 `gen:typert` 前置 + `unrun` devDep、`tsconfig.base.json` 的 starhub 别名组、`tsconfig.client.json` 4 条 refs、`tsconfig.host.json` 9 条 refs),`UPSTREAM_COMMIT.txt` 同步。清理上游已迁走的死文件:`ui-attachment` 的 `ImageLightbox.{tsx,module.css}` 及 spec(上游 rc.1 把该组件迁到 `ui-primitives`,ui-attachment 改为从 baseline external 导入)与误提交的 `runtime-diagnostics/invariants/src/index.{js,map,d.ts}` 构建产物。适配清单见 `docs/DSH升级适配清单-v0.1.7-rc.1.md`。
-- 🔧 **上游 `llm-deepseek` 删除 `protocol` 配置项 → 退役 StarHub 测试补丁**:上游 rc.1 让 `resolveAdapterOptions` 见到 `protocol` 字段直接 throw「protocol is not configurable; remove it and use a Messages-compatible baseURL」,provider 固定走 Messages 协议(`/v1/messages`),mock server 同步改为服务该端点。此前为把 mock 的 chat/completions 扮成 DeepSeek 默认 messages 协议而生成的 `test-protocol.patch.yml` 因此会让 llm-deepseek 整个 entry 激活失败(boot 日志 "3 entries did not activate")、agent loop 拿不到 LLM。删除该 patch 生成,`setup_test_dsh_home` 只返回 DSH_HOME,三个端到端用例的 `patch_files` 相应去掉一项。
-- 🔧 **重放 `sdk-jsonrpc-server` 本地补丁(整树替换时被上游同名文件覆盖)**:补丁内容(`ctx.provide('sdk-transport')` / `ctx.provide('sdk-notifications')` + `transport.onNotification` 多路分发)与升级前逐字节一致;`notifications.ts` 补丁文件本身因是「上游包内新增文件」而未丢失,但 `index.ts` 里的 import/provide/onNotification 三处接线被上游新版覆盖,已按原样重贴并校验 diff 为空。这是「上游包内新增文件」式补丁的固有代价:新增文件不会丢,接线会丢,每次升级必须重放。
-- 🐛 **设置重启后全部失效(通用 / 模型 / 权限):web.rs 每次启动整体覆盖 dsh 设置落盘的同一个文件**:GUI 设置改动经 `ctx.remote.settings` → `SettingsController` → `ConfigEditor.edit()` 落盘到 `$DSH_HOME/profiles/web/cordis.patch.yml`(DSH 0.1.7 起设置体系改 Config schema 派生,`documentPath = profileContext.patchPath`),写入本身成功、无「保存」按钮。但 `src-tauri/src/harness/web.rs` 自 v0.95.x 起每次启动都用 `examples/starhub-web/cordis.patch.yml` 模板**无条件整体覆写**该文件(只为改 webserver 端口),覆写前不读、不备份、不合并 → 0.1.7 之前设置写在 `web.rs` 从不碰的 `settings.yaml` 时这个覆写无害,0.1.7 之后变成每次重启清空用户设置(用户描述「像是没有保存上」)。修复为幂等物化 `materialize_profile_patch(existing, template, port)`:① webserver 端口就地改写(唯一必须每次变的值);② 模板有、磁盘没有的顶层行按原样补齐;③ 磁盘有、模板没有的行**全部保留**(即设置页写入的一切);④ `- insert:` 块规范为最后一块——设置页新行经 `document.add` 落在文件末尾会把 insert 挤到中间,而 `sync_user_client_plugins` 固定往末尾按 4 空格缩进追加插件 entry,insert 不在最后时追加结果就是非法 YAML(实测 `bad indentation of a mapping entry`)、dsh web 组合直接 boot 失败;⑤ 找不到 webserver 端口行(损坏/被第三方改写)时 `.bak-<时间戳>` 备份后按模板重建,与 dsh 自己的 `profile-sanitize` 同构。另用 Node 镜像同一算法对**真实线上文件 + 真实模板**做端到端校验:7 行 → 7 行无丢失、端口改写、insert 在末、追加插件 entry 后 YAML 仍合法。新增 5 个单测(保留用户行 / insert 归位 / 幂等 / 收敛 / 拒绝异物文档),`harness::web` 17 例全绿。沉淀见 `docs/踩坑记录.md` §53。
+### v0.126.0 (2026-09-24)
+- ✨ **AI 浏览器新增 `browser_auto`——Jev 连续执行循环(Phase 2,第 16 个 `browser_*` 工具)**:把 Phase 1「每步一问」升级为「循环内自治」——主模型一次工具往返,Rust 内部完成最多 N 步 extract → Jev decide → 执行,汇总返回(每步动作/元素/置信度/结果 + 终止原因)。`goal` 必填;`max_steps` 默认 8;`stop_on_lowconf` 默认 true;`input_text` 供 type 步骤键入;`snapshot` 可缺省(内部自取)。终止原因齐全:done(目标达成)/ 步数用尽 / `[LOWCONF]`(置信度低于阈值,交还主模型)/ `[HANDOFF]`(Jev 不生成自由文本:`select_option` 与未提供 `input_text` 的 `type` 交还主模型)/ `[STALL]`(同一页面同一决策重复,即上一步没有产生页面变化)/ `[Error]`(元素失效等软错误,附已执行摘要)。
+- ✨ **自动执行步数上限可配(设置 → AI 浏览器)**:settings `ai.jev.auto_max_steps`,默认 50、区间 1–500;模型传参超过上限时按上限执行(汇总首行披露实际上限)。Jev 决策配置随之多一个字段(`browser_get_jev_config` / `browser_set_jev_config`)。
+- ✨ **`browser_auto` 定时授权(approval-bridge,零 Rust 面)**:首次调用软确认(理由写明「一次确认授权循环内全部步骤」);确认后 N 分钟(Config `autoGrantMinutes`,默认 10,cordis.yml 可配)内本会话后续 `browser_auto` 不再逐一弹卡。授予判定从会话日志的 `approval/asked` + `approval/decided` 审计对派生(`autoGrantActive` 纯函数:无状态、可重放、与 answerer 配置无关)。
+- 🔒 **安全边界不变**:循环内步骤继承单次确认(与 desktop/android 任务级授权同构),爆炸半径由步数上限帽死;动作白名单、元素编号纯数字校验、confidence ∈ [0,1] 全部沿用 Phase 1;`browser_auto` 进 JevGate 吊销表、不进门控表(自决策,进门即死锁);循环内每步重读 Jev 配置,中途关开关即中断交接(fail loud);每步决策落 `Jev 决策` info 行,starhub.log 可还原整条自动轨迹。Rust 230 单测 + vendor starhub 44 相关单测全绿。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

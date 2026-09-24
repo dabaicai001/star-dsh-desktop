@@ -50,7 +50,7 @@ describe('BrowserSettingsTab', () => {
     const { restore } = stubTauriInternals({
       browser_get_engine: () => 'obscura',
       browser_get_jev_config: () => ({
-        enabled: true, baseUrl: 'https://gateway.internal', model: 'jev-pro', threshold: 0.8, timeoutMs: 15000,
+        enabled: true, baseUrl: 'https://gateway.internal', model: 'jev-pro', threshold: 0.8, timeoutMs: 15000, autoMaxSteps: 120,
       }),
       get_ai_model_api_key: () => 'secret',
     })
@@ -61,6 +61,8 @@ describe('BrowserSettingsTab', () => {
       expect((screen.getByDisplayValue('https://gateway.internal') as HTMLInputElement).value).toBe('https://gateway.internal')
       expect((screen.getByDisplayValue('jev-pro') as HTMLInputElement).value).toBe('jev-pro')
       expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
+      // getByDisplayValue 的返回类型是 HTMLElement,取 .value 需断言(与上面几行同)
+      expect((screen.getByDisplayValue('120') as HTMLInputElement).value).toBe('120')
       expect(screen.getByText('已配置')).toBeTruthy()
     } finally {
       restore()
@@ -123,6 +125,7 @@ describe('BrowserSettingsTab', () => {
         model: 'jev-latest',
         threshold: 0.6,
         timeoutMs: 8000,
+        autoMaxSteps: 50,
       })
       expect(screen.getByText('已保存。')).toBeTruthy()
       expect(screen.queryByText(/有未保存的修改/)).toBeNull()

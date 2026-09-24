@@ -5,7 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
-## [未发布]
+## [0.126.0] - 2026-09-24
+
+### 新增
+- ✨ feat(browser): `browser_auto` —— Jev 连续执行循环(Phase 2,第 16 个 `browser_*` 工具):主模型一次工具往返,Rust 内部完成最多 N 步 extract → Jev decide → 执行,汇总返回(每步动作/元素/置信度/结果 + 终止原因)。参数:`goal` 必填;`max_steps`(默认 8);`stop_on_lowconf`(默认 true);`input_text`(type 步骤键入文本);`snapshot`(可缺省,内部自取)。终止原因:done(目标达成)/ 步数用尽 / `[LOWCONF]`(置信度低于 `ai.jev.threshold`,交还主模型)/ `[HANDOFF]`(Jev 不生成自由文本——`select_option` 与未提供 `input_text` 的 `type` 交还主模型)/ `[STALL]`(同一页面同一决策重复,即上一步没有产生页面变化)/ `[Error]`(元素失效等软错误,附已执行摘要)。实现:新增 `src-tauri/src/browser/auto.rs`(循环 + 防震荡/汇总/步数钳制纯函数 + 8 个单测),`decide.rs` 重构出 `decide_struct()`(结构化决策,循环与单步共用)并落每步 `Jev 决策` info 行,`mod.rs` 接线(BROWSER_TOOLS、`BrowserAction::Auto`、parse_action、**进 JevGate 吊销表不进门控表**——自决策,进门即死锁)。引擎解耦(webview/obscura 同一 `execute_action`);循环整体走 `begin_call` 守卫,期间其他 `browser_*` 序列化;汇总截断 8000 字符(仿 `browser_eval`)。
+- ✨ feat(browser): 自动执行步数上限可配:settings `ai.jev.auto_max_steps`(默认 50、区间 1–500,设置 → AI 浏览器「自动执行步数上限」编辑);模型传参超过上限时按上限执行,汇总首行披露实际上限。`JevConfig` 增字段(序列化 `autoMaxSteps`),`browser_get_jev_config`/`browser_set_jev_config` 同步,validate 增区间校验,client-nav 设置页增输入框(单测夹具更新)。
+- ✨ feat(approval): `browser_auto` 定时授权(approval-bridge,**零 Rust 面**):首次调用软确认(理由写明「一次确认授权循环内全部步骤;确认后 N 分钟内本会话的后续 browser_auto 不再逐一确认」);确认后 N 分钟(Config `autoGrantMinutes`,默认 10,cordis.yml 可配)内本会话后续调用不再逐一弹卡。授予判定 `autoGrantActive()` 从**会话日志的 `approval/asked` + `approval/decided` 审计对派生**(`ApprovalService.request()` 自写,与 answerer 配置无关——starhub-web 的 `answerer: false` 组合里照常落日志):倒序扫描,最近一次 `toolName==='browser_auto'` 的 asked 配对 decided,`allowed-once` 且未超 TTL 才放行;没有/被拒/取消/unavailable/超时一律照弹。无状态、可重放;只抑制确认卡,不扩大爆炸半径(步数帽在 Rust 执行点)。配 9 个真实 Session 驱动的单测(TTL 边界、各结局、未决、最近一次说了算、跨工具隔离、空会话)。
 
 ### 文档
 - 📝 docs(browser): Jev 调研报告补「结构化决策契约」实证(§2.1:请求/应答 JSON 节选——`criteria` 封闭集由调用方定义,Jev 只做「选一个」)与「为什么快:输出空间决定延迟量级」链路对比(§4.2:传统 截图/DOM → 文本生成 → 解析 → 执行 vs Jev DOM → choice → 直接映射 `BrowserAction`;标注延迟 p50/p99 仍未实测,§10.3 #4)。新增 `docs/browser_auto-连续执行循环-立项设计.md`——Phase 2 立项:工具规格(`goal` 必填、`max_steps` 默认 8 硬上限 20、`stop_on_lowconf`、`input_text`)、Rust 内 extract → decide → 执行循环(引擎解耦、防震荡、JevGate 交互:进吊销表不进门控表)、授权态(定时授权,已定:approval-bridge 从会话日志的 `approval/asked` + `approval/decided` 审计对派生授予——首次软确认后 N 分钟(Config `autoGrantMinutes`,默认 10)内本会话后续 `browser_auto` 不再逐一弹卡;无状态、零 Rust 改动;机制选型留档设计文档 §4.3)、能力划界(Jev 不生成自由文本:`type` 需调用方提供 `input_text`、`select_option` 交还主模型)、文件级改动清单、测试计划与实测关(延迟先实测再开工)。

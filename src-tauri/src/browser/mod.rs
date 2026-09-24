@@ -9,6 +9,7 @@
 //! 导航协议白名单见 [`script::normalize_url`]。obscura 后端为无头引擎,页面不经过
 //! Tauri IPC,由 CDP 触发,风险面由 CDP 命令白名单收窄。
 
+pub mod auto;
 pub mod decide;
 pub mod idle;
 pub mod obscura;
@@ -59,6 +60,8 @@ pub const BROWSER_TOOLS: &[&str] = &[
     "browser_eval",
     // Jev 决策(只读:把目标+快照变成下一步动作建议,不执行;§docs/Jev 调研 §6)
     "browser_decide",
+    // Jev 连续执行循环(Phase 2:Rust 内 extract→decide→执行,§docs/browser_auto 立项)
+    "browser_auto",
 ];
 
 /// 引擎选择(持久化到 settings 表。webview 为默认)。
@@ -78,6 +81,7 @@ const JEV_GATED_ACTIONS: &[&str] = &[
 
 /// 使 Jev 决策令牌失效的工具:导航/重新加载/重新 extract 都会换掉页面,
 /// `browser_eval` 可执行任意 JS 改动 DOM,同样按页面变化处理。
+/// `browser_auto` 循环内页面必然多次变化,整次调用按页面变化处理。
 const JEV_REVOKING_TOOLS: &[&str] = &[
     "browser_open",
     "browser_navigate",
@@ -86,6 +90,7 @@ const JEV_REVOKING_TOOLS: &[&str] = &[
     "browser_reload",
     "browser_extract",
     "browser_eval",
+    "browser_auto",
 ];
 
 /// 动作工具被 Jev 决策门拒绝时的软错误文本(模型可纠正重试)。
@@ -270,6 +275,15 @@ pub enum BrowserAction {
     Eval { expression: String },
     /// Jev 决策:只读。`snapshot` 缺省时内部先跑一次 Extract 再问 Jev。
     Decide { goal: String, snapshot: Option<String> },
+    /// Jev 连续执行循环(Phase 2):内部 extract → decide → 执行,汇总返回。
+    /// `max_steps` 钳制到 settings `ai.jev.auto_max_steps`。
+    Auto {
+        goal: String,
+        max_steps: usize,
+        stop_on_lowconf: bool,
+        input_text: Option<String>,
+        snapshot: Option<String>,
+    },
 }
 
 fn arg_str<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
@@ -361,6 +375,24 @@ pub fn parse_action(name: &str, args: &Value) -> Result<BrowserAction, String> {
                 .map(str::to_string)
                 .filter(|s| !s.trim().is_empty());
             Ok(BrowserAction::Decide { goal, snapshot })
+        }
+        "browser_auto" => {
+            let goal = required_str(args, "goal")?;
+            Ok(BrowserAction::Auto {
+                goal,
+                max_steps: auto::parse_max_steps(args),
+                stop_on_lowconf: args
+                    .get("stop_on_lowconf")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
+                // input_text 可缺省(遇到 type 时交接回主模型);空串等同缺省。
+                input_text: arg_str(args, "input_text")
+                    .map(str::to_string)
+                    .filter(|s| !s.is_empty()),
+                snapshot: arg_str(args, "snapshot")
+                    .map(str::to_string)
+                    .filter(|s| !s.trim().is_empty()),
+            })
         }
         other => Err(format!("unsupported browser tool: {other}")),
     }
@@ -473,6 +505,29 @@ pub async fn execute_from_bridge(
         }
         return Ok(text);
     }
+    // Jev 连续执行循环(Phase 2):Rust 内 extract→decide→执行,汇总返回。
+    // 循环自决策,不在 JEV_GATED_ACTIONS(进门即死锁);调用前的吊销已在上面完成。
+    if let BrowserAction::Auto {
+        goal,
+        max_steps,
+        stop_on_lowconf,
+        input_text,
+        snapshot,
+    } = action
+    {
+        return Ok(auto::run(
+            &app,
+            engine,
+            &auto::AutoParams {
+                goal,
+                max_steps,
+                stop_on_lowconf,
+                input_text,
+                snapshot,
+            },
+        )
+        .await);
+    }
     match engine {
         obscura::Engine::Webview => webview::execute_action(&app, action).await,
         obscura::Engine::Obscura => obscura::execute_action(&app, action).await,
@@ -582,6 +637,70 @@ mod tests {
         );
         let action = parse_action("browser_extract", &json!({"max_chars": 2000})).expect("extract");
         assert_eq!(action, BrowserAction::Extract { max_chars: 2000 });
+    }
+
+    #[test]
+    fn parse_auto_defaults_full_and_invalid() {
+        // 缺省:max_steps=8、stop_on_lowconf=true、无可选参数。
+        let action = parse_action("browser_auto", &json!({"goal": "找到登录并进入"}))
+            .expect("auto defaults");
+        match action {
+            BrowserAction::Auto {
+                goal,
+                max_steps,
+                stop_on_lowconf,
+                input_text,
+                snapshot,
+            } => {
+                assert_eq!(goal, "找到登录并进入");
+                assert_eq!(max_steps, 8);
+                assert!(stop_on_lowconf);
+                assert_eq!(input_text, None);
+                assert_eq!(snapshot, None);
+            }
+            other => panic!("expected Auto, got {other:?}"),
+        }
+        // 全量参数(步数上限的钳制在 auto::run 按配置完成,parse 只收正整数)。
+        let action = parse_action(
+            "browser_auto",
+            &json!({"goal": "g", "max_steps": 30, "stop_on_lowconf": false,
+                    "input_text": "starhub", "snapshot": "url: x\ntitle: y"}),
+        )
+        .expect("auto full");
+        assert_eq!(
+            action,
+            BrowserAction::Auto {
+                goal: "g".to_string(),
+                max_steps: 30,
+                stop_on_lowconf: false,
+                input_text: Some("starhub".to_string()),
+                snapshot: Some("url: x\ntitle: y".to_string()),
+            }
+        );
+        // 非法 max_steps 回落缺省;空串可选参数等同缺省。
+        let action = parse_action(
+            "browser_auto",
+            &json!({"goal": "g", "max_steps": -1, "input_text": "", "snapshot": "   "}),
+        )
+        .expect("auto bad steps");
+        match action {
+            BrowserAction::Auto {
+                max_steps,
+                input_text,
+                snapshot,
+                ..
+            } => {
+                assert_eq!(max_steps, 8);
+                assert_eq!(input_text, None);
+                assert_eq!(snapshot, None);
+            }
+            other => panic!("expected Auto, got {other:?}"),
+        }
+        assert!(parse_action("browser_auto", &json!({})).is_err(), "缺 goal 报错");
+        assert!(
+            parse_action("browser_auto", &json!({"goal": "   "})).is_err(),
+            "goal 空串报错"
+        );
     }
 
     #[test]

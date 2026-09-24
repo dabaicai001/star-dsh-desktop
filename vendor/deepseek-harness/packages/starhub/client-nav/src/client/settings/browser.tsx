@@ -7,7 +7,9 @@
  *   渲染引擎仍在演进,复杂 SPA/登录页/验证码站兼容性可能不如真实内核。
  *
  * Jev 决策(TypeSafe "System One" 决策模型):`browser_decide` 工具把「目标 +
- * 页面快照」发给 Jev 拿结构化动作建议(只读,不执行)。非密配置走
+ * 页面快照」发给 Jev 拿结构化动作建议(只读,不执行)。`browser_auto` 则把
+ * 「目标」交给 Jev 在 Rust 内部循环执行(extract → decide → 执行),步数上限
+ * 即本页的「自动执行步数上限」。非密配置走
  * `browser_get_jev_config`/`browser_set_jev_config`(settings 表),API key 走
  * keyring 的 `set/get_ai_model_api_key`(id = "jev")。默认关闭:页面快照会
  * 外发到所配置端点,私有部署场景请确认合规后再开启。
@@ -35,6 +37,8 @@ type JevConfig = {
   model: string
   threshold: number
   timeoutMs: number
+  /** browser_auto 单次循环步数上限(1–500)。 */
+  autoMaxSteps: number
 }
 
 const JEV_DEFAULT: JevConfig = {
@@ -43,6 +47,7 @@ const JEV_DEFAULT: JevConfig = {
   model: 'jev-latest',
   threshold: 0.6,
   timeoutMs: 8000,
+  autoMaxSteps: 50,
 }
 
 /** Jev API key 的 keyring id(与 Rust decide::API_KEY_ID 对齐)。 */
@@ -57,6 +62,7 @@ function sameJev(a: JevConfig, b: JevConfig): boolean {
     && a.model === b.model
     && a.threshold === b.threshold
     && a.timeoutMs === b.timeoutMs
+    && a.autoMaxSteps === b.autoMaxSteps
 }
 
 /** AI 浏览器设置 tab 内容(单一「保存」入口,引擎 + Jev 配置一起落库)。 */
@@ -110,6 +116,7 @@ export function BrowserSettingsTab() {
         model: jev.model.trim(),
         threshold: jev.threshold,
         timeoutMs: jev.timeoutMs,
+        autoMaxSteps: jev.autoMaxSteps,
       })
       setPersistedEngine(engine)
       setPersistedJev(jev)
@@ -231,6 +238,18 @@ export function BrowserSettingsTab() {
           step={500}
           value={jev.timeoutMs}
           onChange={event => { setJev({ ...jev, timeoutMs: Number(event.target.value) }); setSaved(false) }}
+        />
+      </label>
+      <label className={css.field}>
+        <span className={s.fieldLabel}>自动执行步数上限(1–500,browser_auto 单次循环;模型传参超过时按本上限)</span>
+        <input
+          className={s.input}
+          type="number"
+          min={1}
+          max={500}
+          step={1}
+          value={jev.autoMaxSteps}
+          onChange={(event) => { setJev({ ...jev, autoMaxSteps: Number(event.target.value) }); setSaved(false) }}
         />
       </label>
 

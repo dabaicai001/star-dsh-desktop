@@ -11,7 +11,9 @@
  *   下由风险门静默放行,其余预设照弹)。
  */
 import { describe, expect, it } from 'vitest'
-import { classifyStarHubCall } from '../src/index.ts'
+import { autoGrantActive, classifyStarHubCall } from '../src/index.ts'
+import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import { ApprovalRequestId, type ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 
 /** 断言 ssh/docker 命令判为放行。 */
 function allow(tool: string, command: string): void {
@@ -189,12 +191,88 @@ describe('browser_* gate(AI 浏览器,无痕独立窗口)', () => {
       'browser_reload', 'browser_state', 'browser_extract', 'browser_click',
       'browser_type', 'browser_press_key', 'browser_select_option',
       'browser_scroll', 'browser_screenshot', 'browser_eval', 'browser_decide',
+      'browser_auto',
     ]) {
       expect(classifyStarHubCall(tool, {}), tool).not.toBeNull()
     }
     expect(classifyStarHubCall('browser_nope', {})).toBeNull()
   })
+
+  it('browser_auto: 软 ask(不置 hard),理由写明循环范围与定时授权', () => {
+    const verdict = classifyStarHubCall('browser_auto', { goal: '找到登录并进入' })
+    expect(verdict?.ask).toBe(true)
+    expect(verdict?.hard).toBeUndefined()
+    if (verdict?.reason === undefined) throw new Error('expected a risk reason')
+    expect(verdict.reason).toContain('连续执行循环')
+    expect(verdict.reason).toContain('不再逐一确认')
+  })
 })
+
+describe('browser_auto 定时授权(autoGrantActive,会话日志派生)', () => {
+  /** 造一个带一轮审批审计对的会话(approval/asked + approval/decided)。 */
+  function sessionWithApproval(toolName: string, outcome: ApprovalOutcome, askId = 'a1'): Session {
+    const id = SessionId('auto-grant-session')
+    const session = Session.create(id, undefined, { version: SESSION_FORMAT_VERSION, id, createdAt: 0, isSeeded: false })
+    session.append('turn/start', { turn: 1 })
+    session.append('approval/asked', { id: ApprovalRequestId(askId), toolName })
+    session.append('approval/decided', { id: ApprovalRequestId(askId), outcome })
+    return session
+  }
+
+  /** 取 asked 事件的 epoch ms(TTL 基准;审计对由 ApprovalService 落时间)。 */
+  function askedTime(session: Session): number {
+    const asked = session.snapshotEvents().find(event => event.type === 'approval/asked')
+    if (asked?.type !== 'approval/asked') throw new Error('expected an approval/asked event')
+    return asked.time
+  }
+
+  it('TTL 内的 allowed-once 授予(含恰好等于 TTL 的边界)', () => {
+    const session = sessionWithApproval('browser_auto', 'allowed-once')
+    const at = askedTime(session)
+    expect(autoGrantActive(session, 10, at + 60_000)).toBe(true)
+    expect(autoGrantActive(session, 10, at + 10 * 60_000), '边界:now - asked == TTL').toBe(true)
+  })
+
+  it('超过 TTL 一毫秒也不授予', () => {
+    const session = sessionWithApproval('browser_auto', 'allowed-once')
+    const at = askedTime(session)
+    expect(autoGrantActive(session, 10, at + 10 * 60_000 + 1)).toBe(false)
+  })
+
+  it.each(['rejected', 'cancelled', 'unavailable'] as const)('结局 %s 不授予', (outcome) => {
+    expect(autoGrantActive(sessionWithApproval('browser_auto', outcome), 10, Date.now())).toBe(false)
+  })
+
+  it('只有 asked 没有 decided(未决)不授予', () => {
+    const id = SessionId('auto-grant-pending')
+    const session = Session.create(id, undefined, { version: SESSION_FORMAT_VERSION, id, createdAt: 0, isSeeded: false })
+    session.append('turn/start', { turn: 1 })
+    session.append('approval/asked', { id: ApprovalRequestId('a1'), toolName: 'browser_auto' })
+    expect(autoGrantActive(session, 10, Date.now())).toBe(false)
+  })
+
+  it('最近一次决策说了算(更晚的 rejected 覆盖更早的 allowed-once)', () => {
+    const id = SessionId('auto-grant-latest')
+    const session = Session.create(id, undefined, { version: SESSION_FORMAT_VERSION, id, createdAt: 0, isSeeded: false })
+    session.append('turn/start', { turn: 1 })
+    session.append('approval/asked', { id: ApprovalRequestId('a1'), toolName: 'browser_auto' })
+    session.append('approval/decided', { id: ApprovalRequestId('a1'), outcome: 'allowed-once' })
+    session.append('approval/asked', { id: ApprovalRequestId('a2'), toolName: 'browser_auto' })
+    session.append('approval/decided', { id: ApprovalRequestId('a2'), outcome: 'rejected' })
+    expect(autoGrantActive(session, 10, Date.now())).toBe(false)
+  })
+
+  it('其它工具的审批不影响 browser_auto', () => {
+    expect(autoGrantActive(sessionWithApproval('browser_click', 'allowed-once'), 10, Date.now())).toBe(false)
+  })
+
+  it('空会话不授予', () => {
+    const id = SessionId('auto-grant-empty')
+    const session = Session.create(id, undefined, { version: SESSION_FORMAT_VERSION, id, createdAt: 0, isSeeded: false })
+    expect(autoGrantActive(session, 10, Date.now())).toBe(false)
+  })
+})
+
 
 describe('desktop_* gate(沙箱桌面,任务级授权)', () => {
   it('hard-flags desktop_exec (沙箱与外界逻辑的交换口,即使 never 策略)', () => {

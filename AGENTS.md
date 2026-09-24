@@ -11,7 +11,7 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.125.0(**DSH 内核整体升级到上游 `dsh-v0.1.7-rc.1`(commit `46a7f68b`,上游 master HEAD)**:`vendor/deepseek-harness` 从 `dsh-v0.1.7-alpha.2`(`00102833`)整树替换到 rc.1。差异盘点:上游新增 66 文件、上游演进 886 文件、本地独有 322 文件(`packages/starhub/*` 207 + `packages/typert/*` 87 + 三个上游早已删除的兼容垫片包 + 品牌资产 + 脚本)。**`packages/starhub/*`、`apps/starhub-window`、`examples/starhub-web` 在「上游演进」清单里为 0 条**——StarHub 定制面与上游演进面完全不相交,解耦目标继续成立。重贴四张根配置补丁(`package.json` 的 `gen:typert` 前置 + `unrun` devDep、`tsconfig.base.json` 的 starhub 别名组、`tsconfig.client.json` 4 条 refs、`tsconfig.host.json` 9 条 refs),`UPSTREAM_COMMIT.txt` 同步。清理上游已迁走的死文件:`ui-attachment` 的 `ImageLightbox.{tsx,module.css}` 及 spec(上游 rc.1 把该组件迁到 `ui-primitives`,ui-attachment 改为从 baseline external 导入)与误提交的 `runtime-diagnostics/invariants/src/index.{js,map,d.ts}` 构建产物。适配清单见 `docs/DSH升级适配清单-v0.1.7-rc.1.md`。) |
+| 当前版本 | v0.126.0(**AI 浏览器新增第 16 个工具 `browser_auto`——Jev 连续执行循环(Phase 2)**:主模型一次工具往返,Rust 内部完成最多 N 步 extract → Jev decide → 执行并汇总返回;`max_steps` 默认 8,上限走 settings `ai.jev.auto_max_steps`(默认 50、区间 1–500,设置 → AI 浏览器可改);终止原因齐全(done / 步数用尽 / `[LOWCONF]` / `[HANDOFF]`——Jev 不生成自由文本,`select_option` 与未提供 `input_text` 的 `type` 交还主模型 / `[STALL]` 同页同决策重复 / `[Error]` 软错误);`browser_auto` 进 JevGate 吊销表不进门控表(自决策);审批为一次软确认授权循环内全部步骤 + approval-bridge 定时授权(Config `autoGrantMinutes` 默认 10 分钟,从会话日志 `approval/asked`+`approval/decided` 审计对派生,无状态、零 Rust 面);防震荡/汇总/钳制均为纯函数单测;Rust 230 + vendor starhub 44 相关单测全绿;设计文档 `docs/browser_auto-连续执行循环-立项设计.md`。) |
 
 ## 架构一句话
 
@@ -130,4 +130,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-24 (v0.125.0)*
+*最后更新: 2026-09-24 (v0.126.0)*
