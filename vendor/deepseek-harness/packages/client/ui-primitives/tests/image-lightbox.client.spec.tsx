@@ -19,7 +19,12 @@ describe('ImageLightbox', () => {
     expect(document.activeElement).toBe(close)
     fireEvent.keyDown(window, { key: 'a' })
     expect(onClose).not.toHaveBeenCalled()
-    fireEvent.keyDown(window, { key: 'Escape' })
+    const outerKey = vi.fn()
+    document.body.addEventListener('keydown', outerKey)
+    try {
+      fireEvent.keyDown(close, { key: 'Escape' })
+      expect(outerKey).not.toHaveBeenCalled()
+    } finally { document.body.removeEventListener('keydown', outerKey) }
     fireEvent.click(close)
     expect(onClose).toHaveBeenCalledTimes(2)
     view.unmount()

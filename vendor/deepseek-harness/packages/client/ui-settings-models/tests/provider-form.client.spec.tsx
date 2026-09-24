@@ -609,8 +609,8 @@ describe('endpoint interrogation', () => {
 
     fireEvent.click(screen.getByText(en.fetchModels))
     await screen.findByText(en.fetchTitle)
-    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Fresh' }).checked).toBe(true)
-    expect(screen.queryByRole('checkbox', { name: 'fresh' })).toBeNull()
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'fresh' }).checked).toBe(true)
+    expect(screen.queryByRole('checkbox', { name: 'Fresh' })).toBeNull()
     // The already-configured row starts unchecked; the new one starts checked.
     const boxes = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
     expect(boxes.map(box => box.checked)).toEqual([false, true])
@@ -750,8 +750,8 @@ describe('endpoint interrogation', () => {
     fireEvent.click(screen.getByText(en.fetchModels))
     const dialog = await screen.findByRole('dialog')
     const search = screen.getByLabelText<HTMLInputElement>(en.fetchSearch)
-    expect(dialog.textContent).toContain('Beta Display')
-    expect(dialog.textContent).not.toContain('opaque-id')
+    expect(dialog.textContent).toContain('opaque-id')
+    expect(dialog.textContent).not.toContain('Beta Display')
     expect([...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
       .map(box => box.checked)).toEqual([true, true, true])
 
@@ -760,11 +760,11 @@ describe('endpoint interrogation', () => {
     expect(dialog.textContent).not.toContain('opaque-id')
 
     fireEvent.change(search, { target: { value: 'beta' } })
-    expect(dialog.textContent).toContain('Beta Display')
+    expect(dialog.textContent).toContain('opaque-id')
     expect(dialog.textContent).not.toContain('alpha')
 
     fireEvent.change(search, { target: { value: 'opaque' } })
-    expect(dialog.textContent).toContain('Beta Display')
+    expect(dialog.textContent).toContain('opaque-id')
     expect(dialog.textContent).not.toContain('alpha')
 
     fireEvent.click(within_(dialog, en.fetchDeselectAll))

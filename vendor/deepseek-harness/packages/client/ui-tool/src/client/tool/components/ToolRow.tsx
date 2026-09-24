@@ -96,6 +96,7 @@ export interface ToolRowProps {
 /** Visually hidden run-state label for color-only running and settlement cues. */
 function stateStatus(state: ToolRowState, t: TranslateNS<'conversation'>): string | null {
   switch (state) {
+    case 'preparing': return t('row.preparing')
     case 'running': return t('row.running')
     case 'error': return t('row.failed')
     case 'stopped': return t('row.stopped')
@@ -105,6 +106,7 @@ function stateStatus(state: ToolRowState, t: TranslateNS<'conversation'>): strin
 
 /**
  * Render one localized tool summary and lazily mounted result card.
+ * Preparation retains the icon, title, and optional tool-name summary without disclosure.
  * @param props - tool state, summary, output, and navigation callbacks.
  * @returns the tool disclosure.
  */
@@ -157,14 +159,14 @@ export const ToolRow = memo(function ToolRow({
   const inputRaw = bodyRaw ?? null
   const outputText = output ?? null
   const card = askQuestionBody ?? terminalBody ?? diffBody ?? readBody ?? imageBody ?? searchBody ?? webBody ?? detailsBody
-  const expandable = inputRaw !== null || outputText !== null || card !== null
+  const expandable = state !== 'preparing' && (inputRaw !== null || outputText !== null || card !== null)
   const open = expanded && expandable
   const bodyText = useMemo(
     () => open && card === null && inputRaw !== null ? formatToolBody(variant, inputRaw) : null,
     [card, inputRaw, open, variant],
   )
   const status = stateStatus(state, t)
-  const running = state === 'running'
+  const running = state === 'running' || state === 'preparing'
   const normalSummary = terminalBody?.description ?? (open ? detailsBody?.expandedSummary ?? summary : summary)
   // A failure keeps its first result line when available and otherwise turns
   // the ordinary summary red. An interruption turns the tool-owned summary

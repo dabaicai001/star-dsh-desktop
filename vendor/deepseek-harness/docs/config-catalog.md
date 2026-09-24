@@ -746,7 +746,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/experimental/agent-team/src/types.ts:130`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:152`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="deepseek-aidsh-experimental-api-speech-to-text"></a>
 
@@ -1033,8 +1033,12 @@ export interface Config {
   vadModelPath?: string | undefined
   /** Weight precision; INT8 minimizes first-use download and model storage. */
   precision: 'int8' | 'fp32'
-  /** Hugging Face-compatible origin for pinned model URLs, including private mirrors. */
-  modelOrigin: string
+  /** Explicit Hugging Face-compatible origin; bypasses automatic selection and public fallback. */
+  modelOrigin?: string | undefined
+  /** Hugging Face-compatible origins compared before downloading each missing asset. */
+  modelOrigins: string[]
+  /** Deadline for concurrent HEAD probes, including redirects to the actual asset. */
+  modelProbeTimeoutMs: number
   /** CPU intra-operation thread count. */
   threads: number
   /** Maximum speech segment length passed to the recognizer. */
@@ -2165,16 +2169,20 @@ Source: [`packages/plan/plan-mode/src/index.ts:70`](../packages/plan/plan-mode/s
 Requires: `loader` · `profileContext`
 
 ```ts config-catalog
-/** The pnpm executable, the registries asked, and the limits for package diagnostics and registry lookups. */
+/** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
 export interface Config {
   /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
   pnpmCommand?: string
-  /** Maximum retained pnpm diagnostic bytes per operation. */
+  /** Maximum retained package-operation diagnostic bytes. */
   outputBytes?: number
   /** Maximum time to wait for another process's profile package operation. */
   lockWaitMs?: number
   /** Bound on one registry lookup an inspection runs, in milliseconds. */
   inspectTimeoutMs?: number
+  /** Maximum duration of the GitHub repository connection check before installation, in milliseconds. */
+  githubConnectionTimeoutMs?: number
+  /** Maximum time one captured package run may print nothing before the manager terminates it, in milliseconds. */
+  idleTimeoutMs?: number
   /** The registry lookups and installations ask first, as an http(s) URL; absent, the one pnpm's own configuration names. */
   registry?: string
   /**
@@ -2186,7 +2194,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/boot/plugin-manager/src/index.ts:37`](../packages/boot/plugin-manager/src/index.ts)
+Source: [`packages/boot/plugin-manager/src/index.ts:40`](../packages/boot/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 
@@ -2758,10 +2766,14 @@ Requires: `skills`
 export interface Config {
   /** Absolute assets directory containing the three skill folders and shared scripts; defaults to packaged assets. */
   assetRoot?: string
+  /** Standalone Node executable; defaults to the current executable outside Electron and SEA. */
+  node?: string
+  /** Absolute LibreOffice Kit CLI entry; false explicitly disables CLI access. */
+  cli?: string | false
 }
 ```
 
-Source: [`packages/skill/skill-office/src/index.ts:15`](../packages/skill/skill-office/src/index.ts)
+Source: [`packages/skill/skill-office/src/index.ts:16`](../packages/skill/skill-office/src/index.ts)
 
 <a id="deepseek-aidsh-spill-local"></a>
 

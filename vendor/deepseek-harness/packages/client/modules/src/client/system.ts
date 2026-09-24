@@ -12,12 +12,8 @@ import type {
   ClientModuleSystemOptions,
 } from './manifest.ts'
 
-/**
- * One bundle fetch attempt: same-origin external classic script; resolves
- * once the bundle executed, rejects on the element's error event (a
- * network-level failure — an unreachable host or a 404 reads the same).
- */
-const fetchBundle = (url: string): Promise<void> => new Promise((resolve, reject) => {
+/** Default bundle-load hook: same-origin external classic script. */
+const defaultLoadBundle = (url: string): Promise<void> => new Promise((resolve, reject) => {
   const el = document.createElement('script')
   el.async = true
   el.src = url
@@ -38,28 +34,6 @@ function atRevision(url: string, rev: string): string {
     throw new Error(`client-modules: bundle URL ${url} has no revision`)
   }
   return url.replace(/([?&]rev=)[^&#]*/, `$1${encodeURIComponent(rev)}`)
-}
-
-/**
- * Backoff before each bundle-fetch retry (ms). Boot can race the host: the
- * page requests a bundle while the server process is mid-swap or the bundle
- * file is momentarily unreadable, and without a retry that one transient
- * failure fails the whole boot even though the next attempt would succeed.
- * Bounded so a genuinely absent bundle still fails loud within ~1.5s.
- */
-const BUNDLE_RETRY_DELAYS = [300, 1200] as const
-
-/** Default bundle-load hook: fetch with bounded retry over the transient boot-time failures above. */
-const defaultLoadBundle = async (url: string): Promise<void> => {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await fetchBundle(url)
-    } catch (error) {
-      const delay: number | undefined = BUNDLE_RETRY_DELAYS[attempt]
-      if (delay === undefined) throw error
-      await new Promise<void>(resolve => { setTimeout(resolve, delay) })
-    }
-  }
 }
 
 const CLIENT_CHUNK = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/

@@ -296,20 +296,21 @@
   white-space: nowrap;
 }
 
-/* StarHub brand assets: mark rides the 24px brand-mark seat; the harness
-   wordmark (04) fills the name seat at the 24px `brandName` height. */
-.brandLogo {
-  display: block;
-  width: 24px;
+.localBuildBrand {
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
   height: 24px;
-  object-fit: contain;
+  white-space: nowrap;
 }
 
-.brandBadge {
-  display: block;
-  height: 18px;
-  width: auto;
-  object-fit: contain;
+.localBuildTitle {
+  font-size: 12px;
+  line-height: 13px;
+  letter-spacing: 0;
 }
 
 .iconButton {

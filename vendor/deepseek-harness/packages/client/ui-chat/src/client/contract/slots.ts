@@ -11,7 +11,7 @@ import type {
   SlotHookFactory, SnapshotSelectorHook,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { DiffHunk, MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { createChatStore } from '../stores.ts'
 import type { ChatPresentationPolicy } from '../presentation-policy.ts'
@@ -43,12 +43,6 @@ export type UsePresentation = SnapshotSelectorHook<ChatPresentationPolicy>
 export interface OpenFileOptions {
   /** 1-based line to reveal; absent = the file's beginning. */
   readonly line?: number
-  /**
-   * A file-mutation row passes its applied hunks so the host can open an
-   * in-shell before/after comparison (`edit`) instead of the open-path
-   * (`read`) default. Absent = a plain open, behaviour unchanged.
-   */
-  readonly diffs?: readonly DiffHunk[]
 }
 
 /** Owner currency of the completed-Turn extension chain. */

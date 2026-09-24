@@ -9,7 +9,7 @@
 - button "Copy"
 - status: Worked
 - button "Took {{duration}}" [expanded]
-- button "Edited files, called tools, searched code, etc." [expanded]
+- button "Wrote files, called tools, searched code, etc." [expanded]
 - button "Write site/report.html +1 -0":
   - text: Write
   - button "site/report.html"
@@ -137,7 +137,8 @@
   - code: notes.md
   - text: untouched.
 - paragraph:
-  - img "Token preview"
+  - 'button "View full image: Token preview"':
+    - img "Token preview"
 - text: css
 - button "Wrap lines" [pressed]
 - button "Copy"

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { IconCloseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutlineRegular } from './icons/index.tsx'
 import css from './ImageLightbox.module.css'
 
 /** Lightbox strings the owner resolves from its own locale namespace. */
@@ -37,11 +37,12 @@ export function ImageLightbox({ src, alt, labels, onClose }: {
     restoreRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     closeRef.current?.focus()
     const onKeyDown = (event: globalThis.KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') { event.stopPropagation(); onClose() }
+      if (event.key === 'Tab') { event.preventDefault(); closeRef.current?.focus() }
     }
-    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
     return () => {
-      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keydown', onKeyDown, true)
       restoreRef.current?.focus()
     }
   }, [onClose])

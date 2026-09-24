@@ -107,8 +107,12 @@ it.each(['https://registry.npmjs.org/', MIRROR])('selects the fastest responding
       await dialog.getByRole('button', { name: '立即启用', exact: true }).waitFor({ timeout: 20_000 })
       await dialog.getByText('版本 2.0.0', { exact: true }).waitFor()
       const lookups = (await readFile(join(profile, '.registry-lookups'), 'utf8')).trim().split('\n')
-      expect(lookups).toHaveLength(1)
-      expect(JSON.parse(lookups[0]!)).toContain('--registry=' + MIRROR)
+        .map(line => JSON.parse(line) as string[])
+      // The inspection asked the mirror first, and each install attempt checked the named package's
+      // DSH peers at the registry that attempt would use: the mirror, then pnpm's own.
+      expect(lookups.map(call => call.filter(argument => argument.startsWith('--registry=')))).toEqual([
+        ['--registry=' + MIRROR], ['--registry=' + MIRROR], [],
+      ])
       await dialog.getByRole('button', { name: '查看安装详情', exact: true }).click()
       await dialog.getByText('Installed from the registry pnpm names', { exact: true }).waitFor()
       await dialog.getByText('第 1 次 · 中国大陆镜像源', { exact: true }).waitFor()

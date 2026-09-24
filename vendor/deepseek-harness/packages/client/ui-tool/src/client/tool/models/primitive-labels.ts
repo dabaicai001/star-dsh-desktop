@@ -47,9 +47,6 @@ export function diffBlockLabels(t: T): DiffBlockLabels {
     expandAria: count => t('diff.expandAria', { count }),
     collapse: t('collapse'),
     expand: count => t('diff.expandRest', { count }),
-    files: count => t(count === 1 ? 'diff.files.one' : 'diff.files.other', { count }),
-    columnBefore: t('diff.columnBefore'),
-    columnAfter: t('diff.columnAfter'),
   }
 }
 

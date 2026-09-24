@@ -71,6 +71,7 @@ async function main(): Promise<void> {
   const { ctx } = await application
   control.updateTasks = installDesktopUpdateTaskControl(ctx)
   await ctx.plugin(desktopOffice, {
+    runtimeDir,
     source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
     root: join(resolveDshHome(), 'dsh-runtimes', 'dsh-primary-runtime'),
   })

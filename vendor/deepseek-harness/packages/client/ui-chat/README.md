@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to render a browser chat from recorded Session conversations, including historical images, localized actions, and restored scroll position. Work-details modes control reasoning previews and fold eligible completed-turn process rows without hiding final answers. Local transcript and steering submissions appear immediately, remain in their original surface, and disappear atomically when authoritative Session records arrive, while queued submissions stay outside Chat. The package does not assemble or modify model requests.
+Use this package to render a browser chat from recorded Session conversations, including historical images, localized actions, and restored scroll position. Work-details modes control reasoning previews and process visibility without hiding final answers; Verbose keeps completed-turn process rows visible. Local transcript and steering submissions appear immediately, remain in their original surface, and disappear atomically when authoritative Session records arrive, while queued submissions stay outside Chat. The package does not assemble or modify model requests.
 
 File-mention providers receive the viewed Session ID with the closing-turn owner, so links into inherited history can address the fork itself.
 
@@ -32,6 +32,8 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 ## Reference previews
 
 Chat supplies file and HTTP(S) navigation through one `MarkdownDelegateProvider` around its node list. Assistant Markdown file links open in the right Sidebar after the message settles, including references to unmodified files. Relative paths resolve in the viewed Session's workspace; absolute paths retain the same Session's filesystem access. `#L24` and `#L24-L30` navigate to the first specified line and reuse an existing file tab. Missing files show the preview's error state.
+
+Standalone Markdown images show contained previews and open the shared image lightbox; local paths resolve against the viewed workspace after settlement. Image file links keep their sidebar activation and show a thumbnail after hover dwell or keyboard focus. Escape dismisses the thumbnail. Failed images retain a localized status and their description; no duplicate-image filtering is applied.
 
 Settings → General → Open chat links in selects the destination for ordinary clicks on Chat HTTP(S) links: In-App Sidebar (default) opens a new right-Sidebar Browser tab, while Default Browser opens an external tab. The setting is shown only while the Sidebar Browser is available. If the Sidebar Browser is not registered, both choices use the external browser; modified clicks retain native behavior. The `ui-chat.linkOpening` preference persists on loopback browsers and stays process-local when settings cannot persist writes. Sent file references and skills confirmed by the message’s logged invocation also open in the right Sidebar. File paths use the viewed Session; skill names resolve through its current input-trigger source. Both use the prose file-link dotted underline on hover or focus. Sessions, directories, and command labels remain non-navigating references.
 
@@ -76,7 +78,7 @@ During uninterrupted following, local transcript and steering echoes remain moun
 
 When Chat ends with an open Turn control and that Turn has no visible input, the first local transcript echo precedes the control. Other echoes remain at the flow tail. The control and echoes share one keyed list, so arrival of the control preserves the echo's mounted identity. Durable inputs replace their matching echoes in the same render.
 
-Work-details modes control process-group display and reasoning previews; eligible completed Turns fold their process without hiding the final answer. The [business-rule reference](src/client/conversation-nodes/README.md#display-modes) contains the mode table, title behavior, whole-Turn eligibility, clocks, and disclosure resets.
+Work-details modes control process-group display and reasoning previews. Compact, Standard, and Detailed fold eligible completed Turns without hiding the final answer; Verbose retains the duration/status header without a collapse action and shows historical process rows directly. The [business-rule reference](src/client/conversation-nodes/README.md#display-modes) contains the mode table, title behavior, whole-Turn eligibility, clocks, and disclosure resets.
 
 -----
 
@@ -85,7 +87,9 @@ Work-details modes control process-group display and reasoning previews; eligibl
 
 Chat registers its process Group Definition through `uiConversation.groups`. React renders the mixed `node`/`group` root sequence through stable Group and Node seats; group headers subscribe to data separately from member arrays. Settled group titles remain independent of the live-detail preference; only running titles update when that preference changes. [Process-group business rules](src/client/conversation-nodes/README.md#process-grouping) define segmentation and activity summaries.
 
-`groupPart` selects reasoning or response in the Assistant renderer without copying Node payloads. Each part has a distinct DOM anchor for reading-position restoration; Turn navigation addresses the original Node key and lands on its first visible part. Group sources, member parents, and keys survive display-mode changes and newly loaded prefixes that extend an intact group. The source Node Store remains the only Node-data owner, and a replaced Builder rebinds keyed subscriptions without remounting seats. Mode changes retain size observers and reuse the Turn-state selector.
+`groupPart` selects reasoning or response in the Assistant renderer without copying Node payloads. A Tool node owns its preparing, dispatched, and result stages under one callId. Each part has a distinct DOM anchor for reading-position restoration; Turn navigation addresses the original Node key and lands on its first visible part. Group sources, member parents, and keys survive display-mode changes and newly loaded prefixes that extend an intact group. The source Node Store remains the only Node-data owner, and a replaced Builder rebinds keyed subscriptions without remounting seats. Mode changes retain size observers and reuse the Turn-state selector.
+
+Live tool deltas share reasoning's frame-batched publication; durable calls and results publish immediately. Repeated named deltas retain the Tool node and its data when the projected call, anchor, location, and visibility are unchanged.
 
 The process group uses a stable `div` layout box, a scroll body, and an uncapped content box that reports growth inside the body. Business styles must adapt spacing within and across groups, including hidden or empty members and the answer-spacing exception. CSS variables do not belong in the Group Definition.
 

@@ -1605,25 +1605,21 @@ mod tests {
     /// 测试运行时布置(DSH 0.1.6 适配):`--profile sdk` 需要可写的 DSH_HOME
     /// (物化 profile + 模块 heal),且 starhub 本地包不在 apps/cli 闭包内、必须
     /// 由 `ensure_runtime_local_package_links` 建 junction,否则 boot 时
-    /// 「N entries did not activate」。另生成测试专用 patch:llm-deepseek 0.1.6
-    /// 默认 messages 协议(直连 api.deepseek.com/anthropic),mock 只服务
-    /// chat/completions,测试显式切 chat-completions。
-    /// 返回 (DSH_HOME, protocol 覆盖补丁路径)。
-    fn setup_test_dsh_home(runtime_dir: &Path, temp_root: &Path) -> (PathBuf, PathBuf) {
+    /// 「N entries did not activate」。
+    ///
+    /// DSH 0.1.7 起 `llm-deepseek` 删掉 `protocol` 配置项(固定走 Messages,
+    /// `resolveAdapterOptions` 见到该字段直接 throw「protocol is not
+    /// configurable」),mock server 也改为服务 `/v1/messages`。此前为把 mock 的
+    /// chat/completions 扮成 DeepSeek 默认 messages 协议而生成的
+    /// `test-protocol.patch.yml` 因此**必须移除**——留着会让 llm-deepseek 整个
+    /// entry 激活失败(3 entries did not activate),agent loop 拿不到 LLM,
+    /// 依赖工具调用的端到端用例全部挂掉。返回 DSH_HOME。
+    fn setup_test_dsh_home(runtime_dir: &Path, temp_root: &Path) -> PathBuf {
         let home = temp_root.join("home");
         std::fs::create_dir_all(&home).expect("创建测试 DSH_HOME");
         plugins::ensure_runtime_local_package_links(&home, runtime_dir)
             .expect("建 starhub 本地包 junction");
-        let protocol_patch = temp_root.join("test-protocol.patch.yml");
-        std::fs::write(
-            &protocol_patch,
-            "# 测试专用:mock 只服务 chat/completions,显式切 chat-completions 协议\n\
-             - id: llm-deepseek\n\
-             \x20 config:\n\
-             \x20   protocol: chat-completions\n",
-        )
-        .expect("写 protocol 覆盖补丁");
-        (home, protocol_patch)
+        home
     }
 
     /// 启动 mock LLM(vendor 的 pnpm run mock:llm 等价物),解析 ready 行的 baseURL。
@@ -1698,7 +1694,7 @@ mod tests {
         let temp_root =
             std::env::temp_dir().join(format!("starhub-dsh-test-{}", std::process::id()));
         std::fs::create_dir_all(&temp_root).unwrap();
-        let (dsh_home, protocol_patch) = setup_test_dsh_home(&runtime_dir, &temp_root);
+        let dsh_home = setup_test_dsh_home(&runtime_dir, &temp_root);
         let session_root = temp_root.join("sessions");
         let workdir = temp_root.join("work");
         std::fs::create_dir_all(&session_root).unwrap();
@@ -1711,7 +1707,7 @@ mod tests {
         let runtime = HarnessRuntime::spawn(
             runtime_dir,
             node_path,
-            vec![config_path, protocol_patch],
+            vec![config_path],
             vec![
                 ("DEEPSEEK_BASE_URL".into(), base_url),
                 ("DEEPSEEK_API_KEY".into(), "mock-key".into()),
@@ -1832,7 +1828,7 @@ mod tests {
 
         let temp_root =
             std::env::temp_dir().join(format!("starhub-dsh-tool-test-{}", std::process::id()));
-        let (dsh_home, protocol_patch) = setup_test_dsh_home(&runtime_dir, &temp_root);
+        let dsh_home = setup_test_dsh_home(&runtime_dir, &temp_root);
         let session_root = temp_root.join("sessions");
         let workdir = temp_root.join("work");
         std::fs::create_dir_all(&session_root).unwrap();
@@ -1845,7 +1841,7 @@ mod tests {
         let runtime = HarnessRuntime::spawn(
             runtime_dir,
             node_path,
-            vec![config_path, protocol_patch],
+            vec![config_path],
             vec![
                 ("DEEPSEEK_BASE_URL".into(), base_url),
                 ("DEEPSEEK_API_KEY".into(), "mock-key".into()),
@@ -1973,17 +1969,13 @@ mod tests {
             plugins::render_user_plugins_wrapper_yml(&entries_file),
         )
         .unwrap();
-        let (dsh_home, protocol_patch) = setup_test_dsh_home(&runtime_dir, &temp_root);
+        let dsh_home = setup_test_dsh_home(&runtime_dir, &temp_root);
         let session_root = temp_root.join("sessions");
         std::fs::create_dir_all(&session_root).unwrap();
 
         let sink: NotificationSink = Arc::new(|_method, _params| {});
         // 先算 patch 列表(runtime_dir 之后要 move 进 spawn)
-        let patch_files = vec![
-            runtime_dir.join(RUNTIME_CONFIG_REL),
-            protocol_patch,
-            wrapper,
-        ];
+        let patch_files = vec![runtime_dir.join(RUNTIME_CONFIG_REL), wrapper];
         let runtime = HarnessRuntime::spawn(
             runtime_dir,
             node_path,

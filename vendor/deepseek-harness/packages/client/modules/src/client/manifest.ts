@@ -333,12 +333,7 @@ export interface ClientModuleCreateOptions {
   boot: unknown
   /** Module-table seed: platform-singleton specifier → shell instance. */
   staticModules: Record<string, unknown>
-  /**
-   * Bundle-load hook. Defaults to a same-origin classic `<script src>`
-   * element fetched with bounded backoff retry (300ms, then 1200ms) so one
-   * transient boot-time failure does not fail the whole boot; a genuinely
-   * absent bundle still rejects with the original error after three attempts.
-   */
+  /** Bundle-load hook. Defaults to a same-origin classic `<script src>` element. */
   loadBundle?: (url: string) => Promise<void>
 }
 
@@ -448,11 +443,6 @@ export interface ClientModuleSystemOptions {
   registrationTarget: ClientModuleLoaderTarget
   /** Already-materialized modules bundle consumed while creating the system. */
   bootstrapModule: ClientBootstrapModule
-  /**
-   * Bundle-load hook. Defaults to a same-origin classic `<script src>`
-   * element fetched with bounded backoff retry (300ms, then 1200ms) so one
-   * transient boot-time failure does not fail the whole boot; a genuinely
-   * absent bundle still rejects with the original error after three attempts.
-   */
+  /** Bundle-load hook. Defaults to a same-origin classic `<script src>` element. */
   loadBundle?: (url: string) => Promise<void>
 }

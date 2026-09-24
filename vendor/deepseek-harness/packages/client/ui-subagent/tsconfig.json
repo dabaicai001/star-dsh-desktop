@@ -51,9 +51,6 @@
       "path": "../ui-slots"
     },
     {
-      "path": "../runtime"
-    },
-    {
       "path": "../../llm/token-meter"
     },
     {

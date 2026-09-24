@@ -28,7 +28,7 @@ Desktop 设置中的账号页面显示 DeepSeek 登录状态，并提供浏览�
 
 余额沿用 Platform Web 的金额格式：两位小数和千分位分组，正金额截断至分，小于一分的正金额显示为 <0.01，负金额按舍入规则处理且显示绝对值至少为 0.01。Host 返回的原始余额字符串保持不变。
 
-Desktop 的用量和充值操作在 48px 返回栏下方打开隔离的原生 Platform 视图。返回操作销毁视图并保留 Account 设置页。加载失败时保留返回操作，居中显示本地化错误提示和“重试”按钮。重试重新加载同一目标页面；渲染进程命令不接收账号 token。
+Desktop 的用量和充值操作在 48px 返回栏下方打开隔离的原生 Platform 视图。在 Windows Electron 中，返回栏与原生视图都从 Desktop 顶栏下方开始，Application 和 Edit 菜单文字不会盖住“返回 DeepSeek Harness”。返回操作销毁视图并保留 Account 设置页。加载失败时保留返回操作，居中显示本地化错误提示和“重试”按钮。重试重新加载同一目标页面；渲染进程命令不接收账号 token。
 
 账号菜单的“意见反馈”入口在系统浏览器中打开飞书问卷。链接通过 prefill_* 参数填写已有的构建版本、界面语言和屏幕物理分辨率，并为所有上下文字段设置 hide_*=1；不传账号 UID、token 或联系方式。可在 ui-settings-account 插件配置 contactFormUrl，切换到另一个 HTTPS 问卷。问卷支持 Harness 来源选项前，contactSource 默认为空；OS 和设备字段沿用 Web 实现，保持未填写。
 
@@ -66,6 +66,8 @@ Desktop 的用量和充值操作在 48px 返回栏下方打开隔离的原生 Pl
 <a id="known-limitations-and-deferred-work"></a>
 
 - 资料和充值钱包余额通过 Host getProfile / getBalance 复用已有 Platform Web 接口。页面在打开、登录及重连后刷新，原样显示服务端脱敏后的联系方式，并分别处理查询失败，不将失败显示为零余额。用量和充值使用 Host 按 platformOrigin 派生的链接，并沿用浏览器自身登录态，不携带 DSH token。
+
+- Platform 视图的弹窗会把文档内其它子节点设为 inert，其中包括 Desktop 拥有的顶栏菜单 host，因此 Application 和 Edit 菜单保持可见，但在视图关闭前无法操作。放行该 host 需要 Desktop 侧提供 inert 契约。
 
 <a id="dev-note"></a>
 ### 开发备注

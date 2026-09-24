@@ -24,7 +24,8 @@
   object-fit: contain;
   border-radius: 12px;
   background: var(--dsw-specific-input-major);
-  box-shadow: var(--dsw-shadow-lv3);
+  border: 0;
+  box-shadow: var(--dsw-elevation-prominent);
 }
 
 .close {
@@ -43,3 +44,5 @@
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
 }
+
+.close:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 3px; }

@@ -49,11 +49,12 @@ kind: "package-library"
 | `StateDot` | 10px 槽内的绿色 `done`、琥珀色 `warning`、红色 `error`、中性灰色 `idle` 圆点，以及 tertiary 灰色 14px 旋转 `ongoing` loading，其动画固定到文档时间零点，所以所有可见 loading 同相旋转。它是 `aria-hidden` 的，名称由渲染点提供。 `appearance="step"` 以实心勾表示完成、空心圆表示等待。 |
 | `ConnectionIndicator` | 行内连接恢复控件，覆盖断线、重试与已恢复三种状态。 |
 | `DisclosureRow` | 24px 紧凑折叠行，标题与内容左右排列。使用浅层 prop 比较进行 memo；内容未变时，保持回调与 React 节点 prop 的引用稳定。 |
-| `Modal` | 页面遮罩之上的居中对话框。 |
+| `Modal` | 页面遮罩之上的居中对话框。嵌套对话框可通过 `onKeyDownCapture` 在文档级 Escape 处理器之前拦截按键。 |
 | `RiskConfirmation` | 以显式复选框把关的敏感操作确认。 |
 | `OnboardingSurface` | 首次运行的引导舞台，期间保持应用根节点 inert。 |
-| `Tooltip` | 锚定在克隆子元素上的悬停文本；可通过 `portal` 渲染到外层，避免被容器裁剪。 |
+| `Tooltip` | 锚定在克隆子元素上的悬停文本；可通过 `portal` 渲染到外层，避免被容器裁剪，或受祖先层叠上下文限制其 z-index。 |
 | `HoverCard` | 指针可停留、可选中的悬停预览；可选带复制按钮。 |
+| `ImageLightbox` | 共享图片浮层，支持焦点恢复与 Esc 关闭。 |
 | `Toast` | 顶部居中的瞬时横幅，保持时长由所有者的 `holdMs` 决定。 |
 | `SettingsForm`、`SettingsValueField`、`SettingsSecretField` | 插件设置页的框架与控件：框架以 `labels` 接收文案，只在按钮点击时保存，卸载即丢弃；值字段显示暂存文本以及已覆盖标签和重置；密文字段每次为空，只报告是否已配置。 |
 | `SettingsFormModel`、`settingsNumberField`、`settingsTextField` | 这类页面背后基于设置 scope 的暂存编辑模型：草稿先暂存、保存时写入，字段是否被覆盖看用户层是否含有它，未落地的保存保留草稿。 |
@@ -85,7 +86,7 @@ kind: "package-library"
 
 最近的 `MarkdownDelegateProvider` 提供可选的 `openExternalLink` 和 `openFile` 导航回调。嵌套 Provider 替换外层能力，回调变化无需重新构建 Markdown 即可到达已渲染链接。其 `openFile` 使本地 Markdown 链接在落定后可点击。绝对路径和工作区相对路径支持百分号转义以及 `#L24` / `#L24-L30` 片段；范围定位到起始行。文件名中的字面 `?` 和 `#` 必须百分号编码。悬停提示使用解码后的路径，并在标签为空时提供可访问名称。回调接收解码后的路径和可选行号，渲染器保留标签并显示文件图标。不传回调时，本地链接仍为文本。URL 协议、查询串、不支持的片段及格式错误的目标不会传给文件打开器。
 
-`MarkdownText` 渲染不可信的 GFM 与 TeX 公式、阻止不安全的链接与图片，并可把已解析的文件提及转换为显式控件。外层 `MarkdownDelegateProvider` 会接收普通点击产生的已净化 HTTP(S) URL；带修饰键的点击和 Provider 外的链接保留原生外部 anchor 行为。当 owner 传入 `pathImages` 词表时，本地媒体路径的图片目标只在落定渲染阶段重写为可展示 URL（与 file mentions 相同的流式门）；不传词表时本地目标保持惰性 alt 文本。加载或解码失败后，图片替换为作者的 alt 文本；alt 为空时显示原始目标路径。图片源变化后可重新加载。回复流式输出时，它冻结已完成的块、按已完成行推进顶层未闭合 fence，并从保存的 Shiki grammar state 为该 fence 增量高亮。已完成的 token 行进入固定大小的 React 分组，后续分片只 reconcile 正在增长的分组；最终全量解析解决跨文档语法时，未变化的 fence 会保留该 DOM。`TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock` 与 `WebBlock` 把对应的工具结果意图渲染为带复制控件、溢出处理及适用时 ANSI 处理的卡片。`JsonTree` 与 `JsonBlock` 以只读方式检查 JSON 值；`projectUserText` 把已发送的用户文本投影为行内普通文本段与引用 chip，供消息气泡和排队行使用。引用名称继承调用方的换行规则：长名称在气泡内换行，排队预览保持单行布局。传入 `UserTextReferences` 时，文件和 skill 引用成为支持键盘操作的预览按钮，复用正文文件链接的悬停和聚焦样式；第一次指针点击可以打开预览，后续点击和已有选区保留原生选择行为。键盘激活在存在选区时仍可打开预览。
+`MarkdownText` 渲染不可信的 GFM 与 TeX 公式、阻止不安全的链接与图片，并可把已解析的文件提及转换为显式控件。外层 `MarkdownDelegateProvider` 会接收普通点击产生的已净化 HTTP(S) URL；带修饰键的点击和 Provider 外的链接保留原生外部 anchor 行为。当 owner 传入 `pathImages` 词表时，本地媒体路径的图片目标只在落定渲染阶段重写为可展示 URL（与 file mentions 相同的流式门）；不传词表时本地目标保持惰性 alt 文本。加载或解码失败后，图片替换为作者的 alt 文本；alt 为空时显示原始目标路径；`fileImages` 还提供本地化的失败提示前缀。图片源变化后可重新加载。回复流式输出时，它冻结已完成的块、按已完成行推进顶层未闭合 fence，并从保存的 Shiki grammar state 为该 fence 增量高亮。已完成的 token 行进入固定大小的 React 分组，后续分片只 reconcile 正在增长的分组；最终全量解析解决跨文档语法时，未变化的 fence 会保留该 DOM。`TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock` 与 `WebBlock` 把对应的工具结果意图渲染为带复制控件、溢出处理及适用时 ANSI 处理的卡片。`JsonTree` 与 `JsonBlock` 以只读方式检查 JSON 值；`projectUserText` 把已发送的用户文本投影为行内普通文本段与引用 chip，供消息气泡和排队行使用。引用名称继承调用方的换行规则：长名称在气泡内换行，排队预览保持单行布局。传入 `UserTextReferences` 时，文件和 skill 引用成为支持键盘操作的预览按钮，复用正文文件链接的悬停和聚焦样式；第一次指针点击可以打开预览，后续点击和已有选区保留原生选择行为。键盘激活在存在选区时仍可打开预览。
 
 `MarkdownText` 默认为 `variant="body"`。次级内容使用 `variant="compact"`：其 13px 字号与 20px 行高跟随内容字号设置，各级标题保持同一字号并使用 600 字重，段落与列表采用更紧凑的间距。正文、链接和代码均保持 tertiary 颜色，以点状下划线区分链接。代码标题栏随代码块滚动。表格和公式仍然启用，使用周围文字的字号，并在可用宽度内横向滚动。两个变体共享解析器与流式缓存。
 
@@ -94,6 +95,8 @@ kind: "package-library"
 `DiffBlock` 按行比较新旧内容。它显示实际增删行及两侧最多三行中性上下文，用 `⋯` 分隔远距离改动，工具摘要的统计不计入共享上下文。卡片在差异正文后结束。若一个片段需要超过 256 次行新增或删除，则停止精确比较；该片段按完整新旧内容显示和统计为粗粒度替换，包含共享行。复制包含完整显示 diff 及其前缀。末尾换行视为行终止符；仅末尾换行不同不会显示为改动。
 
 `JsonTree` 把折叠字符串限制为 `collapsedStringLines` 行（默认三行）。展开后显示原始文本、保留同级逗号，并限制在窗口与外层滚动容器内；尺寸变化和祖先滚动事件会更新此限制。行复制反馈独立于 JSON 值渲染更新；尚未完成的剪贴板写入不会更新另一行或已卸载的树。
+
+`ImageLightbox` 是共享原图浮层，支持焦点恢复与 Esc 关闭。包内缩略图渲染器由调用方提供加载及失败文案。`HoverCard.inline` 使文件链接保持在文本流内，并使用共享菜单材质、键盘可见焦点，并在锚点上方或下方定位而不遮挡锚点。即使焦点位于其他位置，Esc 也会关闭已打开的缩略图；后续 Esc 按键继续传给 owner。`MarkdownDelegateProvider.fileImages` 提供已解码路径解析器与完整图片文案：消息落定后的图片链接支持悬停预览，独立图片支持点击放大。仅包含图片的链接保留单一导航目标。解析器仅恢复完整、未转义、独立成段且带明确图片扩展名的含裸空格本地图片引用；代码与有歧义的目标保持原文。
 
 ### 本地化文案
 

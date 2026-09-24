@@ -309,6 +309,23 @@ describe('Tooltip', () => {
     }
   })
 
+  it.each(['bottom', 'top'] as const)('uses a custom gap to position and flip a %s tooltip', (side) => {
+    const anchorBottom = side === 'bottom' ? window.innerHeight - 36 : 56
+    const spy = placed(anchorBottom - 20, anchorBottom, 20)
+    try {
+      const view = render(<Tooltip label="Gap" side={side} gap={4}><button type="button">anchor</button></Tooltip>)
+      fireEvent.mouseEnter(screen.getByText('anchor'))
+      const bubble = screen.getByRole('tooltip')
+      expect(bubble.getAttribute('data-side')).toBe(side)
+      expect(bubble.style.top).toBe(`${side === 'bottom' ? anchorBottom + 4 : anchorBottom - 24}px`)
+      view.rerender(<Tooltip label="Gap" side={side} gap={12}><button type="button">anchor</button></Tooltip>)
+      expect(bubble.getAttribute('data-side')).toBe(side === 'bottom' ? 'top' : 'bottom')
+      expect(bubble.style.top).toBe(`${side === 'bottom' ? anchorBottom - 32 : anchorBottom + 12}px`)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('keeps the requested side when neither side fits', () => {
     // A bubble taller than the viewport has no home; oscillating between the
     // two would be worse than honouring the request.
