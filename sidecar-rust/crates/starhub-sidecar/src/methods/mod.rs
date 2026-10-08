@@ -18,11 +18,13 @@ use serde_json::{json, Value};
 use tokio::runtime::Runtime;
 
 use crate::db_runtime::DbRuntime;
+use crate::desktop_runtime::DesktopRuntime;
 use crate::jsonrpc::RpcError;
 use crate::registry::{MethodRegistry, SIDECAR_PROTOCOL_VERSION};
 use crate::runtime::SshRuntime;
 
 pub mod db;
+pub mod desktop;
 pub mod ssh;
 
 /// Liveness probe.
@@ -74,12 +76,14 @@ macro_rules! register_async {
 /// Build the registry with the built-ins plus every registered domain method.
 ///
 /// `runtime` drives the async domain handlers; `ssh` owns the SSH/SFTP session
-/// state and `db` owns the Go sidecar client. Keeping them behind `Arc` lets
-/// the registered closures stay `'static + Send + Sync`.
+/// state, `db` the Go sidecar client and `desktop` the sandbox-desktop state.
+/// Keeping them behind `Arc` lets the registered closures stay
+/// `'static + Send + Sync`.
 pub fn registry_with_domains(
     runtime: Arc<Runtime>,
     ssh: Arc<SshRuntime>,
     db: Arc<DbRuntime>,
+    desktop: Arc<DesktopRuntime>,
 ) -> Arc<MethodRegistry> {
     Arc::new_cyclic(|weak| {
         let mut registry = MethodRegistry::new();
@@ -298,6 +302,162 @@ pub fn registry_with_domains(
             db,
             "docker_exec",
             crate::methods::db::docker_exec_method
+        );
+
+        // Desktop 域:22 个方法,方法名 = 工具名
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_list_templates",
+            crate::methods::desktop::list_templates_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_build_template",
+            crate::methods::desktop::build_template_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_create_sandbox",
+            crate::methods::desktop::create_sandbox_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_sandbox_status",
+            crate::methods::desktop::sandbox_status_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_pause_sandbox",
+            crate::methods::desktop::pause_sandbox_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_resume_sandbox",
+            crate::methods::desktop::resume_sandbox_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_destroy_sandbox",
+            crate::methods::desktop::destroy_sandbox_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_commit_sandbox",
+            crate::methods::desktop::commit_sandbox_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_sandbox_replay",
+            crate::methods::desktop::sandbox_replay_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_screenshot",
+            crate::methods::desktop::screenshot_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_list_windows",
+            crate::methods::desktop::list_windows_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_get_foreground_window",
+            crate::methods::desktop::get_foreground_window_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_focus_window",
+            crate::methods::desktop::focus_window_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_click",
+            crate::methods::desktop::click_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_double_click",
+            crate::methods::desktop::double_click_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_move_mouse",
+            crate::methods::desktop::move_mouse_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_scroll",
+            crate::methods::desktop::scroll_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_drag",
+            crate::methods::desktop::drag_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_type",
+            crate::methods::desktop::type_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_press_key",
+            crate::methods::desktop::press_key_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_exec",
+            crate::methods::desktop::exec_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            desktop,
+            "desktop_request_user_action",
+            crate::methods::desktop::request_user_action_method
         );
 
         registry

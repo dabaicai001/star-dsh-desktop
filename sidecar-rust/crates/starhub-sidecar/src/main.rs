@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use starhub_domain_ssh::events::{EventSink, KnownHostsStore};
 use starhub_sidecar::bindings::SessionBindings;
 use starhub_sidecar::db_runtime::DbRuntime;
+use starhub_sidecar::desktop_runtime::DesktopRuntime;
 use starhub_sidecar::jsonrpc::{InboundFrame, OutboundNotification, OutboundResponse};
 use starhub_sidecar::known_hosts_store::FileKnownHostsStore;
 use starhub_sidecar::methods;
@@ -152,11 +153,23 @@ fn main() {
     let db = Arc::new(DbRuntime::new(
         Arc::clone(ssh.assets()),
         Arc::new(starhub_domain_db::GoSidecar::new()),
-        known_hosts,
+        Arc::clone(&known_hosts),
         Arc::clone(&bindings),
     ));
-    let registry =
-        methods::registry_with_domains(Arc::clone(&runtime), Arc::clone(&ssh), Arc::clone(&db));
+    // Desktop 域:六个 seam 全部接 sidecar 自己的实现(JSON 存储 / 文件设置 /
+    // 环境缓存目录 / 事件通知出口),资产与 known_hosts 与另外两个域共用。
+    let desktop = Arc::new(DesktopRuntime::new(
+        Arc::clone(&db),
+        Arc::clone(ssh.assets()),
+        FileKnownHostsStore::from_env(),
+        Arc::clone(&sink),
+    ));
+    let registry = methods::registry_with_domains(
+        Arc::clone(&runtime),
+        Arc::clone(&ssh),
+        Arc::clone(&db),
+        Arc::clone(&desktop),
+    );
 
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();

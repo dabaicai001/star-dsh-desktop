@@ -15,6 +15,8 @@
 //! | [`methods`] | built-ins (`ping`, capabilities) + domain registration |
 //! | [`runtime`] | SSH/SFTP session lifecycle shared by the `ssh_*` / `sftp_*` methods |
 //! | [`db_runtime`] | Go sidecar client shared by the `db_*` / `es_*` / `docker_*` methods |
+//! | [`desktop_runtime`] | sandbox-desktop state shared by the 22 `desktop_*` methods |
+//! | [`desktop_store`] | JSON-file implementation of the sandbox `InstanceStore` seam |
 //! | [`assets`] | asset store (JSON file + secret-store seam) |
 //! | [`bindings`] | session → asset bindings (subagent parent chain) |
 //! | [`session_registry`] | assetId → session attachment view (`registry.sync`) |
@@ -23,6 +25,8 @@
 pub mod assets;
 pub mod bindings;
 pub mod db_runtime;
+pub mod desktop_runtime;
+pub mod desktop_store;
 pub mod jsonrpc;
 pub mod known_hosts_store;
 pub mod methods;

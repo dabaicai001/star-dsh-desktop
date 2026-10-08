@@ -1,5 +1,10 @@
 [workspace]
-members = ["crates/starhub-sidecar", "crates/starhub-domain-ssh", "crates/starhub-domain-db"]
+members = [
+    "crates/starhub-sidecar",
+    "crates/starhub-domain-ssh",
+    "crates/starhub-domain-db",
+    "crates/starhub-domain-desktop",
+]
 resolver = "2"
 
 [workspace.package]

@@ -511,3 +511,126 @@ fn db_methods_roundtrip_through_the_real_binary() {
         .unwrap()
         .contains("SELECT 切库不会保留"));
 }
+
+// ---------- Desktop 方法面(M1 第 6 步) ----------
+
+#[test]
+fn capabilities_lists_the_desktop_method_surface() {
+    let mut sidecar = Sidecar::spawn();
+    let response = sidecar
+        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-desktop","method":"starhub_list_capabilities"}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    let methods: Vec<&str> = value["result"]["methods"]
+        .as_array()
+        .expect("methods array")
+        .iter()
+        .map(|m| m.as_str().expect("method name"))
+        .collect();
+    for expected in [
+        "desktop_list_templates",
+        "desktop_build_template",
+        "desktop_create_sandbox",
+        "desktop_sandbox_status",
+        "desktop_pause_sandbox",
+        "desktop_resume_sandbox",
+        "desktop_destroy_sandbox",
+        "desktop_commit_sandbox",
+        "desktop_sandbox_replay",
+        "desktop_screenshot",
+        "desktop_list_windows",
+        "desktop_get_foreground_window",
+        "desktop_focus_window",
+        "desktop_click",
+        "desktop_double_click",
+        "desktop_move_mouse",
+        "desktop_scroll",
+        "desktop_drag",
+        "desktop_type",
+        "desktop_press_key",
+        "desktop_exec",
+        "desktop_request_user_action",
+    ] {
+        assert!(
+            methods.contains(&expected),
+            "missing {expected}: {methods:?}"
+        );
+    }
+}
+
+/// Desktop 方法面 roundtrip(不触 Docker 的分支):模板清单走 JSON 存储,
+/// 空沙箱状态走实例清单——两条都不需要 Go sidecar / Docker daemon。
+#[test]
+fn desktop_methods_roundtrip_through_the_real_binary() {
+    let unique = format!(
+        "starhub-sidecar-desktop-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+    let dir = std::env::temp_dir().join(unique);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let assets = dir.join("assets.json");
+    std::fs::write(&assets, br#"{"assets":[]}"#).expect("seed assets file");
+    let sandbox = dir.join("sandbox.json");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_starhub-sidecar-rust"));
+    command
+        .env("STARHUB_ASSETS_FILE", &assets)
+        .env("STARHUB_SECRETS_FILE", "")
+        .env("STARHUB_KNOWN_HOSTS_FILE", dir.join("known-hosts.json"))
+        .env("STARHUB_SANDBOX_FILE", &sandbox)
+        .env("STARHUB_SETTINGS_FILE", dir.join("settings.json"))
+        .env("STARHUB_CACHE_DIR", dir.join("cache"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().expect("sidecar binary spawns");
+
+    fn roundtrip(child: &mut Child, request: &str) -> String {
+        let stdin = child.stdin.as_mut().expect("stdin piped");
+        stdin.write_all(request.as_bytes()).expect("write request");
+        stdin.write_all(b"\n").expect("write newline");
+        stdin.flush().expect("flush request");
+        let stdout = child.stdout.as_mut().expect("stdout piped");
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read response");
+        line.trim_end().to_string()
+    }
+
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-1","method":"desktop_list_templates","params":{}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    let text = value["result"]["text"].as_str().unwrap();
+    assert!(text.contains("模板名 | 镜像状态 | 创建时间"), "{text}");
+    assert!(text.contains("ubuntu-desktop | 未构建"), "{text}");
+
+    // 模板已播种落盘(持久化:重启后仍在)
+    let persisted = std::fs::read_to_string(&sandbox).expect("sandbox file written");
+    assert!(persisted.contains("ubuntu-desktop"), "{persisted}");
+
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-2","method":"desktop_sandbox_status","params":{}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(value["result"]["text"], "当前没有运行中的沙箱实例");
+
+    // 未授权写操作:硬错误(不触 Docker)
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-3","method":"desktop_screenshot","params":{"sandboxId":"ghost"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32603);
+    assert!(value["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("没有沙箱授权"));
+
+    drop(child.stdin.take());
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+}

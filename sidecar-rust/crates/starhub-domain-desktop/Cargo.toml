@@ -1,0 +1,23 @@
+[package]
+name = "starhub-domain-desktop"
+description = "StarHub sandbox-desktop domain: template recipes, task-level authorization, and the xdotool/scrot orchestration extracted from the retired Tauri shell (M1 of the drop-Tauri migration)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "starhub_domain_desktop"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "time", "macros"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+toml = "0.8"
+base64 = "0.23"
+tracing = "0.1"
+# Docker over SSH 复用 SSH 域的 TOFU 主机密钥策略(同一份 KnownHostsStore)
+starhub-domain-ssh = { path = "../starhub-domain-ssh" }

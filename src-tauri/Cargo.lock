@@ -6653,6 +6653,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "starhub-domain-db",
+ "starhub-domain-desktop",
  "starhub-domain-ssh",
  "tauri",
  "tauri-build",
@@ -6687,6 +6688,21 @@ dependencies = [
  "serde_json",
  "starhub-domain-ssh",
  "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "starhub-domain-desktop"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "serde",
+ "serde_json",
+ "starhub-domain-ssh",
+ "tokio",
+ "toml 0.8.2",
  "tracing",
  "uuid",
 ]

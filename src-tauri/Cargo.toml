@@ -8,6 +8,8 @@ edition = "2021"
 starhub-domain-ssh = { path = "../sidecar-rust/crates/starhub-domain-ssh" }
 # 去 Tauri 化 M1:DB/Redis/ES/Docker 域逻辑(Go sidecar 客户端 + 模型面执行器)
 starhub-domain-db = { path = "../sidecar-rust/crates/starhub-domain-db" }
+# 去 Tauri 化 M1:沙箱桌面域逻辑(配方 + 任务授权 + xdotool/scrot 编排)
+starhub-domain-desktop = { path = "../sidecar-rust/crates/starhub-domain-desktop" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"

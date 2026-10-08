@@ -21,7 +21,10 @@ serde_json = "1"
 starhub-domain-ssh = { path = "../starhub-domain-ssh" }
 # DB/Redis/ES/Docker 域:Go sidecar 客户端 + 模型面执行器
 starhub-domain-db = { path = "../starhub-domain-db" }
+# Desktop 域:模板配方 + 任务授权 + xdotool/scrot 编排
+starhub-domain-desktop = { path = "../starhub-domain-desktop" }
 # 异步域方法经 Runtime::block_on 在 stdio 线程上执行
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 uuid = { version = "1", features = ["v4"] }
 anyhow = "1"
+chrono = "0.4"
