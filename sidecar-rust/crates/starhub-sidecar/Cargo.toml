@@ -25,6 +25,8 @@ starhub-domain-db = { path = "../starhub-domain-db" }
 starhub-domain-desktop = { path = "../starhub-domain-desktop" }
 # Android 域:adb 调用 + 任务授权 + 20 个工具执行体
 starhub-domain-android = { path = "../starhub-domain-android" }
+# Browser 域:16 个工具的参数契约 + 页面注入脚本(引擎层随 M3)
+starhub-domain-browser = { path = "../starhub-domain-browser" }
 # 异步域方法经 Runtime::block_on 在 stdio 线程上执行
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 uuid = { version = "1", features = ["v4"] }

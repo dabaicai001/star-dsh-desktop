@@ -25,6 +25,7 @@ use crate::registry::{MethodRegistry, SIDECAR_PROTOCOL_VERSION};
 use crate::runtime::SshRuntime;
 
 pub mod android;
+pub mod browser;
 pub mod db;
 pub mod desktop;
 pub mod ssh;
@@ -79,14 +80,16 @@ macro_rules! register_async {
 ///
 /// `runtime` drives the async domain handlers; `ssh` owns the SSH/SFTP session
 /// state, `db` the Go sidecar client, `desktop` the sandbox-desktop state and
-/// `android` the device state. Keeping them behind `Arc` lets the registered
-/// closures stay `'static + Send + Sync`.
+/// `android` the device state. `browser` is a unit placeholder: its engine
+/// lands with M3, so the handlers take no runtime state. Keeping them behind
+/// `Arc` lets the registered closures stay `'static + Send + Sync`.
 pub fn registry_with_domains(
     runtime: Arc<Runtime>,
     ssh: Arc<SshRuntime>,
     db: Arc<DbRuntime>,
     desktop: Arc<DesktopRuntime>,
     android: Arc<AndroidRuntime>,
+    _browser: Arc<()>,
 ) -> Arc<MethodRegistry> {
     Arc::new_cyclic(|weak| {
         let mut registry = MethodRegistry::new();
@@ -603,6 +606,122 @@ pub fn registry_with_domains(
             android,
             "android_exec",
             crate::methods::android::exec_method
+        );
+
+        // Browser 域:16 个方法。引擎层(无头 CDP / 截图 / 直播帧)随 M3 面板化
+        // 落地;M1 先固定方法面与参数契约(软错误由 crate 的 parse_action 产出)。
+        let browser_unit = Arc::new(());
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_open",
+            crate::methods::browser::open_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_navigate",
+            crate::methods::browser::navigate_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_back",
+            crate::methods::browser::back_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_forward",
+            crate::methods::browser::forward_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_reload",
+            crate::methods::browser::reload_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_state",
+            crate::methods::browser::state_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_extract",
+            crate::methods::browser::extract_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_click",
+            crate::methods::browser::click_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_type",
+            crate::methods::browser::type_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_press_key",
+            crate::methods::browser::press_key_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_select_option",
+            crate::methods::browser::select_option_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_scroll",
+            crate::methods::browser::scroll_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_screenshot",
+            crate::methods::browser::screenshot_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_eval",
+            crate::methods::browser::eval_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_decide",
+            crate::methods::browser::decide_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            browser_unit,
+            "browser_auto",
+            crate::methods::browser::auto_method
         );
 
         registry

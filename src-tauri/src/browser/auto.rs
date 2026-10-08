@@ -87,6 +87,10 @@ pub(crate) fn is_repeat(previous: &Option<DecisionKey>, current: &DecisionKey) -
 
 /// `max_steps` 参数解析:缺省/非法/非正数回落 [`DEFAULT_MAX_STEPS`](与
 /// `browser_extract` 的 `max_chars` 同款宽容风格)。
+///
+/// 契约层(`parse_action` → `starhub_domain_browser`)的缺省值是
+/// `DEFAULT_AUTO_STEPS`(20);本函数是 auto 循环侧的旧默认(8),
+/// 保留给 `run` 的直接调用方(AutoParams 已由 parse_action 校验过)。
 pub(crate) fn parse_max_steps(args: &serde_json::Value) -> usize {
     args.get("max_steps")
         .and_then(serde_json::Value::as_f64)

@@ -12,6 +12,8 @@ starhub-domain-db = { path = "../sidecar-rust/crates/starhub-domain-db" }
 starhub-domain-desktop = { path = "../sidecar-rust/crates/starhub-domain-desktop" }
 # 去 Tauri 化 M1:Android 域逻辑(adb 调用 + 任务授权 + 20 个工具执行体)
 starhub-domain-android = { path = "../sidecar-rust/crates/starhub-domain-android" }
+# 去 Tauri 化 M1:AI 浏览器契约层(16 工具参数解析 + 页面注入脚本;引擎随 M3)
+starhub-domain-browser = { path = "../sidecar-rust/crates/starhub-domain-browser" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"

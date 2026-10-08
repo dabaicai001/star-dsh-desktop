@@ -6653,6 +6653,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "starhub-domain-android",
+ "starhub-domain-browser",
  "starhub-domain-db",
  "starhub-domain-desktop",
  "starhub-domain-ssh",
@@ -6690,6 +6691,14 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "starhub-domain-browser"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

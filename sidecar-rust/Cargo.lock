@@ -1819,6 +1819,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "starhub-domain-browser"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "starhub-domain-db"
 version = "0.1.0"
 dependencies = [
@@ -1875,6 +1883,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starhub-domain-android",
+ "starhub-domain-browser",
  "starhub-domain-db",
  "starhub-domain-desktop",
  "starhub-domain-ssh",

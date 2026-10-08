@@ -1,20 +1,14 @@
-//! AI 浏览器页面侧注入脚本(M1 兜底通道 / M3 感知增强)。
+//! AI 浏览器页面侧注入脚本(从 `src-tauri/src/browser/script.rs` 平移,JS 逐字不变)。
 //!
 //! 两个出口:
-//! - [`HELPERS_JS`]:幂等定义 `window.__shb`(DOM 序列化 + 交互原语,含 Shadow
-//!   DOM / 同源 iframe 递归)与 `window.__shbEval`(结果经 `browser_internal_result`
-//!   命令回传 Rust 的 oneshot 桥);
-//! - [`wrap_eval`]:把一次求值包装成「注入助手 + 执行 + 回传」的完整脚本,
-//!   供 `webview.eval()` 使用(wry 的 eval 无返回值,结果只能走 IPC)。
+//! - [`HELPERS_JS`]:幂等定义 ``window.__shb``(DOM 序列化 + 交互原语,含 Shadow
+//!   DOM / 同源 iframe 递归)与 ``window.__shbEval``(结果经
+//!   `browser_internal_result` 命令回传宿主的 oneshot 桥);
+//! - [`wrap_eval`]:把一次求值包装成「注入助手 + 执行 + 回传」的完整脚本。
 //!
-//! 页面 CSP 不影响本通道:`webview.eval()` 走的是引擎自身的脚本执行接口
+//! 页面 CSP 不影响本通道:注入走的是引擎自身的脚本执行接口
 //! (WebView2 ExecuteScript / WKWebView evaluateJavaScript / WebKitGTK
 //! evaluate_javascript),不是往页面里插 <script> 标签。
-
-/// extract 默认正文文本上限(字符)。
-pub const DEFAULT_MAX_CHARS: usize = 6000;
-
-/// 页面助手脚本(幂等:重复注入直接返回)。只做定义,不执行任何动作。
 pub const HELPERS_JS: &str = r##"
 ;(function () {
   if (!window.__shbReport) {
@@ -256,6 +250,12 @@ pub const HELPERS_JS: &str = r##"
 })();
 "##;
 
+/// extract 默认正文文本上限(字符)。
+pub const DEFAULT_MAX_CHARS: usize = 6000;
+
+/// `browser_auto` 的缺省步数上限(设置层的 `AUTO_MAX_STEPS_RANGE` 负责钳制)。
+pub const DEFAULT_AUTO_STEPS: usize = 20;
+
 /// 把一段 JS 函数体包装成完整注入脚本:先幂等注入助手,再经 `__shbEval`
 /// 执行并用 `browser_internal_result` 回传 JSON 结果。
 ///
@@ -268,6 +268,11 @@ pub fn wrap_eval(id: &str, body: &str) -> String {
 
 /// URL 规范化与校验:只允许 http/https/about:blank;裸主机名补 https://。
 /// 拒绝 javascript:/file:/data: 等伪协议——AI 浏览器绝不执行导航型脚本注入。
+///
+/// 去 Tauri 化 M1:`tauri::Url` 换成**自实现纯解析**(语义对齐:
+/// 裸主机名补 `https://` 并在无路径时补 `/`;http/https 放行,
+/// `about:blank` 特判,其余协议拒收;主机名含空白/非法字符拒收)。
+/// 错误文案由「依赖内部文本」改为确定性的 `URL 无法解析「…」:…`。
 pub fn normalize_url(raw: &str) -> Result<String, String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -278,13 +283,70 @@ pub fn normalize_url(raw: &str) -> Result<String, String> {
     } else {
         format!("https://{trimmed}")
     };
-    let parsed =
-        tauri::Url::parse(&candidate).map_err(|e| format!("url 无法解析「{trimmed}」:{e}"))?;
-    match parsed.scheme() {
-        "http" | "https" => Ok(parsed.to_string()),
-        "about" if parsed.path() == "blank" => Ok("about:blank".to_string()),
-        scheme => Err(format!(
-            "不允许的 URL 协议「{scheme}」,AI 浏览器只支持 http/https"
+
+    // about: 家族只放行 about:blank
+    if let Some(rest) = candidate.strip_prefix("about:") {
+        if rest == "blank" {
+            return Ok("about:blank".to_string());
+        }
+        return Err(format!(
+            "不允许的 URL 协议「about」,AI 浏览器只支持 http/https"
+        ));
+    }
+
+    let Some((scheme, rest)) = candidate.split_once("://") else {
+        return Err(format!(
+            "URL 无法解析「{trimmed}」:缺少 scheme(形如 https://host/path)"
+        ));
+    };
+    if scheme.is_empty()
+        || !scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+    {
+        return Err(format!("URL 无法解析「{trimmed}」:scheme 非法"));
+    }
+
+    // authority / path 切分:无路径时补 `/`(与 tauri::Url 的归一化一致)
+    let (authority, path) = match rest.find('/') {
+        Some(pos) => (rest[..pos].to_string(), rest[pos..].to_string()),
+        None => (rest.to_string(), "/".to_string()),
+    };
+    if authority.is_empty() {
+        return if scheme == "http" || scheme == "https" {
+            Err(format!("URL 无法解析「{trimmed}」:缺少主机名"))
+        } else {
+            Err(format!(
+                "不允许的 URL 协议「{scheme}」,AI 浏览器只支持 http/https"
+            ))
+        };
+    }
+    // authority 白名单字符(主机名/IPv6/端口/userinfo):出现其它字符(空白、
+    // 括号、逗号、尖括号…)一律拒收——伪协议与畸形 URL 都从这里拦下。
+    if authority.is_empty()
+        || !authority
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".-_:~%@[]".contains(c))
+    {
+        return Err(format!("URL 无法解析「{trimmed}」:主机名含非法字符"));
+    }
+    // 至多一个 ':' 且右侧必须全是数字(端口);其余形态(如 "data:text/html"
+    // 这种把冒号塞进主机名的)一律拒收。
+    let colon = authority.find(':');
+    if let Some(pos) = colon {
+        if authority[..pos].contains(':') {
+            return Err(format!("URL 无法解析「{trimmed}」:主机名含非法字符"));
+        }
+        let port = &authority[pos + 1..];
+        if port.is_empty() || !port.chars().all(|c| c.is_ascii_digit()) {
+            return Err(format!("URL 无法解析「{trimmed}」:端口非法"));
+        }
+    }
+
+    match scheme {
+        "http" | "https" => Ok(format!("{scheme}://{authority}{path}")),
+        other => Err(format!(
+            "不允许的 URL 协议「{other}」,AI 浏览器只支持 http/https"
         )),
     }
 }
@@ -299,7 +361,10 @@ mod tests {
         assert!(script.contains(HELPERS_JS), "必须先注入助手");
         assert!(script.contains("window.__shbEval(\"req-1\", function()"));
         assert!(script.contains("return window.__shb.state();"));
-        assert!(script.contains("browser_internal_result"), "助手里必须含回传命令名");
+        assert!(
+            script.contains("browser_internal_result"),
+            "助手里必须含回传命令名"
+        );
     }
 
     #[test]
@@ -313,12 +378,17 @@ mod tests {
 
     #[test]
     fn normalize_url_accepts_http_https_and_bare_hosts() {
-        assert_eq!(normalize_url("example.com").unwrap(), "https://example.com/");
+        assert_eq!(
+            normalize_url("example.com").unwrap(),
+            "https://example.com/"
+        );
         assert_eq!(
             normalize_url("http://127.0.0.1:8080/__proxy__/x").unwrap(),
             "http://127.0.0.1:8080/__proxy__/x"
         );
         assert_eq!(normalize_url(" about:blank ").unwrap(), "about:blank");
+        // 显式 https 且无路径:同样补 /
+        assert_eq!(normalize_url("https://a.b").unwrap(), "https://a.b/");
     }
 
     #[test]
@@ -327,10 +397,25 @@ mod tests {
             "javascript:alert(1)",
             "file:///etc/passwd",
             "data:text/html,<script>1</script>",
+            "about:config",
+            "not a url",
             "",
             "   ",
         ] {
             assert!(normalize_url(bad).is_err(), "应拒绝:{bad}");
         }
+    }
+
+    #[test]
+    fn normalize_url_error_messages_are_deterministic() {
+        // 去 Tauri 化后错误文案不再依赖 tauri::Url 的内部文本
+        let err = normalize_url("not a url").unwrap_err();
+        assert!(err.contains("URL 无法解析"), "{err}");
+        // javascript: 无 "://" → 缺少 scheme 的确定性错误
+        let err = normalize_url("javascript:alert(1)").unwrap_err();
+        assert!(err.contains("URL 无法解析"), "{err}");
+        // file: 有 "://" 且 scheme 不在白名单 → 协议拒绝
+        let err = normalize_url("file:///etc/passwd").unwrap_err();
+        assert!(err.contains("不允许的 URL 协议"), "{err}");
     }
 }

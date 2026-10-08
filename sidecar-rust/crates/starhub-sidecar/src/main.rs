@@ -178,6 +178,7 @@ fn main() {
         Arc::clone(&db),
         Arc::clone(&desktop),
         Arc::clone(&android),
+        Arc::new(()),
     );
 
     let stdin = std::io::stdin();

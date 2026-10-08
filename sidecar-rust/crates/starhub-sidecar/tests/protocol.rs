@@ -635,7 +635,75 @@ fn desktop_methods_roundtrip_through_the_real_binary() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// ---------- Android 方法面(M1 第 6 步) ----------
+// ---------- Browser 方法面(M1 第 6 步) ----------
+
+#[test]
+fn capabilities_lists_the_browser_method_surface() {
+    let mut sidecar = Sidecar::spawn();
+    let response = sidecar
+        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-browser","method":"starhub_list_capabilities"}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    let methods: Vec<&str> = value["result"]["methods"]
+        .as_array()
+        .expect("methods array")
+        .iter()
+        .map(|m| m.as_str().expect("method name"))
+        .collect();
+    for expected in [
+        "browser_open",
+        "browser_navigate",
+        "browser_back",
+        "browser_forward",
+        "browser_reload",
+        "browser_state",
+        "browser_extract",
+        "browser_click",
+        "browser_type",
+        "browser_press_key",
+        "browser_select_option",
+        "browser_scroll",
+        "browser_screenshot",
+        "browser_eval",
+        "browser_decide",
+        "browser_auto",
+    ] {
+        assert!(
+            methods.contains(&expected),
+            "missing {expected}: {methods:?}"
+        );
+    }
+}
+
+/// Browser 方法面 roundtrip:参数契约(软错误)先于引擎提示返回;
+/// 未知方法仍是 -32601。
+#[test]
+fn browser_methods_roundtrip_through_the_real_binary() {
+    let mut sidecar = Sidecar::spawn_with_fake_go_sidecar(DB_ASSETS);
+
+    // 合法参数 → 引擎未就绪提示(M3 落地前的确定性应答)
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-1","method":"browser_open","params":{"url":"example.com"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert!(value["result"]["text"].as_str().unwrap().contains("M3"));
+
+    // 非法参数 → 软错误(与 Tauri 版文案一致)
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-2","method":"browser_click","params":{"id":"12a"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert!(value["result"]["text"].as_str().unwrap().contains("纯数字"));
+
+    let response = sidecar
+        .roundtrip(r#"{"jsonrpc":"2.0","id":"b-3","method":"browser_navigate","params":{}}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["result"]["text"]
+        .as_str()
+        .unwrap()
+        .contains("url 不能为空"));
+}
 
 #[test]
 fn capabilities_lists_the_android_method_surface() {
@@ -676,8 +744,8 @@ fn capabilities_lists_the_android_method_surface() {
             "missing {expected}: {methods:?}"
         );
     }
-    // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)= 69
-    assert_eq!(methods.len(), 69, "方法面总数: {methods:?}");
+    // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)+ 16(browser)= 85
+    assert_eq!(methods.len(), 85, "方法面总数: {methods:?}");
 }
 
 /// Android 方法面 roundtrip(不触设备的分支):未授权写操作硬错误;
