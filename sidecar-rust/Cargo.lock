@@ -1793,8 +1793,12 @@ dependencies = [
 name = "starhub-sidecar"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "serde",
  "serde_json",
+ "starhub-domain-ssh",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

@@ -49,7 +49,12 @@ impl<T: EventSink + ?Sized> EventSinkExt for T {
 /// Persistence for the TOFU host-key policy.
 pub trait KnownHostsStore: Send + Sync {
     /// Whether `fingerprint` is already trusted for `host:port`.
-    fn is_known<'a>(&self, host: &'a str, port: u16, fingerprint: &'a str) -> StoreFuture<'a, anyhow::Result<bool>>;
+    fn is_known<'a>(
+        &self,
+        host: &'a str,
+        port: u16,
+        fingerprint: &'a str,
+    ) -> StoreFuture<'a, anyhow::Result<bool>>;
 
     /// Persist a confirmed host key (insert-or-replace semantics).
     fn add_host<'a>(
@@ -62,22 +67,41 @@ pub trait KnownHostsStore: Send + Sync {
     ) -> StoreFuture<'a, anyhow::Result<()>>;
 
     /// The most recently confirmed OpenSSH public key for `host:port`.
-    fn trusted_public_key<'a>(&self, host: &'a str, port: u16) -> StoreFuture<'a, anyhow::Result<Option<String>>>;
+    fn trusted_public_key<'a>(
+        &self,
+        host: &'a str,
+        port: u16,
+    ) -> StoreFuture<'a, anyhow::Result<Option<String>>>;
 }
 
 /// Test double: an in-memory known-hosts policy.
-#[cfg(test)]
+///
+/// 刻意不挂 `#[cfg(test)]`:sidecar crate 自己的单测也要用同一份双端,
+/// 且它不含任何 I/O,随库发布没有代价。
 #[derive(Default)]
 pub struct MemoryKnownHostsStore {
     entries: std::sync::Mutex<Vec<(String, u16, String, String)>>,
 }
 
-#[cfg(test)]
+impl MemoryKnownHostsStore {
+    /// Build an empty store.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 impl KnownHostsStore for MemoryKnownHostsStore {
-    fn is_known<'a>(&self, host: &'a str, port: u16, fingerprint: &'a str) -> StoreFuture<'a, anyhow::Result<bool>> {
+    fn is_known<'a>(
+        &self,
+        host: &'a str,
+        port: u16,
+        fingerprint: &'a str,
+    ) -> StoreFuture<'a, anyhow::Result<bool>> {
         let found = {
             let entries = self.entries.lock().unwrap();
-            entries.iter().any(|(h, p, fp, _)| h == host && *p == port && fp == fingerprint)
+            entries
+                .iter()
+                .any(|(h, p, fp, _)| h == host && *p == port && fp == fingerprint)
         };
         Box::pin(async move { Ok(found) })
     }
@@ -93,12 +117,21 @@ impl KnownHostsStore for MemoryKnownHostsStore {
         {
             let mut entries = self.entries.lock().unwrap();
             entries.retain(|(h, p, fp, _)| !(h == host && *p == port && fp == fingerprint));
-            entries.push((host.to_string(), port, fingerprint.to_string(), public_key.to_string()));
+            entries.push((
+                host.to_string(),
+                port,
+                fingerprint.to_string(),
+                public_key.to_string(),
+            ));
         }
         Box::pin(async move { Ok(()) })
     }
 
-    fn trusted_public_key<'a>(&self, host: &'a str, port: u16) -> StoreFuture<'a, anyhow::Result<Option<String>>> {
+    fn trusted_public_key<'a>(
+        &self,
+        host: &'a str,
+        port: u16,
+    ) -> StoreFuture<'a, anyhow::Result<Option<String>>> {
         let key = {
             let entries = self.entries.lock().unwrap();
             entries
@@ -138,12 +171,24 @@ mod tests {
     async fn memory_known_hosts_store_roundtrips() {
         let store = MemoryKnownHostsStore::default();
         assert!(!store.is_known("h", 22, "fp").await.unwrap());
-        store.add_host("h", 22, "ssh-ed25519", "fp", "KEY").await.unwrap();
+        store
+            .add_host("h", 22, "ssh-ed25519", "fp", "KEY")
+            .await
+            .unwrap();
         assert!(store.is_known("h", 22, "fp").await.unwrap());
         assert!(!store.is_known("h", 22, "other").await.unwrap());
-        assert_eq!(store.trusted_public_key("h", 22).await.unwrap().as_deref(), Some("KEY"));
+        assert_eq!(
+            store.trusted_public_key("h", 22).await.unwrap().as_deref(),
+            Some("KEY")
+        );
         // insert-or-replace: same (host, port, fingerprint) keeps one entry
-        store.add_host("h", 22, "ssh-ed25519", "fp", "KEY2").await.unwrap();
-        assert_eq!(store.trusted_public_key("h", 22).await.unwrap().as_deref(), Some("KEY2"));
+        store
+            .add_host("h", 22, "ssh-ed25519", "fp", "KEY2")
+            .await
+            .unwrap();
+        assert_eq!(
+            store.trusted_public_key("h", 22).await.unwrap().as_deref(),
+            Some("KEY2")
+        );
     }
 }

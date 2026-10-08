@@ -4,15 +4,15 @@
 //! seams ([`events::EventSink`], [`events::KnownHostsStore`]) replace the
 //! former direct `tauri::AppHandle` / SQLite couplings.
 
-pub mod auth;
 pub mod asset_config;
+pub mod auth;
 pub mod events;
-pub mod manager;
 pub mod known_hosts;
+pub mod manager;
 pub mod session;
 pub mod sftp;
-pub mod sftp_types;
 mod sftp_transport;
+pub mod sftp_types;
 pub mod web_gateway;
 
 use serde::{Deserialize, Serialize};
@@ -169,10 +169,8 @@ mod tests {
     fn test_ssh_auth_private_key_no_passphrase() {
         let json = r#"{"PrivateKey":{"key":"keydata","passphrase":null}}"#;
         let auth: SshAuth = serde_json::from_str(json).unwrap();
-        assert!(
-            matches!(auth, SshAuth::PrivateKey { ref passphrase, .. }
-            if passphrase.is_none())
-        );
+        assert!(matches!(auth, SshAuth::PrivateKey { ref passphrase, .. }
+            if passphrase.is_none()));
     }
 
     #[test]

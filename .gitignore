@@ -113,3 +113,5 @@ test-sftp/.venv/
 test-sftp/__pycache__/
 # 测试 SSH/SFTP 服务器的持久 host key(本地生成的测试私钥,不入库)
 test-sftp/host_key.pem
+# exec_server.py 的 SFTP 根目录(服务器首启自动创建并写入 hello.txt)
+test-sftp/sftp-root/
