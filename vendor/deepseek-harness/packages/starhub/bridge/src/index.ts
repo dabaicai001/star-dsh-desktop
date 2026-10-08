@@ -1,17 +1,23 @@
 /**
  * StarHub sidecar bridge(去 Tauri 化 M1;StarHub 本地包,不在上游)。
  *
- * 迁移后的 StarHub 工具面执行端点:本插件在 dsh Host 进程内 spawn Go /
- * Rust 两个 sidecar,经 stdio JSON-RPC(换行分帧,与 `JsonRpcLineTransport`
- * 逐字节对齐)把 sidecar 方法面暴露给模型。旧 Tauri 壳的
- * `src-tauri/src/harness` 应答方整体退役后,`starhub-tools` 的
- * `starhub/tool.execute` 桥由本插件承接(兼容层在 M1 后续提交落地,
- * 9 插件 TS 侧零改动)。
+ * 迁移后的 StarHub 工具面执行端点:本插件在 dsh Host 进程内 spawn Rust
+ * sidecar,经 stdio JSON-RPC(换行分帧,与 `JsonRpcLineTransport` 逐字节对齐)
+ * 把 sidecar 方法面暴露给模型。旧 Tauri 壳的 `src-tauri/src/harness` 应答方
+ * 整体退役后,`starhub-tools` 等 9 个插件的 `starhub/tool.execute` 桥由本插件
+ * 承接——兼容层见 `compat.ts` 的 {@link createBridgePeer},9 插件的 TS 侧
+ * 零改动。
  *
- * 本提交(M1 垂直切片):进程生命周期 + 健康探针 + 一个状态工具
- * (`starhub_sidecar_status`),把「spawn → JSON-RPC → dsh 工具」全链路
- * 打通并测试;域工具(ssh/db/browser/…)按 `docs/去Tauri化-M1-命令映射清单.md`
- * 的顺序逐个平移进来。
+ * 本插件提供两个宿主私有服务(与 sdk-jsonrpc-server 在 Tauri 组合里提供的
+ * 同名,二选一;重复提供会在加载期 fail loud):
+ * - `sdk-transport`:桥 peer(`starhub/tool.execute` / `bind.asset` /
+ *   `open.asset` / `focus.tool` / `live.snapshot` → sidecar 方法);
+ * - `sdk-notifications`:入站通知 hub(sidecar 的 `starhub/domain-event` 按
+ *   内层 event 名分发给 domain-events / session-registry 等订阅者)。
+ *
+ * 另挂工作台 API(`/starhub/api/invoke` + `/starhub/api/events` SSE):React
+ * 工作台在独立组合里没有 Tauri IPC,这两条路由是它的调用/事件面(见
+ * `workbench.ts`)。
  *
  * @module @deepseek-ai/dsh-starhub-bridge
  */
@@ -20,10 +26,24 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { DEFAULT_HEALTH_TIMEOUT_MS, DEFAULT_SIDECAR_COMMAND, errorMessage, spawnSidecar } from './transport.ts'
+// Type-only: declares the `webServer` service on Context (route registration).
+import type {} from '@deepseek-ai/dsh-host-webserver'
+import {
+  BRIDGE_NOTIFICATIONS_SERVICE,
+  BRIDGE_TRANSPORT_SERVICE,
+  createBridgePeer,
+  NotificationDispatcher,
+} from './compat.ts'
+import {
+  DEFAULT_HEALTH_TIMEOUT_MS,
+  DEFAULT_SIDECAR_COMMAND,
+  errorMessage,
+  spawnSidecar,
+} from './transport.ts'
+import { eventsHandler, invokeHandler } from './workbench.ts'
 
 export const name = 'starhub-bridge'
-export const inject = ['tools']
+export const inject = ['tools', 'webServer']
 
 /**
  * 插件配置。sidecarCommand 是部署变化项(可执行路径随打包布局而变),
@@ -77,7 +97,7 @@ export function registerStatusTool(ctx: Context, getTransport: () => JsonRpcTran
       const transport = getTransport()
       const [ping, capabilities] = await Promise.all([
         transport.request('ping', {}),
-        transport.request('starhub_list_capabilities', {}),
+        transport.request('starhub/capabilities', {}),
       ])
       const methods = extractMethods(capabilities)
       const protocol = extractProtocol(ping)
@@ -104,10 +124,10 @@ function extractProtocol(value: unknown): string {
 }
 
 /**
- * 插件装配:spawn sidecar(健康探针失败即加载失败),注册状态工具,
- * dispose 时收进程。
+ * 插件装配:spawn sidecar(健康探针失败即加载失败),提供桥 peer 与通知 hub,
+ * 注册状态工具与工作台 API,dispose 时收进程。
  *
- * @param ctx - plugin context carrying the tool registry.
+ * @param ctx - plugin context carrying the tool and webServer registries.
  * @param config - resolved plugin config (cordis.yml / defaults).
  */
 export async function apply(ctx: Context, config: BridgeConfig = {}): Promise<void> {
@@ -115,12 +135,33 @@ export async function apply(ctx: Context, config: BridgeConfig = {}): Promise<vo
   const healthTimeoutMs = config.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS
 
   const handle = await spawnSidecar(command, healthTimeoutMs)
-  // Notifications from the sidecar (domain events, exec progress) arrive
-  // here once the domains are extracted; the transport requires a handler
-  // to be installed, and dropping them is the correct M1 behavior.
-  const transport = handle.transport
-  transport.onNotification((_method: string, _params: object) => {})
-  registerStatusTool(ctx, () => transport)
+  const sidecar = handle.transport
+  // 通知出口:sidecar 的 `starhub/domain-event`(内层 {event, payload})按事件名
+  // 分发给订阅插件(domain-events / session-registry / 直播面板)。
+  const notifications = new NotificationDispatcher()
+  notifications.attach(sidecar)
+  // 桥 peer:9 个 StarHub 插件经 `sdk-transport` 读到的就是它(协议不变)。
+  const peer = createBridgePeer(sidecar)
+  ctx.provide(BRIDGE_TRANSPORT_SERVICE, peer)
+  ctx.provide(BRIDGE_NOTIFICATIONS_SERVICE, notifications)
+  registerStatusTool(ctx, () => sidecar)
+  // 工作台 API(React 工作台的调用/事件面;独立组合里没有 Tauri IPC)。
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: '/starhub/api/invoke',
+      handler: invokeHandler(sidecar),
+    }),
+    'starhub-bridge: /starhub/api/invoke route',
+  )
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: '/starhub/api/events',
+      handler: eventsHandler(broadcast => notifications.subscribeAll(broadcast)),
+    }),
+    'starhub-bridge: /starhub/api/events SSE route',
+  )
   ctx.effect(() => async () => {
     try {
       await handle.dispose()

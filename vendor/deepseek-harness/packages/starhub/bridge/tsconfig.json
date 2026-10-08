@@ -15,6 +15,9 @@
       "path": "../../core/tools"
     },
     {
+      "path": "../../host/webserver"
+    },
+    {
       "path": "../../sdk/protocol"
     }
   ]

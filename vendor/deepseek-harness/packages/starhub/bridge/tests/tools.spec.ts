@@ -30,8 +30,8 @@ function transportPair(): { tool: JsonRpcLineTransport; dispose: () => void } {
   const sidecar = new JsonRpcLineTransport(toolToSidecar, sidecarToTool)
   sidecar.onRequest(async (method) => {
     if (method === 'ping') return { pong: true, protocol: 'fake-sidecar/1.0.0' }
-    if (method === 'starhub_list_capabilities') {
-      return { protocol: 'fake-sidecar/1.0.0', methods: ['ping', 'starhub_list_capabilities'] }
+    if (method === 'starhub/capabilities') {
+      return { protocol: 'fake-sidecar/1.0.0', methods: ['ping', 'starhub/capabilities'] }
     }
     throw new Error(`method not found: ${method}`)
   })
@@ -57,7 +57,7 @@ describe('starhub_sidecar_status tool', () => {
       expect(output.text).toContain('alive')
       expect(output.text).toContain('fake-sidecar/1.0.0')
       expect(output.text).toContain('2 method(s) registered')
-      expect(output.text).toContain('ping, starhub_list_capabilities')
+      expect(output.text).toContain('ping, starhub/capabilities')
     } finally {
       pair.dispose()
     }

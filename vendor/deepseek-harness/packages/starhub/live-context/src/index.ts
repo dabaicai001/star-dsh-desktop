@@ -240,13 +240,17 @@ export function apply(ctx: Context, config: Config): void {
   if (!resolved.enabled) return
   validateConfig(resolved)
   ctx.effect(() => {
-    // 宿主私有服务名(sdk-transport / starhub-session-registry / starhub-domain-events)
-    // 不走 Context 接口声明合并,读取后自行窄化;缺失即降级,不 fail loud。
-    // 在 effect 阶段读取:apply 阶段的 ctx.get 受 loader 拓扑影响,提供方
-    // (sdk-jsonrpc-server / session-registry / domain-events)可能尚未 apply。
+    // 宿主私有服务名(starhub-session-registry / starhub-domain-events /
+    // sdk-transport)不走 Context 接口声明合并,读取后自行窄化;缺失即降级,
+    // 不 fail loud。
+    // registry / events 是两个 store 服务,加载拓扑稳定,effect 阶段读一次即可;
+    // transport 每次 pre-step 现取:提供方(starhub-bridge 的 apply 是异步的——
+    // spawn + 健康探针之后才 provide)可能晚于本插件 apply,读一次就永久丢掉
+    // 快照段。
     const registry = ctx.get('starhub-session-registry') as SessionRegistry | undefined
     const events = ctx.get('starhub-domain-events') as DomainEventStore | undefined
-    const transport = ctx.get('sdk-transport') as JsonRpcTransportPeer | undefined
+    const getTransport = (): JsonRpcTransportPeer | undefined =>
+      ctx.get('sdk-transport') as JsonRpcTransportPeer | undefined
 
     return ctx.on('agent/pre-step', async (
       { signal },
@@ -254,7 +258,7 @@ export function apply(ctx: Context, config: Config): void {
     ): Promise<PreStepDecision> => {
       const decision = await next()
       if (decision.kind === 'reject' || signal.aborted) return decision
-      const text = await composeLiveContext(registry, events, transport, resolved.maxEvents, resolved.maxSnapshotChars)
+      const text = await composeLiveContext(registry, events, getTransport(), resolved.maxEvents, resolved.maxSnapshotChars)
       if (text === null) return decision
       return {
         kind: 'enter',
