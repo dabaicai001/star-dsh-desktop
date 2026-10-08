@@ -4,6 +4,7 @@ members = [
     "crates/starhub-domain-ssh",
     "crates/starhub-domain-db",
     "crates/starhub-domain-desktop",
+    "crates/starhub-domain-android",
 ]
 resolver = "2"
 

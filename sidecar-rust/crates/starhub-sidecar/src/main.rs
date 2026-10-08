@@ -17,6 +17,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use starhub_domain_ssh::events::{EventSink, KnownHostsStore};
+use starhub_sidecar::android_runtime::AndroidRuntime;
 use starhub_sidecar::bindings::SessionBindings;
 use starhub_sidecar::db_runtime::DbRuntime;
 use starhub_sidecar::desktop_runtime::DesktopRuntime;
@@ -164,11 +165,19 @@ fn main() {
         FileKnownHostsStore::from_env(),
         Arc::clone(&sink),
     ));
+    // Android 域:adb 直连本机(与 sidecar 同机),直播/接管是窗口面(M3),
+    // 这里只经通知出口表达意图。
+    let android = Arc::new(AndroidRuntime::new(
+        Arc::clone(ssh.assets()),
+        Arc::clone(&bindings),
+        Arc::clone(&sink),
+    ));
     let registry = methods::registry_with_domains(
         Arc::clone(&runtime),
         Arc::clone(&ssh),
         Arc::clone(&db),
         Arc::clone(&desktop),
+        Arc::clone(&android),
     );
 
     let stdin = std::io::stdin();

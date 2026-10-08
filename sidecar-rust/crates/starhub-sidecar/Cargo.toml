@@ -23,6 +23,8 @@ starhub-domain-ssh = { path = "../starhub-domain-ssh" }
 starhub-domain-db = { path = "../starhub-domain-db" }
 # Desktop 域:模板配方 + 任务授权 + xdotool/scrot 编排
 starhub-domain-desktop = { path = "../starhub-domain-desktop" }
+# Android 域:adb 调用 + 任务授权 + 20 个工具执行体
+starhub-domain-android = { path = "../starhub-domain-android" }
 # 异步域方法经 Runtime::block_on 在 stdio 线程上执行
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 uuid = { version = "1", features = ["v4"] }

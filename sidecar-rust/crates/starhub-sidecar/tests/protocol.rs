@@ -634,3 +634,124 @@ fn desktop_methods_roundtrip_through_the_real_binary() {
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ---------- Android 方法面(M1 第 6 步) ----------
+
+#[test]
+fn capabilities_lists_the_android_method_surface() {
+    let mut sidecar = Sidecar::spawn();
+    let response = sidecar
+        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-android","method":"starhub_list_capabilities"}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    let methods: Vec<&str> = value["result"]["methods"]
+        .as_array()
+        .expect("methods array")
+        .iter()
+        .map(|m| m.as_str().expect("method name"))
+        .collect();
+    for expected in [
+        "android_list_devices",
+        "android_connect",
+        "android_disconnect",
+        "android_device_status",
+        "android_replay",
+        "android_wireless",
+        "android_screenshot",
+        "android_current_app",
+        "android_ui_tree",
+        "android_tap",
+        "android_double_tap",
+        "android_swipe",
+        "android_scroll",
+        "android_type",
+        "android_press_key",
+        "android_launch_app",
+        "android_open_live",
+        "android_pull",
+        "android_push",
+        "android_exec",
+    ] {
+        assert!(
+            methods.contains(&expected),
+            "missing {expected}: {methods:?}"
+        );
+    }
+    // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)= 69
+    assert_eq!(methods.len(), 69, "方法面总数: {methods:?}");
+}
+
+/// Android 方法面 roundtrip(不触设备的分支):未授权写操作硬错误;
+/// `android_replay` 空清单走 JSON 帧存储;未知方法 -32601。
+#[test]
+fn android_methods_roundtrip_through_the_real_binary() {
+    let unique = format!(
+        "starhub-sidecar-android-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+    let dir = std::env::temp_dir().join(unique);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let assets = dir.join("assets.json");
+    std::fs::write(&assets, br#"{"assets":[]}"#).expect("seed assets file");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_starhub-sidecar-rust"));
+    command
+        .env("STARHUB_ASSETS_FILE", &assets)
+        .env("STARHUB_SECRETS_FILE", "")
+        .env("STARHUB_KNOWN_HOSTS_FILE", dir.join("known-hosts.json"))
+        .env("STARHUB_SANDBOX_FILE", dir.join("sandbox.json"))
+        .env("STARHUB_SETTINGS_FILE", dir.join("settings.json"))
+        .env("STARHUB_CACHE_DIR", dir.join("cache"))
+        .env(
+            "STARHUB_ANDROID_FRAMES_FILE",
+            dir.join("android-frames.json"),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().expect("sidecar binary spawns");
+
+    fn roundtrip(child: &mut Child, request: &str) -> String {
+        let stdin = child.stdin.as_mut().expect("stdin piped");
+        stdin.write_all(request.as_bytes()).expect("write request");
+        stdin.write_all(b"\n").expect("write newline");
+        stdin.flush().expect("flush request");
+        let stdout = child.stdout.as_mut().expect("stdout piped");
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read response");
+        line.trim_end().to_string()
+    }
+
+    // 未授权写操作:硬错误(不触 adb)
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"a-1","method":"android_tap","params":{"x":1,"y":2}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32603);
+    assert!(value["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("没有设备授权"));
+
+    // 空回放:走 JSON 帧存储(本机无 adb 也能答)
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"a-2","method":"android_replay","params":{"serial":"nope"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(value["result"]["text"], "设备 nope 没有回放帧");
+
+    // 未知工具:-32601
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"a-3","method":"android_nope","params":{}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32601);
+
+    drop(child.stdin.take());
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+}

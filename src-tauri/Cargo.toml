@@ -10,6 +10,8 @@ starhub-domain-ssh = { path = "../sidecar-rust/crates/starhub-domain-ssh" }
 starhub-domain-db = { path = "../sidecar-rust/crates/starhub-domain-db" }
 # 去 Tauri 化 M1:沙箱桌面域逻辑(配方 + 任务授权 + xdotool/scrot 编排)
 starhub-domain-desktop = { path = "../sidecar-rust/crates/starhub-domain-desktop" }
+# 去 Tauri 化 M1:Android 域逻辑(adb 调用 + 任务授权 + 20 个工具执行体)
+starhub-domain-android = { path = "../sidecar-rust/crates/starhub-domain-android" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"

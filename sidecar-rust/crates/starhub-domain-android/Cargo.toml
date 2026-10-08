@@ -1,0 +1,19 @@
+[package]
+name = "starhub-domain-android"
+description = "StarHub Android-device domain: adb invocation, task-level authorization, and the 20 android_* tool bodies extracted from the retired Tauri shell (M1 of the drop-Tauri migration)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "starhub_domain_android"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+chrono = "0.4"
+base64 = "0.23"
+tracing = "0.1"

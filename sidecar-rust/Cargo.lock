@@ -1807,6 +1807,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "starhub-domain-android"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "starhub-domain-db"
 version = "0.1.0"
 dependencies = [
@@ -1862,6 +1874,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "starhub-domain-android",
  "starhub-domain-db",
  "starhub-domain-desktop",
  "starhub-domain-ssh",

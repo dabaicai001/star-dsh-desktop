@@ -86,7 +86,8 @@ impl FileSettingsStore {
         Self { path }
     }
 
-    fn read_all(&self) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    /// 读全部设置(扁平 key→value 对象;文件不存在 = 空)。
+    pub fn read_all(&self) -> Result<serde_json::Map<String, serde_json::Value>, String> {
         match std::fs::read(&self.path) {
             Ok(bytes) => serde_json::from_slice::<serde_json::Value>(&bytes)
                 .map_err(|e| format!("设置文件解析失败({}): {e}", self.path.display()))

@@ -17,12 +17,14 @@ use std::sync::{Arc, Weak};
 use serde_json::{json, Value};
 use tokio::runtime::Runtime;
 
+use crate::android_runtime::AndroidRuntime;
 use crate::db_runtime::DbRuntime;
 use crate::desktop_runtime::DesktopRuntime;
 use crate::jsonrpc::RpcError;
 use crate::registry::{MethodRegistry, SIDECAR_PROTOCOL_VERSION};
 use crate::runtime::SshRuntime;
 
+pub mod android;
 pub mod db;
 pub mod desktop;
 pub mod ssh;
@@ -76,14 +78,15 @@ macro_rules! register_async {
 /// Build the registry with the built-ins plus every registered domain method.
 ///
 /// `runtime` drives the async domain handlers; `ssh` owns the SSH/SFTP session
-/// state, `db` the Go sidecar client and `desktop` the sandbox-desktop state.
-/// Keeping them behind `Arc` lets the registered closures stay
-/// `'static + Send + Sync`.
+/// state, `db` the Go sidecar client, `desktop` the sandbox-desktop state and
+/// `android` the device state. Keeping them behind `Arc` lets the registered
+/// closures stay `'static + Send + Sync`.
 pub fn registry_with_domains(
     runtime: Arc<Runtime>,
     ssh: Arc<SshRuntime>,
     db: Arc<DbRuntime>,
     desktop: Arc<DesktopRuntime>,
+    android: Arc<AndroidRuntime>,
 ) -> Arc<MethodRegistry> {
     Arc::new_cyclic(|weak| {
         let mut registry = MethodRegistry::new();
@@ -458,6 +461,148 @@ pub fn registry_with_domains(
             desktop,
             "desktop_request_user_action",
             crate::methods::desktop::request_user_action_method
+        );
+
+        // Android 域:20 个方法,方法名 = 工具名
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_list_devices",
+            crate::methods::android::list_devices_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_connect",
+            crate::methods::android::connect_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_disconnect",
+            crate::methods::android::disconnect_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_device_status",
+            crate::methods::android::device_status_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_replay",
+            crate::methods::android::replay_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_wireless",
+            crate::methods::android::wireless_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_screenshot",
+            crate::methods::android::screenshot_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_current_app",
+            crate::methods::android::current_app_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_ui_tree",
+            crate::methods::android::ui_tree_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_tap",
+            crate::methods::android::tap_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_double_tap",
+            crate::methods::android::double_tap_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_swipe",
+            crate::methods::android::swipe_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_scroll",
+            crate::methods::android::scroll_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_type",
+            crate::methods::android::type_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_press_key",
+            crate::methods::android::press_key_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_launch_app",
+            crate::methods::android::launch_app_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_open_live",
+            crate::methods::android::open_live_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_pull",
+            crate::methods::android::pull_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_push",
+            crate::methods::android::push_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            android,
+            "android_exec",
+            crate::methods::android::exec_method
         );
 
         registry

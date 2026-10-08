@@ -64,26 +64,13 @@ pub async fn android_ui_set_adb_path(app: AppHandle, path: Option<String>) -> Re
 /// 工具面板「Android」子类:adb 设备列表(serial/state/model)。只读,不需要授权。
 #[tauri::command]
 pub async fn android_ui_list_devices(app: AppHandle) -> Result<serde_json::Value, String> {
-    let manager = app.state::<crate::android::AndroidManager>();
-    let devices = crate::android::ui_list_devices(&manager).await?;
-    Ok(serde_json::Value::Array(
-        devices
-            .iter()
-            .map(|d| {
-                serde_json::json!({
-                    "serial": d.serial,
-                    "state": d.state,
-                    "model": d.model,
-                })
-            })
-            .collect(),
-    ))
+    let devices = crate::android::ui_list_devices(&app).await?;
+    Ok(devices)
 }
 
 /// 工具面板「Android」子类:打开设备直播窗口(用户点击 = 审批表达;围观/接管
 /// 由直播页内的「接管」开关控制,与 AI 工具路径打开的窗口完全同款)。
 #[tauri::command]
 pub async fn android_ui_open_live(app: AppHandle, serial: String) -> Result<(), String> {
-    let manager = app.state::<crate::android::AndroidManager>();
-    crate::android::ui_open_live(&app, &manager, &serial).await
+    crate::android::ui_open_live(&app, serial).await
 }
