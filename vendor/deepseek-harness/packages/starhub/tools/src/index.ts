@@ -1,15 +1,14 @@
 /**
- * StarHub 宿主工具桥(内核替换 P1-4 起,Phase 2 扩展全域工具;StarHub 本地包,
+ * StarHub 宿主工具桥(去 Tauri 化 M1 起由 starhub-bridge 承接;StarHub 本地包,
  * 不在上游)。把 StarHub 能力注册为 dsh 模型工具;工具体不在 dsh 进程内执行,
- * 而是经 SDK stdio JSON-RPC 的双向 request(方法 `starhub/tool.execute`,参数
- * `{ sessionId, name, args }`,结果为模型可读文本)桥回 StarHub 主进程,
- * 再由主进程分发给拥有该会话的前端面板执行(SSH/DB/Redis/ES/Docker/Excel/MCP
- * 等域工具)或在 Rust 内直接执行(全局工具:list_capabilities / list_assets)。
+ * 而是经 JSON-RPC(方法 `starhub/tool.execute`,参数 `{ sessionId, name, args }`,
+ * 结果为模型可读文本)桥回 StarHub 侧执行端点——新架构里是 starhub-bridge
+ * 插件 spawn 的 Rust sidecar(方法名 = 工具名)。
  *
  * 确认语义:本包不做确认;`starhub-approval-bridge` 插件在 tools/pre-execute 上按
  * 只读/风险分级把调用升级为 ask,经 ctx.approval 桥到前端确认卡(方案 5.2)。
- * 依赖同组合的 sdk-jsonrpc-server 插件提供的 `sdk-transport` 服务
- * (StarHub 对 sdk/server 的本地补丁);缺失时加载即失败(fail loud)。
+ * 依赖同组合的 starhub-bridge 插件提供的 `sdk-transport` 服务(兼容层见
+ * bridge 包 README);缺失时加载即失败(fail loud)。
  *
  * @module @deepseek-ai/dsh-starhub-tools
  */
@@ -457,183 +456,6 @@ export const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
       snapshot: { type: 'string', description: '可选,直接提供首屏 browser_extract 原文;不传则内部自动提取' },
     },
   },
-  // ── Excel(当前工作簿,前端执行)──
-  {
-    toolName: 'excel_get_context',
-    description: '获取当前工作簿、活动 Sheet、列名、行数、选中单元格和筛选状态。',
-    parameters: {},
-  },
-  {
-    toolName: 'excel_write_range',
-    description: '从指定数据行列开始批量写入二维区域。row 为 0-based 数据行索引,不含表头。',
-    parameters: {
-      row: { type: 'number', required: true, description: '起始 0-based 数据行索引,不含表头' },
-      col: { type: 'number', required: true, description: '起始 0-based 列索引' },
-      values: { type: 'array', required: true, description: '二维数组,每个内部数组代表一行' },
-    },
-  },
-  {
-    toolName: 'excel_fill_formula',
-    description: '批量填充公式。formula 支持 {excelRow}、{row}、{colLetter} 占位符。',
-    parameters: {
-      startRow: { type: 'number', required: true, description: '起始 0-based 数据行索引,不含表头' },
-      col: { type: 'number', required: true, description: '0-based 目标列索引' },
-      rowCount: { type: 'number', required: true, description: '填充行数' },
-      formula: { type: 'string', required: true, description: '公式模板,例如 =B{excelRow}*C{excelRow}' },
-    },
-  },
-  {
-    toolName: 'excel_read_range',
-    description: '读取当前筛选视图中的一段数据。',
-    parameters: {
-      startRow: { type: 'number', description: '0-based 数据行索引,不含表头' },
-      rowCount: { type: 'number', description: '读取多少行,默认 20' },
-    },
-  },
-  {
-    toolName: 'excel_set_headers',
-    description: '重写当前工作表表头。headers 数组会写入第 1 行。',
-    parameters: {
-      headers: { type: 'array', required: true, description: '新的表头数组' },
-    },
-  },
-  {
-    toolName: 'excel_find_replace',
-    description: '在当前工作表查找并替换文本。',
-    parameters: {
-      find: { type: 'string', required: true, description: '要查找的文本或正则' },
-      replace: { type: 'string', required: true, description: '替换为' },
-      matchCase: { type: 'boolean', description: '是否区分大小写' },
-      entireCell: { type: 'boolean', description: '是否整格匹配' },
-      useRegex: { type: 'boolean', description: '是否按正则表达式处理' },
-    },
-  },
-  {
-    toolName: 'excel_add_sheet',
-    description: '新增一个 Sheet 并切换过去。',
-    parameters: {
-      sheetName: { type: 'string', required: true, description: 'Sheet 名称' },
-    },
-  },
-  {
-    toolName: 'excel_remove_sheet',
-    description: '删除指定 Sheet。',
-    parameters: {
-      sheetName: { type: 'string', required: true, description: 'Sheet 名称' },
-    },
-  },
-  {
-    toolName: 'excel_rename_sheet',
-    description: '重命名 Sheet。',
-    parameters: {
-      oldName: { type: 'string', required: true, description: '旧 Sheet 名称' },
-      newName: { type: 'string', required: true, description: '新 Sheet 名称' },
-    },
-  },
-  {
-    toolName: 'excel_switch_sheet',
-    description: '切换到指定 Sheet。',
-    parameters: {
-      sheetName: { type: 'string', required: true, description: 'Sheet 名称' },
-    },
-  },
-  {
-    toolName: 'excel_style_header',
-    description: '为当前工作表第 1 行应用醒目的表头样式。CSV 中为 no-op。',
-    parameters: {},
-  },
-  {
-    toolName: 'excel_auto_filter',
-    description: '为当前工作表已用区域写入 Excel 自动筛选。',
-    parameters: {},
-  },
-  {
-    toolName: 'excel_write_cell',
-    description: '写入一个单元格。row 为 0-based 数据行索引,不含表头; col 为 0-based 列索引。',
-    parameters: {
-      row: { type: 'number', required: true, description: '0-based 数据行索引,不含表头' },
-      col: { type: 'number', required: true, description: '0-based 列索引' },
-      value: { type: 'string', required: true, description: '要写入的文本、数字或公式字符串' },
-    },
-  },
-  {
-    toolName: 'excel_insert_rows',
-    description: '在指定数据行前插入行。',
-    parameters: {
-      row: { type: 'number', required: true, description: '0-based 数据行索引,在此行前插入' },
-      count: { type: 'number', description: '插入行数,默认 1' },
-    },
-  },
-  {
-    toolName: 'excel_delete_rows',
-    description: '删除指定数据行。',
-    parameters: {
-      row: { type: 'number', required: true, description: '0-based 数据行索引' },
-      count: { type: 'number', description: '删除行数,默认 1' },
-    },
-  },
-  {
-    toolName: 'excel_insert_cols',
-    description: '在指定列前插入列。',
-    parameters: {
-      col: { type: 'number', required: true, description: '0-based 列索引,在此列前插入' },
-      count: { type: 'number', description: '插入列数,默认 1' },
-    },
-  },
-  {
-    toolName: 'excel_delete_cols',
-    description: '删除指定列。',
-    parameters: {
-      col: { type: 'number', required: true, description: '0-based 列索引' },
-      count: { type: 'number', description: '删除列数,默认 1' },
-    },
-  },
-  {
-    toolName: 'excel_sort',
-    description: '按列排序当前工作表数据,表头保持不动。',
-    parameters: {
-      col: { type: 'number', required: true, description: '0-based 排序列索引' },
-      descending: { type: 'boolean', description: 'true 为降序,false 为升序' },
-    },
-  },
-  {
-    toolName: 'excel_filter',
-    description: '按指定列关键词筛选当前视图。col 为空表示全列搜索。',
-    parameters: {
-      text: { type: 'string', required: true, description: '筛选关键词' },
-      col: { type: 'number', description: '0-based 列索引;不传则全列搜索' },
-    },
-  },
-  {
-    toolName: 'excel_clear_filter',
-    description: '清除当前筛选。',
-    parameters: {},
-  },
-  {
-    toolName: 'excel_freeze',
-    description: '设置冻结窗格。冻结表头 rows=1,冻结首列 cols=1,取消冻结 rows=0 cols=0。',
-    parameters: {
-      rows: { type: 'number', description: '要冻结的顶部行数' },
-      cols: { type: 'number', description: '要冻结的左侧列数' },
-    },
-  },
-  {
-    toolName: 'excel_remove_duplicates',
-    description: '删除重复数据行。',
-    parameters: {},
-  },
-  {
-    toolName: 'excel_dedup_to_sheet',
-    description: '按指定列或当前选中列删除重复项,保留第一次出现的整行数据,并把结果写入新的 Sheet。',
-    parameters: {
-      columns: { type: 'array', description: '可选,0-based 列索引数组。不传则使用当前选中列/选区/单元格所在列。' },
-    },
-  },
-  {
-    toolName: 'excel_save',
-    description: '保存当前文件。',
-    parameters: {},
-  },
   // ── 沙箱桌面(Ubuntu 容器沙箱平台,设计 docs/superpowers/specs/2026-08-28-desktop-automation-design.md)──
   // 安全模型:desktop_create_sandbox 的一次确认 = 任务级授权(60 分钟),授权期内
   // 箱内截图/键鼠全自动放行(授权由宿主在执行点强制);desktop_exec 恒确认;
@@ -998,12 +820,12 @@ export function apply(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: 'starhub_list_assets',
-    description: '列出 StarHub 工作区资产(SSH / 数据库 / Docker / 本机 / Excel)。',
+    description: '列出 StarHub 工作区资产(SSH / 数据库 / Docker / 本机)。',
     parameters: {
       type: {
         type: 'string',
-        enum: ['ssh', 'db', 'docker', 'local', 'excel'],
-        description: '可选: ssh、db、docker、local 或 excel',
+        enum: ['ssh', 'db', 'docker', 'local'],
+        description: '可选: ssh、db、docker 或 local',
       },
     },
     output: TEXT_OUTPUT,

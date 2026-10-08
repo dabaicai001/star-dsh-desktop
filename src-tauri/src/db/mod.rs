@@ -37,7 +37,7 @@ pub async fn init_database(app_handle: &AppHandle) -> Result<(), String> {
         .await
         .map_err(|e| format!("Failed to create tables: {}", e))?;
 
-    // 迁移:assets 表 CHECK 约束加入 'excel' 与 'local'
+    // 迁移:Excel 能力删除后收窄 assets 表 type CHECK(删历史 excel 资产行)
     migrate_assets_type_check(&pool).await?;
     migrate_asset_credentials(&pool).await?;
 
@@ -86,10 +86,11 @@ pub fn get_pool() -> Result<&'static SqlitePool, String> {
         .ok_or_else(|| "Database not initialized".to_string())
 }
 
-/// 迁移:给 assets 表的 type CHECK 约束加入 'excel' 与 'local'
-/// SQLite 不支持 ALTER CHECK,只能重建表
+/// 迁移:Excel 能力删除后把 assets 表的 type CHECK 约束收窄为
+/// ('ssh', 'db', 'docker', 'local')——SQLite 不支持 ALTER CHECK,只能重建表。
+/// 重建前先删掉历史 excel 资产行(工作簿文件不再由 StarHub 管理)。
 async fn migrate_assets_type_check(pool: &SqlitePool) -> Result<(), String> {
-    // 检查是否已经包含 'excel' 和 'local'(用旧表插入一条再删掉来检测)
+    // 检测是否还需要迁移:DDL 里已没有 'excel' 即已迁移(或全新安装)
     let check = sqlx::query_scalar::<_, String>(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='assets'",
     )
@@ -98,20 +99,20 @@ async fn migrate_assets_type_check(pool: &SqlitePool) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
 
     if let Some(ddl) = check {
-        if ddl.contains("'excel'") && ddl.contains("'local'") {
+        if !ddl.contains("'excel'") {
             return Ok(()); // 已迁移
         }
     } else {
-        return Ok(()); // 表还不存在(全新安装),schema 已包含 excel 与 local
+        return Ok(()); // 表还不存在(全新安装),schema 已不含 excel
     }
 
-    tracing::info!("Migrating assets table to add 'excel' and 'local' types...");
+    tracing::info!("Migrating assets table to drop the 'excel' asset type...");
 
     sqlx::raw_sql(
         "BEGIN;
          CREATE TABLE assets_new (
            id TEXT PRIMARY KEY,
-           type TEXT NOT NULL CHECK(type IN ('ssh', 'db', 'docker', 'excel', 'local')),
+           type TEXT NOT NULL CHECK(type IN ('ssh', 'db', 'docker', 'local')),
            name TEXT NOT NULL,
            group_id INTEGER,
            config_json TEXT NOT NULL DEFAULT '{}',
@@ -123,7 +124,7 @@ async fn migrate_assets_type_check(pool: &SqlitePool) -> Result<(), String> {
            updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
            FOREIGN KEY (group_id) REFERENCES asset_groups(id) ON DELETE SET NULL
          );
-         INSERT INTO assets_new SELECT * FROM assets;
+         INSERT INTO assets_new SELECT * FROM assets WHERE type <> 'excel';
          DROP TABLE assets;
          ALTER TABLE assets_new RENAME TO assets;
          CREATE INDEX IF NOT EXISTS idx_assets_type ON assets(type);

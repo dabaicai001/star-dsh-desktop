@@ -134,22 +134,6 @@ pub async fn dsh_approval_reply(
     Ok(Value::Null)
 }
 
-/// 应答一条 `dsh://tool-exec` 事件对应的域工具执行(requestId 来自事件 payload)。
-/// ok=true 时 text 作为工具结果返回给 dsh;ok=false 时 text 作为工具失败信息。
-#[tauri::command]
-pub async fn dsh_tool_exec_reply(
-    manager: State<'_, HarnessManager>,
-    request_id: String,
-    ok: bool,
-    text: String,
-) -> Result<Value, String> {
-    manager
-        .bridge()
-        .resolve_tool_exec(&request_id, ok, text)
-        .await;
-    Ok(Value::Null)
-}
-
 /// 记录 会话→资产 绑定(sessionId 关联到 assetId;asset_id 传空串解除绑定)。
 /// tools.rs 的 memory 工具 asset scope 用 sessionId 沿 subagent 父链解析该绑定
 /// (子代理会话继承父会话绑定);assetType 仅作调试信息。

@@ -326,7 +326,6 @@ fn main() {
             commands::db::db_mysql_update_rows,
             commands::db::db_mysql_delete_rows,
             commands::db::db_mysql_export_data,
-            commands::db::db_mysql_export_excel,
             commands::db::db_mysql_get_row_count,
             commands::db::db_mysql_get_table_meta,
             // Redis
@@ -391,7 +390,6 @@ fn main() {
             commands::db::db_clickhouse_update_rows,
             commands::db::db_clickhouse_delete_rows,
             commands::db::db_clickhouse_export_data,
-            commands::db::db_clickhouse_export_excel,
             commands::db::db_clickhouse_get_row_count,
             commands::db::db_clickhouse_get_table_meta,
             commands::db::db_clickhouse_get_partitions,
@@ -482,9 +480,8 @@ fn main() {
             commands::harness::dsh_prompt,
             commands::harness::dsh_cancel,
             commands::harness::dsh_shutdown,
-            // dsh 双向 request 桥应答(审批确认卡 / 域工具执行面板)+ 会话资产绑定
+            // dsh 双向 request 桥应答(审批确认卡)+ 会话资产绑定
             commands::harness::dsh_approval_reply,
-            commands::harness::dsh_tool_exec_reply,
             commands::harness::dsh_bind_session,
             // 联动:用户起源事件上报 + 面板「问 AI」入口(契约 §4)
             commands::harness::dsh_report_domain_event,

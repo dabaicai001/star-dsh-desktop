@@ -5,6 +5,21 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
+## [未发布]
+
+### 变更
+- 🔥 **Excel 能力全线删除**(去 Tauri 化 M1):24 个 `excel_*` 模型工具、Tauri 的 `dsh://tool-exec` / `dsh_tool_exec_reply` 转发通道、Go sidecar 的 Excel 适配器(`adapters/excel.go` / `excel_formulas.go` / `excel_test.go` 与 `file.excel.*` 20 个 RPC、MySQL/ClickHouse `db.*.exportExcel` 及 `ExportExcel` 实现)、excel 资产类型(`assets` 表 CHECK 收窄为 ssh/db/docker/local,重建时删历史 excel 行)、DB 工作台「导出 Excel」按钮、`#Excel` 模块作用域(`aiMention.ts`)一并移除;`starhub_list_capabilities` 静态文本去掉 excel 域。模型面工具 110 → 86。理由:React 工作台没有工作簿视图,`excel_*` 转发过去只会 180s 超时——工具定义与转发通道本就是死代码。共享表格类型/纯函数(`SheetData` / `CellChange` / `FindReplaceOptions` / `maxColumnCount` / `cellValueAt` / `isRowEmpty` / `trimTrailingEmptyRows` / `compareSheetValues` / `buildDedupKey` / `replaceCellText` / `replaceAllFold`)原样平移到 `sidecar/adapters/sheet.go`,CSV 链路零行为变化。
+- ✨ **sidecar 桥命令面 + AI 起源领域事件**(去 Tauri 化 M1):新增 `starhub/open.asset` / `starhub/focus.tool` / `starhub/live.snapshot`(注册表快照 + 传输 + recentExecs + 任务轨迹)与 `starhub/capabilities`(方法面清单);域工具成功后按契约 §1/M4 回写 `starhub/domain.event`(origin=ai,kind 按工具名映射,summary 单行 ≤200 字符只取白名单参数)与 recentExecs 缓存。**修正事件因果顺序**:通知改为「本条请求处理完、响应写出之前」刷盘——旧实现在下一条入站帧时才刷,对端看到的是「果在因前」。方法面 85 → **89**。
+- ✨ **`starhub-contract` crate**:领域事件 schema 与模型可读能力文本从 `src-tauri/src/harness/{events,tools}.rs` 平移,Tauri 壳与 Rust sidecar 共用同一份实现(事件形状/能力文本不可能漂移);src-tauri 的 `events.rs` 变为再导出 shim。
+- ✨ **bridge 插件兼容层落地**(9 插件 TS 侧零改动):`starhub-bridge` provide `sdk-transport` / `sdk-notifications` 两个宿主私有服务(与 `sdk-jsonrpc-server` 在 Tauri 组合里同名,二选一,重复提供 fail loud),实现 `starhub/tool.execute {sessionId,name,args}` → `method=name, params=args` 直调 sidecar(`{text}` 信封拆封为模型文本)、`starhub/bind.asset` → `bind_asset_context`、`open.asset` / `focus.tool` / `live.snapshot` 同名透传;`starhub/approval.request` 明确不应答(审批归 dsh 自己的 approval UI)。入站通知按 sidecar `starhub/domain-event` 的内层 event 名分发,订阅者异常隔离。
+- ✨ **bridge 工作台 API**:`POST /starhub/api/invoke`(命令 → sidecar 方法,`{ok:true,result}` / `{ok:false,error}`)+ `GET /starhub/api/events`(SSE,事件名原样透传)——React 工作台脱离 Tauri IPC 的调用/事件面(M2 搬入 dsh GUI 的座席)。
+- 🐛 **live-context 快照段永久丢失修复**:`sdk-transport` 改为每次 pre-step 现取——bridge 的 apply 是异步的(spawn + 健康探针之后才 provide),effect 注册时读一次会在 provide 晚于 apply 的组合里永久丢掉快照段。
+
+### 文档
+- 📝 `docs/去Tauri化-M1-命令映射清单.md`:第 7 步(Excel 删除 + 兼容层 + 9 插件适配)标记完成,Excel 行改为「已删除」,工具总数 110 → 86,方法面 85 → 89,分发替换图更新;`AGENTS.md` 技术栈/目录去掉 excelize 与 excel 适配器。
+
+---
+
 ## [0.127.0] - 2026-10-08
 
 ### 变更

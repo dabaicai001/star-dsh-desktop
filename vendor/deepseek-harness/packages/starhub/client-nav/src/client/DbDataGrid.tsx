@@ -27,8 +27,8 @@
  * db_mysql_list_columns(取主键列)、db_mysql_update_rows。返回 QueryResult:
  * `{ columns:[{name,type,nullable}], rows:unknown[][], totalRows?:number,
  * durationMs?:number, isSelect?:boolean, error?:string }`;`filter`(raw WHERE)/
- * `columnFilters` 由 db_mysql_get_table_data / db_clickhouse_get_table_data /
- * db_mysql_export_excel 的 Tauri command 显式声明透传。
+ * `columnFilters` 由 db_mysql_get_table_data / db_clickhouse_get_table_data
+ * 的 Tauri command 显式声明透传。
  *
  * @module StarHub DB data grid (client)
  */
@@ -212,13 +212,11 @@ export function whereSuggestions(text: string, cursor: number, columns: readonly
  * Render a virtualized, server-paginated DB result grid with editing, filters,
  * CSV export, and a copy-as-INSERT row context menu.
  * @param props - connection id, table name, and selected database.
- * @param props.onExport - optional callback invoked with the current sort
- *   state when the user clicks 导出 Excel; omitted to hide the button.
  * @returns the data grid (toolbar + virtual rows + pager).
  */
 export function DbDataGrid({
-  connId, table, database, cmdPrefix = 'db_mysql', onExport,
-}: { connId: string; table: string; database?: string; cmdPrefix?: 'db_mysql' | 'db_clickhouse'; onExport?: (orderBy: string | null, orderDir: 'asc' | 'desc', whereFilter: string | null) => void }) {
+  connId, table, database, cmdPrefix = 'db_mysql',
+}: { connId: string; table: string; database?: string; cmdPrefix?: 'db_mysql' | 'db_clickhouse' }) {
   const [result, setResult] = useState<QueryResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -717,11 +715,6 @@ export function DbDataGrid({
         <button type="button" className={css.exportBtn} onClick={refreshTable} disabled={loading} title="刷新当前表数据" aria-label="刷新当前表">
           <span className={css.refreshBtnInner}><IconRefreshOutlineMedium size={12} /> 刷新</span>
         </button>
-        {onExport !== undefined && (
-          <button type="button" className={css.exportBtn} onClick={() =>{  onExport(orderBy, orderDir, whereFilter !== '' ? whereFilter : null) }} title="全量导出该表到 Excel(后端执行,含当前筛选)">
-            导出 Excel
-          </button>
-        )}
         <button type="button" className={css.exportBtn} onClick={exportCsv} disabled={rows.length === 0} title="导出当前页为 CSV">
           导出 CSV
         </button>

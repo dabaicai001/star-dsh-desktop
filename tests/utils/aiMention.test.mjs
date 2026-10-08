@@ -86,7 +86,6 @@ test('workspacePrefix / tokenSafeName / assetMentionToken', () => {
   assert.equal(workspacePrefix('ssh'), 'SSH')
   assert.equal(workspacePrefix('db'), 'DB')
   assert.equal(workspacePrefix('docker'), 'Docker')
-  assert.equal(workspacePrefix('excel'), 'Excel')
   assert.equal(workspacePrefix('local'), 'LOCAL')
   assert.equal(tokenSafeName('我的  测试@机#器'), '我的-测试-机-器')
   assert.equal(assetMentionToken('ssh', '测试 服务器'), '#SSH-测试-服务器')
@@ -97,7 +96,6 @@ test('assetSummary 按类型给连接摘要', () => {
   assert.equal(assetSummary(makeAsset({ type: 'db', config: { dbType: 'redis', address: 'r://x' } })), 'redis · r://x')
   assert.equal(assetSummary(makeAsset({ type: 'docker', config: { dockerTransport: 'ssh' } })), 'ssh')
   assert.equal(assetSummary(makeAsset({ type: 'local', name: '本机', config: { rootPath: 'D:/code' } })), 'D:/code')
-  assert.equal(assetSummary(makeAsset({ type: 'excel', config: { format: 'csv' } })), 'csv')
 })
 
 test('filterMentionedAssets 按 token 匹配(大小写不敏感)', () => {

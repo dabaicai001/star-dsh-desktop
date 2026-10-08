@@ -427,16 +427,15 @@ describe('DbDataGrid', () => {
     expect(screen.queryByText(/保存 1/)).toBeNull()
   })
 
-  it('invokes the onExport callback with current sort state', async () => {
+  it('offers CSV export and no Excel export (the capability was removed)', async () => {
     const { calls } = stubInvoke()
-    const onExport = vi.fn()
-    render(<DbDataGrid connId="c1" table="users" onExport={onExport} />)
+    render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
+    // 排序仍走 orderBy 参数(Excel 导出删除后排序语义不变)。
     fireEvent.click(screen.getByText('name'))
     await waitFor(() =>{  expect(calls.some(([, a]) => a.orderBy === 'name')).toBe(true) })
-    fireEvent.click(screen.getByText('导出 Excel'))
-    // onExport 第三个参数携带当前 WHERE 条件(无筛选时传 null)。
-    expect(onExport).toHaveBeenCalledWith('name', 'asc', null)
+    expect(screen.queryByText('导出 Excel')).toBeNull()
+    expect(screen.getByText('导出 CSV')).toBeTruthy()
   })
 
   it('handles a column without a type hint', async () => {

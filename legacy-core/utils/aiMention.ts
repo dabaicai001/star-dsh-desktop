@@ -54,21 +54,20 @@ export function extractHashTokens(text: string): string[] {
   return Array.from(new Set(tokens))
 }
 
-/** 文本中的 # 模块作用域(#SSH/#DB/#Docker/#Excel/#LOCAL/#本机,大小写不敏感) */
+/** 文本中的 # 模块作用域(#SSH/#DB/#Docker/#LOCAL/#本机,大小写不敏感) */
 export function extractMentionScopes(text: string): AiAssetType[] {
-  const matches = Array.from(text.matchAll(/#(ssh|db|docker|excel|local|本机)(?=\s|$)/gi), match => {
+  const matches = Array.from(text.matchAll(/#(ssh|db|docker|local|本机)(?=\s|$)/gi), match => {
     const scope = match[1].toLowerCase()
     return scope === '本机' ? 'local' : scope
   })
   return Array.from(new Set(matches)) as AiAssetType[]
 }
 
-/** 资产类型 → # 模块前缀(SSH/DB/Docker/Excel/LOCAL) */
+/** 资产类型 → # 模块前缀(SSH/DB/Docker/LOCAL) */
 export function workspacePrefix(type: AiAssetType | string): string {
   if (type === 'ssh') return 'SSH'
   if (type === 'db') return 'DB'
   if (type === 'docker') return 'Docker'
-  if (type === 'excel') return 'Excel'
   return 'LOCAL'
 }
 

@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS asset_groups (
 -- 资产（连接）
 CREATE TABLE IF NOT EXISTS assets (
   id TEXT PRIMARY KEY,
-  type TEXT NOT NULL CHECK(type IN ('ssh', 'db', 'docker', 'excel', 'local')),
+  type TEXT NOT NULL CHECK(type IN ('ssh', 'db', 'docker', 'local')),
   name TEXT NOT NULL,
   group_id INTEGER,
   config_json TEXT NOT NULL DEFAULT '{}',

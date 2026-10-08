@@ -33,7 +33,6 @@ import { NewTableDialog, ColumnListDialog, IndexListDialog } from './DbTableDial
 import { DbDashboard } from './dashboard/DbDashboard.tsx'
 import { MetricIcon } from './dashboard/metric-icons.tsx'
 import type { CreateTableDbType } from './ddlGenerator.ts'
-import { isTauriRuntime } from './settings/services.ts'
 import { formatSql, splitStatements } from './sqlFormat.ts'
 import { addHistory, clearHistory, loadHistory, type SqlHistoryEntry } from './sqlHistory.ts'
 import css from './DbWorkbench.module.css'
@@ -457,9 +456,6 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     | { kind: 'indexes'; database: string; table: string }
     | null
   >(null)
-  // Excel 全量导出(后端执行)的进行态。
-  const [exporting, setExporting] = useState(false)
-  const [exportError, setExportError] = useState<string | null>(null)
   // 最新 connId(供 list_tables 与卸载 cleanup 断连;效应闭包拿不到最新异步态)。
   const connRef = useRef<string | null>(null)
   const [connected, setConnected] = useState(false)
@@ -864,45 +860,6 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     )))
   }, [])
 
-  /** 全量导出当前表到 Excel(后端执行,服务端直写 xlsx;whereFilter 透传 raw WHERE)。 */
-  const exportTableExcel = useCallback(async (table: string, database: string | undefined, orderBy: string | null, orderDir: 'asc' | 'desc', whereFilter: string | null) => {
-    const id = connRef.current
-    if (id === null) return
-    if (!isTauriRuntime()) {
-      setConnectError('浏览器预览环境不支持导出 Excel')
-      return
-    }
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')
-    const safe = `${database ?? ''}_${table}`.replace(/[^\w.]/g, '_').slice(0, 40) || 'export'
-    const filePath = await tauriInvoke<string | null>('plugin:dialog|save', {
-      options: {
-        defaultPath: `export_${safe}_${stamp}.xlsx`,
-        filters: [{ name: 'Excel', extensions: ['xlsx'] }],
-      },
-    })
-    if (filePath === null) return
-    setExportError(null)
-    setExporting(true)
-    try {
-      const cmd = dialect === 'clickhouse' ? 'db_clickhouse_export_excel' : 'db_mysql_export_excel'
-      const args: Record<string, unknown> = { connId: id, table, filePath }
-      if (database !== undefined) args.database = database
-      if (orderBy !== null) {
-        args.orderBy = orderBy
-        args.orderDir = orderDir
-      }
-      if (whereFilter !== null && whereFilter !== '') args.filter = whereFilter
-      const res = await tauriInvoke<{ filePath: string; totalRows?: number; durationMs?: number }>(cmd, args)
-      const rows = res.totalRows ?? 0
-      setConnectError(null)
-      window.alert(`导出完成:${rows.toLocaleString()} 行 → ${res.filePath}`)
-    } catch (e) {
-      setConnectError(`导出失败: ${e instanceof Error ? e.message : String(e)}`)
-    } finally {
-      setExporting(false)
-    }
-  }, [dialect])
-
   // 把已展开库的表拼成补全 schema(表名 → 列名;列名在展开时惰性拉取,
   // 经 columnsByTable state 驱动 memo 重算,列到达后立即参与补全)。
   const sqlSchema: SqlCompletionSchema = useMemo(() => {
@@ -1204,8 +1161,6 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                       table={activeTable.table}
                       cmdPrefix={cmdPrefix}
                       {...(activeTable.database !== undefined ? { database: activeTable.database } : {})}
-                      onExport={(orderBy, orderDir, whereFilter) =>
-                        void exportTableExcel(activeTable.table, activeTable.database, orderBy, orderDir, whereFilter)}
                     />
                   )
                 })()
@@ -1213,8 +1168,6 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
             ) : (
               <div className={css.placeholder}>连接数据库后将在此显示 SQL 编辑器</div>
             )}
-            {exporting && <div className={css.exportMsg}>正在导出 Excel…</div>}
-            {exportError !== null && !exporting && <div className={css.error}>{exportError}</div>}
           </section>
           {monitorSupported && showMonitor && (
             <div

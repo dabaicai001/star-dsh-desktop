@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,7 +11,6 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
-	"github.com/xuri/excelize/v2"
 )
 
 // ClickHouseAdapter 封装 ClickHouse 连接
@@ -668,132 +666,4 @@ func (a *ClickHouseAdapter) GetTableStats(database, table string) (*TableStats, 
 		return nil, fmt.Errorf("get table stats: %w", err)
 	}
 	return &stats, nil
-}
-
-// exportExcelSelectBase 构建 SELECT 查询基础(WHERE/ORDER BY,不含 LIMIT/OFFSET)。
-// 语义与 GetTableData 完全一致:filter 为 raw WHERE 条件(括号包裹),
-// columnFilters 为 列 → 值 精确匹配(`col = ?`),orderBy + orderDir 排序。
-func (a *ClickHouseAdapter) exportExcelSelectBase(database, table, filter, orderBy, orderDir string, columnFilters map[string]string) (string, []interface{}) {
-	query := "SELECT * FROM " + qualifiedIdentifier(database, table)
-
-	var conditions []string
-	var args []interface{}
-
-	if filter != "" {
-		conditions = append(conditions, "("+filter+")")
-	}
-	for col, val := range columnFilters {
-		conditions = append(conditions, fmt.Sprintf("%s = ?", quoteIdentifier(col)))
-		args = append(args, val)
-	}
-	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
-	}
-
-	if orderBy != "" {
-		dir := "ASC"
-		if strings.ToUpper(orderDir) == "DESC" {
-			dir = "DESC"
-		}
-		query += fmt.Sprintf(" ORDER BY %s %s", quoteIdentifier(orderBy), dir)
-	}
-	return query, args
-}
-
-// ExportExcel 将表全量导出为 .xlsx 文件(服务端直写磁盘)。
-// 使用流式 writer + 服务端 LIMIT/OFFSET 分页(默认每批 10000 行),避免大表整表载入内存。
-// 返回导出的总行数。
-func (a *ClickHouseAdapter) ExportExcel(database, table, filePath, filter string, columnFilters map[string]string, orderBy, orderDir string) (int64, error) {
-	if database == "" {
-		database = a.conn.Database
-	}
-
-	baseQuery, baseArgs := a.exportExcelSelectBase(database, table, filter, orderBy, orderDir, columnFilters)
-
-	f := excelize.NewFile()
-	sheet := "Sheet1"
-	sw, err := f.NewStreamWriter(sheet)
-	if err != nil {
-		return 0, fmt.Errorf("excel: new stream writer: %w", err)
-	}
-
-	const batchSize = 10000
-	var total int64
-
-	// 写表头
-	cols, err := a.ListColumns(database, table)
-	if err != nil {
-		_ = sw.Flush()
-		_ = f.Close()
-		return 0, fmt.Errorf("export excel: list columns: %w", err)
-	}
-	headerRow := make([]interface{}, len(cols))
-	for i, c := range cols {
-		headerRow[i] = c.Name
-	}
-	if err := writeStreamRow(sw, 1, headerRow); err != nil {
-		_ = f.Close()
-		return 0, err
-	}
-	total++ // 表头行占用行号 1,后续数据从行号 2 起
-
-	for offset := 0; ; offset += batchSize {
-		query := fmt.Sprintf("%s LIMIT %d OFFSET %d", baseQuery, batchSize, offset)
-		var result *QueryResult
-		var execErr error
-		if len(baseArgs) > 0 {
-			result, execErr = a.executeSelectArgs(query, baseArgs, time.Now())
-		} else {
-			result, execErr = a.executeSelect(query, time.Now())
-		}
-		if execErr != nil {
-			_ = sw.Flush()
-			_ = f.Close()
-			return 0, fmt.Errorf("export excel: %w", execErr)
-		}
-		if result.Error != "" {
-			_ = sw.Flush()
-			_ = f.Close()
-			return 0, fmt.Errorf("export excel: %s", result.Error)
-		}
-
-		rows := result.Rows
-		if len(rows) == 0 {
-			break
-		}
-		for _, row := range rows {
-			vals := make([]interface{}, len(row))
-			for i, v := range row {
-				vals[i] = excelSerializableValue(v)
-			}
-			if err := writeStreamRow(sw, int(total+1), vals); err != nil {
-				_ = f.Close()
-				return 0, err
-			}
-			total++
-		}
-		if len(rows) < batchSize {
-			break
-		}
-	}
-
-	if err := sw.Flush(); err != nil {
-		_ = f.Close()
-		return 0, fmt.Errorf("excel: flush stream writer: %w", err)
-	}
-
-	dataRows := total - 1 // 减去表头行
-
-	if err := os.MkdirAll(fileDir(filePath), 0o755); err != nil {
-		_ = f.Close()
-		return 0, fmt.Errorf("export excel: create dir: %w", err)
-	}
-	if err := f.SaveAs(filePath); err != nil {
-		_ = f.Close()
-		return 0, fmt.Errorf("export excel: save file: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return 0, fmt.Errorf("export excel: close file: %w", err)
-	}
-	return dataRows, nil
 }

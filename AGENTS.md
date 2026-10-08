@@ -43,7 +43,7 @@ starhub/
 ├── sidecar/                 # Go 1.25 Sidecar — 数据库/中间件代理
 │   ├── main.go               # stdio JSON-RPC server 入口
 │   ├── adapters/             # mysql / postgres / sqlite / redis / clickhouse / mssql /
-│   │                         # elasticsearch / broker(Kafka/NSQ)/ docker(+compose,+ssh)/ excel / csv / backup
+│   │                         # elasticsearch / broker(Kafka/NSQ)/ docker(+compose,+ssh)/ csv / backup
 │   ├── pool/  rpc/           # 连接池 / JSON-RPC 协议
 │   └── bin/                  # 构建输出 starhub-sidecar[.exe]
 │
@@ -70,7 +70,7 @@ starhub/
 
 - **前端**:React + TypeScript 5(strict)+ Vite 5;xterm.js 6(终端)、CodeMirror 6(SQL)、zmodem.js
 - **Rust**:tauri 2、tokio、russh 0.62 + russh-sftp 2、sqlx(SQLite + FTS5)、reqwest、keyring-core、serde、tracing、thiserror/anyhow;AI 浏览器平台 crate(webview2-com / objc2-web-kit / webkit2gtk 2.0.2)版本必须与 wry 0.55 锁定一致
-- **Go**:go-sql-driver/mysql、jackc/pgx、modernc.org/sqlite(纯 Go)、go-redis、clickhouse-go、go-mssqldb、go-elasticsearch、docker/docker、excelize、zerolog
+- **Go**:go-sql-driver/mysql、jackc/pgx、modernc.org/sqlite(纯 Go)、go-redis、clickhouse-go、go-mssqldb、go-elasticsearch、docker/docker、zerolog
 
 **铁律 — 新功能优先以 dsh 插件形式注入,禁止改 vendor 内核源码。** 新能力落在 `vendor/deepseek-harness/packages/starhub/*`,经槽位系统(`ctx.slots.register` / `slots.inject`)或 Cordis 服务(`ctx.provide` / `ctx.get`)接入。仅两种例外可动 vendor 源码:(1) 修 DSH 自身的 bug(注释标注「上游补丁」);(2) 扩展点上无法表达且改动最小。不新增 Vue 系依赖。
 

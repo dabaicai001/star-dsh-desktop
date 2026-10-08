@@ -1,23 +1,23 @@
-//! StarHub 宿主工具执行端(内核替换 P1-4,Phase 2 扩展全域工具;方案1 起
-//! 域工具改在 Rust 主进程内直接执行)。
+//! StarHub 宿主工具执行端(去 Tauri 化 M1:模型面工具全部在 Rust 侧执行,
+//! 域逻辑住在 `sidecar-rust/` workspace 的域 crate 里,本模块只留 Tauri 壳的
+//! 装配与审计)。
 //!
-//! dsh 侧 `@deepseek-ai/dsh-starhub-tools` 插件把工具调用经 SDK stdio 双向
+//! dsh 侧 `@deepseek-ai/dsh-starhub-tools` 插件把工具调用经 JSON-RPC 双向
 //! request 桥回本进程:方法 `starhub/tool.execute`,参数 `{ sessionId, name, args }`,
 //! result 为模型可读文本字符串;硬错误回 JSON-RPC error(-32603)。
 //! 软错误([DUPLICATE]/[FULL]/[NOMATCH]/[AMBIGUOUS]/[Error] …)按旧前端语义
 //! 原样作为文本返回,不 throw,由模型自行纠正后重试。
 //!
 //! 分发:
-//! - 全局工具(starhub_list_capabilities / starhub_list_assets)在 Rust 内执行
-//!   (tools.rs 本体);
-//! - 方案1 域工具(ssh_*/sftp_*/db_query/redis_exec/es_*/docker_*)由
-//!   [`domain`](self::domain) 模块在 Rust 主进程内直接执行——连接走
-//!   SshManager / SidecarManager,exec 带 exec_id 注册到桥的 inflight,
-//!   停止生成时由 `bridge.drain()` 真正中断(不再有「前端执行超时或窗口
-//!   已关闭」);
-//! - 其余(excel_*)因前端状态依赖,仍 emit `dsh://tool-exec`
-//!   转发给拥有该会话的前端面板,经 `dsh_tool_exec_reply` 应答等待结果
-//!   (超时 180s)。
+//! - 域工具(ssh_*/sftp_*/db_query/redis_exec/es_*/docker_*/browser_*/
+//!   desktop_*/android_*)在 Rust 主进程内直接执行——连接走 SshManager /
+//!   SidecarManager,exec 带 exec_id 注册到桥的 inflight,停止生成时由
+//!   `bridge.drain()` 真正中断;
+//! - 全局工具(starhub_list_capabilities / starhub_list_assets)在 Rust 内执行。
+//!
+//! (Excel 工作簿能力 `excel_*` 24 工具与其「转发前端面板」通道
+//! `dsh://tool-exec` / `dsh_tool_exec_reply` 已整体删除:React 工作台没有
+//! 工作簿视图,转发过去只会 180s 超时;见 CHANGELOG。)
 //!
 //! 工具语义对齐旧前端实现(src/utils/aiTools.ts 与 AiView.vue workspaceTools);
 //! 资产查询直读 assets 表(不 hydrate,绝不返回密码/密钥等敏感字段)。
@@ -35,45 +35,9 @@ use super::{HostBridgeState, DOMAIN_EVENT_EVENT, DOMAIN_EVENT_METHOD};
 /// 桥方法名(与 vendor/deepseek-harness/packages/starhub/tools/src/index.ts 对齐)。
 pub const BRIDGE_METHOD: &str = "starhub/tool.execute";
 
-/// 域工具执行超时(前端面板确认/执行 180s 未应答视为失败)。
-const TOOL_EXEC_TIMEOUT: Duration = Duration::from_secs(180);
-
-/// 仍在 Rust 进程内执行的域工具:ssh_*/sftp_*/db_query/redis_exec/es_*/docker_*
-/// 已迁移到进程内执行(方案1,见 domain 模块);这里只保留必须由前端面板
-/// 执行的工具——工作簿状态在 webview(Univer),无法脱离前端:
-/// - Excel:excel_*(当前工作簿在前端 Univer 内存)
-/// (与 vendor packages/starhub/tools/src/index.ts 的 BRIDGED_TOOLS 对齐)
-const FORWARDED_TOOLS: &[&str] = &[
-    // Excel(当前工作簿,前端执行)
-    "excel_get_context",
-    "excel_write_range",
-    "excel_fill_formula",
-    "excel_read_range",
-    "excel_set_headers",
-    "excel_find_replace",
-    "excel_add_sheet",
-    "excel_remove_sheet",
-    "excel_rename_sheet",
-    "excel_switch_sheet",
-    "excel_style_header",
-    "excel_auto_filter",
-    "excel_write_cell",
-    "excel_insert_rows",
-    "excel_delete_rows",
-    "excel_insert_cols",
-    "excel_delete_cols",
-    "excel_sort",
-    "excel_filter",
-    "excel_clear_filter",
-    "excel_freeze",
-    "excel_remove_duplicates",
-    "excel_dedup_to_sheet",
-    "excel_save",
-];
-
-/// 方案1:在 Rust 主进程内直接执行的域工具(见 harness/domain.rs)。
-/// 这些工具不再 emit `dsh://tool-exec`,因此不受「前端窗口关闭 → 180s 超时」
-/// 影响,停止生成也能经 bridge.drain() 真正中断。
+/// 在 Rust 主进程内直接执行的域工具(域逻辑住在 sidecar-rust workspace 的域
+/// crate 里,与 Rust sidecar 同一份执行体)。这些工具不依赖前端面板窗口存活,
+/// 停止生成也能经 bridge.drain() 真正中断。
 /// (与 vendor packages/starhub/tools/src/index.ts 的 BRIDGED_TOOLS 对齐)
 const IN_PROCESS_TOOLS: &[&str] = &[
     // SSH(会话绑定 SSH 资产)
@@ -150,7 +114,7 @@ pub async fn execute_bridge_request(
     result.map(Value::String)
 }
 
-/// 工具分发:域工具(前端转发 / 进程内执行)与全局工具,返回模型可读文本。
+/// 工具分发:域工具(进程内执行)与全局工具,返回模型可读文本。
 /// `Ok` 为工具结果文本(含软错误),`Err` 为硬错误(回 JSON-RPC error)。
 async fn dispatch_tool(
     bridge: &Arc<HostBridgeState>,
@@ -158,20 +122,9 @@ async fn dispatch_tool(
     name: &str,
     args: &Value,
 ) -> Result<String, String> {
-    // 域工具不在 Rust 内执行:emit dsh://tool-exec 转发前端面板,await 应答
-    if FORWARDED_TOOLS.contains(&name) {
-        let text = forward_to_frontend(bridge, session_id, name, args).await?;
-        // 联动 M4(契约 §1/§4):域工具成功后自动生成 origin=ai 领域事件,
-        // notify dsh + 广播 starhub://domain-event + 写 recentExecs 缓存。
-        // 失败路径不产生事件(用户拒绝/超时不代表 AI 动作完成)。
-        on_ai_tool_success(bridge, session_id, name, args, &text).await;
-        return Ok(text);
-    }
-
-    // 方案1:可在 Rust 主进程内直接执行的域工具(ssh_*/sftp_*/db_query/
+    // 方案1:在 Rust 主进程内直接执行的域工具(ssh_*/sftp_*/db_query/
     // redis_exec/es_*/docker_*)——进程内执行,不依赖前端面板窗口存活,
-    // 停止生成经 bridge.drain() 真正中断在途命令。excel_*
-    // 因工作簿状态在前端,仍走 FORWARDED_TOOLS。
+    // 停止生成经 bridge.drain() 真正中断在途命令。
     if IN_PROCESS_TOOLS.contains(&name) {
         let text = domain::execute_domain_tool(bridge, session_id, name, args).await?;
         on_ai_tool_success(bridge, session_id, name, args, &text).await;
@@ -292,58 +245,6 @@ async fn audit_ai_tool(
     }
 }
 
-/// 域工具转发:emit `dsh://tool-exec` `{requestId, sessionId, name, args}`,
-/// 把 pending 存入 map 后 await `dsh_tool_exec_reply`;
-/// ok=true 返回 text 作为桥结果,ok=false 把 text 作为工具失败抛回桥;
-/// 超时(180s)或应答通道关闭返回固定错误文本。
-async fn forward_to_frontend(
-    bridge: &HostBridgeState,
-    session_id: &str,
-    name: &str,
-    args: &Value,
-) -> Result<String, String> {
-    forward_to_frontend_with_timeout(bridge, session_id, name, args, TOOL_EXEC_TIMEOUT).await
-}
-
-/// 带超时的域工具转发(测试注入短超时;生产走 [`forward_to_frontend`])。
-async fn forward_to_frontend_with_timeout(
-    bridge: &HostBridgeState,
-    session_id: &str,
-    name: &str,
-    args: &Value,
-    timeout: Duration,
-) -> Result<String, String> {
-    let request_id = uuid::Uuid::new_v4().to_string();
-    bridge
-        .emit(
-            "dsh://tool-exec",
-            serde_json::json!({
-                "requestId": request_id,
-                "sessionId": session_id,
-                "name": name,
-                "args": args,
-            }),
-        )
-        .await;
-    let (response_tx, response_rx) = oneshot::channel();
-    bridge
-        .tool_execs
-        .lock()
-        .await
-        .insert(request_id.clone(), response_tx);
-    match tokio::time::timeout(timeout, response_rx).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(_)) => {
-            tracing::warn!("工具执行应答通道已关闭: {name}");
-            Err("前端执行通道已关闭".to_string())
-        }
-        Err(_) => {
-            bridge.tool_execs.lock().await.remove(&request_id);
-            tracing::warn!("工具执行超时({}s): {name}", timeout.as_secs());
-            Err("前端执行超时或窗口已关闭".to_string())
-        }
-    }
-}
 
 /// 域工具成功后的 AI 动作回写(契约 §1/M4):
 /// 1. 按工具名映射 kind,summary 单行 ≤200 字符且只取白名单参数(events::ai_tool_event);
@@ -392,18 +293,10 @@ pub(crate) async fn execute_tool(
 // starhub_list_capabilities:静态能力清单(内容照抄旧前端 executeWorkspaceTool)
 // ============================================================
 
+/// 模型可读能力清单文本。实现随契约层平移到 `starhub-contract`
+/// (去 Tauri 化 M1),与 Rust sidecar 共用同一份静态内容——逐字保持。
 fn list_capabilities() -> String {
-    serde_json::json!({
-        "ssh": ["终端", "主机仪表盘", "SFTP", "快速命令", "广播命令", "AI 运维工具"],
-        "db": ["MySQL/PostgreSQL/ClickHouse/Redis/Elasticsearch", "SQL 查询", "数据编辑", "结构与监控"],
-        "broker": ["Kafka", "NSQ", "Topic/Channel 状态"],
-        "docker": ["容器", "镜像", "日志", "Inspect", "SSH/TCP/Socket 连接"],
-        "excel": ["工作簿", "CSV", "编辑", "筛选", "排序", "公式", "导入导出"],
-        "local": ["Windows PowerShell", "macOS/Linux /bin/sh", "目录与路径元数据", "文本文件读写", "复制/移动/删除"],
-        "android": ["Android 实体机(adb)", "截屏回灌", "触控/滑动/按键/输入", "App 启动", "直播围观/接管", "文件传输", "无线调试配对"],
-        "application": ["资产与标签导航", "新建连接", "设置", "AI Agents", "Skills"],
-    })
-    .to_string()
+    events::capabilities_text()
 }
 
 // ============================================================
@@ -566,8 +459,8 @@ mod tests {
             "db",
             "broker",
             "docker",
-            "excel",
             "local",
+            "android",
             "application",
         ] {
             assert!(parsed.get(key).is_some(), "缺 {key} 域");
@@ -632,121 +525,7 @@ mod tests {
         assert!(err.contains("unsupported StarHub tool"), "{err}");
     }
 
-    // ---------- 域工具转发(dsh://tool-exec → dsh_tool_exec_reply) ----------
-
-    /// 域工具桥(方案1 后仍转发前端的工具):emit `dsh://tool-exec` 事件
-    /// (requestId/sessionId/name/args),应答(ok=true)后文本作为桥结果返回。
-    /// 用 excel_get_context(前端工作簿域)验证转发路径;ssh_*/db_query 等已
-    /// 迁到进程内执行(见 domain 模块),不再走此路径。
-    #[tokio::test]
-    async fn domain_tool_forwards_to_frontend_and_returns_text() {
-        let (emit_tx, mut emit_rx) = mpsc::channel::<(String, serde_json::Value)>(10);
-        let bridge = Arc::new(HostBridgeState::new(Arc::new(move |event, payload| {
-            let _ = emit_tx.try_send((event.to_string(), payload));
-        })));
-        let params = serde_json::json!({
-            "sessionId": "sess-1",
-            "name": "excel_get_context",
-            "args": {},
-        });
-        let handle = tokio::spawn({
-            let bridge = bridge.clone();
-            async move { execute_bridge_request("starhub/tool.execute", params, bridge).await }
-        });
-
-        let (event, payload) = emit_rx.recv().await.expect("应收到 dsh://tool-exec 事件");
-        assert_eq!(event, "dsh://tool-exec");
-        let request_id = payload["requestId"]
-            .as_str()
-            .expect("requestId")
-            .to_string();
-        assert_eq!(payload["sessionId"], "sess-1");
-        assert_eq!(payload["name"], "excel_get_context");
-        assert!(bridge.tool_execs.lock().await.contains_key(&request_id));
-
-        bridge
-            .resolve_tool_exec(
-                &request_id,
-                true,
-                "total 0\n-rw-r--r-- 1 u u 0 f".to_string(),
-            )
-            .await;
-        let result = handle
-            .await
-            .expect("桥执行完成")
-            .expect("应答 ok=true 应返回文本");
-        assert_eq!(result, "total 0\n-rw-r--r-- 1 u u 0 f");
-        assert!(!bridge.tool_execs.lock().await.contains_key(&request_id));
-    }
-
-    /// 域工具桥:ok=false 时 text 作为工具失败抛回桥(Err)。
-    /// 用 excel_get_context(仍转发前端)验证;db_query 已迁到进程内执行。
-    #[tokio::test]
-    async fn domain_tool_reply_error_propagates_as_failure() {
-        let (emit_tx, mut emit_rx) = mpsc::channel::<(String, serde_json::Value)>(10);
-        let bridge = Arc::new(HostBridgeState::new(Arc::new(move |event, payload| {
-            let _ = emit_tx.try_send((event.to_string(), payload));
-        })));
-        let handle = tokio::spawn({
-            let bridge = bridge.clone();
-            async move {
-                execute_bridge_request(
-                    "starhub/tool.execute",
-                    serde_json::json!({
-                        "sessionId": "sess-1",
-                        "name": "excel_get_context",
-                        "args": {},
-                    }),
-                    bridge,
-                )
-                .await
-            }
-        });
-        let (_event, payload) = emit_rx.recv().await.expect("应收到事件");
-        let request_id = payload["requestId"]
-            .as_str()
-            .expect("requestId")
-            .to_string();
-        bridge
-            .resolve_tool_exec(&request_id, false, "用户拒绝:高风险 SQL".to_string())
-            .await;
-        let err = handle
-            .await
-            .expect("桥执行完成")
-            .expect_err("ok=false 应把 text 作为错误抛给桥");
-        assert_eq!(err, "用户拒绝:高风险 SQL");
-    }
-
-    /// 域工具桥:180s 生产常量不可等,走带超时的内部实现验证超时错误文本。
-    #[tokio::test]
-    async fn domain_tool_timeout_returns_error_text() {
-        let bridge = empty_bridge();
-        let err = forward_to_frontend_with_timeout(
-            &bridge,
-            "sess-1",
-            "ssh_exec",
-            &serde_json::json!({ "command": "sleep 1" }),
-            Duration::from_millis(50),
-        )
-        .await
-        .expect_err("超时应失败");
-        assert_eq!(err, "前端执行超时或窗口已关闭");
-        assert!(
-            bridge.tool_execs.lock().await.is_empty(),
-            "超时后 pending 应清理"
-        );
-    }
-
-    /// 未知 requestId 的工具执行应答:幂等成功。
-    #[tokio::test]
-    async fn tool_exec_reply_unknown_request_id_is_noop() {
-        let bridge = empty_bridge();
-        assert!(
-            !bridge
-                .resolve_tool_exec("missing", true, "x".to_string())
-                .await
-        );
-    }
+    // ---------- 联动 M4:AI 动作回写(origin=ai 领域事件 + recentExecs) ----------
 
     /// 缺 sessionId 的桥请求:硬错误(与插件失败语义一致)。
     #[tokio::test]
@@ -764,107 +543,72 @@ mod tests {
 
     // ---------- 联动 M4:AI 动作回写(origin=ai 领域事件 + recentExecs) ----------
 
-    /// 前端桥接工具成功后:广播 `starhub://domain-event`(origin=ai,assetId 来自会话绑定),
+    /// 域工具成功后:广播 `starhub://domain-event`(origin=ai,assetId 来自会话绑定),
     /// recentExecs 缓存写入(输出尾部 ≤2KB);notify dsh 无 runtime 时静默跳过。
     ///
-    /// ssh_exec 已迁移到 Rust 进程内执行,在无 Tauri AppHandle 的单测中不能等待
-    /// 旧的 `dsh://tool-exec` 回调。excel_get_context 仍走前端桥接,可稳定覆盖成功回写路径。
+    /// 直接驱动 `on_ai_tool_success`(域工具已在进程内执行,不再有前端应答通道)。
     #[tokio::test]
-    async fn forwarded_tool_success_generates_ai_domain_event_and_recent_exec() {
+    async fn tool_success_generates_ai_domain_event_and_recent_exec() {
         let (emit_tx, mut emit_rx) = mpsc::channel::<(String, serde_json::Value)>(10);
         let bridge = Arc::new(HostBridgeState::new(Arc::new(move |event, payload| {
             let _ = emit_tx.try_send((event.to_string(), payload));
         })));
         bridge.bind_session("sess-1", "ssh", "a1");
 
-        let handle = tokio::spawn({
-            let bridge = bridge.clone();
-            async move {
-                execute_bridge_request(
-                    "starhub/tool.execute",
-                    serde_json::json!({
-                        "sessionId": "sess-1",
-                        "name": "excel_get_context",
-                        "args": {},
-                    }),
-                    bridge,
-                )
-                .await
-            }
-        });
-        let (_event, payload) = emit_rx.recv().await.expect("应收到 dsh://tool-exec 事件");
-        assert_eq!(payload["name"], "excel_get_context");
-        let request_id = payload["requestId"]
-            .as_str()
-            .expect("requestId")
-            .to_string();
-        bridge
-            .resolve_tool_exec(&request_id, true, "当前工作簿已就绪".to_string())
-            .await;
-        let result = handle
-            .await
-            .expect("桥执行完成")
-            .expect("应答 ok=true 应返回文本");
-        assert_eq!(result, "当前工作簿已就绪");
+        on_ai_tool_success(
+            &bridge,
+            "sess-1",
+            "ssh_exec",
+            &serde_json::json!({ "command": "systemctl status nginx" }),
+            "active (running)",
+        )
+        .await;
 
-        // 随后应收到 starhub://domain-event 广播
         let (event, payload) = emit_rx.recv().await.expect("应收到 domain-event 广播");
         assert_eq!(event, "starhub://domain-event");
         assert_eq!(payload["origin"], "ai");
         assert_eq!(payload["assetId"], "a1");
-        assert_eq!(payload["kind"], "tool.executed");
+        assert_eq!(payload["kind"], "ssh.exec_completed");
         assert!(payload["summary"]
             .as_str()
             .expect("summary")
-            .starts_with("excel_get_context"));
+            .starts_with("ssh_exec: systemctl status nginx"));
         assert!(payload["ts"].as_i64().expect("ts") > 0);
 
         // recentExecs 已缓存(每资产一条,tail 为输出尾部)
         let recents = bridge.recent_execs();
         assert_eq!(recents.len(), 1);
         assert_eq!(recents[0].asset_id, "a1");
-        assert_eq!(recents[0].tool_name, "excel_get_context");
-        assert_eq!(recents[0].tail, "当前工作簿已就绪");
+        assert_eq!(recents[0].tool_name, "ssh_exec");
+        assert_eq!(recents[0].tail, "active (running)");
         assert!(recents[0].ts > 0);
     }
 
     /// 域工具失败(用户拒绝/超时):不产生 AI 事件、不写 recentExecs。
+    /// 失败路径根本不调用 `on_ai_tool_success`;用未知工具的硬错误桥请求验证
+    /// 「没有任何领域事件广播、recentExecs 为空」。
+    /// 域工具失败(未绑定资产 → 执行器报错):不产生 AI 事件、不写 recentExecs。
+    /// 失败路径根本不调用 `on_ai_tool_success`;这里用 ssh_exec 的无绑定引导
+    /// 错误(确定性失败,不触网、不依赖数据库)覆盖该路径。
     #[tokio::test]
     async fn domain_tool_failure_does_not_generate_ai_event() {
         let (emit_tx, mut emit_rx) = mpsc::channel::<(String, serde_json::Value)>(10);
         let bridge = Arc::new(HostBridgeState::new(Arc::new(move |event, payload| {
             let _ = emit_tx.try_send((event.to_string(), payload));
         })));
-        bridge.bind_session("sess-1", "ssh", "a1");
 
-        let handle = tokio::spawn({
-            let bridge = bridge.clone();
-            async move {
-                execute_bridge_request(
-                    "starhub/tool.execute",
-                    serde_json::json!({
-                        "sessionId": "sess-1",
-                        "name": "excel_get_context",
-                        "args": {},
-                    }),
-                    bridge,
-                )
-                .await
-            }
-        });
-        let (_event, payload) = emit_rx.recv().await.expect("应收到 tool-exec 事件");
-        let request_id = payload["requestId"]
-            .as_str()
-            .expect("requestId")
-            .to_string();
-        bridge
-            .resolve_tool_exec(&request_id, false, "用户拒绝:高风险 SQL".to_string())
-            .await;
-        let err = handle
-            .await
-            .expect("桥执行完成")
-            .expect_err("ok=false 应把 text 作为错误抛给桥");
-        assert_eq!(err, "用户拒绝:高风险 SQL");
+        let err = execute_bridge_request(
+            "starhub/tool.execute",
+            serde_json::json!({
+                "sessionId": "sess-nobody",
+                "name": "ssh_exec",
+                "args": { "command": "ls" },
+            }),
+            Arc::clone(&bridge),
+        )
+        .await
+        .expect_err("未绑定资产应报硬错误");
+        assert!(err.contains("bind_asset_context"), "{err}");
         // 不应有 domain-event 广播,recentExecs 为空
         assert!(emit_rx.try_recv().is_err(), "失败路径不应产生领域事件");
         assert!(bridge.recent_execs().is_empty(), "失败路径不应写 recentExecs");
@@ -877,30 +621,7 @@ mod tests {
         let bridge = Arc::new(HostBridgeState::new(Arc::new(move |event, payload| {
             let _ = emit_tx.try_send((event.to_string(), payload));
         })));
-        let handle = tokio::spawn({
-            let bridge = bridge.clone();
-            async move {
-                execute_bridge_request(
-                    "starhub/tool.execute",
-                    serde_json::json!({
-                        "sessionId": "sess-nobody",
-                        "name": "excel_get_context",
-                        "args": {},
-                    }),
-                    bridge,
-                )
-                .await
-            }
-        });
-        let (_event, payload) = emit_rx.recv().await.expect("应收到 tool-exec 事件");
-        let request_id = payload["requestId"]
-            .as_str()
-            .expect("requestId")
-            .to_string();
-        bridge
-            .resolve_tool_exec(&request_id, true, "root".to_string())
-            .await;
-        handle.await.expect("桥执行完成").expect("成功");
+        on_ai_tool_success(&bridge, "sess-nobody", "ssh_exec", &serde_json::json!({}), "root").await;
         let (event, payload) = emit_rx.recv().await.expect("应收到 domain-event 广播");
         assert_eq!(event, "starhub://domain-event");
         assert_eq!(payload["origin"], "ai");

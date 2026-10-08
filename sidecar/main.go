@@ -37,7 +37,7 @@ func main() {
 			"version":         sidecarVersion,
 			"protocolVersion": protocolVersion,
 			"go":              "1.25+",
-			"modules":         "mysql,postgresql,redis,elasticsearch,clickhouse,kafka,nsq,docker,excel,csv",
+			"modules":         "mysql,postgresql,redis,elasticsearch,clickhouse,kafka,nsq,docker,csv",
 			"methods":         server.Methods(),
 		}, nil
 	})
@@ -53,8 +53,7 @@ func main() {
 	// 注册 Docker 方法
 	adapters.RegisterDockerHandlers(server, connMgr)
 
-	// 注册 Excel / CSV 文件方法
-	adapters.RegisterExcelHandlers(server, connMgr)
+	// 注册 CSV 文件方法
 	adapters.RegisterCSVHandlers(server, connMgr)
 
 	fmt.Fprintf(os.Stderr, "StarHub Sidecar ready\n")

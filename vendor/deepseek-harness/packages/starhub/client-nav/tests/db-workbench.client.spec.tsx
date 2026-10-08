@@ -23,7 +23,6 @@ function stubInvoke(scenario: {
   columns?: unknown
   indexes?: unknown
   execute?: unknown
-  savePath?: unknown
   rowCount?: unknown
   fail?: boolean
 }) {
@@ -53,8 +52,6 @@ function stubInvoke(scenario: {
       case 'db_mysql_get_row_count': return Promise.resolve(scenario.rowCount ?? 2)
       case 'db_mysql_drop_table': return Promise.resolve(null)
       case 'db_mysql_truncate_table': return Promise.resolve(null)
-      case 'db_mysql_export_excel': return Promise.resolve({ filePath: '/tmp/out.xlsx', totalRows: 2, durationMs: 10 })
-      case 'plugin:dialog|save': return Promise.resolve(scenario.savePath ?? '/tmp/out.xlsx')
       case 'db_mysql_disconnect': return Promise.resolve(null)
       default: return Promise.reject(new Error(`unexpected ${cmd}`))
     }
@@ -299,21 +296,16 @@ describe('DbWorkbench', () => {
     unmount()
   })
 
-  it('exports the selected table to Excel via the backend command', async () => {
-    const { calls } = stubInvoke({ savePath: 'C:/tmp/out.xlsx' })
+  it('offers CSV export only (the Excel export capability was removed)', async () => {
+    stubInvoke({})
     const { unmount } = render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
     fireEvent.click(screen.getByTitle('app'))
     await waitFor(() =>{  expect(screen.getByText('users')).toBeTruthy() })
     fireEvent.click(screen.getByText('users'))
-    await waitFor(() =>{  expect(screen.getByText('导出 Excel')).toBeTruthy() })
-    fireEvent.click(screen.getByText('导出 Excel'))
-    await waitFor(() =>{  expect(calls.some(([cmd]) => cmd === 'plugin:dialog|save')).toBe(true) })
-    await waitFor(() =>{  expect(calls.some(([cmd]) => cmd === 'db_mysql_export_excel')).toBe(true) })
-    const exportCall = calls.find(([cmd]) => cmd === 'db_mysql_export_excel')
-    expect(exportCall?.[1]?.table).toBe('users')
-    expect(exportCall?.[1]?.database).toBe('app')
-    expect(exportCall?.[1]?.filePath).toBe('C:/tmp/out.xlsx')
+    // Excel 导出按钮与后端命令都已删除:只剩 CSV 导出。
+    await waitFor(() =>{  expect(screen.getByText('导出 CSV')).toBeTruthy() })
+    expect(screen.queryByText('导出 Excel')).toBeNull()
     unmount()
   })
 

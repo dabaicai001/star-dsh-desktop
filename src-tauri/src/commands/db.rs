@@ -378,41 +378,6 @@ pub async fn db_mysql_export_data(
 }
 
 #[tauri::command]
-pub async fn db_mysql_export_excel(
-    sidecar: State<'_, SidecarManager>,
-    conn_id: String,
-    table: String,
-    file_path: String,
-    database: Option<String>,
-    filter: Option<String>,
-    column_filters: Option<HashMap<String, String>>,
-    order_by: Option<String>,
-    order_dir: Option<String>,
-) -> Result<Value, String> {
-    let mut params = serde_json::json!({
-        "connId": conn_id,
-        "table": table,
-        "filePath": file_path
-    });
-    if let Some(db) = database {
-        params["database"] = serde_json::json!(db);
-    }
-    if let Some(f) = &filter {
-        params["filter"] = serde_json::json!(f);
-    }
-    if let Some(cf) = &column_filters {
-        params["columnFilters"] = serde_json::json!(cf);
-    }
-    if let Some(ob) = order_by {
-        params["orderBy"] = serde_json::json!(ob);
-    }
-    if let Some(od) = order_dir {
-        params["orderDir"] = serde_json::json!(od);
-    }
-    sidecar.call("db.mysql.exportExcel", params).await
-}
-
-#[tauri::command]
 pub async fn db_mysql_get_row_count(
     sidecar: State<'_, SidecarManager>,
     conn_id: String,
@@ -1306,41 +1271,6 @@ pub async fn db_clickhouse_export_data(
         params["database"] = serde_json::json!(db);
     }
     sidecar.call("db.clickhouse.exportData", params).await
-}
-
-#[tauri::command]
-pub async fn db_clickhouse_export_excel(
-    sidecar: State<'_, SidecarManager>,
-    conn_id: String,
-    table: String,
-    file_path: String,
-    database: Option<String>,
-    filter: Option<String>,
-    column_filters: Option<HashMap<String, String>>,
-    order_by: Option<String>,
-    order_dir: Option<String>,
-) -> Result<Value, String> {
-    let mut params = serde_json::json!({
-        "connId": conn_id,
-        "table": table,
-        "filePath": file_path
-    });
-    if let Some(db) = database {
-        params["database"] = serde_json::json!(db);
-    }
-    if let Some(f) = &filter {
-        params["filter"] = serde_json::json!(f);
-    }
-    if let Some(cf) = &column_filters {
-        params["columnFilters"] = serde_json::json!(cf);
-    }
-    if let Some(ob) = order_by {
-        params["orderBy"] = serde_json::json!(ob);
-    }
-    if let Some(od) = order_dir {
-        params["orderDir"] = serde_json::json!(od);
-    }
-    sidecar.call("db.clickhouse.exportExcel", params).await
 }
 
 #[tauri::command]
