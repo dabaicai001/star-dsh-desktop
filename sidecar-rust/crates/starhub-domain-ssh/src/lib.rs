@@ -13,6 +13,7 @@ pub mod session;
 pub mod sftp;
 mod sftp_transport;
 pub mod sftp_types;
+pub mod tools;
 pub mod web_gateway;
 
 use serde::{Deserialize, Serialize};

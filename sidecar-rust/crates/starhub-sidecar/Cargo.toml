@@ -19,6 +19,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # 域运行时:SSH/SFTP 会话 + 传输(与 src-tauri 同一份域 crate)
 starhub-domain-ssh = { path = "../starhub-domain-ssh" }
+# DB/Redis/ES/Docker 域:Go sidecar 客户端 + 模型面执行器
+starhub-domain-db = { path = "../starhub-domain-db" }
 # 异步域方法经 Runtime::block_on 在 stdio 线程上执行
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 uuid = { version = "1", features = ["v4"] }

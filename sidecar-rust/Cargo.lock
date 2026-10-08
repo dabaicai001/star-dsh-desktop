@@ -1770,6 +1770,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "starhub-domain-db"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "starhub-domain-ssh",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "starhub-domain-ssh"
 version = "0.1.0"
 dependencies = [
@@ -1796,6 +1809,7 @@ dependencies = [
  "anyhow",
  "serde",
  "serde_json",
+ "starhub-domain-db",
  "starhub-domain-ssh",
  "tokio",
  "uuid",

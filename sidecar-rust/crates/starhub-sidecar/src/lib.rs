@@ -1,5 +1,5 @@
 //! StarHub Rust sidecar library: wire types, method registry, built-in
-//! methods, and the domain runtime for the stdio JSON-RPC protocol shared
+//! methods, and the domain runtimes for the stdio JSON-RPC protocol shared
 //! with the TypeScript bridge (`JsonRpcLineTransport` framing).
 //!
 //! The binary entry lives in `main.rs`; domain modules register their
@@ -14,6 +14,7 @@
 //! | [`registry`] | name → handler dispatch with the protocol's error mapping |
 //! | [`methods`] | built-ins (`ping`, capabilities) + domain registration |
 //! | [`runtime`] | SSH/SFTP session lifecycle shared by the `ssh_*` / `sftp_*` methods |
+//! | [`db_runtime`] | Go sidecar client shared by the `db_*` / `es_*` / `docker_*` methods |
 //! | [`assets`] | asset store (JSON file + secret-store seam) |
 //! | [`bindings`] | session → asset bindings (subagent parent chain) |
 //! | [`session_registry`] | assetId → session attachment view (`registry.sync`) |
@@ -21,6 +22,7 @@
 
 pub mod assets;
 pub mod bindings;
+pub mod db_runtime;
 pub mod jsonrpc;
 pub mod known_hosts_store;
 pub mod methods;

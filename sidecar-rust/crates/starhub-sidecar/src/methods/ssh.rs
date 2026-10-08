@@ -8,47 +8,53 @@
 use serde_json::{json, Value};
 
 use crate::jsonrpc::RpcError;
-use crate::runtime::SshRuntime;
+use crate::runtime::{resolve_asset_id, SshRuntime};
 
-/// 取字符串参数;缺失/空串返回 None。
-fn str_arg<'a>(params: &'a Value, key: &str) -> Option<&'a str> {
+/// 取工具参数:`args` 信封(bridge 的 `starhub/tool.execute` 形态)优先,
+/// 否则参数平铺(工具直调形态)。
+pub fn tool_args(params: &Value) -> Value {
     params
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-}
-
-/// 解析目标资产:显式 `assetId` 优先,否则用会话绑定(沿 subagent 父链)。
-fn resolve_asset_id(runtime: &SshRuntime, params: &Value) -> Result<String, RpcError> {
-    if let Some(asset_id) = str_arg(params, "assetId") {
-        return Ok(asset_id.to_string());
-    }
-    if let Some(session_id) = str_arg(params, "sessionId") {
-        if let Some((_asset_type, asset_id)) = runtime.resolve_bound_asset(session_id) {
-            return Ok(asset_id);
-        }
-    }
-    Err(RpcError::invalid_params(
-        "缺少 assetId,且当前会话未绑定资产:请先调用 starhub_list_assets 查看可用资产,\
-         再调用 bind_asset_context 绑定目标资产(不打开窗口),或调用 open_connection / \
-         focus_terminal 打开目标资产后重试",
-    ))
+        .get("args")
+        .cloned()
+        .unwrap_or_else(|| params.clone())
 }
 
 /// 域执行的硬错误 → `-32603`(message 透传,模型可读);软错误(空命令 /
 /// 长 sleep 引导等)以 `Ok` 文本返回,由模型决策下一步。
-fn domain_error(message: String) -> RpcError {
+pub fn domain_error(message: String) -> RpcError {
     RpcError::internal(message)
+}
+
+/// 工具族校验:资产类型与工具不匹配 → 软错误(Ok 文本)。
+///
+/// 与 Tauri 版 `execute_domain_tool` 的 `check_tool_asset_type` 同语义:
+/// 「@ 数据库资产却调 ssh_exec」这类误路由必须拦下并给引导,而不是让域逻辑
+/// 报一句难懂的类型错误。资产不存在时返回 None(交给后续硬错误路径)。
+fn check_asset_family(runtime: &SshRuntime, name: &str, asset_id: &str) -> Option<Value> {
+    let record = runtime.assets().get(asset_id).ok()?;
+    let kind = if record.asset_type == "db" {
+        record
+            .config
+            .get("dbType")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    } else {
+        record.asset_type.clone()
+    };
+    starhub_domain_db::check_tool_asset_type(&record.asset_type, &kind, name)
+        .err()
+        .map(|hint| json!({ "text": hint }))
 }
 
 /// `ssh_exec` / `ssh_exec_background` / `ssh_wait_task` 的公共入口。
 async fn ssh_exec(runtime: &SshRuntime, name: &str, params: &Value) -> Result<Value, RpcError> {
-    let asset_id = resolve_asset_id(runtime, params)?;
-    let args = params
-        .get("args")
-        .cloned()
-        .unwrap_or_else(|| params.clone());
+    let asset_id =
+        resolve_asset_id(runtime.bindings(), params).map_err(RpcError::invalid_params)?;
+    if let Some(soft) = check_asset_family(runtime, name, &asset_id) {
+        return Ok(soft);
+    }
+    let args = tool_args(params);
     let text = runtime
         .execute_ssh(name, &asset_id, &args)
         .await
@@ -76,7 +82,11 @@ pub async fn ssh_session_status_method(
     runtime: &SshRuntime,
     params: &Value,
 ) -> Result<Value, RpcError> {
-    let asset_id = resolve_asset_id(runtime, params)?;
+    let asset_id =
+        resolve_asset_id(runtime.bindings(), params).map_err(RpcError::invalid_params)?;
+    if let Some(soft) = check_asset_family(runtime, "ssh_session_status", &asset_id) {
+        return Ok(soft);
+    }
     let text = runtime
         .execute_ssh_status(&asset_id)
         .await
@@ -86,11 +96,12 @@ pub async fn ssh_session_status_method(
 
 /// `sftp_list` / `sftp_stat` / `sftp_upload` / `sftp_download` 的公共入口。
 async fn sftp(runtime: &SshRuntime, name: &str, params: &Value) -> Result<Value, RpcError> {
-    let asset_id = resolve_asset_id(runtime, params)?;
-    let args = params
-        .get("args")
-        .cloned()
-        .unwrap_or_else(|| params.clone());
+    let asset_id =
+        resolve_asset_id(runtime.bindings(), params).map_err(RpcError::invalid_params)?;
+    if let Some(soft) = check_asset_family(runtime, name, &asset_id) {
+        return Ok(soft);
+    }
+    let args = tool_args(params);
     let text = runtime
         .execute_sftp(name, &asset_id, &args)
         .await
@@ -142,6 +153,7 @@ mod tests {
             Arc::clone(&assets),
             Arc::new(NoopSink),
             Arc::new(MemoryKnownHostsStore::default()),
+            Arc::new(crate::bindings::SessionBindings::new()),
         ));
         (runtime, dir)
     }

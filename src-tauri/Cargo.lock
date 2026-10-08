@@ -6652,6 +6652,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "starhub-domain-db",
  "starhub-domain-ssh",
  "tauri",
  "tauri-build",
@@ -6675,6 +6676,19 @@ dependencies = [
  "windows-native-keyring-store",
  "xcap",
  "zbus-secret-service-keyring-store",
+]
+
+[[package]]
+name = "starhub-domain-db"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "starhub-domain-ssh",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

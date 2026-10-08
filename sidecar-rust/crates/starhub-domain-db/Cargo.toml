@@ -1,0 +1,21 @@
+[package]
+name = "starhub-domain-db"
+description = "StarHub DB/Redis/ES/Docker domain: Go sidecar stdio client plus the model-facing tool executors extracted from the retired Tauri shell (M1 of the drop-Tauri migration)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "starhub_domain_db"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+tracing = "0.1"
+# Docker over SSH 复用 SSH 域的 TOFU 主机密钥策略(同一份 KnownHostsStore)
+starhub-domain-ssh = { path = "../starhub-domain-ssh" }

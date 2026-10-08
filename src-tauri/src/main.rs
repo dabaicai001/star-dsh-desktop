@@ -204,7 +204,7 @@ fn main() {
                     tracing::error!("数据库初始化失败: {error}");
                 }
                 let manager = app_handle.state::<sidecar::SidecarManager>();
-                if let Err(error) = manager.start(&app_handle).await {
+                if let Err(error) = manager.start().await {
                     tracing::error!("sidecar 启动失败: {error}");
                 }
                 let bridge = app_handle.state::<harness::HarnessManager>().bridge();

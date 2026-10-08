@@ -1,26 +1,28 @@
-//! Built-in methods available before any domain module is extracted.
+//! Built-in methods plus the domain method surface.
 //!
 //! `ping` is the liveness probe the bridge uses after spawn; the capability
 //! report is the seed of the model-facing `starhub_list_capabilities` tool —
 //! it reads the live registry so the inventory can never drift from the
 //! registered method surface.
 //!
-//! Domain modules (ssh/sftp today, db/browser/android/desktop next) register
-//! through the runtime shim: their handlers are async, the registry surface
-//! stays synchronous, so [`registry_with_domains`] wraps each handler in
-//! `Runtime::block_on`. The stdio loop processes one request at a time, so
-//! blocking the loop thread for the duration of a domain call preserves
-//! request/response ordering without any extra synchronization.
+//! Domain modules (ssh/sftp, then db/redis/es/docker; browser/android/desktop
+//! next) register through the runtime shim: their handlers are async, the
+//! registry surface stays synchronous, so [`registry_with_domains`] wraps each
+//! handler in `Runtime::block_on`. The stdio loop processes one request at a
+//! time, so blocking the loop thread for the duration of a domain call
+//! preserves request/response ordering without any extra synchronization.
 
 use std::sync::{Arc, Weak};
 
 use serde_json::{json, Value};
 use tokio::runtime::Runtime;
 
+use crate::db_runtime::DbRuntime;
 use crate::jsonrpc::RpcError;
 use crate::registry::{MethodRegistry, SIDECAR_PROTOCOL_VERSION};
 use crate::runtime::SshRuntime;
 
+pub mod db;
 pub mod ssh;
 
 /// Liveness probe.
@@ -56,15 +58,15 @@ pub fn registry_with_builtins() -> Arc<MethodRegistry> {
 
 /// 注册一个异步域方法:闭包在 stdio 线程上 `block_on` 到完成。
 ///
-/// 域 handler 形如 `async fn(&SshRuntime, &Value) -> Result<Value, RpcError>`;
+/// 域 handler 形如 `async fn(&Runtime, &Value) -> Result<Value, RpcError>`;
 /// future 在闭包体内创建并当场消费,借用不越过调用,因此 registry 的同步
 /// handler 面(`Fn(&Value) -> Result<Value, RpcError>`)无需任何特判。
 macro_rules! register_async {
-    ($registry:expr, $runtime:expr, $ssh:expr, $name:literal, $handler:path) => {
+    ($registry:expr, $runtime:expr, $state:expr, $name:literal, $handler:path) => {
         $registry.register($name, {
             let runtime = Arc::clone(&$runtime);
-            let ssh = Arc::clone(&$ssh);
-            move |params: &Value| runtime.block_on($handler(&ssh, params))
+            let state = Arc::clone(&$state);
+            move |params: &Value| runtime.block_on($handler(&state, params))
         });
     };
 }
@@ -72,9 +74,13 @@ macro_rules! register_async {
 /// Build the registry with the built-ins plus every registered domain method.
 ///
 /// `runtime` drives the async domain handlers; `ssh` owns the SSH/SFTP session
-/// state. Keeping both behind `Arc` lets the registered closures stay
-/// `'static + Send + Sync`.
-pub fn registry_with_domains(runtime: Arc<Runtime>, ssh: Arc<SshRuntime>) -> Arc<MethodRegistry> {
+/// state and `db` owns the Go sidecar client. Keeping them behind `Arc` lets
+/// the registered closures stay `'static + Send + Sync`.
+pub fn registry_with_domains(
+    runtime: Arc<Runtime>,
+    ssh: Arc<SshRuntime>,
+    db: Arc<DbRuntime>,
+) -> Arc<MethodRegistry> {
     Arc::new_cyclic(|weak| {
         let mut registry = MethodRegistry::new();
         registry.register("ping", ping);
@@ -185,6 +191,113 @@ pub fn registry_with_domains(runtime: Arc<Runtime>, ssh: Arc<SshRuntime>) -> Arc
             ssh,
             "sftp_download",
             crate::methods::ssh::sftp_download_method
+        );
+
+        // DB / Redis / ES / Docker 域:15 个方法,方法名 = 工具名
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "db_query",
+            crate::methods::db::db_query_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "redis_exec",
+            crate::methods::db::redis_exec_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "es_list_indices",
+            crate::methods::db::es_list_indices_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "es_cluster_health",
+            crate::methods::db::es_cluster_health_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "es_get_mapping",
+            crate::methods::db::es_get_mapping_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "es_search",
+            crate::methods::db::es_search_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "es_get_document",
+            crate::methods::db::es_get_document_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "es_count",
+            crate::methods::db::es_count_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "es_index_document",
+            crate::methods::db::es_index_document_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "es_delete_document",
+            crate::methods::db::es_delete_document_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "es_delete_index",
+            crate::methods::db::es_delete_index_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "docker_list_containers",
+            crate::methods::db::docker_list_containers_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "docker_logs",
+            crate::methods::db::docker_logs_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "docker_inspect",
+            crate::methods::db::docker_inspect_method
+        );
+        register_async!(
+            &mut registry,
+            runtime,
+            db,
+            "docker_exec",
+            crate::methods::db::docker_exec_method
         );
 
         registry

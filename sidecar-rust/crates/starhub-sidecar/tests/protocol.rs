@@ -7,6 +7,12 @@
 //! throwaway file — no real SSH server is contacted; the covered paths are
 //! the ones that answer before any network I/O (asset resolution, status
 //! query, abort acknowledgement).
+//!
+//! The DB/Redis/ES/Docker methods additionally need a Go sidecar to talk to;
+//! `spawn_with_fake_go_sidecar` points `STARHUB_GO_SIDECAR` at a wrapper that
+//! runs the Python protocol double shipped in `starhub-domain-db`, so the
+//! whole chain (binary → registry → block_on → GoSidecar → fake Go sidecar)
+//! is exercised without a real MySQL/Redis/ES/Docker.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -24,6 +30,25 @@ struct Sidecar {
 impl Sidecar {
     /// Spawn the binary with an empty asset store in a throwaway directory.
     fn spawn() -> Self {
+        Self::spawn_inner(None)
+    }
+
+    /// Spawn with a seeded asset store and the fake Go sidecar wired in.
+    fn spawn_with_fake_go_sidecar(assets: &str) -> Self {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("starhub-domain-db")
+            .join("tests")
+            .join("fixtures")
+            .join("fake-go-sidecar.py")
+            .canonicalize()
+            .expect("fake Go sidecar fixture resolves");
+        let (program, args) = python_interpreter();
+        let wrapper = write_wrapper(&fixture, &program, &args);
+        Self::spawn_inner(Some((assets.to_string(), wrapper)))
+    }
+
+    fn spawn_inner(config: Option<(String, PathBuf)>) -> Self {
         let unique = format!(
             "starhub-sidecar-it-{}-{}",
             std::process::id(),
@@ -32,17 +57,24 @@ impl Sidecar {
         let dir = std::env::temp_dir().join(unique);
         std::fs::create_dir_all(&dir).expect("temp dir");
         let assets = dir.join("assets.json");
-        std::fs::write(&assets, br#"{"assets":[]}"#).expect("seed assets file");
-        let child = Command::new(env!("CARGO_BIN_EXE_starhub-sidecar-rust"))
+        let seeded = config
+            .as_ref()
+            .map(|(assets, _)| assets.clone())
+            .unwrap_or_else(|| r#"{"assets":[]}"#.to_string());
+        std::fs::write(&assets, seeded).expect("seed assets file");
+        let mut command = Command::new(env!("CARGO_BIN_EXE_starhub-sidecar-rust"));
+        command
             .env("STARHUB_ASSETS_FILE", &assets)
             // 空串 = 内存密钥存储:测试不碰任何真实密钥环
             .env("STARHUB_SECRETS_FILE", "")
             .env("STARHUB_KNOWN_HOSTS_FILE", dir.join("known-hosts.json"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("sidecar binary spawns");
+            .stderr(Stdio::piped());
+        if let Some((_, wrapper)) = &config {
+            command.env("STARHUB_GO_SIDECAR", wrapper);
+        }
+        let child = command.spawn().expect("sidecar binary spawns");
         Self { child, _dir: dir }
     }
 
@@ -78,6 +110,71 @@ impl Drop for Sidecar {
         let _ = self.child.wait();
         let _ = std::fs::remove_dir_all(&self._dir);
     }
+}
+
+/// 找一个 Python 解释器(契约测试的假 Go sidecar 是 Python 脚本)。
+fn python_interpreter() -> (String, Vec<String>) {
+    for candidate in ["python", "python3"] {
+        if Command::new(candidate)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+        {
+            return (candidate.to_string(), Vec::new());
+        }
+    }
+    // 兜底:仓库 venv(test-sftp/.venv),相对本 crate 的位置固定
+    let venv = if cfg!(target_os = "windows") {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../test-sftp/.venv/Scripts/python.exe")
+    } else {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../test-sftp/.venv/bin/python")
+    };
+    (
+        venv.canonicalize()
+            .expect("a python interpreter is available for the contract tests")
+            .display()
+            .to_string(),
+        Vec::new(),
+    )
+}
+
+/// 写一个启动包装:把「解释器 + fixture 脚本」包成单个可执行路径,
+/// 这样 `STARHUB_GO_SIDECAR`(单程序路径)就能承载「python script.py」。
+fn write_wrapper(fixture: &std::path::Path, program: &str, _args: &[String]) -> PathBuf {
+    let unique = format!(
+        "starhub-go-wrapper-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+    let dir = std::env::temp_dir().join(unique);
+    std::fs::create_dir_all(&dir).expect("wrapper dir");
+    let path = dir.join(if cfg!(target_os = "windows") {
+        "fake-go-sidecar.cmd"
+    } else {
+        "fake-go-sidecar.sh"
+    });
+    let body = if cfg!(target_os = "windows") {
+        format!(
+            "@echo off\r\n\"{program}\" \"{}\" %*\r\n",
+            fixture.display()
+        )
+    } else {
+        format!(
+            "#!/bin/sh\nexec \"{program}\" \"{}\" \"$@\"\n",
+            fixture.display()
+        )
+    };
+    std::fs::write(&path, body).expect("write wrapper");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("wrapper executable");
+    }
+    path
 }
 
 #[test]
@@ -297,4 +394,120 @@ fn bind_asset_context_rejects_unknown_assets_and_missing_params() {
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     assert_eq!(value["error"]["code"], -32603);
     assert_eq!(value["error"]["message"], "资产不存在: ghost");
+}
+
+// ---------- DB / Redis / ES / Docker 方法面(M1 第 5 步) ----------
+
+/// 资产库:mysql / redis / es / docker 各一条(假 Go sidecar 提供连接与结果)。
+const DB_ASSETS: &str = r#"{
+  "assets": [
+    { "id": "mysql-1", "type": "db", "name": "mysql",
+      "config": { "dbType": "mysql", "host": "db.internal", "port": 3306,
+                  "username": "root", "password": "pw", "database": "app" } },
+    { "id": "redis-1", "type": "db", "name": "redis",
+      "config": { "dbType": "redis", "host": "r.internal", "port": 6379, "redisDb": 3 } },
+    { "id": "es-1", "type": "db", "name": "es",
+      "config": { "dbType": "elasticsearch", "host": "es.internal", "port": 9200 } },
+    { "id": "docker-1", "type": "docker", "name": "docker",
+      "config": { "dockerTransport": "socket" } }
+  ]
+}"#;
+
+#[test]
+fn capabilities_lists_the_db_method_surface() {
+    let mut sidecar = Sidecar::spawn();
+    let response = sidecar
+        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-db","method":"starhub_list_capabilities"}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    let methods: Vec<&str> = value["result"]["methods"]
+        .as_array()
+        .expect("methods array")
+        .iter()
+        .map(|m| m.as_str().expect("method name"))
+        .collect();
+    for expected in [
+        "db_query",
+        "redis_exec",
+        "es_list_indices",
+        "es_cluster_health",
+        "es_get_mapping",
+        "es_search",
+        "es_get_document",
+        "es_count",
+        "es_index_document",
+        "es_delete_document",
+        "es_delete_index",
+        "docker_list_containers",
+        "docker_logs",
+        "docker_inspect",
+        "docker_exec",
+    ] {
+        assert!(
+            methods.contains(&expected),
+            "missing {expected}: {methods:?}"
+        );
+    }
+}
+
+/// 全链路 roundtrip:真二进制 → 方法注册 → block_on → GoSidecar → 假 Go sidecar。
+/// 断言的是模型可读文本(契约),不是内部结构。
+#[test]
+fn db_methods_roundtrip_through_the_real_binary() {
+    let mut sidecar = Sidecar::spawn_with_fake_go_sidecar(DB_ASSETS);
+
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"db-1","method":"db_query","params":{"assetId":"mysql-1","sql":"SELECT * FROM users"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(
+        value["result"]["text"],
+        "列: id, name\nid=1 | name=alice\nid=2 | name=bob"
+    );
+
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"db-2","method":"redis_exec","params":{"assetId":"redis-1","command":"GET key","db":15}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(value["result"]["text"], "cached-value");
+
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"db-3","method":"es_list_indices","params":{"assetId":"es-1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(
+        value["result"]["text"],
+        "logs-2026 | 12 | 48kb | green\nmetrics | 3 | 12kb | yellow"
+    );
+
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"db-4","method":"docker_exec","params":{"assetId":"docker-1","container":"web","command":"echo hi"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(value["result"]["text"], "container-output");
+
+    // 工具族不匹配 → 软错误(Ok 文本):mysql 资产上调 ssh_exec
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"db-5","method":"ssh_exec","params":{"assetId":"mysql-1","command":"ls"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert!(value["result"]["text"]
+        .as_str()
+        .unwrap()
+        .contains("不是 SSH 资产"));
+
+    // SELECT 拦截 → 软错误(不触网)
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"db-6","method":"redis_exec","params":{"assetId":"redis-1","command":"SELECT 15"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert!(value["result"]["text"]
+        .as_str()
+        .unwrap()
+        .contains("SELECT 切库不会保留"));
 }

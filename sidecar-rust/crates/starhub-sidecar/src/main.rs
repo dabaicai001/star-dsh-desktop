@@ -16,8 +16,11 @@ use std::io::{BufRead, Write};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use starhub_domain_ssh::events::EventSink;
+use starhub_domain_ssh::events::{EventSink, KnownHostsStore};
+use starhub_sidecar::bindings::SessionBindings;
+use starhub_sidecar::db_runtime::DbRuntime;
 use starhub_sidecar::jsonrpc::{InboundFrame, OutboundNotification, OutboundResponse};
+use starhub_sidecar::known_hosts_store::FileKnownHostsStore;
 use starhub_sidecar::methods;
 use starhub_sidecar::runtime::SshRuntime;
 
@@ -135,14 +138,25 @@ fn main() {
     let sink: Arc<dyn EventSink> = Arc::new(NotificationSink {
         queue: Mutex::new(tx),
     });
-    let ssh = match SshRuntime::from_env(sink) {
+    // 资产存储 / known_hosts / 会话绑定在 SSH 与 DB 两个域之间共享:
+    // 同一份资产存档、同一份 TOFU 策略、同一份「会话 → 资产」绑定。
+    let bindings = Arc::new(SessionBindings::new());
+    let ssh = match SshRuntime::from_env(Arc::clone(&sink), Arc::clone(&bindings)) {
         Ok(ssh) => Arc::new(ssh),
         Err(error) => {
             eprintln!("starhub-sidecar-rust: 资产存储初始化失败: {error}");
             std::process::exit(1);
         }
     };
-    let registry = methods::registry_with_domains(Arc::clone(&runtime), Arc::clone(&ssh));
+    let known_hosts: Arc<dyn KnownHostsStore> = Arc::new(FileKnownHostsStore::from_env());
+    let db = Arc::new(DbRuntime::new(
+        Arc::clone(ssh.assets()),
+        Arc::new(starhub_domain_db::GoSidecar::new()),
+        known_hosts,
+        Arc::clone(&bindings),
+    ));
+    let registry =
+        methods::registry_with_domains(Arc::clone(&runtime), Arc::clone(&ssh), Arc::clone(&db));
 
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
