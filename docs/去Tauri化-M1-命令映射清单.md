@@ -157,7 +157,27 @@ excel_get_context / write_range / fill_formula / read_range / set_headers / find
      + exec + SFTP 子系统,宿主机密钥复用)+ `test-sftp/verify_sidecar_ssh.py`
      实跑全过——ssh_exec 真连真执行、sftp_list 列出远端文件、状态机迁移、
      abort 确认、`ssh:exec-done` 通知都在真实二进制上验过;
-5. ⬜ 其余域按「DB/Redis/ES/Docker → desktop → android → browser」顺序平移
-   (DB/Redis/ES/Docker 的 Go sidecar 客户端已在 Rust 侧,平移最直);
-6. ⬜ excel 转发改道 + 9 插件适配(client-nav 的 Tauri 桥调用);
-7. ⬜ dsh web 全工具验收(不等 Electron)。
+5. ✅ **DB/Redis/ES/Docker 域平移(已完成)**:
+   - 新 crate `starhub-domain-db`:`go_sidecar.rs`(Go sidecar stdio 客户端,
+     从 `src-tauri/src/sidecar` 整文件平移;启动命令解析改为
+     「显式覆盖 → `STARHUB_GO_SIDECAR` → current_exe 相对查找」——M1 架构里
+     Rust sidecar 才是 Go sidecar 的父进程,惰性启动)+ `executors.rs`
+     (15 个执行器 + 结果文本契约 + `check_tool_asset_type`);
+   - `db_runtime.rs` + `methods/db.rs`:15 个方法注册(资产解析三岔口:
+     就绪 / 软错误引导 / 硬错误);方法面总数 12 → **27**;
+   - 集成测试:DB 方法面 roundtrip(真二进制 → 注册表 → block_on → GoSidecar
+     → 假 Go sidecar fixture),断言模型可读文本;
+   - `src-tauri` 改依赖 crate:`src/sidecar/mod.rs` 变再导出 shim,
+     `harness/domain.rs` 1448 → 409 行(只剩 Tauri 装配:SqliteAssetSource /
+     BridgeExecTracker / app state 取用 / 四个 DB 薄封装);
+   - 同时把 SSH/SFTP 执行体收敛到 `starhub-domain-ssh::tools`
+     (AssetSource / ExecTracker / ToolContext 三个注入点),消除 sidecar 与
+     src-tauri 两份同名拷贝——**两个宿主现在共用同一份执行体**;
+   - **验证**:workspace 166 例全绿(db 17 + ssh 80 + sidecar 53 + 集成 16);
+     src-tauri 152 passed(原 167,15 例随执行体搬迁到 crate,零丢失);
+     端到端 verify_sidecar_ssh.py 8/8(能力表 27 方法);
+6. ⬜ 其余域按「desktop → android → browser」顺序平移(22 + 20 + 16 个方法);
+   desktop 的 Docker 编排与 android 的 adb 面最重;浏览器域逻辑
+   (引擎/decide/cdp)平移后,窗口/直播面板化留给 M3;
+7. ⬜ excel 转发改道 + 9 插件适配(client-nav 的 Tauri 桥调用);
+8. ⬜ dsh web 全工具验收(不等 Electron)。
