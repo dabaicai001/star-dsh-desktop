@@ -222,7 +222,16 @@ M1 第 7 步随能力整体删除(工具定义、`dsh://tool-exec` 转发通道�
     - 验证:workspace **267 例全绿**(contract 7 + sidecar lib 69 + 集成 26
       + 四域 crate);src-tauri 110 passed(6 例随契约层搬到 crate、4 例随
       Excel 转发通道删除,零丢失);vendor `packages/starhub` vitest 全绿
-      (bridge 32 + client-nav 912 + 其余 108);Go `go build/vet/test` 全过;
- 8. ⬜ dsh web 全工具验收(不等 Electron):起 `dsh --profile web` +
-    starhub-bridge(不挂 sdk-jsonrpc-server),用真 sidecar 二进制跑通
-    「工具调用 → 兼容层 → sidecar → 模型文本」全链路。
+      (bridge 34 + client-nav 912 + 其余 108);Go `go build/vet/test` 全过;
+ 8. ✅ **全工具验收(不等 Electron,`npm run verify:bridge-compat`)**:用**真
+    sidecar 二进制** + `JsonRpcLineTransport` + 兼容层跑通最后一公里,
+    `test-sftp/verify_bridge_compat.mjs` **15 项全过**:域工具直调(方法名 =
+    工具名、`{text}` 拆封)、未绑定资产的引导软错误、两个全局工具、bind.asset
+    → bind_asset_context(绑定后域工具不再要 assetId)、open.asset/focus.tool
+    的 open→focus 预判与参数校验、live.snapshot 四视图(含 recentExecs 已按
+    资产落账)、域工具成功后的 `starhub/domain.event`(origin=ai / kind / summary
+    逐字断言)、未知工具 -32601 与未知 exec_id 中止通知不杀进程。
+    兼容层把桥信封里的 `sessionId` 注入 sidecar 参数(旧宿主用信封里的
+    session_id 直接解析资产,不过工具参数)。
+    剩余未验收面:dsh web 的**浏览器内**整树启动(需 DEEPSEEK_API_KEY 才能驱动
+    模型回合)与 Electron 桌面壳(M4);工作台 React 侧的 Tauri IPC 迁移(M2)。

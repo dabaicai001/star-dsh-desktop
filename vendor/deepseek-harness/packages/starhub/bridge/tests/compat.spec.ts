@@ -57,7 +57,32 @@ describe('bridge peer: starhub/tool.execute', () => {
       args: { command: 'ls' },
     })
     expect(result).toBe('total 0\nfile')
-    expect(sidecar.requests).toEqual([{ method: 'ssh_exec', params: { command: 'ls' } }])
+    expect(sidecar.requests).toEqual([
+      { method: 'ssh_exec', params: { command: 'ls', sessionId: 's1' } },
+    ])
+  })
+
+  it('injects the bridge sessionId so the sidecar can resolve the bound asset', async () => {
+    const sidecar = fakeSidecar({ ssh_session_status: { text: 'no session' } })
+    const peer = createBridgePeer(sidecar.peer)
+    await peer.request(TOOL_EXECUTE_METHOD, {
+      sessionId: 's1',
+      name: 'ssh_session_status',
+      args: {},
+    })
+    // 旧宿主用信封里的 session_id 解析资产;sidecar 从参数里读,故兼容层注入。
+    expect(sidecar.requests[0]?.params).toEqual({ sessionId: 's1' })
+  })
+
+  it('keeps the model args untouched apart from the injected sessionId', async () => {
+    const sidecar = fakeSidecar({ ssh_exec: { text: 'ok' } })
+    const peer = createBridgePeer(sidecar.peer)
+    await peer.request(TOOL_EXECUTE_METHOD, {
+      sessionId: 's1',
+      name: 'ssh_exec',
+      args: { command: 'ls', timeoutSec: 5 },
+    })
+    expect(sidecar.requests[0]?.params).toEqual({ command: 'ls', timeoutSec: 5, sessionId: 's1' })
   })
 
   it('accepts a bare-string sidecar result verbatim', async () => {
@@ -72,7 +97,7 @@ describe('bridge peer: starhub/tool.execute', () => {
     const sidecar = fakeSidecar({ ssh_session_status: { text: 'no session' } })
     const peer = createBridgePeer(sidecar.peer)
     await peer.request(TOOL_EXECUTE_METHOD, { sessionId: 's1', name: 'ssh_session_status' })
-    expect(sidecar.requests[0]?.params).toEqual({})
+    expect(sidecar.requests[0]?.params).toEqual({ sessionId: 's1' })
   })
 
   it('rejects a missing tool name (same shape as the retired host)', async () => {

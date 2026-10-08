@@ -12,7 +12,7 @@
  *
  * | bridge method | sidecar method | result |
  * |---|---|---|
- * | `starhub/tool.execute {sessionId,name,args}` | `name` with `args` | model-readable text |
+ * | `starhub/tool.execute {sessionId,name,args}` | `name` with `args` (plus the injected `sessionId`) | model-readable text |
  * | `starhub/bind.asset {assetId,sessionId}` | `bind_asset_context` | `{ok,action:"bound"}` |
  * | `starhub/open.asset {assetId,tool?,sessionId}` | `starhub/open.asset` | `{ok,action}` |
  * | `starhub/focus.tool {assetId,tool,sessionId}` | `starhub/focus.tool` | `{ok,action}` |
@@ -112,8 +112,16 @@ export function createBridgePeer(sidecar: JsonRpcTransportPeer): JsonRpcTranspor
         case TOOL_EXECUTE_METHOD: {
           const name = typeof record.name === 'string' ? record.name : ''
           if (name === '') throw new Error(`${TOOL_EXECUTE_METHOD} 缺少 name`)
-          const args = (record.args ?? {}) as object
           // 兼容层核心:方法名 = 工具名,参数原样直调 sidecar。
+          // sessionId 从桥信封注入参数:sidecar 的资产解析(显式 assetId 优先,
+          // 否则沿会话绑定 / subagent 父链)读的就是它——旧宿主是用信封里的
+          // session_id 直接解析,不经过工具参数。
+          const args = {
+            ...(typeof record.args === 'object' && record.args !== null ? record.args : {}),
+            ...(typeof record.sessionId === 'string' && record.sessionId !== ''
+              ? { sessionId: record.sessionId }
+              : {}),
+          } as object
           return toolResultText(await sidecar.request(name, args))
         }
         default: {
