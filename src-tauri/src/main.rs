@@ -220,7 +220,9 @@ fn main() {
             });
 
             // 初始化 TransferManager(需要 AppHandle 用于 emit 进度/状态事件)
-            app.manage(TransferManager::new(app.handle().clone()));
+            app.manage(TransferManager::new(crate::ssh::adapters::tauri_sink(
+        app.handle().clone(),
+    )));
             // 截图会话状态(区域模式底图缓存),仅截图特性启用时存在
             #[cfg(feature = "screenshot")]
             app.manage(commands::screenshot::ScreenshotSession::default());

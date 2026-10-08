@@ -49,20 +49,20 @@ impl<T: EventSink + ?Sized> EventSinkExt for T {
 /// Persistence for the TOFU host-key policy.
 pub trait KnownHostsStore: Send + Sync {
     /// Whether `fingerprint` is already trusted for `host:port`.
-    fn is_known(&self, host: &str, port: u16, fingerprint: &str) -> StoreFuture<'_, anyhow::Result<bool>>;
+    fn is_known<'a>(&self, host: &'a str, port: u16, fingerprint: &'a str) -> StoreFuture<'a, anyhow::Result<bool>>;
 
     /// Persist a confirmed host key (insert-or-replace semantics).
-    fn add_host(
+    fn add_host<'a>(
         &self,
-        host: &str,
+        host: &'a str,
         port: u16,
-        key_type: &str,
-        fingerprint: &str,
-        public_key: &str,
-    ) -> StoreFuture<'_, anyhow::Result<()>>;
+        key_type: &'a str,
+        fingerprint: &'a str,
+        public_key: &'a str,
+    ) -> StoreFuture<'a, anyhow::Result<()>>;
 
     /// The most recently confirmed OpenSSH public key for `host:port`.
-    fn trusted_public_key(&self, host: &str, port: u16) -> StoreFuture<'_, anyhow::Result<Option<String>>>;
+    fn trusted_public_key<'a>(&self, host: &'a str, port: u16) -> StoreFuture<'a, anyhow::Result<Option<String>>>;
 }
 
 /// Test double: an in-memory known-hosts policy.
@@ -74,33 +74,39 @@ pub struct MemoryKnownHostsStore {
 
 #[cfg(test)]
 impl KnownHostsStore for MemoryKnownHostsStore {
-    fn is_known(&self, host: &str, port: u16, fingerprint: &str) -> StoreFuture<'_, anyhow::Result<bool>> {
-        let entries = self.entries.lock().unwrap();
-        let found = entries.iter().any(|(h, p, fp, _)| h == host && *p == port && fp == fingerprint);
+    fn is_known<'a>(&self, host: &'a str, port: u16, fingerprint: &'a str) -> StoreFuture<'a, anyhow::Result<bool>> {
+        let found = {
+            let entries = self.entries.lock().unwrap();
+            entries.iter().any(|(h, p, fp, _)| h == host && *p == port && fp == fingerprint)
+        };
         Box::pin(async move { Ok(found) })
     }
 
-    fn add_host(
+    fn add_host<'a>(
         &self,
-        host: &str,
+        host: &'a str,
         port: u16,
-        _key_type: &str,
-        fingerprint: &str,
-        public_key: &str,
-    ) -> StoreFuture<'_, anyhow::Result<()>> {
-        let mut entries = self.entries.lock().unwrap();
-        entries.retain(|(h, p, fp, _)| !(h == host && *p == port && fp == fingerprint));
-        entries.push((host.to_string(), port, fingerprint.to_string(), public_key.to_string()));
+        _key_type: &'a str,
+        fingerprint: &'a str,
+        public_key: &'a str,
+    ) -> StoreFuture<'a, anyhow::Result<()>> {
+        {
+            let mut entries = self.entries.lock().unwrap();
+            entries.retain(|(h, p, fp, _)| !(h == host && *p == port && fp == fingerprint));
+            entries.push((host.to_string(), port, fingerprint.to_string(), public_key.to_string()));
+        }
         Box::pin(async move { Ok(()) })
     }
 
-    fn trusted_public_key(&self, host: &str, port: u16) -> StoreFuture<'_, anyhow::Result<Option<String>>> {
-        let entries = self.entries.lock().unwrap();
-        let key = entries
-            .iter()
-            .filter(|(h, p, _, _)| h == host && *p == port)
-            .next_back()
-            .map(|(_, _, _, key)| key.clone());
+    fn trusted_public_key<'a>(&self, host: &'a str, port: u16) -> StoreFuture<'a, anyhow::Result<Option<String>>> {
+        let key = {
+            let entries = self.entries.lock().unwrap();
+            entries
+                .iter()
+                .filter(|(h, p, _, _)| h == host && *p == port)
+                .next_back()
+                .map(|(_, _, _, key)| key.clone())
+        };
         Box::pin(async move { Ok(key) })
     }
 }

@@ -4,6 +4,8 @@ version = "0.127.0"
 edition = "2021"
 
 [dependencies]
+# 去 Tauri 化 M1:SSH/SFTP 域逻辑(sidecar-rust workspace,与 sidecar 二进制同源)
+starhub-domain-ssh = { path = "../sidecar-rust/crates/starhub-domain-ssh" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"

@@ -6652,6 +6652,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "starhub-domain-ssh",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -6674,6 +6675,25 @@ dependencies = [
  "windows-native-keyring-store",
  "xcap",
  "zbus-secret-service-keyring-store",
+]
+
+[[package]]
+name = "starhub-domain-ssh"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glob-match",
+ "once_cell",
+ "russh",
+ "russh-sftp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "webpki-roots 1.0.8",
 ]
 
 [[package]]

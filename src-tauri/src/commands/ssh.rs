@@ -1,6 +1,8 @@
 use crate::harness::HarnessManager;
 use crate::registry::{DetachOutcome, SessionRegistry};
 use crate::sftp::transfer::TransferManager;
+use crate::ssh::adapters::{tauri_sink, SqliteKnownHostsStore};
+use starhub_domain_ssh::events::KnownHostsStore;
 use crate::ssh::session::SshSession;
 use crate::ssh::{
     KeyboardInteractiveConfig, PendingBastionResponses, PendingHostKeyResponses,
@@ -85,6 +87,8 @@ pub struct SshManager {
     /// 放在 manager 层而不是 SshSession 里:exec 期间 session 锁被持有,
     /// `ssh_exec_abort` 只需要拿这把独立的 map 锁就能中断,不会死锁。
     exec_aborts: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>>,
+    /// TOFU 主机密钥策略存储(SQLite seam 实现)。
+    known_hosts: Arc<dyn KnownHostsStore>,
 }
 
 impl SshManager {
@@ -97,6 +101,7 @@ impl SshManager {
             pending_bastion: Arc::new(Mutex::new(HashMap::new())),
             attempts: Arc::new(Mutex::new(HashMap::new())),
             exec_aborts: Arc::new(Mutex::new(HashMap::new())),
+            known_hosts: Arc::new(SqliteKnownHostsStore),
         }
     }
 
@@ -169,7 +174,10 @@ impl SshManager {
 
 #[tauri::command]
 pub async fn ssh_get_trusted_host_key(host: String, port: u16) -> Result<Option<String>, String> {
-    crate::ssh::known_hosts::get_trusted_public_key(&host, port).await
+    SqliteKnownHostsStore
+            .trusted_public_key(&host, port)
+            .await
+            .map_err(|e| e.to_string())
 }
 
 /// 读取用户通过原生文件对话框选择的 SSH 私钥。
@@ -244,11 +252,11 @@ pub(crate) async fn connect_session(
     // 网络 I/O 在锁外执行 — 否则 connect() 期间持有 sessions 锁会阻塞
     // 所有其他 SSH 操作(resize / disconnect / 新 connect),导致第二个 tab
     // 永远卡在 "Connecting to"。
-    let mut session = SshSession::new(config.clone());
+    let mut session = SshSession::new(config.clone(), Arc::clone(&manager.known_hosts));
     session
         .connect(
             &id,
-            Some(&app_handle),
+            Some(&tauri_sink(app_handle.clone())),
             &manager.pending_kb,
             &manager.pending_hostkey,
         )
@@ -264,7 +272,7 @@ pub(crate) async fn connect_session(
             .open_shell(
                 &id,
                 attempt_generation,
-                app_handle.clone(),
+                tauri_sink(app_handle.clone()),
                 manager.channels.clone(),
             )
             .await
@@ -783,13 +791,13 @@ pub async fn test_ssh_connection(
     app_handle: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
     use std::time::Duration;
-    let mut session = SshSession::new(config.clone());
+    let mut session = SshSession::new(config.clone(), Arc::clone(&manager.known_hosts));
     let start = std::time::Instant::now();
 
     let result = session
         .connect(
             &test_session_id,
-            Some(&app_handle),
+            Some(&tauri_sink(app_handle.clone())),
             &manager.pending_kb,
             &manager.pending_hostkey,
         )
@@ -856,6 +864,7 @@ pub(crate) async fn ssh_exec_core(
     exec_id: Option<&str>,
     bastion_interactive: bool,
 ) -> Result<String, String> {
+    let sink = tauri_sink(app_handle.clone());
     // 执行主体包一层:成功后统一广播执行结果(主壳迷你面板展示最近一次
     // 命令输出,普通 SSH 资产与堡垒机首次/复用路径全覆盖)。
     let result = async {
@@ -892,7 +901,7 @@ pub(crate) async fn ssh_exec_core(
             session
                 .exec_via_bastion_pty(
                     id,
-                    Some(app_handle),
+                    Some(&sink),
                     &manager.pending_bastion,
                     manager.channels.clone(),
                     command,
