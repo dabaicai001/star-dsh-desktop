@@ -133,8 +133,30 @@ excel_get_context / write_range / fill_formula / read_range / set_headers / find
      connect/open_shell/exec_via_bastion_pty 的 app_handle 改传
      tauri_sink;旧 9 文件已删;**cargo test 169 passed / 0 failed**
      (与 crate 63 例合计 232,零丢失);事件名/载荷/SQL 逐字保持;
-4. ⬜ sidecar 注册 8 个 ssh/sftp 方法(资产存储 + 会话绑定,§六数据迁移)
-   ——域逻辑已在 crate 内,剩「资产配置解析 + 方法面 + 结果文本契约」;
+   - 追加:SshManager / connect_session / ssh_exec_core /
+     ssh_exec_abort_core 与 `ssh_config_from_asset` 纯映射也搬进 crate
+     (Tauri 侧只留 `#[tauri::command]` 薄封装 + `pub use` 再导出),
+     域 crate 71 单测、src-tauri 167 passed(169 − 2 随迁),合计 238 零丢失;
+4. ✅ **sidecar 注册 8 个 ssh/sftp 方法(已完成)**:
+   - `assets.rs` 资产存储(assets.json + `SecretStore` seam:内存/文件两实现,
+     原生 Keyring 随 §六 credentials 迁移补齐);错误文案与 SQLite 版逐字一致;
+   - `known_hosts_store.rs` TOFU 主机密钥 JSON 存储(字段与 SQLite 表对齐,
+     §六/R7 一次性导入即 `SELECT → JSON` 直排);
+   - `runtime.rs` 域运行时(ensure_ssh_session / 连接级失败重连一次 /
+     后台任务命令拼装 / 长 sleep 软引导 / SFTP 惰性通道 / 传输终态汇总),
+     结果文本格式逐字保持;`bindings.rs` + `session_registry.rs` 平移
+     会话绑定与附着视图;
+   - 异步域方法经 `register_async!`(`Runtime::block_on`)注册,registry
+     同步 handler 面不变;`starhub_list_assets` / `bind_asset_context` 同批落地;
+   - 域事件出口:NotificationSink 把 `ssh:data` / `ssh:exec-done` /
+     `sftp://transfer-*` 转成 `starhub/domain-event` 通知,排队后在对应
+     请求的响应之前刷盘(因果顺序);`starhub/exec.abort` 通知按 exec_id
+     中断在途命令(停止生成);
+   - **验证**:workspace 133 例全绿(71 域 + 48 库 + 14 集成);src-tauri 167 不变;
+   - **端到端(真 SSH,非 mock)**:`test-sftp/exec_server.py`(password 认证
+     + exec + SFTP 子系统,宿主机密钥复用)+ `test-sftp/verify_sidecar_ssh.py`
+     实跑全过——ssh_exec 真连真执行、sftp_list 列出远端文件、状态机迁移、
+     abort 确认、`ssh:exec-done` 通知都在真实二进制上验过;
 5. ⬜ 其余域按「DB/Redis/ES/Docker → desktop → android → browser」顺序平移
    (DB/Redis/ES/Docker 的 Go sidecar 客户端已在 Rust 侧,平移最直);
 6. ⬜ excel 转发改道 + 9 插件适配(client-nav 的 Tauri 桥调用);
