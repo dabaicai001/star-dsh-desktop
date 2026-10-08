@@ -176,8 +176,21 @@ excel_get_context / write_range / fill_formula / read_range / set_headers / find
    - **验证**:workspace 166 例全绿(db 17 + ssh 80 + sidecar 53 + 集成 16);
      src-tauri 152 passed(原 167,15 例随执行体搬迁到 crate,零丢失);
      端到端 verify_sidecar_ssh.py 8/8(能力表 27 方法);
-6. ⬜ 其余域按「desktop → android → browser」顺序平移(22 + 20 + 16 个方法);
-   desktop 的 Docker 编排与 android 的 adb 面最重;浏览器域逻辑
-   (引擎/decide/cdp)平移后,窗口/直播面板化留给 M3;
-7. ⬜ excel 转发改道 + 9 插件适配(client-nav 的 Tauri 桥调用);
+6. ✅ **desktop / android / browser 三域平移(已完成,方法面 85)**:
+   - `starhub-domain-desktop`(22 方法):recipe(配方/Dockerfile)+ keys
+     (键名白名单/sh_quote)+ manager(任务授权/接管互斥)+ store seam +
+     exec(22 工具体);src-tauri 侧 1694 → 460 行(只剩直播/UI 入口与六个
+     seam 的 SQLite/app 实现);
+   - `starhub-domain-android`(20 方法):keys(白名单/uiautomator 解析/
+     PNG CRLF 修复)+ manager(授权)+ adb seam(路径显式传入,测试替身可
+     完整记录调用)+ store(回放帧)+ exec(20 工具体);src-tauri 侧
+     2646 → 1531 行(只剩 scrcpy 直播窗口面);
+   - `starhub-domain-browser`(16 方法,契约层):action(parse_action +
+     BrowserAction)+ script(HELPERS_JS 逐字 + wrap_eval + normalize_url
+     去 tauri::Url 依赖);引擎层(无头 CDP/截图/直播帧)明确留给 M3
+     面板化,M1 先固定方法面与参数契约;
+   - sidecar 方法面 12 → **85**;workspace 249 例全绿;
+     src-tauri 137 → 120 passed(17 例随契约层搬到 crate,零丢失);
+7. ⬜ excel 转发改道(工作簿状态留前端,桥从 Tauri webview 事件改为工作台
+   面板通道)+ 9 插件适配(client-nav 的 Tauri 桥调用);
 8. ⬜ dsh web 全工具验收(不等 Electron)。
