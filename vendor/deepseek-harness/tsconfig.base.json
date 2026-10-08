@@ -214,6 +214,7 @@
       // "starhub-<pkg>", not "<pkg>"), so they get explicit mappings like the
       // host/client packages above (restored from the pre-rc.2 copy).
       "@deepseek-ai/dsh-starhub-tools": ["./packages/starhub/tools/src"],
+      "@deepseek-ai/dsh-starhub-bridge": ["./packages/starhub/bridge/src"],
       "@deepseek-ai/dsh-starhub-session-registry": ["./packages/starhub/session-registry/src"],
       "@deepseek-ai/dsh-starhub-domain-events": ["./packages/starhub/domain-events/src"],
       "@deepseek-ai/dsh-starhub-live-context": ["./packages/starhub/live-context/src"],

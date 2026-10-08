@@ -1,0 +1,19 @@
+[package]
+name = "starhub-sidecar"
+description = "StarHub Rust sidecar: stdio JSON-RPC surface for the StarHub tool domains extracted from the retired Tauri shell (M1 of the drop-Tauri migration)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "starhub_sidecar"
+path = "src/lib.rs"
+
+[[bin]]
+name = "starhub-sidecar-rust"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
