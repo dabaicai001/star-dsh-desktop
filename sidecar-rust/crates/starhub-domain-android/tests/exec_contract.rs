@@ -5,7 +5,7 @@
 
 use std::sync::Mutex;
 
-use serde_json::{json, Value};
+use serde_json::json;
 use starhub_domain_android::adb::Adb;
 use starhub_domain_android::exec::{execute, ANDROID_TOOLS};
 use starhub_domain_android::keys::parse_devices;

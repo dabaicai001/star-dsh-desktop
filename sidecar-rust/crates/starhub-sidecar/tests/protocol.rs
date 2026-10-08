@@ -78,21 +78,19 @@ impl Sidecar {
         Self { child, _dir: dir }
     }
 
-    /// Send one request line and read the next response line.
+    /// Send one request line and read the matching response line.
+    ///
+    /// Frames without an `id` (sidecar notifications — domain events, UI-action
+    /// intents) are skipped: a domain-event notification is flushed *before*
+    /// the response of the request that caused it, so a naive "next line" read
+    /// would consume the notification and hang. The TypeScript peer
+    /// (`JsonRpcLineTransport`) demultiplexes by id; this does the same.
     fn roundtrip(&mut self, request: &str) -> String {
         let stdin = self.child.stdin.as_mut().expect("stdin piped");
         stdin.write_all(request.as_bytes()).expect("write request");
         stdin.write_all(b"\n").expect("write newline");
         stdin.flush().expect("flush request");
-        let stdout = self.child.stdout.as_mut().expect("stdout piped");
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-        reader.read_line(&mut line).expect("read response");
-        assert!(
-            line.ends_with('\n'),
-            "response frames are newline-terminated"
-        );
-        line.trim_end().to_string()
+        read_response(&mut self.child)
     }
 
     /// Send a raw line without expecting a response.
@@ -101,6 +99,31 @@ impl Sidecar {
         stdin.write_all(line.as_bytes()).expect("write line");
         stdin.write_all(b"\n").expect("write newline");
         stdin.flush().expect("flush line");
+    }
+}
+
+/// Read frames until the next response (a frame carrying `id`), skipping
+/// sidecar notifications (domain events, UI-action intents).
+///
+/// The sidecar flushes a request's notifications *before* its response, so a
+/// one-line read would consume the notification instead. The TypeScript peer
+/// (`JsonRpcLineTransport`) demultiplexes by id; this helper mirrors that.
+fn read_response(child: &mut Child) -> String {
+    let stdout = child.stdout.as_mut().expect("stdout piped");
+    let mut reader = BufReader::new(stdout);
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read response");
+        assert!(
+            line.ends_with('\n'),
+            "response frames are newline-terminated"
+        );
+        let frame = line.trim_end().to_string();
+        let parsed: serde_json::Value = serde_json::from_str(&frame).expect("frame parses");
+        if parsed.get("id").is_some() {
+            return frame;
+        }
+        // Notification frame (no id): keep reading for the response.
     }
 }
 
@@ -198,7 +221,7 @@ fn ping_roundtrip_over_stdio() {
 fn capabilities_lists_registered_methods() {
     let mut sidecar = Sidecar::spawn();
     let response =
-        sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"cap-1","method":"starhub_list_capabilities"}"#);
+        sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"cap-1","method":"starhub/capabilities"}"#);
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     let methods = value["result"]["methods"]
         .as_array()
@@ -261,7 +284,7 @@ fn string_and_number_ids_are_echoed_verbatim() {
 fn capabilities_lists_the_ssh_sftp_method_surface() {
     let mut sidecar = Sidecar::spawn();
     let response =
-        sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"cap-2","method":"starhub_list_capabilities"}"#);
+        sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"cap-2","method":"starhub/capabilities"}"#);
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     let methods: Vec<&str> = value["result"]["methods"]
         .as_array()
@@ -416,8 +439,8 @@ const DB_ASSETS: &str = r#"{
 #[test]
 fn capabilities_lists_the_db_method_surface() {
     let mut sidecar = Sidecar::spawn();
-    let response = sidecar
-        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-db","method":"starhub_list_capabilities"}"#);
+    let response =
+        sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"cap-db","method":"starhub/capabilities"}"#);
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     let methods: Vec<&str> = value["result"]["methods"]
         .as_array()
@@ -518,7 +541,7 @@ fn db_methods_roundtrip_through_the_real_binary() {
 fn capabilities_lists_the_desktop_method_surface() {
     let mut sidecar = Sidecar::spawn();
     let response = sidecar
-        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-desktop","method":"starhub_list_capabilities"}"#);
+        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-desktop","method":"starhub/capabilities"}"#);
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     let methods: Vec<&str> = value["result"]["methods"]
         .as_array()
@@ -589,11 +612,7 @@ fn desktop_methods_roundtrip_through_the_real_binary() {
         stdin.write_all(request.as_bytes()).expect("write request");
         stdin.write_all(b"\n").expect("write newline");
         stdin.flush().expect("flush request");
-        let stdout = child.stdout.as_mut().expect("stdout piped");
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-        reader.read_line(&mut line).expect("read response");
-        line.trim_end().to_string()
+        read_response(child)
     }
 
     let response = roundtrip(
@@ -641,7 +660,7 @@ fn desktop_methods_roundtrip_through_the_real_binary() {
 fn capabilities_lists_the_browser_method_surface() {
     let mut sidecar = Sidecar::spawn();
     let response = sidecar
-        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-browser","method":"starhub_list_capabilities"}"#);
+        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-browser","method":"starhub/capabilities"}"#);
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     let methods: Vec<&str> = value["result"]["methods"]
         .as_array()
@@ -709,7 +728,7 @@ fn browser_methods_roundtrip_through_the_real_binary() {
 fn capabilities_lists_the_android_method_surface() {
     let mut sidecar = Sidecar::spawn();
     let response = sidecar
-        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-android","method":"starhub_list_capabilities"}"#);
+        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-android","method":"starhub/capabilities"}"#);
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     let methods: Vec<&str> = value["result"]["methods"]
         .as_array()
@@ -738,14 +757,20 @@ fn capabilities_lists_the_android_method_surface() {
         "android_pull",
         "android_push",
         "android_exec",
+        // 桥命令(非工具方法,契约 §2.2):对端是 bridge 插件
+        "starhub/capabilities",
+        "starhub/open.asset",
+        "starhub/focus.tool",
+        "starhub/live.snapshot",
     ] {
         assert!(
             methods.contains(&expected),
             "missing {expected}: {methods:?}"
         );
     }
-    // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)+ 16(browser)= 85
-    assert_eq!(methods.len(), 85, "方法面总数: {methods:?}");
+    // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)+ 16(browser)
+    // + 4 桥命令(capabilities / open.asset / focus.tool / live.snapshot)= 89
+    assert_eq!(methods.len(), 89, "方法面总数: {methods:?}");
 }
 
 /// Android 方法面 roundtrip(不触设备的分支):未授权写操作硬错误;
@@ -783,11 +808,7 @@ fn android_methods_roundtrip_through_the_real_binary() {
         stdin.write_all(request.as_bytes()).expect("write request");
         stdin.write_all(b"\n").expect("write newline");
         stdin.flush().expect("flush request");
-        let stdout = child.stdout.as_mut().expect("stdout piped");
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-        reader.read_line(&mut line).expect("read response");
-        line.trim_end().to_string()
+        read_response(child)
     }
 
     // 未授权写操作:硬错误(不触 adb)
@@ -818,6 +839,165 @@ fn android_methods_roundtrip_through_the_real_binary() {
     );
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     assert_eq!(value["error"]["code"], -32601);
+
+    drop(child.stdin.take());
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------- 桥命令面(M1 第 7 步:契约 §2.2) ----------
+
+/// 读接下来的 N 行(通知 + 响应都可能占行)。
+fn read_lines(sidecar: &mut Sidecar, count: usize) -> Vec<String> {
+    let stdout = sidecar.child.stdout.as_mut().expect("stdout piped");
+    let mut reader = BufReader::new(stdout);
+    let mut lines = Vec::with_capacity(count);
+    for _ in 0..count {
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read line");
+        lines.push(line.trim_end().to_string());
+    }
+    lines
+}
+
+#[test]
+fn open_asset_predicts_the_action_and_notifies_the_bridge() {
+    let mut sidecar = Sidecar::spawn();
+    let stdin = sidecar.child.stdin.as_mut().expect("stdin piped");
+    stdin
+        .write_all(br#"{"jsonrpc":"2.0","id":"oa-1","method":"starhub/open.asset","params":{"assetId":"a1","tool":"terminal"}}"#)
+        .expect("write request");
+    stdin.write_all(b"\n").expect("write newline");
+    stdin.flush().expect("flush request");
+    // 因果顺序:意图通知在响应之前
+    let lines = read_lines(&mut sidecar, 2);
+    let notification: serde_json::Value =
+        serde_json::from_str(&lines[0]).expect("notification parses");
+    assert_eq!(notification["method"], "starhub/domain-event");
+    assert_eq!(notification["params"]["event"], "starhub://open-asset");
+    assert_eq!(notification["params"]["payload"]["assetId"], "a1");
+    assert_eq!(notification["params"]["payload"]["tool"], "terminal");
+    assert_eq!(notification["params"]["payload"]["action"], "opened");
+    let response: serde_json::Value = serde_json::from_str(&lines[1]).expect("response parses");
+    assert_eq!(response["id"], "oa-1");
+    assert_eq!(response["result"]["ok"], true);
+    assert_eq!(response["result"]["action"], "opened");
+
+    // 同一 (资产, 工具) 第二次 = focus
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"oa-2","method":"starhub/focus.tool","params":{"assetId":"a1","tool":"terminal"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["result"]["action"], "focused");
+}
+
+#[test]
+fn focus_tool_requires_the_tool_parameter() {
+    let mut sidecar = Sidecar::spawn();
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"ft-1","method":"starhub/focus.tool","params":{"assetId":"a1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32602);
+    assert!(value["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("缺少 tool"));
+}
+
+#[test]
+fn live_snapshot_reports_the_contract_views() {
+    let mut sidecar = Sidecar::spawn();
+    let response =
+        sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"ls-1","method":"starhub/live.snapshot"}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    let result = &value["result"];
+    assert!(result["sessions"].is_array(), "{response}");
+    assert!(result["transfers"].is_array(), "{response}");
+    assert!(result["recentExecs"].is_array(), "{response}");
+    assert!(result["taskTrails"].is_array(), "{response}");
+}
+
+#[test]
+fn a_domain_tool_success_emits_the_ai_origin_event_first() {
+    let unique = format!(
+        "starhub-sidecar-event-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+    let dir = std::env::temp_dir().join(unique);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let assets = dir.join("assets.json");
+    std::fs::write(&assets, br#"{"assets":[]}"#).expect("seed assets file");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_starhub-sidecar-rust"));
+    command
+        .env("STARHUB_ASSETS_FILE", &assets)
+        .env("STARHUB_SECRETS_FILE", "")
+        .env("STARHUB_KNOWN_HOSTS_FILE", dir.join("known-hosts.json"))
+        .env(
+            "STARHUB_ANDROID_FRAMES_FILE",
+            dir.join("android-frames.json"),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().expect("sidecar binary spawns");
+
+    fn roundtrip(child: &mut Child, request: &str) -> String {
+        let stdin = child.stdin.as_mut().expect("stdin piped");
+        stdin.write_all(request.as_bytes()).expect("write request");
+        stdin.write_all(b"\n").expect("write newline");
+        stdin.flush().expect("flush request");
+        read_response(child)
+    }
+
+    /// 读接下来的 N 行(事件通知占行,响应紧随其后)。
+    fn read_lines(child: &mut Child, count: usize) -> Vec<String> {
+        let stdout = child.stdout.as_mut().expect("stdout piped");
+        let mut reader = BufReader::new(stdout);
+        let mut lines = Vec::with_capacity(count);
+        for _ in 0..count {
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("read line");
+            lines.push(line.trim_end().to_string());
+        }
+        lines
+    }
+
+    // android_replay 是不触设备的域工具:成功 → AI 起源事件 + recentExecs
+    let stdin = child.stdin.as_mut().expect("stdin piped");
+    stdin
+        .write_all(
+            br#"{"jsonrpc":"2.0","id":"ev-1","method":"android_replay","params":{"serial":"nope"}}"#,
+        )
+        .expect("write request");
+    stdin.write_all(b"\n").expect("write newline");
+    stdin.flush().expect("flush request");
+    let lines = read_lines(&mut child, 2);
+    let value: serde_json::Value = serde_json::from_str(&lines[0]).expect("frame parses");
+    assert_eq!(value["method"], "starhub/domain-event");
+    assert_eq!(value["params"]["event"], "starhub/domain.event");
+    assert_eq!(value["params"]["payload"]["kind"], "android.action");
+    assert_eq!(value["params"]["payload"]["origin"], "ai");
+    assert_eq!(
+        value["params"]["payload"]["summary"],
+        "android_replay: 设备 nope"
+    );
+    assert!(value["params"]["payload"]["assetId"].is_null());
+    let value: serde_json::Value = serde_json::from_str(&lines[1]).expect("response parses");
+    assert_eq!(value["id"], "ev-1");
+    assert_eq!(value["result"]["text"], "设备 nope 没有回放帧");
+
+    // recentExecs 无资产上下文时为空(绑定后才写缓存)
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"ev-2","method":"starhub/live.snapshot"}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(
+        value["result"]["recentExecs"].as_array().map(Vec::len),
+        Some(0)
+    );
 
     drop(child.stdin.take());
     let _ = child.wait();

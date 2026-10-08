@@ -6652,6 +6652,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "starhub-contract",
  "starhub-domain-android",
  "starhub-domain-browser",
  "starhub-domain-db",
@@ -6679,6 +6680,14 @@ dependencies = [
  "windows-native-keyring-store",
  "xcap",
  "zbus-secret-service-keyring-store",
+]
+
+[[package]]
+name = "starhub-contract"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

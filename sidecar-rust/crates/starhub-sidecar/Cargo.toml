@@ -17,6 +17,8 @@ path = "src/main.rs"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# 联动契约:领域事件 schema + 模型可读能力文本(与 src-tauri 同一份 crate)
+starhub-contract = { path = "../starhub-contract" }
 # 域运行时:SSH/SFTP 会话 + 传输(与 src-tauri 同一份域 crate)
 starhub-domain-ssh = { path = "../starhub-domain-ssh" }
 # DB/Redis/ES/Docker 域:Go sidecar 客户端 + 模型面执行器

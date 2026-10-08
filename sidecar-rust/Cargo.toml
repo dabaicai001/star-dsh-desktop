@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/starhub-sidecar",
+    "crates/starhub-contract",
     "crates/starhub-domain-ssh",
     "crates/starhub-domain-db",
     "crates/starhub-domain-desktop",

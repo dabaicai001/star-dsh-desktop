@@ -17,13 +17,13 @@
 //! cancel 语义(方案 D1 / 附录 11.3):SDK 协议无 mid-turn cancel,
 //! `HarnessManager::cancel` 直接杀进程并清空单例,下一轮 initialize 时重启 runtime。
 //!
-//! 双向 request 桥(Phase 2 / 方案 5.2):dsh 侧经 sdk-transport 发回两个方法,
-//! 都在 [`HostBridgeState`] 上挂 pending 并 await 前端应答——
+//! 双向 request 桥(Phase 2 / 方案 5.2):dsh 侧经 sdk-transport 发回的方法——
 //! - `starhub/approval.request`(`{sessionId, toolName, callId?, reason?}`):
 //!   emit `dsh://approval` 事件,前端确认卡经 `dsh_approval_reply` 应答,
 //!   结果 `{outcome: "allowed-once" | "rejected"}`;超时(300s)或通道关闭按拒绝。
 //! - `starhub/tool.execute`(`{sessionId, name, args}`):见 `tools` 模块,
-//!   全局工具在 Rust 内执行,域工具 emit `dsh://tool-exec` 转发前端面板。
+//!   全部工具都在 Rust 内执行(域逻辑在 sidecar-rust workspace 的域 crate 里)。
+//!   (原「emit `dsh://tool-exec` 转发前端面板」通道随 Excel 能力一起删除。)
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -220,8 +220,6 @@ pub enum InflightAbort {
 pub struct HostBridgeState {
     /// pending 审批应答:requestId(uuid)→ 应答通道(true = allowed-once)。
     pub approvals: tokio::sync::Mutex<HashMap<String, oneshot::Sender<bool>>>,
-    /// pending 域工具执行:requestId(uuid)→ 应答通道(Ok(text) = 成功,Err = 前端报错)。
-    pub tool_execs: tokio::sync::Mutex<HashMap<String, oneshot::Sender<Result<String, String>>>>,
     /// 在途进程内域工具执行:request_id(uuid)→ 取消句柄(cancel 时逐个 abort)。
     pub inflight_tools: std::sync::Mutex<HashMap<String, InflightAbort>>,
     /// 会话→资产绑定:sessionId → (assetType, assetId),由 `dsh_bind_session` 写入。
@@ -229,7 +227,7 @@ pub struct HostBridgeState {
     /// subagent 子→父会话映射:childSessionId → parentSessionId,
     /// 由 `subagent.started` / `subagent.finished` 通知记录。
     pub subagent_parents: std::sync::Mutex<HashMap<String, String>>,
-    /// 前端事件发射:`dsh://approval` / `dsh://tool-exec` / `starhub://domain-event`;
+    /// 前端事件发射:`dsh://approval` / `starhub://domain-event`;
     /// 生产为 webview emit,测试为 mpsc。initialize 时由 manager 设置。
     emit: tokio::sync::Mutex<EventSink>,
     /// 当前 runtime 的弱引用(联动:Rust → dsh notification 出站)。
@@ -263,7 +261,6 @@ impl HostBridgeState {
     pub fn new(emit: EventSink) -> Self {
         Self {
             approvals: tokio::sync::Mutex::new(HashMap::new()),
-            tool_execs: tokio::sync::Mutex::new(HashMap::new()),
             inflight_tools: std::sync::Mutex::new(HashMap::new()),
             bindings: std::sync::Mutex::new(HashMap::new()),
             subagent_parents: std::sync::Mutex::new(HashMap::new()),
@@ -423,22 +420,7 @@ impl HostBridgeState {
         }
     }
 
-    /// resolve 一条域工具执行应答;未知 requestId(已超时/重复应答)记日志并返回 false。
-    pub async fn resolve_tool_exec(&self, request_id: &str, ok: bool, text: String) -> bool {
-        match self.tool_execs.lock().await.remove(request_id) {
-            Some(response_tx) => {
-                let result = if ok { Ok(text) } else { Err(text) };
-                let _ = response_tx.send(result);
-                true
-            }
-            None => {
-                tracing::warn!("收到未知 requestId 的工具执行应答: {request_id}");
-                false
-            }
-        }
-    }
-
-    /// 清空全部未决桥请求:审批按拒绝、工具执行按失败,避免前端应答悬空
+    /// 清空全部未决桥请求:审批按拒绝,避免前端应答悬空
     /// 或等待方长时间挂起(cancel / shutdown / 重启重建时调用)。
     /// 同时中止全部在途进程内域工具(SSH exec abort / 任务 abort),
     /// 让停止生成真正中断正在 Rust 主进程内跑的命令。
@@ -449,13 +431,6 @@ impl HostBridgeState {
         };
         for response_tx in approvals {
             let _ = response_tx.send(false);
-        }
-        let tool_execs: Vec<oneshot::Sender<Result<String, String>>> = {
-            let mut map = self.tool_execs.lock().await;
-            map.drain().map(|(_, tx)| tx).collect()
-        };
-        for response_tx in tool_execs {
-            let _ = response_tx.send(Err("dsh runtime 已关闭,工具未执行".to_string()));
         }
         // 中止在途进程内工具:SSH exec 走 ssh_exec_abort_core。
         let inflight: Vec<(String, InflightAbort)> = {

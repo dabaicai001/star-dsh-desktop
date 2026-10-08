@@ -1,9 +1,9 @@
 //! Built-in methods plus the domain method surface.
 //!
-//! `ping` is the liveness probe the bridge uses after spawn; the capability
-//! report is the seed of the model-facing `starhub_list_capabilities` tool —
-//! it reads the live registry so the inventory can never drift from the
-//! registered method surface.
+//! `ping` is the liveness probe the bridge uses after spawn;
+//! `starhub_list_capabilities` is the model-facing capability text (the
+//! contract constant from `starhub-contract`), while `starhub/capabilities`
+//! reports the live registry inventory for bridge diagnostics.
 //!
 //! Domain modules (ssh/sftp, then db/redis/es/docker; browser/android/desktop
 //! next) register through the runtime shim: their handlers are async, the
@@ -35,12 +35,22 @@ pub fn ping(_params: &Value) -> Result<Value, RpcError> {
     Ok(json!({ "pong": true, "protocol": SIDECAR_PROTOCOL_VERSION }))
 }
 
-/// Registry inventory report.
+/// Registry inventory report (bridge diagnostics; not a model-facing tool).
 pub fn capabilities(registry: &MethodRegistry) -> Result<Value, RpcError> {
     Ok(json!({
         "protocol": SIDECAR_PROTOCOL_VERSION,
         "methods": registry.method_names(),
     }))
+}
+
+/// `starhub_list_capabilities` tool result: the model-facing capability text.
+///
+/// The text is the StarHub × dsh contract (契约 §1) and lives in
+/// `starhub-contract`, shared with the retired Tauri host so it cannot drift.
+/// The live method inventory is a separate bridge-only method
+/// (`starhub/capabilities`) consumed by `starhub_sidecar_status`.
+pub fn list_capabilities(_params: &Value) -> Result<Value, RpcError> {
+    Ok(json!({ "text": starhub_contract::capabilities_text() }))
 }
 
 /// Build the registry with the built-in methods.
@@ -52,8 +62,9 @@ pub fn registry_with_builtins() -> Arc<MethodRegistry> {
     Arc::new_cyclic(|weak| {
         let mut registry = MethodRegistry::new();
         registry.register("ping", ping);
+        registry.register("starhub_list_capabilities", list_capabilities);
         let handle: Weak<MethodRegistry> = weak.clone();
-        registry.register("starhub_list_capabilities", move |_params| {
+        registry.register("starhub/capabilities", move |_params| {
             let registry = handle.upgrade().expect("registry alive during dispatch");
             capabilities(&registry)
         });
@@ -83,6 +94,11 @@ macro_rules! register_async {
 /// `android` the device state. `browser` is a unit placeholder: its engine
 /// lands with M3, so the handlers take no runtime state. Keeping them behind
 /// `Arc` lets the registered closures stay `'static + Send + Sync`.
+///
+/// `sink` and `bridge_state` complete the non-tool bridge surface
+/// (`starhub/open.asset`, `starhub/focus.tool`, `starhub/live.snapshot`), so
+/// the method inventory covers the whole protocol.
+#[allow(clippy::too_many_arguments)]
 pub fn registry_with_domains(
     runtime: Arc<Runtime>,
     ssh: Arc<SshRuntime>,
@@ -90,12 +106,15 @@ pub fn registry_with_domains(
     desktop: Arc<DesktopRuntime>,
     android: Arc<AndroidRuntime>,
     _browser: Arc<()>,
+    sink: Arc<dyn starhub_domain_ssh::events::EventSink>,
+    bridge_state: Arc<crate::bridge::BridgeState>,
 ) -> Arc<MethodRegistry> {
     Arc::new_cyclic(|weak| {
         let mut registry = MethodRegistry::new();
         registry.register("ping", ping);
+        registry.register("starhub_list_capabilities", list_capabilities);
         let handle: Weak<MethodRegistry> = weak.clone();
-        registry.register("starhub_list_capabilities", move |_params| {
+        registry.register("starhub/capabilities", move |_params| {
             let registry = handle.upgrade().expect("registry alive during dispatch");
             capabilities(&registry)
         });
@@ -724,6 +743,33 @@ pub fn registry_with_domains(
             crate::methods::browser::auto_method
         );
 
+        // 桥命令(非工具方法,契约 §2.2):联动 UI 动作 + 活性快照。
+        // 对端是 starhub-bridge 插件;进注册表让方法面清单覆盖完整协议。
+        for (method, require_tool) in [
+            (crate::bridge::OPEN_ASSET_METHOD, false),
+            (crate::bridge::FOCUS_TOOL_METHOD, true),
+        ] {
+            let ssh = Arc::clone(&ssh);
+            let sink = Arc::clone(&sink);
+            registry.register(method, move |params| {
+                crate::bridge::open_or_focus(&ssh, &sink, method, params, require_tool)
+            });
+        }
+        {
+            let runtime = Arc::clone(&runtime);
+            let ssh = Arc::clone(&ssh);
+            let sink = Arc::clone(&sink);
+            let bridge_state = Arc::clone(&bridge_state);
+            registry.register(crate::bridge::LIVE_SNAPSHOT_METHOD, move |_params| {
+                Ok(runtime.block_on(crate::bridge::live_snapshot(
+                    &ssh,
+                    &sink,
+                    &bridge_state,
+                    ssh.transfers(),
+                )))
+            });
+        }
+
         registry
     })
 }
@@ -753,13 +799,31 @@ mod tests {
     fn capabilities_reports_the_live_method_table() {
         let registry = registry_with_builtins();
         let frame =
-            InboundFrame::parse(r#"{"jsonrpc":"2.0","id":2,"method":"starhub_list_capabilities"}"#)
+            InboundFrame::parse(r#"{"jsonrpc":"2.0","id":2,"method":"starhub/capabilities"}"#)
                 .expect("parses");
         let (_, outcome) = registry.dispatch(&frame).expect("outcome");
         let result = outcome.expect("ok");
         assert_eq!(
             result["methods"],
-            serde_json::json!(["ping", "starhub_list_capabilities"])
+            serde_json::json!(["ping", "starhub/capabilities", "starhub_list_capabilities"])
         );
+    }
+
+    #[test]
+    fn list_capabilities_returns_the_contract_text() {
+        let registry = registry_with_builtins();
+        let frame =
+            InboundFrame::parse(r#"{"jsonrpc":"2.0","id":3,"method":"starhub_list_capabilities"}"#)
+                .expect("parses");
+        let (_, outcome) = registry.dispatch(&frame).expect("outcome");
+        let result = outcome.expect("ok");
+        let text = result["text"].as_str().expect("text");
+        assert_eq!(text, starhub_contract::capabilities_text());
+        // 模型可读文本:单行紧凑 JSON(serde_json 键序),与旧前端逐字一致
+        assert!(
+            text.starts_with(r#"{"android":["Android 实体机(adb)""#),
+            "{text}"
+        );
+        assert!(text.contains(r#""ssh":["终端","主机仪表盘""#), "{text}");
     }
 }

@@ -13,6 +13,7 @@
 //! | [`jsonrpc`] | wire types (frames, ids, errors, notifications) |
 //! | [`registry`] | name → handler dispatch with the protocol's error mapping |
 //! | [`methods`] | built-ins (`ping`, capabilities) + domain registration |
+//! | [`bridge`] | non-tool bridge methods (open/focus, live.snapshot) + AI-origin domain events |
 //! | [`runtime`] | SSH/SFTP session lifecycle shared by the `ssh_*` / `sftp_*` methods |
 //! | [`db_runtime`] | Go sidecar client shared by the `db_*` / `es_*` / `docker_*` methods |
 //! | [`desktop_runtime`] | sandbox-desktop state shared by the 22 `desktop_*` methods |
@@ -26,6 +27,7 @@
 pub mod android_runtime;
 pub mod assets;
 pub mod bindings;
+pub mod bridge;
 pub mod db_runtime;
 pub mod desktop_runtime;
 pub mod desktop_store;

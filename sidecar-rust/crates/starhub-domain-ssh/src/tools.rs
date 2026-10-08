@@ -612,7 +612,6 @@ impl ExecTracker for NoopExecTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::MemoryKnownHostsStore;
 
     // ---------- 纯函数:base64 / 后台任务命令 / sleep 检测 ----------
 

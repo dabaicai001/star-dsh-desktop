@@ -110,6 +110,16 @@ impl SshRuntime {
         &self.registry
     }
 
+    /// 传输任务表(`starhub/live.snapshot` 的 transfers 源)。
+    pub fn transfers(&self) -> &TransferManager {
+        &self.transfers
+    }
+
+    /// 事件出口(领域事件 / 注册表快照 / UI 动作意图通知)。
+    pub fn sink(&self) -> &Arc<dyn EventSink> {
+        &self.sink
+    }
+
     /// 存活的 SSH 会话 id 集合(注册表快照的剔除依据)。
     pub async fn live_session_ids(&self) -> std::collections::HashSet<String> {
         self.manager.sessions.lock().await.keys().cloned().collect()

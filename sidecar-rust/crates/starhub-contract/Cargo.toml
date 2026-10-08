@@ -1,0 +1,15 @@
+[package]
+name = "starhub-contract"
+description = "StarHub × dsh 联动契约:领域事件 schema 与模型可读能力文本(Tauri 壳与 Rust sidecar 共用同一份实现)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "starhub_contract"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
