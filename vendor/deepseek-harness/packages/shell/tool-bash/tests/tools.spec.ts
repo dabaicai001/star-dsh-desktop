@@ -389,6 +389,22 @@ describe('bash tool', () => {
     expect(text(result)).toContain('tool execution arguments must be losslessly JSON-serializable')
   })
 
+  it.each([
+    ['foreground-only', setup],
+    ['job-backed', setupWithJobs],
+  ] as const)('requests description before command in the %s schema', async (_mode, setupContext) => {
+    const ctx = await setupContext()
+    try {
+      const schema = ctx.tools.schemas().find(tool => tool.name === 'bash')!
+      expect(Object.keys(schema.parameters.properties as Record<string, unknown>).slice(0, 2))
+        .toEqual(['description', 'command'])
+      expect(schema.parameters).toHaveProperty('required', ['description', 'command'])
+      expect(schema.description).toContain('Provide `description` before `command` in the arguments.')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('registers the bash schema with run_in_background exposed while a job registry is composed', async () => {
     const ctx = await setupWithJobs()
     const schemas = ctx.tools.schemas()
@@ -396,12 +412,12 @@ describe('bash tool', () => {
     const bashSchema = schemas.find(schema => schema.name === 'bash')!
     expect(bashSchema.parameters).toMatchObject({
       type: 'object',
-      required: ['command', 'description'],
+      required: ['description', 'command'],
     })
     expect(Object.keys(bashSchema.parameters.properties as Record<string, unknown>))
       .toContain('run_in_background')
-    expect(bashSchema.description).toContain('job_output')
-    expect(bashSchema.description).toContain('A foreground command that reaches its timeout is not killed')
+    expect(JSON.stringify(bashSchema.parameters)).toContain('job_output')
+    expect(JSON.stringify(bashSchema.parameters)).toContain('moves to the background as a job')
   })
 
   it('registers a foreground-only schema without a job registry', async () => {
@@ -410,9 +426,8 @@ describe('bash tool', () => {
     expect(schemas.map(schema => schema.name)).toEqual(['bash'])
     const bashSchema = schemas[0]!
     expect(Object.keys(bashSchema.parameters.properties as Record<string, unknown>))
-      .toEqual(['command', 'description', 'timeoutMs', 'workdir'])
-    expect(bashSchema.description).toContain('Background execution is not available')
-    expect(bashSchema.description).not.toContain('job_output')
+      .toEqual(['description', 'command', 'timeoutMs', 'workdir'])
+    expect(JSON.stringify(bashSchema.parameters)).not.toContain('job_output')
     expect(JSON.stringify(bashSchema.parameters)).toContain('kills the command on expiry')
   })
 
@@ -647,7 +662,7 @@ describe('background execution through the job runtime', () => {
     expect((ctx.shell as CountingStartExecutor).starts).toBe(0)
   })
 
-  it('enableRunInBackground: false removes the parameter and flips the description', async () => {
+  it('enableRunInBackground: false removes the parameter and rejects the call', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
@@ -658,8 +673,7 @@ describe('background execution through the job runtime', () => {
 
     const schema = ctx.tools.schemas().find(s => s.name === 'bash')!
     expect(Object.keys(schema.parameters.properties as Record<string, unknown>))
-      .toEqual(['command', 'description', 'timeoutMs', 'workdir'])
-    expect(schema.description).toContain('Background execution is not available')
+      .toEqual(['description', 'command', 'timeoutMs', 'workdir'])
     expect(schema.description).not.toContain('run_in_background')
     // The registry-held definition agrees (schema and capability never disagree).
     const parameters = ctx.tools.get('bash')!.parameters as { properties: Record<string, unknown> }
@@ -694,9 +708,9 @@ describe('sandbox escalation through the generic task producer', () => {
   it('advertises the sandbox fields and validates their pairing', async () => {
     const { ctx } = await setupSandboxed()
     const schema = ctx.tools.schemas().find(item => item.name === 'bash')!
-    const properties = schema.parameters.properties as Record<string, { enum?: string[] }>
+    const properties = schema.parameters.properties as Record<string, { enum?: string[]; description?: string }>
     expect(properties['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access'])
-    expect(schema.description).toContain('approval prompt')
+    expect(properties['sandbox_permissions']?.description).toContain('asks the user for approval')
 
     for (const args of [
       { command: 'true', description: 'd', sandbox_permissions: 'workspace-write' },

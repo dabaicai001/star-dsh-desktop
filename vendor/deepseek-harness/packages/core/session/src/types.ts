@@ -266,9 +266,9 @@ export interface RequestContext {
  * Why a `request/header` snapshot was appended: `'initial'` — the log's first
  * header (a new conversation); `'resume'` — a loop instance's first request
  * over a log that already has header events (process restart, fork seed);
- * `'change'` — a later request used a different header, with `startsSeries`
- * preserving a coincident series boundary; `'series'` — an unchanged header
- * began an explicitly distinct message series or followed a surface replacement.
+ * `'change'` — a later request used a different header; `'series'` — an unchanged
+ * header began an explicitly distinct message series or followed a surface
+ * replacement. Other reasons carry `startsSeries` when a new series coincides.
  */
 export type RequestHeaderReason = 'initial' | 'resume' | 'change' | 'series'
 
@@ -390,7 +390,7 @@ export interface SessionEventMap {
   'request/header': {
     header: EpochHeader
     reason: RequestHeaderReason
-    /** A changed header also begins a distinct model-message series. */
+    /** This request begins a distinct model-message series, independently of the header reason. */
     startsSeries?: true
   }
   /**
@@ -414,8 +414,8 @@ export interface SessionEventMap {
    * keep ordinary restore and replay lifecycle boundaries.
    *
    * Only the `Session` constructor and `buildForkSeed` may create this marker.
-   * The invariant companion deliberately constrains nothing here, so a plugin
-   * appending one would silently classify every live bracket before it as seed history.
+   * Session append does not reject other writers, so a plugin appending one
+   * would silently classify every live bracket before it as seed history.
    *
    * An owner of a standalone open/close bracket (`compaction/start` …
    * `compaction/end`) reads it because seed history and live work are otherwise

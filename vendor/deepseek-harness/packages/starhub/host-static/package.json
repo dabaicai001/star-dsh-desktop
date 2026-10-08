@@ -12,10 +12,6 @@
       "default": "./lib/types/index.js"
     },
     "./src/*": "./src/*",
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/types/invariant.js"
-    },
     "./package.json": "./package.json"
   },
   "files": [

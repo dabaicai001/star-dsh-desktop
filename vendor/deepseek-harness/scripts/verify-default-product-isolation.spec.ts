@@ -91,11 +91,13 @@ describe('default product isolation', () => {
     expect(verifyDefaultProductIsolation(root).failures).toEqual([])
   })
 
-  it('ships an optional bundle switched off: its graph is outside the product, its name stays out of imports and defaults', () => {
+  it.each([true, false])('ships an optional bundle switched off with legacy icon=%s', (legacy) => {
     const root = fixture()
     const layer = '@deepseek-ai/dsh-experimental-layer'
     write(root, 'packages/experimental/layer/package.json', {
-      name: layer, dependencies: { [experimental]: 'workspace:^' }, dsh: { bundle: { patch: './cordis.patch.yml' } },
+      name: layer, ...legacy ? { icon: './icon.svg' } : {},
+      exports: { ...legacy ? {} : { './icon': './icon.svg' }, './locale/*.json': './locale/*.json' },
+      dependencies: { [experimental]: 'workspace:^' }, dsh: { bundle: { patch: './cordis.patch.yml' } },
     })
     write(root, 'packages/experimental/layer/cordis.patch.yml', [{ insert: [{ name: experimental }] }])
     manifest(root, 'apps/cli/package.json', { dependencies: { [core]: 'workspace:^', [layer]: 'workspace:^' } })
@@ -114,7 +116,7 @@ describe('default product isolation', () => {
     expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(`optional bundle ${layer} must not be a default bundle`)
   })
 
-  it('requires each optional bundle to be a runtime dependency that declares a bundle patch', () => {
+  it('requires each optional bundle to be a runtime dependency that declares a bundle patch, an icon, and locale metadata', () => {
     const root = fixture()
     write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${base}'] } }\n`
       + `export const DEFAULT_PROFILE_BUNDLES = ['${base}']\n`
@@ -122,6 +124,8 @@ describe('default product isolation', () => {
     const failures = verifyDefaultProductIsolation(root).failures.join('\n')
     expect(failures).toContain(`optional bundle ${experimental} must be a runtime dependency of apps/cli`)
     expect(failures).toContain(`optional bundle ${experimental} must declare dsh.bundle.patch`)
+    expect(failures).toContain(`optional bundle ${experimental} must declare icon or export ./icon`)
+    expect(failures).toContain(`optional bundle ${experimental} must export ./locale/*.json display metadata`)
 
     // An experimental runtime dependency the list does not name is still a product requirement.
     write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${base}'] } }\n`

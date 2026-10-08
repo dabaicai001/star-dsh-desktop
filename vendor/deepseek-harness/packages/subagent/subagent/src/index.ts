@@ -18,8 +18,8 @@
  * continuation manager holds their `AgentHandle` directly and orders every turn
  * through the child's own inbox, so providers contribute only the detached
  * creation spec and see no handle, turn, or teardown. Direct-child
- * discovery uses the parent catalog; descendant discovery uses the Session
- * corpus. Neither read requires the continuation runtime.
+ * discovery reads the parent catalog; descendant discovery recursively reads
+ * those child catalogs. Neither read requires the continuation runtime.
  *
  * Same-process providers are trusted typed collaborators. Requests, provider
  * descriptors, results, and lifecycle payloads are borrowed immutable values;
@@ -159,7 +159,6 @@ declare module '@deepseek-ai/cordis' {
      * parent-scoped listener observes only its own delegations. Paired with
      * `subagent/end`.
      * @param info - the provider and published child identity.
-     * @dshScopeScan unsupported
      * @mode emit
      */
     'subagent/start'(this: Scoped<SubagentRuntime>, info: SubagentRunInfo): void
@@ -168,7 +167,6 @@ declare module '@deepseek-ai/cordis' {
      * parent carrier as `subagent/start`, so the lifecycle pair reaches the
      * same scoped audience.
      * @param info - the run identity and terminal outcome.
-     * @dshScopeScan unsupported
      * @mode emit
      */
     'subagent/end'(this: Scoped<SubagentRuntime>, info: SubagentRunEndInfo): void
@@ -376,19 +374,19 @@ export class SubagentRuntime extends TypertRemoteService {
   }
 
   /**
-   * Enumerate the root's complete session-backed subagent tree in stable
-   * pre-order from one live-preferred corpus, without loading or resuming an
-   * Agent. Ordinary sessions and one-shot children remain traversal nodes so
-   * continuable descendants below them are discovered; each returned entry
-   * adds its durable `parentId` and root-relative `depth`. Identity resolution,
-   * diagnostics, optional persistence, and cancellation use the registered
-   * child identity projection and complete Session corpus.
-   * @param rootSessionId - session whose complete descendant tree is listed.
-   * @param signal - caller-owned cancellation forwarded to persistence reads
-   *   and observed around every read await.
-   * @returns children and per-candidate diagnostics with tree position, in
-   *   stable pre-order.
+   * Recursively list reachable parent catalogs in stable pre-order, preserving
+   * each catalog's event order. Each row carries its catalog parent and depth;
+   * one-shot and unknown-mode children remain traversal nodes. Unknown modes
+   * produce unsupported diagnostics. Unreadable child catalogs produce corrupt
+   * or unavailable diagnostics and stop only that branch. Root read failures,
+   * missing services or projections, and cancellation reject the whole listing.
+   * Each catalog is observed once and released before the next read. No Agent
+   * is loaded or resumed; Sessions absent from reachable catalogs are omitted.
+   * @param rootSessionId - session whose catalog starts descendant discovery.
+   * @param signal - cancellation forwarded to and checked around each catalog read.
+   * @returns children and branch diagnostics in parent-catalog pre-order.
    * @throws {@link SubagentError} when listing dependencies are unavailable or the caller cancels.
+   * @throws SessionQueryError when the root catalog cannot be read.
    */
   listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]> {
     return listSubagentDescendants(this.ctx, rootSessionId, signal)

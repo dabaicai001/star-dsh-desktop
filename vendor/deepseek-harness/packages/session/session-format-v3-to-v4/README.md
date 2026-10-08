@@ -259,7 +259,7 @@ An event containing additions must have `headerSeq`; it selects an earlier known
 
 Tool-change blocks in ordinary messages, inbox/title input, compaction summary/raw output, or embedded assistant block-start/block-end records are refused. A present `request/header.header.tools[].deferLoading` must be exactly true; it is independent of whether any developer addition exists. Empty developer nodes retain surface positions, produce no model message, and cannot replace the protected system head. Unknown ignorable developer payloads are deferred until the reader knows that event type.
 
-Native format support does not enable automatic emission, provider tool loading, or UI rendering. Current provider and UI consumers explicitly refuse developer history they cannot represent. Backward-compatible consumer support for the already accepted representation is separate from adding a new format.
+Native format support validates and preserves developer history. The [LLM runtime](../../llm/llm/README.md) projects tool updates for each route and omits developer messages on unsupported routes; Chat and Trajectory render tool-change notices. These consumers use the accepted representation without adding a new format.
 
 <a id="fork-results"></a>
 ### Fork-generated results
@@ -294,7 +294,7 @@ Unknown required events are refused by vocabulary-aware restoration. Unknown ign
 
 The migration declaration creates independent streaming stages. Compact runs expand as iterables without an intermediate event array. The V3-to-V4 stage rewrites historical message sources, lifts historical tool-result wrappers, and inserts evidenced interrupted turn endings while emitting V4 events. It retains one source-to-target sequence entry per source event for local reference remapping. The V4 codec uses the released V2 codec only for physical header and source-range framing, and validates native tool-role rows directly; it does not invoke the released V3 validator or source-conversion views. JSONL scanners call `assertV4RowAdmission` before suppressing recoverable rows and the shared mandatory relationship validator before returning the completed logical prefix.
 
-The target restorer validates native fields and mandatory cross-event relationships, then returns the original artifact. Unknown ignorable events remain opaque, and unfinished inherited compactions expire at the end-seed marker. No runtime invariant companion is published because this pure library owns no independently maintained runtime observations.
+The target restorer validates native fields and mandatory cross-event relationships, then returns the original artifact. Unknown ignorable events remain opaque, and unfinished inherited compactions expire at the end-seed marker.
 
 </details>
 

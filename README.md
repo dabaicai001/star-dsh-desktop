@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.126.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.127.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -48,11 +48,11 @@ StarHub 是一个跨平台桌面应用,把开发运维每天要用到的工具�
 
 ## 当前版本
 
-### v0.126.0 (2026-09-24)
-- ✨ **AI 浏览器新增 `browser_auto`——Jev 连续执行循环(Phase 2,第 16 个 `browser_*` 工具)**:把 Phase 1「每步一问」升级为「循环内自治」——主模型一次工具往返,Rust 内部完成最多 N 步 extract → Jev decide → 执行,汇总返回(每步动作/元素/置信度/结果 + 终止原因)。`goal` 必填;`max_steps` 默认 8;`stop_on_lowconf` 默认 true;`input_text` 供 type 步骤键入;`snapshot` 可缺省(内部自取)。终止原因齐全:done(目标达成)/ 步数用尽 / `[LOWCONF]`(置信度低于阈值,交还主模型)/ `[HANDOFF]`(Jev 不生成自由文本:`select_option` 与未提供 `input_text` 的 `type` 交还主模型)/ `[STALL]`(同一页面同一决策重复,即上一步没有产生页面变化)/ `[Error]`(元素失效等软错误,附已执行摘要)。
-- ✨ **自动执行步数上限可配(设置 → AI 浏览器)**:settings `ai.jev.auto_max_steps`,默认 50、区间 1–500;模型传参超过上限时按上限执行(汇总首行披露实际上限)。Jev 决策配置随之多一个字段(`browser_get_jev_config` / `browser_set_jev_config`)。
-- ✨ **`browser_auto` 定时授权(approval-bridge,零 Rust 面)**:首次调用软确认(理由写明「一次确认授权循环内全部步骤」);确认后 N 分钟(Config `autoGrantMinutes`,默认 10,cordis.yml 可配)内本会话后续 `browser_auto` 不再逐一弹卡。授予判定从会话日志的 `approval/asked` + `approval/decided` 审计对派生(`autoGrantActive` 纯函数:无状态、可重放、与 answerer 配置无关)。
-- 🔒 **安全边界不变**:循环内步骤继承单次确认(与 desktop/android 任务级授权同构),爆炸半径由步数上限帽死;动作白名单、元素编号纯数字校验、confidence ∈ [0,1] 全部沿用 Phase 1;`browser_auto` 进 JevGate 吊销表、不进门控表(自决策,进门即死锁);循环内每步重读 Jev 配置,中途关开关即中断交接(fail loud);每步决策落 `Jev 决策` info 行,starhub.log 可还原整条自动轨迹。Rust 230 单测 + vendor starhub 44 相关单测全绿。
+### v0.127.0 (2026-10-08)
+- ⬆️ **AI 内核(DeepSeek Harness)整体升级到上游 `dsh-v0.2.1-alpha.1`(commit `5badb15009`,上游 master HEAD)**:`vendor/deepseek-harness` 从 `dsh-v0.1.7-rc.1`(`46a7f68b`)整树替换,跨越 `0.1.7-rc.2` / `0.2.0-rc.1` / `0.2.0-rc.2` 四个上游发布。差异盘点:上游演进 4011 文件、上游新增 1914 文件、上游移除 1006 文件、本地独有 315 文件全部保留——**`packages/starhub/*`、`apps/starhub-window`、`examples/starhub-*` 在上游演进清单里为 0 条**,StarHub 定制面与上游演进面继续完全不相交,解耦目标保持成立。适配清单见 `docs/DSH升级适配清单-v0.2.1-alpha1.md`。
+- 🔧 **适配上游破坏性变更「runtime invariants 移除」(`dsh-v0.2.0-rc.2`)**:上游删除 `@deepseek-ai/dsh-invariants` 包与全部 `<pkg>/invariant` 子路径,StarHub 9 个插件包 + 2 个兼容垫片包的 `./invariant` 伴生插件(源文件、测试、exports、files、依赖、tsconfig 引用、tsdown 入口)按官方迁移指南整体移除。
+- 🔒 **依赖图钉版,保证冻结安装可复现**:上游 lockfile 定稿后新发的 `micromark-util-types@2.0.3` 等三个补丁版与 `mdast-util-from-markdown@2.0.3` 在 `exactOptionalPropertyTypes` 下类型不兼容(同一棵树混两套类型会直接炸 tsc),在 `pnpm-workspace.yaml` overrides 钉回上游版本;lockfile 带上全部 StarHub workspace importer,CI 的 `--frozen-lockfile` 干净环境安装通过。
+- ✅ 验证:`build:lib:host` / `build:lib:client`(含上游新增的 desktop bundle 链)/ `build:window` 全过;vendor starhub + 垫片包 vitest **69 spec / 1088 例全绿**;sdk/server 补丁包 4 spec / 45 例全绿;Rust **230 passed / 0 failed**(含 dsh runtime 启动链端到端用例)。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

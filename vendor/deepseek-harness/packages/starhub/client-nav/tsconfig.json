@@ -40,9 +40,6 @@
     },
     {
       "path": "../../client/store"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

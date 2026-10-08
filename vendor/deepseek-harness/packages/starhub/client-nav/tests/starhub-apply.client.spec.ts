@@ -34,7 +34,6 @@ import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
 import { AboutTab } from '../src/client/settings/about.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
 import { AuditTab } from '../src/client/settings/audit.tsx'
-import { apply as applyInvariant } from '../src/invariant.ts'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -330,12 +329,6 @@ describe('client-nav apply (rc.2)', () => {
     expect(settingsUpdate).not.toHaveBeenCalled()
   })
 
-  it('invariant registers the package name', async () => {
-    const register = vi.fn(() => () => {})
-    const invariantCtx = { invariants: { register } } as unknown as Context
-    await applyInvariant(invariantCtx)
-    expect(register).toHaveBeenCalledWith('@deepseek-ai/dsh-starhub-client-nav', expect.any(Function))
-  })
 
   it('inject list declares the required services', () => {
     expect(injectList).toContain('slots')

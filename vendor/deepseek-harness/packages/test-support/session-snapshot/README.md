@@ -84,7 +84,7 @@ Headless/ACP and SDK adapters compare raw catalog child-creation times with harv
 
 ### Pinning request headers and system prompts
 
-A pin owns its generated `system-prompt.expected.md` or `tool-schemas.expected.json` sidecar by default; `systemPromptSource` and `toolSchemasSource` name another pin when the complete corresponding sequence is identical, so each distinct version is committed once. The system prompt is surface node 0, logged as a `system/message` event before the step's first `request/header`; every fixture stores its text block as `"text":"{{system}}"` and the prompt sidecar keeps the full text. The pin's `request/header` events store `"tools":"{{tools}}"` while retaining config and reason, and the structured schema sidecar keeps the full catalogs. A child Session whose own scope composes a different request declares it per fixture index with `pinsChildToolSchemas` and `pinsChildSystemPrompts`. A scenario that changes the request header mid-run declares `expectedHeaderChanges`; a scenario whose prompt changes mid-run — replacing node 0, or appending after the cached history on an `in-history` route — declares `expectedPromptChanges`, and each change adds a `<!-- system/message change N -->` section to the prompt sidecar. The manifest spells these `header.changes` and `header.promptChanges`.
+A pin owns its generated `system-prompt.expected.md` or `tool-schemas.expected.json` sidecar by default; `systemPromptSource` and `toolSchemasSource` name another pin when the complete corresponding sequence is identical, so each distinct version is committed once. The system prompt is surface node 0, logged as a `system/message` event before the step's first `request/header`; every fixture stores its text block as `"text":"{{system}}"` and the prompt sidecar keeps the full text. The pin's `request/header` events store `"tools":"{{tools}}"` while retaining config and reason, and the structured schema sidecar keeps the full catalogs. Logs containing developer messages retain ordered tool names in each header instead of the token so historical addition references remain verifiable. A child Session whose own scope composes a different request declares it per fixture index with `pinsChildToolSchemas` and `pinsChildSystemPrompts`. A scenario that changes the request header mid-run declares `expectedHeaderChanges`; a scenario whose prompt changes mid-run — replacing node 0, or appending after the cached history on an `in-history` route — declares `expectedPromptChanges`, and each change adds a `<!-- system/message change N -->` section to the prompt sidecar. The manifest spells these `header.changes` and `header.promptChanges`.
 
 ### Platform and composition variants
 
@@ -92,7 +92,7 @@ A scenario requiring a non-Windows host declares `posixOnly`, which skips its ru
 
 ### What can go wrong
 
-- **A child turn wait fails** — `waitForSubagentTurnEnd` identifies the child, requested turn, and deadline even when the first log harvest exceeds that deadline, and retains the underlying failure as the error cause.
+- **A turn-end wait fails** — `waitForTurnEnd` and `waitForSubagentTurnEnd` identify the session or child and deadline even when the first log harvest exceeds that deadline. Child waits also name the requested turn. Both retain the underlying failure as the error cause.
 - **A fixture guard rejects the committed files** — orphan scenario dirs, missing files, multiple pins for one header class, duplicate sidecar content, unscrubbed prompt text or tool schemas, a `request/header` with no preceding `system/message`, and malformed pinning headers all fail the suite before comparisons run.
 - **The session harvest needs raw JSONL mode** — snapshot configs set the JSONL backend's `compression: 'none'`; compressed JSONL has no snapshot-harvest path.
 - **Built mode needs current artifacts** — run `pnpm run build` before selecting `DSH_EXAMPLE_MODE=lib`; source mode remains the zero-build path.
@@ -124,7 +124,6 @@ The shared core owns manifests, generation-qualified role selection, workspace s
 | [`src/workspace.ts`](src/workspace.ts) | Scenario workspace setup and complete expected-state comparison |
 | [`src/suite.ts`](src/suite.ts) | Scenario-table suite factory, fixture guards, record/refresh write-back |
 | [`src/index.ts`](src/index.ts) | Package entry re-exporting the four layers |
-| — | No runtime invariant companion is published; this test-support package owns no production event stream or mutable data; consuming test suites exercise its behavior. |
 
 ### Data flow
 

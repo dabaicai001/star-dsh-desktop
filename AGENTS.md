@@ -11,11 +11,11 @@ StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.126.0(**AI 浏览器新增第 16 个工具 `browser_auto`——Jev 连续执行循环(Phase 2)**:主模型一次工具往返,Rust 内部完成最多 N 步 extract → Jev decide → 执行并汇总返回;`max_steps` 默认 8,上限走 settings `ai.jev.auto_max_steps`(默认 50、区间 1–500,设置 → AI 浏览器可改);终止原因齐全(done / 步数用尽 / `[LOWCONF]` / `[HANDOFF]`——Jev 不生成自由文本,`select_option` 与未提供 `input_text` 的 `type` 交还主模型 / `[STALL]` 同页同决策重复 / `[Error]` 软错误);`browser_auto` 进 JevGate 吊销表不进门控表(自决策);审批为一次软确认授权循环内全部步骤 + approval-bridge 定时授权(Config `autoGrantMinutes` 默认 10 分钟,从会话日志 `approval/asked`+`approval/decided` 审计对派生,无状态、零 Rust 面);防震荡/汇总/钳制均为纯函数单测;Rust 230 + vendor starhub 44 相关单测全绿;设计文档 `docs/browser_auto-连续执行循环-立项设计.md`。) |
+| 当前版本 | v0.127.0(**AI 内核整体升级到上游 `dsh-v0.2.1-alpha.1`(commit `5badb15009`,上游 master HEAD,跨越 0.1.7-rc.2 / 0.2.0-rc.1 / 0.2.0-rc.2 四个上游发布)**:`vendor/deepseek-harness` 整树替换;差异盘点为上游演进 4011 / 新增 1914 / 移除 1006 / 本地独有 315 全保留,`packages/starhub/*`、`apps/starhub-window`、`examples/starhub-*` 在上游演进清单里为 0 条,解耦目标继续成立;适配上游 `dsh-v0.2.0-rc.2`「runtime invariants 移除」破坏性变更——9 个插件包 + 2 个兼容垫片包的 `./invariant` 伴生插件按官方迁移指南整体移除;`pnpm-workspace.yaml` overrides 钉回上游 lockfile 的 micromark 三包版本(新发补丁版与 `mdast-util-from-markdown@2.0.3` 在 `exactOptionalPropertyTypes` 下类型不兼容);lockfile 带全部 StarHub importer,CI 冻结安装通过;验证:build:lib:host/client(含上游新增 desktop bundle 链)、build:window、vitest 69 spec/1088 例、Rust 230 passed 全绿;适配清单 `docs/DSH升级适配清单-v0.2.1-alpha1.md`。) |
 
 ## 架构一句话
 
-三层进程:**Rust 主进程(Tauri 2,`src-tauri/`)** 管窗口、SSH/SFTP、密钥环、AI 浏览器 → **Go Sidecar(`sidecar/`)** 经 stdio JSON-RPC 管全部数据库/中间件适配 → **前端** 是 DeepSeek Harness 主壳 + StarHub React 工作台(`vendor/deepseek-harness/`,git submodule)。
+三层进程:**Rust 主进程(Tauri 2,`src-tauri/`)** 管窗口、SSH/SFTP、密钥环、AI 浏览器 → **Go Sidecar(`sidecar/`)** 经 stdio JSON-RPC 管全部数据库/中间件适配 → **前端** 是 DeepSeek Harness 主壳 + StarHub React 工作台(`vendor/deepseek-harness/`,上游 `deepseek-ai/deepseek-harness` 的 vendored 副本,随仓库直接版本化)。
 
 ## 目录结构
 
@@ -47,10 +47,13 @@ starhub/
 │   ├── pool/  rpc/           # 连接池 / JSON-RPC 协议
 │   └── bin/                  # 构建输出 starhub-sidecar[.exe]
 │
-├── vendor/deepseek-harness/ # DSH 主壳与 StarHub React 工作台(唯一 git submodule)
+├── vendor/deepseek-harness/ # DSH 主壳与 StarHub React 工作台(上游 deepseek-ai/deepseek-harness
+│                            # 的 vendored 副本,随仓库直接版本化;上游 commit 记录于
+│                            # vendor/deepseek-harness/UPSTREAM_COMMIT.txt)
 │   ├── apps/
 │   │   ├── starhub-window/   # StarHub 资产工作台构建入口(产物 dist-starhub-react/)
 │   │   ├── web/  cli/        # DSH 自身应用
+│   │   └── desktop/ desktop-host/  # 上游 DSH 自家 Electron 桌面壳(随整树 vendored,StarHub 不启动它)
 │   └── packages/starhub/     # 9 个内置插件:approval-bridge / client-nav / commit-message /
 │                             # domain-events / host-static / live-context /
 │                             # session-registry / tool-context / tools
@@ -130,4 +133,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-09-24 (v0.126.0)*
+*最后更新: 2026-10-08 (v0.127.0)*

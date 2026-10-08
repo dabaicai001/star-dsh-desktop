@@ -28,9 +28,6 @@
     },
     {
       "path": "../domain-events"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

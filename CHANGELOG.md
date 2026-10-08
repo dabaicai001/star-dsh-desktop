@@ -5,6 +5,18 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
+## [0.127.0] - 2026-10-08
+
+### 变更
+- ⬆️ **DSH 内核整体升级到上游 `dsh-v0.2.1-alpha.1`(commit `5badb15009`,上游 master HEAD)**:`vendor/deepseek-harness` 从 `dsh-v0.1.7-rc.1`(`46a7f68b`)整树替换,跨越 `dsh-v0.1.7-rc.2` / `dsh-v0.2.0-rc.1` / `dsh-v0.2.0-rc.2` / `dsh-v0.2.1-alpha.1` 四个上游发布。三方差异盘点:直接跟上游 4011 文件、上游新增 1914 文件、上游移除 1006 文件(885 个上游 notes 清理 + 121 个演进移除)、本地独有 315 文件全部保留;需三方合并的本地补丁面仍是既有四张根配置 + lockfile,`packages/sdk/server/src/index.ts` 上游未动原样保留。**`packages/starhub/*`、`apps/starhub-window`、`examples/starhub-*` 在「上游演进」清单里为 0 条**——StarHub 定制面与上游演进面继续完全不相交,解耦目标保持成立。`UPSTREAM_COMMIT.txt` → `5badb15009 (tag: dsh-v0.2.1-alpha.1)`;14 个上游 symlink 按 Windows 既有约定物化为普通文件。适配清单见 `docs/DSH升级适配清单-v0.2.1-alpha1.md`。
+- 🔧 **适配上游破坏性变更「runtime invariants 移除」(`dsh-v0.2.0-rc.2`)**:上游删除 `@deepseek-ai/dsh-invariants` 包与全部 `<pkg>/invariant` 子路径(`docs/upgrade-guide/v0.2.0-rc.2/remove-runtime-invariants/`)。StarHub 9 个插件包(approval-bridge / client-nav / commit-message / domain-events / host-static / live-context / session-registry / tool-context / tools)+ 2 个兼容垫片包(client/schema-form / client/web-react)的 `./invariant` 伴生插件按官方迁移指南整体移除:`src/invariant.ts` × 11、`tests/invariant.spec.ts` × 4(client-nav 为套件内联块)、`"./invariant"` exports × 11、`lib/invariant.js` files × 8、`dsh-invariants` 依赖 × 8、tsconfig `runtime-diagnostics/invariants` 引用 × 11、tsdown invariant 入口 × 3、`tsconfig.base.json` 两条 shim `/invariant` 别名、`examples/package.json` 依赖。
+- 🔒 **依赖图钉版 + lockfile 带全 StarHub importer**:① `pnpm-workspace.yaml` overrides 增加 StarHub 钉版块,把 `micromark-util-types`(2.0.2)/ `micromark-factory-space`(2.0.1)/ `micromark-core-commonmark`(2.0.3)钉回上游 lockfile 版本——上游定稿后新发的补丁版与 `mdast-util-from-markdown@2.0.3` 在 `exactOptionalPropertyTypes` 下类型不兼容,非 frozen 重解析混树会直接炸 `ui-primitives` markdown parse 的 tsc;② lockfile 以上游原版为底收敛出全部 StarHub workspace importer(apps/starhub-window、packages/starhub/* 12、三个兼容垫片)与 `unrun@0.3.1`,相对上游仅 +479/-20 行;CI 同款 `pnpm install --frozen-lockfile` 干净环境通过。两个新坑(pnpm workspace 状态缓存假象、micromark 漂移)沉淀见 `docs/踩坑记录.md` §54/§55。
+
+### 文档
+- 📝 新增 `docs/DSH升级适配清单-v0.2.1-alpha1.md`(盘点、整树替换、根配置重贴、锁文件收敛、invariants 移除适配、运行时契约核对、验证清单);`AGENTS.md` 目录结构更正 vendor/deepseek-harness 为「上游 vendored 副本随仓库直接版本化」(不再是 submodule)并补记 `apps/desktop` / `apps/desktop-host`(上游自家 Electron 桌面壳,StarHub 不启动)。
+
+---
+
 ## [0.126.0] - 2026-09-24
 
 ### 新增
