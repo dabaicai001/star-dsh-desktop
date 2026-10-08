@@ -122,6 +122,16 @@ excel_get_context / write_range / fill_formula / read_range / set_headers / find
 
 1. ✅ `sidecar-rust/` workspace + JSON-RPC 骨架 + `ping`/`starhub_list_capabilities` 两个方法 + 协议单测(**已完成**:15 单测 + 6 集成测试,真实二进制 stdio 会话;`npm run sidecar-rust:test`);
 2. ✅ `packages/starhub/bridge` 插件骨架:spawn sidecar、`JsonRpcLineTransport` 复用、注册 `starhub_sidecar_status` 工具、健康探针 fail loud、dispose 收进程(**已完成**:6 测试;vendor host 聚合 tsc + `packages/starhub` vitest 63 spec/1020 例全绿);
-3. ⬜ 域模块按「SSH/SFTP → DB/Redis/ES/Docker → desktop → android → browser」顺序平移,每个域:平移 + 契约测试(工具 roundtrip)+ 旧实现对照;
-4. ⬜ excel 转发改道 + 9 插件适配(client-nav 的 Tauri 桥调用);
-5. ⬜ dsh web 全工具验收(不等 Electron)。
+3. 🔄 **SSH/SFTP 域抽取(进行中,第一步已完成)**:`starhub-domain-ssh` crate 从
+   `src-tauri/src/{ssh,sftp}` 整树搬迁(10 文件 ~10.8k 行),Tauri 耦合收敛为两个
+   seam——`EventSink`(原 `tauri::Emitter` 的 20 处 emit,调用点
+   `emit`→`emit_ser` 一词之改)与 `KnownHostsStore`(原 SQLite
+   known_hosts, trait + 内存测试替身);`SshSession`/`SshHandler` 携带
+   store。**crate 编译 + 63 单测全绿(含搬迁的原有测试)**。
+   待续:① sidecar 注册 8 个 ssh/sftp 方法(资产存储 + 会话绑定,
+   §六数据迁移);② src-tauri 改依赖 crate(Tauri 侧 EventSink/KnownHostsStore
+   适配器 + 删除 src/ssh、src/sftp 旧副本,使 crate 成为唯一事实源);
+4. ⬜ 其余域按「DB/Redis/ES/Docker → desktop → android → browser」顺序平移
+   (DB/Redis/ES/Docker 的 Go sidecar 客户端已在 Rust 侧,平移最直);
+5. ⬜ excel 转发改道 + 9 插件适配(client-nav 的 Tauri 桥调用);
+6. ⬜ dsh web 全工具验收(不等 Electron)。
