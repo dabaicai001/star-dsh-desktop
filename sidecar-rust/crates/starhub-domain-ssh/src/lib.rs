@@ -5,7 +5,9 @@
 //! former direct `tauri::AppHandle` / SQLite couplings.
 
 pub mod auth;
+pub mod asset_config;
 pub mod events;
+pub mod manager;
 pub mod known_hosts;
 pub mod session;
 pub mod sftp;

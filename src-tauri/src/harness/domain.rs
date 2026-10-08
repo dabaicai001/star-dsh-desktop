@@ -195,12 +195,13 @@ async fn ensure_ssh_session(
     let (_name, config) = crate::commands::ssh::asset_ssh_config(asset_id).await?;
     let manager = app.state::<SshManager>();
     let transfer_manager = app.state::<TransferManager>();
+    let sink = crate::ssh::adapters::tauri_sink(app.clone());
     crate::commands::ssh::connect_session(
         &manager,
         &transfer_manager,
         conn_id.clone(),
         config,
-        app.clone(),
+        &sink,
         false,
     )
     .await?;
@@ -248,9 +249,10 @@ async fn exec_ssh_command(
             exec_id: exec_id.clone(),
         },
     );
+    let sink = crate::ssh::adapters::tauri_sink(app.clone());
     let result = crate::commands::ssh::ssh_exec_core(
         &manager,
-        &app,
+        &sink,
         conn_id,
         command,
         Some(timeout_sec),

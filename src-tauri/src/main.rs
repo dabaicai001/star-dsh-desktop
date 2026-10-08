@@ -18,6 +18,7 @@ mod ssh;
 
 use commands::ssh::SshManager;
 use sftp::transfer::TransferManager;
+use std::sync::Arc;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// 程序化创建主窗口(声明式 app.windows 挂不上 on_download:WebView2 默认
@@ -110,7 +111,10 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .manage(SshManager::new())
+        // SSH 会话管理器:主机密钥策略存储注入 SQLite seam 实现
+        .manage(SshManager::new(Arc::new(
+            crate::ssh::adapters::SqliteKnownHostsStore,
+        )))
         .manage(sidecar_manager)
         .manage(harness::HarnessManager::new())
         .manage(harness::web::DshWebManager::new())

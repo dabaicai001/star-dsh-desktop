@@ -2,14 +2,16 @@ use crate::harness::HarnessManager;
 use crate::registry::{DetachOutcome, SessionRegistry};
 use crate::sftp::transfer::TransferManager;
 use crate::ssh::adapters::{tauri_sink, SqliteKnownHostsStore};
+use starhub_domain_ssh::asset_config::ssh_config_from_asset;
 use starhub_domain_ssh::events::KnownHostsStore;
-use crate::ssh::session::SshSession;
-use crate::ssh::{
-    KeyboardInteractiveConfig, PendingBastionResponses, PendingHostKeyResponses,
-    PendingKeyboardResponses, SftpLaunchMode, SshAuth, SshConfig, SshSessionInfo, SshWriteChannels,
+// SshManager / connect_session / ssh_exec_core / ssh_exec_abort_core 已平移到
+// starhub-domain-ssh(去 Tauri 化 M1),这里再导出以沿用 `crate::commands::ssh::*` 旧路径。
+pub use starhub_domain_ssh::manager::{
+    connect_session, ssh_exec_abort_core, ssh_exec_core, SshManager,
 };
+use crate::ssh::session::SshSession;
+use crate::ssh::{SshConfig, SshSessionInfo};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::State;
 use tokio::io::AsyncReadExt;
@@ -74,103 +76,10 @@ fn decode_private_key_file(bytes: &[u8]) -> Result<String, String> {
     Ok(sanitize_key(&text))
 }
 
-pub struct SshManager {
-    pub sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
-    channels: SshWriteChannels,
-    pub pending_kb: PendingKeyboardResponses,
-    pub pending_hostkey: PendingHostKeyResponses,
-    /// 堡垒机 AI exec 的「选择机器」待应答通道(session_id → 用户选择的机器)。
-    /// 方案A(v0.95.6):AI exec 走带 pty 的 shell 时,先由用户在这里选机器。
-    pub pending_bastion: PendingBastionResponses,
-    attempts: Arc<Mutex<HashMap<String, u64>>>,
-    /// 在途 exec 命令的中断句柄:exec_id → 发送端。
-    /// 放在 manager 层而不是 SshSession 里:exec 期间 session 锁被持有,
-    /// `ssh_exec_abort` 只需要拿这把独立的 map 锁就能中断,不会死锁。
-    exec_aborts: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>>,
-    /// TOFU 主机密钥策略存储(SQLite seam 实现)。
-    known_hosts: Arc<dyn KnownHostsStore>,
-}
-
-impl SshManager {
-    pub fn new() -> Self {
-        Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
-            channels: Arc::new(Mutex::new(HashMap::new())),
-            pending_kb: Arc::new(Mutex::new(HashMap::new())),
-            pending_hostkey: Arc::new(Mutex::new(HashMap::new())),
-            pending_bastion: Arc::new(Mutex::new(HashMap::new())),
-            attempts: Arc::new(Mutex::new(HashMap::new())),
-            exec_aborts: Arc::new(Mutex::new(HashMap::new())),
-            known_hosts: Arc::new(SqliteKnownHostsStore),
-        }
-    }
-
-    async fn begin_attempt(&self, id: &str) -> u64 {
-        let mut attempts = self.attempts.lock().await;
-        let next = attempts
-            .get(id)
-            .copied()
-            .unwrap_or_default()
-            .wrapping_add(1)
-            .max(1);
-        attempts.insert(id.to_string(), next);
-        next
-    }
-
-    /// 读取 id 当前代次(只读,不递增)。无记录返回 None。
-    async fn current_attempt(&self, id: &str) -> Option<u64> {
-        self.attempts.lock().await.get(id).copied()
-    }
-
-    async fn invalidate_attempt(&self, id: &str) -> u64 {
-        self.begin_attempt(id).await
-    }
-
-    /// 代次守卫的失效:仅当 id 当前代次仍等于 `guard` 时才递增,否则不动。
-    ///
-    /// 修复「关闭→重连失败」竞态:旧会话的 disconnect 在 session 锁上被
-    /// 在途 exec 阻塞数秒,期间用户重开连接(新代次);旧 disconnect 醒来后
-    /// 若盲目 invalidate 会作废新连接(报 Connection aborted / 删新写通道 /
-    /// 删新 MFA 应答通道)。带守卫后旧 disconnect 对新连接零影响。
-    /// @returns Some(新代次) = 守卫命中已失效;None = 代次已前移,跳过清理。
-    async fn invalidate_attempt_if_current(&self, id: &str, guard: u64) -> Option<u64> {
-        let mut attempts = self.attempts.lock().await;
-        if attempts.get(id).copied() != Some(guard) {
-            return None;
-        }
-        let next = guard.wrapping_add(1).max(1);
-        attempts.insert(id.to_string(), next);
-        Some(next)
-    }
-
-    async fn is_current_attempt(&self, id: &str, generation: u64) -> bool {
-        self.attempts.lock().await.get(id).copied() == Some(generation)
-    }
-
-    async fn remove_channel_for_attempt(&self, id: &str, generation: u64) {
-        let mut channels = self.channels.lock().await;
-        if channels
-            .get(id)
-            .is_some_and(|(current, _)| *current == generation)
-        {
-            channels.remove(id);
-        }
-    }
-
-    /// 丢弃一个会话(死会话自愈路径):从 map 移除 + 作废当前代次 +
-    /// 清掉全部 pending 应答通道。供 harness/domain.rs 在连接级失败后调用,
-    /// 下一次 ensure_ssh_session 会按资产配置重建会话。
-    pub(crate) async fn drop_session(&self, id: &str) {
-        if let Some(session_arc) = self.sessions.lock().await.remove(id) {
-            let mut session = session_arc.lock().await;
-            session.disconnect();
-        }
-        self.invalidate_attempt(id).await;
-        self.pending_kb.lock().await.remove(id);
-        self.pending_hostkey.lock().await.remove(id);
-        self.pending_bastion.lock().await.remove(id);
-    }
-}
+// ── SshManager(会话表 / 代次守卫 / 在途 exec 取消句柄)与 connect_session /
+//    ssh_exec_core / ssh_exec_abort_core 已平移到 starhub-domain-ssh::manager
+//    (去 Tauri 化 M1,唯一事实源);Tauri 侧只保留 #[tauri::command] 薄封装,
+//    注入 adapters::TauriEventSink 与 SqliteKnownHostsStore 两个 seam 实现。 ──
 
 #[tauri::command]
 pub async fn ssh_get_trusted_host_key(host: String, port: u16) -> Result<Option<String>, String> {
@@ -217,7 +126,7 @@ pub async fn ssh_connect(
     config: SshConfig,
     app_handle: tauri::AppHandle,
 ) -> Result<SshSessionInfo, String> {
-    connect_session(&manager, &transfer_manager, id, config, app_handle, true).await
+    connect_session(&manager, &transfer_manager, id, config, &tauri_sink(app_handle.clone()), true).await
 }
 
 /// 为 AI / 仪表盘的一次性命令建立无 PTY 的 SSH 会话。
@@ -231,109 +140,13 @@ pub async fn ssh_connect_exec(
     config: SshConfig,
     app_handle: tauri::AppHandle,
 ) -> Result<SshSessionInfo, String> {
-    connect_session(&manager, &transfer_manager, id, config, app_handle, false).await
+    connect_session(&manager, &transfer_manager, id, config, &tauri_sink(app_handle.clone()), false).await
 }
 
-/// 建立 SSH 会话(interactive=true 开 PTY shell,false 为一次性 exec 通道)。
-/// pub(crate):harness/domain.rs 进程内域工具执行器复用。
-pub(crate) async fn connect_session(
-    manager: &SshManager,
-    transfer_manager: &TransferManager,
-    id: String,
-    config: SshConfig,
-    app_handle: tauri::AppHandle,
-    interactive: bool,
-) -> Result<SshSessionInfo, String> {
-    let started_at = std::time::Instant::now();
-    // 每次显式连接都有独立代次。失败后的 disconnect 只会让旧代次失效，
-    // 不会像永久 abandoned 标记那样污染同一 tab/窗口里的下一次重试。
-    let attempt_generation = manager.begin_attempt(&id).await;
+// connect_session 已平移到 starhub-domain-ssh::manager(去 Tauri 化 M1,
+// 唯一事实源);Tauri 侧经上方 `pub use` 再导出,签名由 app_handle 改为
+// `&Arc<dyn EventSink>`,由 tauri 命令面传 adapters::tauri_sink(...) 进去。
 
-    // 网络 I/O 在锁外执行 — 否则 connect() 期间持有 sessions 锁会阻塞
-    // 所有其他 SSH 操作(resize / disconnect / 新 connect),导致第二个 tab
-    // 永远卡在 "Connecting to"。
-    let mut session = SshSession::new(config.clone(), Arc::clone(&manager.known_hosts));
-    session
-        .connect(
-            &id,
-            Some(&tauri_sink(app_handle.clone())),
-            &manager.pending_kb,
-            &manager.pending_hostkey,
-        )
-        .await?;
-    let auth_elapsed = started_at.elapsed();
-
-    if !manager.is_current_attempt(&id, attempt_generation).await {
-        session.disconnect();
-        return Err("Connection aborted by client".to_string());
-    }
-    if interactive {
-        if let Err(error) = session
-            .open_shell(
-                &id,
-                attempt_generation,
-                tauri_sink(app_handle.clone()),
-                manager.channels.clone(),
-            )
-            .await
-        {
-            session.disconnect();
-            return Err(error);
-        }
-    }
-
-    tracing::info!(
-        session_id = %id,
-        host = %config.host,
-        port = config.port,
-        interactive,
-        auth_ms = auth_elapsed.as_millis(),
-        total_ms = started_at.elapsed().as_millis(),
-        "SSH session connected"
-    );
-
-    let info = SshSessionInfo {
-        id: id.clone(),
-        host: config.host,
-        port: config.port,
-        username: config.username,
-        connected: true,
-    };
-
-    // 覆盖同 id 的旧会话前,先注销 TransferManager 里挂在其上的 SFTP 通道。
-    // 否则自动重连后 sftp_ensure_session 的 has_session 短路会直接复用旧(已死)通道,
-    // 之后所有上传/下载都在死句柄上失败。注销后下一次 ensure 会在新会话上重建通道。
-    // 放在取 attempts/sessions 锁之前,避免引入新的锁顺序。
-    transfer_manager.unregister_sftp(&id).await;
-
-    // 只在插入 map 时短暂持锁。锁顺序固定为 attempts -> sessions:
-    // 先取 attempts 锁(校验代次),再取 sessions 锁插入,
-    // 避免持 sessions 锁时 await attempts 锁的锁内 await 反模式,
-    // 同时关闭 disconnect / 新 connect 与当前尝试完成之间的竞态窗口。
-    let attempts = manager.attempts.lock().await;
-    let mut sessions = manager.sessions.lock().await;
-    if attempts.get(&id).copied() != Some(attempt_generation) {
-        drop(sessions);
-        drop(attempts);
-        manager
-            .remove_channel_for_attempt(&id, attempt_generation)
-            .await;
-        session.disconnect();
-        return Err("Connection aborted by client".to_string());
-    }
-    // 目标机认证完成后:若本次连接实际走了 keyboard-interactive(MFA),向对应
-    // 弹窗发精确的「目标机已连接」信号,让 MFA 弹窗等用户在确认连接成功后复用该
-    // 会话。注意:仅认证链(含跳板机/堡垒机选机器后的目标机)全部完成才算成功,
-    // 跳板机本身的 MFA 不算「连接成功」。发射前先取 mfa_used,再把 session 移入 Arc。
-    let mfa_used = session.mfa_used();
-    sessions.insert(id.clone(), Arc::new(Mutex::new(session)));
-    if mfa_used {
-        use tauri::Emitter;
-        let _ = app_handle.emit(&format!("ssh:mfa-connected:{id}"), id.clone());
-    }
-
-    Ok(info)
-}
 // ── 联动 M1(docs/联动实施-桥接契约-2026-08-17.md §4):ssh_attach / ssh_detach ──
 // 附着语义:SessionRegistry 维护 assetId → sessionId 视图(refcount + attachedBy);
 // 有活 session 复用(refcount+1),否则按资产存档建连;detach 归零才真断。
@@ -393,124 +206,9 @@ pub(crate) async fn asset_ssh_config(asset_id: &str) -> Result<(String, SshConfi
         config = crate::keyring::merge_config(config, secrets);
     }
 
-    let get = |key: &str| config.get(key).and_then(Value::as_str).unwrap_or("");
-    let get_bool = |key: &str, default: bool| {
-        config.get(key).and_then(Value::as_bool).unwrap_or(default)
-    };
-    let port = config
-        .get("port")
-        .and_then(Value::as_u64)
-        .map(|p| p as u16)
-        .unwrap_or(22);
-    let username = get("username");
-    if get("host").is_empty() || username.is_empty() {
-        return Err(format!("SSH 资产「{name}」配置不完整(缺 host 或 username)"));
-    }
-
-    let use_password = get_bool("usePasswordAuth", true);
-    let use_key = get_bool("useKeyAuth", false);
-    let password = get("password");
-    let private_key = get("privateKey");
-    let passphrase = {
-        let value = get("passphrase");
-        (!value.is_empty()).then(|| value.to_string())
-    };
-    let auth = if use_password && use_key && !password.is_empty() && !private_key.is_empty() {
-        SshAuth::PasswordAndKey {
-            password: password.to_string(),
-            key: private_key.to_string(),
-            passphrase,
-        }
-    } else if use_password && !password.is_empty() {
-        SshAuth::Password(password.to_string())
-    } else if use_key && !private_key.is_empty() {
-        SshAuth::PrivateKey {
-            key: private_key.to_string(),
-            passphrase,
-        }
-    } else {
-        SshAuth::Password(String::new())
-    };
-
-    let kb_interactive = if get_bool("mfaEnabled", false) {
-        let mfa_password = get("mfaPassword");
-        Some(KeyboardInteractiveConfig {
-            enabled: true,
-            password: (!mfa_password.is_empty()).then(|| mfa_password.to_string()),
-        })
-    } else {
-        None
-    };
-
-    // 堡垒机模式显式声明:None = 旧行为(MFA 资产一律按堡垒机,存量零回归);
-    // Some(false) = 普通 MFA 服务器(2FA 后是普通 shell),AI exec 不弹「选机器」。
-    let bastion_mode = config.get("bastionMode").and_then(Value::as_bool);
-
-    let jump_host = get("jumpHost");
-    let jump_auth = if jump_host.is_empty() {
-        None
-    } else {
-        let jump_password = get("jumpPassword");
-        let jump_private_key = get("jumpPrivateKey");
-        let jump_passphrase = {
-            let value = get("jumpPassphrase");
-            (!value.is_empty()).then(|| value.to_string())
-        };
-        Some(if !jump_private_key.is_empty() {
-            SshAuth::PrivateKey {
-                key: jump_private_key.to_string(),
-                passphrase: jump_passphrase,
-            }
-        } else if !jump_password.is_empty() {
-            SshAuth::Password(jump_password.to_string())
-        } else {
-            auth.clone()
-        })
-    };
-
-    let sftp_launch_mode = match get("sftpLaunchMode") {
-        "subsystem" => SftpLaunchMode::Subsystem,
-        "custom" => SftpLaunchMode::Custom,
-        _ => SftpLaunchMode::Auto,
-    };
-
-    Ok((
-        name,
-        SshConfig {
-            host: get("host").to_string(),
-            port,
-            username: username.to_string(),
-            auth,
-            pty_cols: None,
-            pty_rows: None,
-            sftp_timeout_sec: config
-                .get("sftpTimeoutSec")
-                .and_then(Value::as_u64)
-                .unwrap_or(crate::ssh::DEFAULT_SFTP_TIMEOUT_SEC),
-            sftp_launch_mode,
-            sftp_server_path: {
-                let value = get("sftpServerPath");
-                (!value.is_empty()).then(|| value.to_string())
-            },
-            kb_interactive,
-            bastion_mode,
-            jump_host: (!jump_host.is_empty()).then(|| jump_host.to_string()),
-            jump_port: config
-                .get("jumpPort")
-                .and_then(Value::as_u64)
-                .map(|p| p as u16)
-                .or(Some(22)),
-            jump_username: {
-                let value = get("jumpUsername");
-                if value.is_empty() {
-                    Some(username.to_string())
-                } else {
-                    Some(value.to_string())
-                }
-            },
-            jump_auth,
-        },
-    ))
+    // config_json → SshConfig 的映射语义在 crate 的纯函数里(两侧逐字一致)
+    let config = ssh_config_from_asset(&name, &config)?;
+    Ok((name, config))
 }
 
 /// M1 附着(契约 §4):按 assetId 复用或建立一条共享 SSH 会话。
@@ -557,7 +255,7 @@ pub async fn ssh_attach(
         &transfer_manager,
         session_id.clone(),
         config,
-        app_handle,
+        &tauri_sink(app_handle.clone()),
         false,
     )
     .await?;
@@ -604,7 +302,7 @@ pub async fn ssh_detach(
             };
             if let Some(invalidated) = invalidated {
                 manager
-                    .remove_channel_for_attempt(&session_id, invalidated.wrapping_sub(1))
+                    .remove_write_channel_for_attempt(&session_id, invalidated.wrapping_sub(1))
                     .await;
                 // 与 ssh_disconnect 相同的清理路径:丢弃仍在等待前端输入的
                 // MFA / 主机密钥 / 堡垒机选机器应答通道,避免 in-flight connect
@@ -662,7 +360,7 @@ pub async fn ssh_disconnect(
         // 只移除本次 disconnect 取消的旧写通道；如果新的 connect 已经开始，
         // 它拥有更高代次，不能被较晚完成的旧清理误删。
         manager
-            .remove_channel_for_attempt(&id, invalidated_generation.wrapping_sub(1))
+            .remove_write_channel_for_attempt(&id, invalidated_generation.wrapping_sub(1))
             .await;
 
         // 主动断开(关闭窗口/取消连接)时,丢弃仍在等待前端输入的 MFA / 主机密钥
@@ -848,94 +546,7 @@ pub async fn ssh_exec(
     timeout_sec: Option<u64>,
     exec_id: Option<String>,
 ) -> Result<String, String> {
-    ssh_exec_core(&manager, &app, &id, &command, timeout_sec, exec_id.as_deref(), false).await
-}
-
-/// ssh_exec 的进程内核心(harness/domain.rs 复用;State 解引用为 &SshManager)。
-/// `bastion_interactive` = true 时(AI 域工具路径):资产启用 kb_interactive
-/// MFA(堡垒机,含直连堡垒机与跳板机两种形态)时改走带 pty 的 shell,
-/// 先由用户选机器再执行命令。
-pub(crate) async fn ssh_exec_core(
-    manager: &SshManager,
-    app_handle: &tauri::AppHandle,
-    id: &str,
-    command: &str,
-    timeout_sec: Option<u64>,
-    exec_id: Option<&str>,
-    bastion_interactive: bool,
-) -> Result<String, String> {
-    let sink = tauri_sink(app_handle.clone());
-    // 执行主体包一层:成功后统一广播执行结果(主壳迷你面板展示最近一次
-    // 命令输出,普通 SSH 资产与堡垒机首次/复用路径全覆盖)。
-    let result = async {
-        // 先从 sessions map 中取出 Arc(只持有主锁一瞬间),然后释放主锁,
-        // 再对单个 session 加锁执行命令。这样不同 session 的 exec 和 connect
-        // 不会互相阻塞。
-        let session_arc = {
-            let sessions = manager.sessions.lock().await;
-            sessions
-                .get(id)
-                .cloned()
-                .ok_or_else(|| format!("SSH session {} not found", id))?
-        };
-
-        let mut session = session_arc.lock().await;
-        // 注册在途取消句柄:普通 exec 与堡垒机 pty 路径统一支持停止生成中断
-        // (此前堡垒机路径不可中断,阶段1 等选机器最长扣住会话锁 360s)。
-        let abort_rx = match exec_id {
-            Some(eid) => {
-                let (abort_tx, abort_rx) = tokio::sync::oneshot::channel();
-                manager
-                    .exec_aborts
-                    .lock()
-                    .await
-                    .insert(eid.to_string(), abort_tx);
-                Some(abort_rx)
-            }
-            None => None,
-        };
-        // 堡垒机 pty 路径:启用 kb_interactive MFA(直连堡垒机或跳板机)时,普通
-        // exec 通道被服务端拒绝(Channel send error),需先经 pty 让用户选机器。
-        // 仅 AI 域工具路径启用。
-        let result = if bastion_interactive && session.is_bastion() {
-            session
-                .exec_via_bastion_pty(
-                    id,
-                    Some(&sink),
-                    &manager.pending_bastion,
-                    manager.channels.clone(),
-                    command,
-                    timeout_sec.unwrap_or(10),
-                    abort_rx,
-                )
-                .await
-        } else {
-            match abort_rx {
-                Some(abort_rx) => {
-                    session
-                        .exec_abortable(command, timeout_sec.unwrap_or(10), abort_rx)
-                        .await
-                }
-                None => session.exec(command, timeout_sec.unwrap_or(10)).await,
-            }
-        };
-        // 无论结果如何都清理注册,避免 map 泄漏
-        if let Some(eid) = exec_id {
-            manager.exec_aborts.lock().await.remove(eid);
-        }
-        result
-    }
-    .await;
-
-    if let Ok(output) = &result {
-        use tauri::Emitter;
-        let _ = app_handle.emit("ssh:exec-done", serde_json::json!({
-            "sessionId": id,
-            "command": command,
-            "output": output.chars().take(4000).collect::<String>(),
-        }));
-    }
-    result
+    ssh_exec_core(&manager, &tauri_sink(app), &id, &command, timeout_sec, exec_id.as_deref(), false).await
 }
 
 /// 中断一个仍在执行的 exec 命令(通过 `ssh_exec` 传入的 `exec_id` 定位)。
@@ -948,27 +559,6 @@ pub async fn ssh_exec_abort(
     exec_id: String,
 ) -> Result<bool, String> {
     ssh_exec_abort_core(&manager, &id, &exec_id).await
-}
-
-/// ssh_exec_abort 的进程内核心(harness/domain.rs 复用;停止生成时中断在途命令)。
-pub(crate) async fn ssh_exec_abort_core(
-    manager: &SshManager,
-    id: &str,
-    exec_id: &str,
-) -> Result<bool, String> {
-    // exec_id 由前端按 session 生成且全局唯一(uuid),这里只做防御性的存在性校验
-    {
-        let sessions = manager.sessions.lock().await;
-        if !sessions.contains_key(id) {
-            return Err(format!("SSH session {} not found", id));
-        }
-    }
-    let tx = manager.exec_aborts.lock().await.remove(exec_id);
-    match tx {
-        // 发送失败说明接收端(exec)已结束并清理,视为未中断
-        Some(tx) => Ok(tx.send(()).is_ok()),
-        None => Ok(false),
-    }
 }
 
 /// 前端回复 keyboard-interactive 响应
@@ -1356,38 +946,4 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn reconnect_uses_a_fresh_attempt_generation() {
-        let manager = SshManager::new();
-        let first = manager.begin_attempt("same-session").await;
-        manager.invalidate_attempt("same-session").await;
-        assert!(!manager.is_current_attempt("same-session", first).await);
-
-        let retry = manager.begin_attempt("same-session").await;
-        assert!(retry > first);
-        assert!(manager.is_current_attempt("same-session", retry).await);
-    }
-
-    #[tokio::test]
-    async fn invalidate_attempt_if_current_only_bumps_matching_generation() {
-        // 修复「关闭→重连失败」竞态的守卫语义:旧 disconnect 的失效操作在
-        // 新 connect 已开跑(代次前移)后必须被拒绝,而不是作废新连接。
-        let manager = SshManager::new();
-        let first = manager.begin_attempt("asset-a").await; // 1
-        // 守卫命中:递增到 2
-        assert_eq!(
-            manager.invalidate_attempt_if_current("asset-a", first).await,
-            Some(2)
-        );
-        // 旧代次守卫不再命中:返回 None 且代次不动
-        assert_eq!(
-            manager
-                .invalidate_attempt_if_current("asset-a", first)
-                .await,
-            None
-        );
-        assert_eq!(manager.current_attempt("asset-a").await, Some(2));
-        // 无记录的 id:current 为 None
-        assert_eq!(manager.current_attempt("asset-b").await, None);
-    }
 }
