@@ -30,8 +30,10 @@ pub mod db;
 pub mod desktop;
 pub mod ssh;
 pub mod ui;
+pub mod ui_browser;
 pub mod ui_db;
 pub mod ui_devices;
+pub mod ui_host;
 pub mod ui_settings;
 pub mod ui_ssh;
 
@@ -376,6 +378,67 @@ pub fn registry_with_domains(
                 ))
             });
         }
+
+        // UI 面 D 组第三批:AI 浏览器设置 + AI 模型密钥(设置存储 / 密钥存储),
+        // 以及归 Electron 壳 / M3 的宿主持有能力(本机 shell 实做,其余降级)。
+        // 每条注册一个块:块作用域即闭包捕获的边界,变量名可重复。
+        {
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.browser_get_engine", move |_params| {
+                crate::methods::ui_browser::browser_get_engine(&ui)
+            });
+        }
+        {
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.browser_set_engine", move |params| {
+                crate::methods::ui_browser::browser_set_engine(&ui, params)
+            });
+        }
+        {
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.browser_get_jev_config", move |_params| {
+                crate::methods::ui_browser::browser_get_jev_config(&ui)
+            });
+        }
+        {
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.browser_set_jev_config", move |params| {
+                crate::methods::ui_browser::browser_set_jev_config(&ui, params)
+            });
+        }
+        {
+            let ssh = Arc::clone(&ssh);
+            registry.register("ui.get_ai_model_api_key", move |params| {
+                crate::methods::ui_browser::get_ai_model_api_key(ssh.assets(), params)
+            });
+        }
+        {
+            let ssh = Arc::clone(&ssh);
+            registry.register("ui.set_ai_model_api_key", move |params| {
+                crate::methods::ui_browser::set_ai_model_api_key(ssh.assets(), params)
+            });
+        }
+        {
+            let ssh = Arc::clone(&ssh);
+            registry.register("ui.delete_ai_model_api_key", move |params| {
+                crate::methods::ui_browser::delete_ai_model_api_key(ssh.assets(), params)
+            });
+        }
+        {
+            let runtime = Arc::clone(&runtime);
+            registry.register("ui.local_shell_exec", move |params| {
+                runtime.block_on(crate::methods::ui_host::local_shell_exec(params))
+            });
+        }
+        registry.register("ui.screenshot_begin_region", |params| {
+            crate::methods::ui_host::screenshot_begin_region(params)
+        });
+        registry.register("ui.plugin:dialog|open", |params| {
+            crate::methods::ui_host::plugin_dialog_open(params)
+        });
+        registry.register("ui.plugin:app|version", |params| {
+            crate::methods::ui_host::plugin_app_version(params)
+        });
 
         // SSH / SFTP 域:8 个方法,方法名 = 工具名
         register_async!(

@@ -29,8 +29,9 @@ starhub-domain-desktop = { path = "../starhub-domain-desktop" }
 starhub-domain-android = { path = "../starhub-domain-android" }
 # Browser 域:16 个工具的参数契约 + 页面注入脚本(引擎层随 M3)
 starhub-domain-browser = { path = "../starhub-domain-browser" }
-# 异步域方法经 Runtime::block_on 在 stdio 线程上执行
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+# 异步域方法经 Runtime::block_on 在 stdio 线程上执行;process/io-util 供
+# ui.local_shell_exec 的本机 shell 捕获输出
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util"] }
 uuid = { version = "1", features = ["v4"] }
 anyhow = "1"
 chrono = "0.4"

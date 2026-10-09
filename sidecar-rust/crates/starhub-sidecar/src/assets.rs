@@ -291,6 +291,30 @@ impl AssetStore {
         &self.path
     }
 
+    // ---------- 非资产密钥(AI 模型 API key 等;UI 面 set/get/delete_ai_model_api_key) ──
+
+    /// AI 模型密钥的 key_id 前缀(资产密钥用 `asset:<id>`,AI key 用 `ai-model:<id>`)。
+    pub const AI_MODEL_KEY_PREFIX: &str = "ai-model:";
+
+    /// 存一个字符串密钥(insert-or-replace)。
+    pub fn set_secret(&self, key_id: &str, value: &str) -> Result<(), String> {
+        self.secrets
+            .store(key_id, &Value::String(value.to_string()))
+    }
+
+    /// 读一个字符串密钥;不存在返回 None(与 keyring 的 "no entry found" 对应)。
+    pub fn get_secret(&self, key_id: &str) -> Option<String> {
+        self.secrets
+            .load(key_id)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_string))
+    }
+
+    /// 删一个字符串密钥(不存在即幂等成功)。
+    pub fn delete_secret(&self, key_id: &str) -> Result<(), String> {
+        self.secrets.delete(key_id)
+    }
+
     fn read_records(&self) -> Result<Vec<AssetRecord>, String> {
         let bytes = match std::fs::read(&self.path) {
             Ok(bytes) => bytes,

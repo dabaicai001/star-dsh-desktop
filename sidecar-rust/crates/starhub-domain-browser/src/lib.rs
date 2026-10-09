@@ -9,8 +9,12 @@
 //! 引擎层(webview 窗口 / obscura CDP 无头引擎 / 截图 / Jev 决策 / auto 循环)
 //! 仍是**窗口面与宿主面**:M3 直播/操作面板化时随帧出口一起搬,届时本 crate
 //! 增加 `BrowserEngine` seam(与 desktop/android 同姿势)。
+//!
+//! M2 追加 [`jev`]:Jev 决策的**非密配置**(结构体 / 缺省 / 校验 / settings 键)——
+//! 设置页的读写是 UI 面,不依赖引擎层,先搬过来避免两侧各存一份键名。
 
 pub mod action;
+pub mod jev;
 pub mod script;
 
 pub use action::{parse_action, BrowserAction, BROWSER_TOOLS};

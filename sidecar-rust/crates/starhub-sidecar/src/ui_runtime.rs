@@ -4,16 +4,22 @@
 //! 平级:审计日志与告警规则都是低频小数据,JSON 文件承载(不值得引入 SQLite),
 //! 字段与语义以 Tauri 版 SQLite 表为契约。
 //!
-//! D 组其余部分(android 配置 / 沙箱平台 / 浏览器引擎 / AI key)随下一批接入,
-//! 届时往本结构加字段即可,主循环的装配点不变。
+//! `settings` 与 desktop / android 两个域的 `FileSettingsStore` 指向**同一个
+//! 文件**:该实现无内存缓存(每次读全部 / 写穿透),多实例共存是安全的;UI 面的
+//! 浏览器引擎 / Jev 配置也走这一份。
+//!
+//! D 组其余部分(android 配置 / 沙箱平台)随下一批接入,届时往本结构加字段即可,
+//! 主循环的装配点不变。
 
 use crate::alert_store::AlertStore;
 use crate::audit_store::AuditStore;
+use crate::desktop_runtime::FileSettingsStore;
 
-/// UI 面 D 组状态(审计 + 告警)。
+/// UI 面 D 组状态(设置 + 审计 + 告警)。
 pub struct UiRuntime {
     audit: AuditStore,
     alerts: AlertStore,
+    settings: FileSettingsStore,
 }
 
 impl UiRuntime {
@@ -22,12 +28,17 @@ impl UiRuntime {
         Self {
             audit: AuditStore::from_env(),
             alerts: AlertStore::from_env(),
+            settings: FileSettingsStore::from_env(),
         }
     }
 
     /// 用指定存储构造(测试 / 装配点用)。
-    pub fn new(audit: AuditStore, alerts: AlertStore) -> Self {
-        Self { audit, alerts }
+    pub fn new(audit: AuditStore, alerts: AlertStore, settings: FileSettingsStore) -> Self {
+        Self {
+            audit,
+            alerts,
+            settings,
+        }
     }
 
     /// 审计日志存储。
@@ -39,6 +50,11 @@ impl UiRuntime {
     pub fn alerts(&self) -> &AlertStore {
         &self.alerts
     }
+
+    /// 设置存储(浏览器引擎 / Jev 配置;与 desktop / android 域同一份文件)。
+    pub fn settings(&self) -> &FileSettingsStore {
+        &self.settings
+    }
 }
 
 #[cfg(test)]
@@ -46,16 +62,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exposes_both_stores() {
+    fn exposes_every_store() {
         let dir = std::env::temp_dir().join(format!("starhub-ui-runtime-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let ui = UiRuntime::new(
             AuditStore::new(dir.join("audit.json")),
             AlertStore::new(dir.join("alerts.json")),
+            FileSettingsStore::new(dir.join("settings.json")),
         );
         assert!(ui.audit().list(10, 0, None).unwrap().is_empty());
         assert!(ui.alerts().list().unwrap().is_empty());
+        assert!(ui.settings().read_all().unwrap().is_empty());
+        ui.settings().set("k", "v").unwrap();
+        assert_eq!(
+            ui.settings().read_all().unwrap()["k"],
+            serde_json::json!("v")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -23,30 +23,13 @@ use tauri::AppHandle;
 // 配置(非密走 settings 表,密钥走 keyring `model:jev`)
 // ------------------------------------------------------------
 
-/// 启用开关(settings 值 `0`/`1`),**默认关**:外部 SaaS,页面快照会外发。
-pub const CONFIG_ENABLED: &str = "ai.jev.enabled";
-/// Jev API base_url(官方 `https://api.typesafe.ai`,或网关/自建端点)。
-pub const CONFIG_BASE_URL: &str = "ai.jev.base_url";
-/// 模型名(官方示例返回 `jev-1.13.0`;缺省 `jev-latest`)。
-pub const CONFIG_MODEL: &str = "ai.jev.model";
-/// 置信度阈值,低于它返回 `[LOWCONF]` 提示主模型自行判断。
-pub const CONFIG_THRESHOLD: &str = "ai.jev.threshold";
-/// 单次决策超时(毫秒);决策对延迟敏感,默认 8s。
-pub const CONFIG_TIMEOUT_MS: &str = "ai.jev.timeout_ms";
-/// `browser_auto` 单次循环的步数上限(模型参数 `max_steps` 钳制到它)。
-pub const CONFIG_AUTO_MAX_STEPS: &str = "ai.jev.auto_max_steps";
-
-/// keyring 条目 id(entry key = `model:` + 本值,见 keyring::ai_model_api_key_id)。
-pub const API_KEY_ID: &str = "jev";
-/// 官方 API base(用户可改填 AI/ML API 等网关或内网自建端点)。
-pub const DEFAULT_BASE_URL: &str = "https://api.typesafe.ai";
-pub const DEFAULT_MODEL: &str = "jev-latest";
-pub const DEFAULT_THRESHOLD: f64 = 0.60;
-pub const DEFAULT_TIMEOUT_MS: u64 = 8_000;
-/// 单次自动执行循环步数上限的缺省值(自定义入口:设置 → AI 浏览器)。
-pub const DEFAULT_AUTO_MAX_STEPS: u64 = 50;
-/// 步数上限的许可区间(设置页校验与读取钳制共用)。
-pub const AUTO_MAX_STEPS_RANGE: std::ops::RangeInclusive<u64> = 1..=500;
+// 配置结构体 / 缺省值 / 校验 / settings 键名已平移到 starhub-domain-browser
+// (去 Tauri 化 M2,Tauri 壳与 Rust sidecar 共用同一份);此处再导出以沿用旧路径。
+pub use starhub_domain_browser::jev::{
+    JevConfig, API_KEY_ID, AUTO_MAX_STEPS_RANGE, CONFIG_AUTO_MAX_STEPS, CONFIG_BASE_URL,
+    CONFIG_ENABLED, CONFIG_MODEL, CONFIG_THRESHOLD, CONFIG_TIMEOUT_MS, DEFAULT_AUTO_MAX_STEPS,
+    DEFAULT_BASE_URL,
+};
 
 /// 决策面(候选动作白名单):Jev 只能从这个封闭集里选,自由文本一律拒收。
 pub(crate) const ACTION_CRITERIA: &[(&str, &str)] = &[
@@ -63,71 +46,6 @@ pub(crate) const ACTION_CRITERIA: &[(&str, &str)] = &[
 const MAX_ELEMENT_CANDIDATES: usize = 60;
 /// state 里正文快照的截断上限(字符):决策只需结构与标签,不需要全文。
 const MAX_STATE_CHARS: usize = 8_000;
-
-/// Jev 决策配置(非密部分;API key 单独走 keyring)。
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct JevConfig {
-    pub enabled: bool,
-    pub base_url: String,
-    pub model: String,
-    /// 0.00–1.00;低于它的决策返回 `[LOWCONF]`。
-    pub threshold: f64,
-    /// 单次请求超时(毫秒)。
-    pub timeout_ms: u64,
-    /// `browser_auto` 单次循环步数上限(1–500;模型参数 `max_steps` 钳制到它)。
-    pub auto_max_steps: u64,
-}
-
-impl Default for JevConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            // 官方端点为缺省值:设置页加载即回显官方地址,用户启用后直接可用。
-            // 历史上这里是空串,而前端 JEV_DEFAULT 是官方地址、`{...JEV_DEFAULT,
-            // ...value}` 的展开让 Rust 空串覆盖前端默认 → 字段显示为空、保存后
-            // `ai.jev.base_url` 落空,browser_decide 必然软失败(空值在 setting()
-            // 读取时被过滤,同样回落到本默认,自愈)。validate() 仍允许显式置空。
-            base_url: DEFAULT_BASE_URL.to_string(),
-            model: DEFAULT_MODEL.to_string(),
-            threshold: DEFAULT_THRESHOLD,
-            timeout_ms: DEFAULT_TIMEOUT_MS,
-            auto_max_steps: DEFAULT_AUTO_MAX_STEPS,
-        }
-    }
-}
-
-impl JevConfig {
-    /// 设置页保存前的校验(软错误文本,前端原样展示)。
-    pub fn validate(&self) -> Result<(), String> {
-        if !(0.0..=1.0).contains(&self.threshold) {
-            return Err(format!(
-                "阈值必须在 0.00–1.00 之间,收到 {}",
-                self.threshold
-            ));
-        }
-        if !(500..=60_000).contains(&self.timeout_ms) {
-            return Err(format!(
-                "超时必须在 500–60000 毫秒之间,收到 {}",
-                self.timeout_ms
-            ));
-        }
-        if !AUTO_MAX_STEPS_RANGE.contains(&self.auto_max_steps) {
-            return Err(format!(
-                "单次自动执行步数上限必须在 1–500 之间,收到 {}",
-                self.auto_max_steps
-            ));
-        }
-        let url = self.base_url.trim();
-        if !url.is_empty() && !(url.starts_with("http://") || url.starts_with("https://")) {
-            return Err(format!("base_url 必须以 http:// 或 https:// 开头:{url}"));
-        }
-        if self.model.trim().is_empty() {
-            return Err("模型名不能为空".to_string());
-        }
-        Ok(())
-    }
-}
 
 /// 读一个 settings 键(失败/缺省返回 None)。settings 表经全局 pool 访问,
 /// 不需要 AppHandle(与 browser::engine_setting 同模式)。

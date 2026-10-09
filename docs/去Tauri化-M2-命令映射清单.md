@@ -167,9 +167,26 @@ Electron 壳。工作台侧改为「调 bridge 的 `ui.*` 占位 → 由 dsh GUI
        避免为 UI 面改动域契约);
      - `InstanceRow` 补 `created_at`(UI 总览按它倒序;对应 SQL 列,Tauri 侧
        同步读该列,`#[serde(default)]` 保证存量 JSON 仍可读)。
-   - ⬜ **第三批**:浏览器引擎与 Jev 配置(设置存储)/ AI key(密钥存储)/
-     `local_shell_exec`(同机 shell;tokio 需开 `process` feature)/
-     `screenshot_begin_region`(M3 帧服务)/ `plugin:*`(交 dsh GUI)。
+   - ⬜ **第三批:浏览器设置 + AI 密钥 + 宿主持有能力**(本批):新增
+     `starhub-domain-browser/src/jev.rs`(Jev 配置结构体/缺省/校验/settings 键
+     从 `src-tauri/src/browser/decide.rs` 平移,两侧同一份)与 sidecar 的
+     `methods/ui_browser.rs` / `methods/ui_host.rs`,**11 个 `ui.*` 方法,方法面
+     229 → 240**。
+     - `ui.browser_get_engine` / `ui.browser_set_engine`(设置键 `browser.engine`,
+       非法值文案逐字)/ `ui.browser_get_jev_config` / `ui.browser_set_jev_config`
+       (6 个 `ai.jev.*` 键;先过 validate,文案逐字);
+     - `ui.get_ai_model_api_key` / `ui.set_ai_model_api_key` /
+       `ui.delete_ai_model_api_key`:密钥走 `AssetStore` 的 SecretStore seam
+       (key_id = `ai-model:<id>`,与资产密钥 `asset:<id>` 同一套);Tauri 侧是
+       系统 Keyring,sidecar 侧是密钥文件/内存(§六 credentials 迁移的座席);
+       不存在时报 `no entry found`(工作台据此显示「未设置」);
+     - `ui.local_shell_exec`:**实做平移**(从 `src-tauri/src/commands/local.rs`)
+       —— sidecar 与桌面端同机,本机命令执行(Git 工作台 / AI 提交信息)不需要
+       窗口;行为(512KB 输出上限 / 超时 1–120s 钳制 / camelCase 结果字段)逐字
+       保持。tokio 开 `process` + `io-util` feature;
+     - `ui.screenshot_begin_region` / `ui.plugin:dialog|open` 显式降级(分别归
+       M3 帧服务 / dsh GUI 原生面);`ui.plugin:app|version` 返回明确占位文本
+       (版本与自更新归 Electron 壳)。
 6. ⬜ **iframe 搬入**:工作台从「新开独立窗口/tab」改为壳内面板(client-nav 的
    `openNewPage` → 面板槽位;`starhub://open-asset` 的 focus 语义随面板重写)。
 7. ⬜ **验收**:dsh desktop dev 壳内全功能可用(窗口类除外)。
@@ -179,9 +196,10 @@ Electron 壳。工作台侧改为「调 bridge 的 `ui.*` 占位 → 由 dsh GUI
 - 每个 `ui.*` 方法一个 roundtrip 契约测试(与 M1 的 `protocol.rs` 同纪律):
   参数白名单、错误码、**模型/用户可读文本逐字保持**(Tauri 版文案是契约)。
 - `npm run verify:bridge-compat` 扩到 UI 面:经 `POST /starhub/api/invoke`
-  打真二进制,断言资产 CRUD 往返。**当前 78 项检查全绿**(第 8 节资产 CRUD 12 项
+  打真二进制,断言资产 CRUD 往返。**当前 93 项检查全绿**(第 8 节资产 CRUD 12 项
   + 第 9 节 B 组交互会话 18 项 + 第 10 节 C 组数据面 11 项 + 第 11 节 D 组
-  审计/告警 13 项 + 第 12 节 D 组设备面 13 项)。脚本的 `startSidecar` 把
-  **全部**状态文件(资产/密钥/known_hosts/审计/告警/沙箱/设置/缓存/Android 帧)
-  指到临时目录——D 组落地时发现沙箱与设置两个文件还落在 cwd,已补齐。
+  审计/告警 13 项 + 第 12 节 D 组设备面 13 项 + 第 13 节 D 组浏览器/密钥/宿主
+  13 项)。脚本的 `startSidecar` 把**全部**状态文件(资产/密钥/known_hosts/审计/
+  告警/沙箱/设置/缓存/Android 帧)指到临时目录——D 组落地时发现沙箱与设置两个
+  文件还落在 cwd,已补齐。
 - client-nav vitest 全绿(传输 seam 替身的单测替代 `__TAURI_INTERNALS__` 存根)。
