@@ -60,9 +60,41 @@ impl AndroidRuntime {
         }
     }
 
+    /// 用显式设置/帧存储路径装配(测试 / 装配点用)。
+    pub fn with_paths(
+        assets: Arc<AssetStore>,
+        bindings: Arc<SessionBindings>,
+        sink: Arc<dyn starhub_domain_ssh::events::EventSink>,
+        settings: FileSettingsStore,
+        cache: EnvCacheDir,
+        frames: FileFrameStore,
+    ) -> Self {
+        Self {
+            manager: AndroidManager::new(),
+            adb: LocalAdb::new(),
+            settings,
+            cache,
+            frames,
+            live: NotifyLiveLauncher::new(sink),
+            takeover: MemoryTakeover::default(),
+            assets,
+            bindings,
+        }
+    }
+
     /// 管理器(设置页清 adb 缓存 / UI 命令用)。
     pub fn manager(&self) -> &AndroidManager {
         &self.manager
+    }
+
+    /// adb 执行器(UI 面 `android_ui_list_devices` 只读列表用)。
+    pub fn adb(&self) -> &LocalAdb {
+        &self.adb
+    }
+
+    /// 设置存储(UI 面 adb 路径读写;与 desktop 域共用同一份文件)。
+    pub fn settings(&self) -> &FileSettingsStore {
+        &self.settings
     }
 
     /// 接管开关(桥命令 `starhub/android.takeover`)。

@@ -60,6 +60,7 @@ impl SqliteInstanceStore {
             novnc_port: row.try_get("novnc_port").map_err(|e| e.to_string())?,
             status: row.try_get("status").map_err(|e| e.to_string())?,
             task: row.try_get("task").map_err(|e| e.to_string())?,
+            created_at: row.try_get("created_at").unwrap_or(0),
         })
     }
 }

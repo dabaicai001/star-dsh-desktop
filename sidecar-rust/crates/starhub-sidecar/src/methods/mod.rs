@@ -31,6 +31,7 @@ pub mod desktop;
 pub mod ssh;
 pub mod ui;
 pub mod ui_db;
+pub mod ui_devices;
 pub mod ui_settings;
 pub mod ui_ssh;
 
@@ -286,6 +287,93 @@ pub fn registry_with_domains(
             let ui = Arc::clone(&ui_state);
             registry.register("ui.alert_test_webhook", move |params| {
                 crate::methods::ui_settings::alert_test_webhook(&ui, params)
+            });
+        }
+
+        // UI 面 D 组第二批(Android 设备设置 + 沙箱桌面 UI):存储/管理器多已在
+        // sidecar,这里只补 ui.* 包装;两个窗口类动作显式降级(M3 面板)。
+        // 每条注册一个块:块作用域即闭包捕获的边界,变量名可重复。
+        {
+            let android = Arc::clone(&android);
+            let runtime = Arc::clone(&runtime);
+            registry.register("ui.android_ui_get_config", move |_params| {
+                runtime.block_on(crate::methods::ui_devices::android_get_config(&android))
+            });
+        }
+        {
+            let android = Arc::clone(&android);
+            let runtime = Arc::clone(&runtime);
+            registry.register("ui.android_ui_set_adb_path", move |params| {
+                runtime.block_on(crate::methods::ui_devices::android_set_adb_path(
+                    &android, params,
+                ))
+            });
+        }
+        {
+            let android = Arc::clone(&android);
+            let runtime = Arc::clone(&runtime);
+            registry.register("ui.android_ui_list_devices", move |_params| {
+                runtime.block_on(crate::methods::ui_devices::android_list_devices(&android))
+            });
+        }
+        {
+            let android = Arc::clone(&android);
+            registry.register("ui.android_ui_open_live", move |params| {
+                crate::methods::ui_devices::android_open_live(&android, params)
+            });
+        }
+        {
+            let desktop = Arc::clone(&desktop);
+            registry.register("ui.desktop_ui_overview", move |_params| {
+                crate::methods::ui_devices::desktop_overview(&desktop)
+            });
+        }
+        {
+            let desktop = Arc::clone(&desktop);
+            registry.register("ui.desktop_ui_set_platform", move |params| {
+                crate::methods::ui_devices::desktop_set_platform(&desktop, params)
+            });
+        }
+        {
+            let desktop = Arc::clone(&desktop);
+            registry.register("ui.desktop_ui_upsert_template", move |params| {
+                crate::methods::ui_devices::desktop_upsert_template(&desktop, params)
+            });
+        }
+        {
+            let desktop = Arc::clone(&desktop);
+            registry.register("ui.desktop_ui_delete_template", move |params| {
+                crate::methods::ui_devices::desktop_delete_template(&desktop, params)
+            });
+        }
+        {
+            let desktop = Arc::clone(&desktop);
+            registry.register("ui.desktop_ui_replay_frames", move |params| {
+                crate::methods::ui_devices::desktop_replay_frames(&desktop, params)
+            });
+        }
+        {
+            let desktop = Arc::clone(&desktop);
+            let runtime = Arc::clone(&runtime);
+            registry.register("ui.desktop_ui_lifecycle", move |params| {
+                runtime.block_on(crate::methods::ui_devices::desktop_lifecycle(
+                    &desktop, params,
+                ))
+            });
+        }
+        {
+            let desktop = Arc::clone(&desktop);
+            registry.register("ui.desktop_ui_open_live_window", move |params| {
+                crate::methods::ui_devices::desktop_open_live_window(&desktop, params)
+            });
+        }
+        {
+            let desktop = Arc::clone(&desktop);
+            let runtime = Arc::clone(&runtime);
+            registry.register("ui.desktop_user_action_reply", move |params| {
+                runtime.block_on(crate::methods::ui_devices::desktop_user_action_reply(
+                    &desktop, params,
+                ))
             });
         }
 

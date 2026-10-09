@@ -129,7 +129,7 @@ Electron 壳。工作台侧改为「调 bridge 的 `ui.*` 占位 → 由 dsh GUI
    - 测试:`ui_db.rs` 5 个单测(表结构 / Wrapped 拆封 / Flat 平铺 / 必填键 /
      broker 白名单)+ `protocol.rs` 集成 roundtrip(接假 Go sidecar)。
 5. 🚧 **D 组其余**(进行中):
-   - ✅ **第一批:审计 + 告警**(本批):sidecar 新增 `audit_store.rs` /
+   - ✅ **第一批:审计 + 告警**(已落地):sidecar 新增 `audit_store.rs` /
      `alert_store.rs` / `ui_runtime.rs` / `methods/ui_settings.rs`,8 个 `ui.*`
      方法,方法面 209 → **217**。Tauri 版是 SQLite 表(`audit_log` / `alert_rule`),
      sidecar 换自有 JSON 存储(**字段、缺省、排序、文案逐字保持**):
@@ -148,10 +148,28 @@ Electron 壳。工作台侧改为「调 bridge 的 `ui.*` 占位 → 由 dsh GUI
      - **`ui.alert_test_webhook` 显式降级**:sidecar 刻意零 HTTP 依赖(不为一个
        测试按钮引入 reqwest 全家桶),返回指明原因的中文硬错误;webhook 外发归
        Electron 壳/M3。
-   - ⬜ **第二批**:`android_ui_*`(4)/ `desktop_ui_*`(7)+ `desktop_user_action_reply`
-     (存储/管理器多已在 sidecar,补 `ui.*` 包装 + 直播窗口交 M3 面板)/
-     浏览器引擎与 Jev 配置(设置存储)/ AI key(密钥存储)/ `local_shell_exec`
-     (同机 shell)/ `screenshot_begin_region`(M3 帧服务)/ `plugin:*`(交 dsh GUI)。
+   - ✅ **第二批:Android 设备设置 + 沙箱桌面 UI**(本批):新增
+     `methods/ui_devices.rs`,**12 个 `ui.*` 方法,方法面 217 → 229**。
+     - `ui.android_ui_get_config` / `ui.android_ui_set_adb_path`(设置
+       `android.adb_path`,写前校验文件存在,保存后清 adb 解析缓存)/
+       `ui.android_ui_list_devices`(adb devices -l,只读)/ `ui.android_ui_open_live`;
+     - `ui.desktop_ui_overview`(实例 + 模板 + 平台选择,camelCase 线形状)/
+       `set_platform`(只允许 docker 资产,文案逐字)/ `upsert_template`(配方先
+       校验,name 必须匹配;按 name 唯一 upsert)/ `delete_template` /
+       `replay_frames`({frames} 包装)/ `lifecycle`(复用域编排
+       `exec::ui_lifecycle`,不经任务授权)/ `desktop_user_action_reply`(未知
+       requestId 幂等);
+     - 两个窗口类动作(`android_ui_open_live` / `desktop_ui_open_live_window`)
+       显式降级,直播/接管面板随 M3 面板化落地;
+     - 存储侧补两件 sidecar 原先没有的东西:`FileInstanceStore` 的 UI 投影
+       (全量实例 / 模板 upsert / 删除 / 全量帧)与 `FileSettingsStore` 的
+       `set` / `remove`(域工具只需要读,UI 面才需要写;**不扩大到 trait**,
+       避免为 UI 面改动域契约);
+     - `InstanceRow` 补 `created_at`(UI 总览按它倒序;对应 SQL 列,Tauri 侧
+       同步读该列,`#[serde(default)]` 保证存量 JSON 仍可读)。
+   - ⬜ **第三批**:浏览器引擎与 Jev 配置(设置存储)/ AI key(密钥存储)/
+     `local_shell_exec`(同机 shell;tokio 需开 `process` feature)/
+     `screenshot_begin_region`(M3 帧服务)/ `plugin:*`(交 dsh GUI)。
 6. ⬜ **iframe 搬入**:工作台从「新开独立窗口/tab」改为壳内面板(client-nav 的
    `openNewPage` → 面板槽位;`starhub://open-asset` 的 focus 语义随面板重写)。
 7. ⬜ **验收**:dsh desktop dev 壳内全功能可用(窗口类除外)。
@@ -161,9 +179,9 @@ Electron 壳。工作台侧改为「调 bridge 的 `ui.*` 占位 → 由 dsh GUI
 - 每个 `ui.*` 方法一个 roundtrip 契约测试(与 M1 的 `protocol.rs` 同纪律):
   参数白名单、错误码、**模型/用户可读文本逐字保持**(Tauri 版文案是契约)。
 - `npm run verify:bridge-compat` 扩到 UI 面:经 `POST /starhub/api/invoke`
-  打真二进制,断言资产 CRUD 往返。**当前 65 项检查全绿**(第 8 节资产 CRUD 12 项
+  打真二进制,断言资产 CRUD 往返。**当前 78 项检查全绿**(第 8 节资产 CRUD 12 项
   + 第 9 节 B 组交互会话 18 项 + 第 10 节 C 组数据面 11 项 + 第 11 节 D 组
-  审计/告警 13 项;D 组一节验 snake_case 线形状、SQL 同款缺省、AI 审计回写、
-  webhook 降级)。脚本另加 120s 看门狗——曾经因复用已关闭实例的 peer 挂住
-  10 分钟,现在大声失败而不是无限挂起。
+  审计/告警 13 项 + 第 12 节 D 组设备面 13 项)。脚本的 `startSidecar` 把
+  **全部**状态文件(资产/密钥/known_hosts/审计/告警/沙箱/设置/缓存/Android 帧)
+  指到临时目录——D 组落地时发现沙箱与设置两个文件还落在 cwd,已补齐。
 - client-nav vitest 全绿(传输 seam 替身的单测替代 `__TAURI_INTERNALS__` 存根)。

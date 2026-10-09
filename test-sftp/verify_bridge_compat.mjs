@@ -21,6 +21,8 @@
  *     Go sidecar:Wrapped 拆封 / Flat 平铺 / 参数白名单 / broker kind 白名单)
  * 11. UI 面 D 组第一批(M2):`ui.audit_*` / `ui.alert_*` 设置页(JSON 存储、
  *     snake_case 线形状、SQL 同款缺省、AI 工具审计回写、webhook 降级)
+ * 12. UI 面 D 组第二批(M2):`ui.android_ui_*` / `ui.desktop_ui_*` 设备面(总览 /
+ *     平台资产校验 / 模板 upsert / 回放帧 / 人工介入幂等 / 直播降级)
  *
  * 与 `verify_sidecar_ssh.py`(真 SSH e2e)分工:那条验 Rust 侧域逻辑,这条验
  * 「插件协议 → 兼容层 → sidecar」的最后一公里。
@@ -72,9 +74,12 @@ function startSidecar(assets, { fakeGo = false } = {}) {
       STARHUB_SECRETS_FILE: '',
       STARHUB_KNOWN_HOSTS_FILE: join(dir, 'known-hosts.json'),
       STARHUB_ANDROID_FRAMES_FILE: join(dir, 'android-frames.json'),
-      // 审计/告警落临时目录:绝不写进仓库或 vendor 树
+      // 审计/告警/沙箱/设置全部落临时目录:绝不写进仓库或 vendor 树
       STARHUB_AUDIT_FILE: join(dir, 'audit.json'),
       STARHUB_ALERTS_FILE: join(dir, 'alerts.json'),
+      STARHUB_SANDBOX_FILE: join(dir, 'sandbox.json'),
+      STARHUB_SETTINGS_FILE: join(dir, 'settings.json'),
+      STARHUB_CACHE_DIR: join(dir, 'cache'),
       ...(fakeGo ? { STARHUB_GO_SIDECAR: writeGoWrapper(dir) } : {}),
     },
   })
@@ -282,8 +287,8 @@ async function main() {
     // ── 9. UI 面 B 组(交互会话):ui.ssh_* / ui.sftp_*(connId 面) ──
     console.log('\n[9] UI 面 B 组交互会话(ui.ssh_* / ui.sftp_*)')
     const methodSurface = await transport.request('starhub/capabilities', {})
-    check('方法面覆盖 B 组(总数 217)',
-      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 217
+    check('方法面覆盖 B 组(总数 229)',
+      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 229
       && methodSurface.methods.includes('ui.ssh_connect') && methodSurface.methods.includes('ui.sftp_start_upload'),
       `${String(methodSurface?.methods?.length)} 个方法`)
 
@@ -389,8 +394,8 @@ async function main() {
     check('白名单内 kind 走 broker.{kind}.{verb}', String(kafka).includes('broker.kafka.overview'), String(kafka))
 
     const methodSurface = await go.transport.request('starhub/capabilities', {})
-    check('方法面覆盖 C 组(总数 217)',
-      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 217
+    check('方法面覆盖 C 组(总数 229)',
+      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 229
       && methodSurface.methods.includes('ui.db_mysql_connect')
       && methodSurface.methods.includes('ui.docker_exec_session_read'),
       `${String(methodSurface?.methods?.length)} 个方法`)
@@ -465,6 +470,86 @@ async function main() {
       setTimeout(() => { settings.child.kill('SIGKILL'); resolve() }, 2000).unref()
     })
     rmSync(settings.dir, { recursive: true, force: true })
+  }
+
+  // ── 12. UI 面 D 组第二批(Android 设备设置 + 沙箱桌面 UI) ──
+  console.log('\n[12] UI 面 D 组设备面(ui.android_ui_* / ui.desktop_ui_*)')
+  const devices = startSidecar([
+    { id: 'docker-1', type: 'docker', name: '本机 Docker', config: { dockerTransport: 'socket' } },
+    { id: 'ssh-1', type: 'ssh', name: 'ssh', config: { host: '10.0.0.7', username: 'root' } },
+  ])
+  const dv = {
+    request: (method, params) => devices.transport.request(`ui.${method}`, params ?? {}),
+  }
+  try {
+    const overview = await dv.request('desktop_ui_overview')
+    check('空沙箱总览三字段齐全',
+      Array.isArray(overview?.instances) && Array.isArray(overview?.templates)
+      && overview.platformAssetId === null,
+      JSON.stringify(overview).slice(0, 80))
+
+    await dv.request('desktop_ui_set_platform', { assetId: 'docker-1' })
+    check('docker 资产可设为沙箱平台',
+      (await dv.request('desktop_ui_overview')).platformAssetId === 'docker-1')
+    const wrongType = await dv.request('desktop_ui_set_platform', { assetId: 'ssh-1' })
+      .catch((error) => error.message)
+    check('非 docker 资产文案逐字保持',
+      String(wrongType) === '资产 ssh-1 不是 Docker 连接(ssh)', String(wrongType))
+
+    await dv.request('desktop_ui_upsert_template', {
+      name: 'box', recipeToml: 'name = "box"\nresolution = "1280x800"\n',
+    })
+    const mismatch = await dv.request('desktop_ui_upsert_template', {
+      name: 'other', recipeToml: 'name = "box"\n',
+    }).catch((error) => error.message)
+    check('配方 name 与模板名不一致的文案逐字保持',
+      String(mismatch) === '配方内 name(box)与模板名(other)不一致', String(mismatch))
+    const templates = (await dv.request('desktop_ui_overview')).templates
+    check('模板 upsert 落库(camelCase 线形状)',
+      Array.isArray(templates) && templates.length === 1 && templates[0].name === 'box'
+      && templates[0].imageTag === null && templates[0].createdAt > 0,
+      JSON.stringify(templates).slice(0, 80))
+
+    const frames = await dv.request('desktop_ui_replay_frames', { sandboxId: 'ghost' })
+    check('未知沙箱的回放帧是空数组', Array.isArray(frames?.frames) && frames.frames.length === 0)
+
+    const lifecycle = await dv.request('desktop_ui_lifecycle', { sandboxId: 'ghost', action: 'pause' })
+      .catch((error) => error.message)
+    check('未知沙箱的生命周期是硬错误', String(lifecycle).includes('ghost'), String(lifecycle))
+
+    const replied = await dv.request('desktop_user_action_reply', { requestId: 'ghost', done: true })
+    check('未知 requestId 的人工介入应答幂等', replied === null || replied === undefined)
+
+    const adbConfig = await dv.request('android_ui_get_config')
+    check('未配置时 adb 配置两个字段都是 null',
+      adbConfig?.adbPath === null && adbConfig.resolvedAdb === null, JSON.stringify(adbConfig))
+    const badAdb = await dv.request('android_ui_set_adb_path', { path: '/nope/adb' })
+      .catch((error) => error.message)
+    check('adb 路径不存在文案逐字保持',
+      String(badAdb).startsWith('adb 路径不存在或不是文件'), String(badAdb))
+
+    for (const [method, params] of [
+      ['android_ui_open_live', { serial: 's1' }],
+      ['desktop_ui_open_live_window', { sandboxId: 'box-1', containerId: 'c1', novncPort: 15900, takeover: true }],
+    ]) {
+      const error = await dv.request(method, params).catch((caught) => caught.message)
+      check(`${method} 窗口类降级(指明 M3)`, String(error).includes('M3'), String(error))
+    }
+
+    const deviceSurface = await devices.transport.request('starhub/capabilities', {})
+    check('方法面覆盖 D 组设备面(总数 229)',
+      Array.isArray(deviceSurface?.methods) && deviceSurface.methods.length === 229
+      && deviceSurface.methods.includes('ui.desktop_ui_overview')
+      && deviceSurface.methods.includes('ui.android_ui_list_devices'),
+      `${String(deviceSurface?.methods?.length)} 个方法`)
+  } finally {
+    devices.child.stdin.end()
+    await new Promise((resolve) => {
+      if (devices.child.exitCode !== null) { resolve(); return }
+      devices.child.once('exit', () => resolve())
+      setTimeout(() => { devices.child.kill('SIGKILL'); resolve() }, 2000).unref()
+    })
+    rmSync(devices.dir, { recursive: true, force: true })
   }
 
   console.log(`\n验收结果: ${passed} passed, ${failed} failed`)

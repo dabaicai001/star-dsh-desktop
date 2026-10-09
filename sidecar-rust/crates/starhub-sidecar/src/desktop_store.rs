@@ -265,17 +265,7 @@ impl InstanceStore for FileInstanceStore {
         action: &'a str,
         shot_path: Option<&'a str>,
     ) -> BoxFuture<'a, Result<(), String>> {
-        let outcome = self
-            .update(|document| {
-                document.frames.push(FrameRecord {
-                    sandbox_id: sandbox_id.to_string(),
-                    action: action.to_string(),
-                    shot_path: shot_path.map(str::to_string),
-                    created_at: chrono::Utc::now().timestamp(),
-                });
-                Ok(())
-            })
-            .map_err(|e| e.to_string());
+        let outcome = self.insert_frame_now(sandbox_id, action, shot_path);
         Box::pin(async move { outcome })
     }
 
@@ -312,6 +302,91 @@ impl InstanceStore for FileInstanceStore {
     }
 }
 
+impl FileInstanceStore {
+    // ---------- UI 面(desktop_ui_*:Tauri SQL 语义的 JSON 对应物) ----------
+
+    /// 落一帧回放(同步版;trait 的 `insert_frame` 与 UI 面测试共用)。
+    pub fn insert_frame_now(
+        &self,
+        sandbox_id: &str,
+        action: &str,
+        shot_path: Option<&str>,
+    ) -> Result<(), String> {
+        self.update(|document| {
+            document.frames.push(FrameRecord {
+                sandbox_id: sandbox_id.to_string(),
+                action: action.to_string(),
+                shot_path: shot_path.map(str::to_string),
+                created_at: chrono::Utc::now().timestamp(),
+            });
+            Ok(())
+        })
+        .map_err(|e| e.to_string())
+    }
+
+    /// 全部实例(UI 总览要 container_id / platform / novnc_port 等全字段)。
+    pub fn all_instances(&self) -> Result<Vec<InstanceRow>, String> {
+        let mut instances = self.load().map_err(|e| e.to_string())?.instances;
+        // 与 SQL 的 ORDER BY created_at DESC 对齐(同秒保持插入倒序)
+        instances.reverse();
+        Ok(instances)
+    }
+
+    /// 全部模板(UI 总览;trait 的 `list_templates` 是异步面,这里是同步投影)。
+    pub fn all_templates(&self) -> Result<Vec<SandboxTemplate>, String> {
+        let mut templates = self.load().map_err(|e| e.to_string())?.templates;
+        // 与 SQL 的 ORDER BY created_at 对齐
+        templates.reverse();
+        Ok(templates)
+    }
+
+    /// 模板按 name 唯一的新增/更新(对应 SQL 的 `ON CONFLICT(name) DO UPDATE`)。
+    pub fn upsert_template(&self, name: &str, recipe: &str) -> Result<SandboxTemplate, String> {
+        self.update(|document| {
+            let now = chrono::Utc::now().timestamp();
+            if let Some(template) = document.templates.iter_mut().find(|t| t.name == name) {
+                template.recipe = recipe.to_string();
+                return Ok(template.clone());
+            }
+            let template = SandboxTemplate {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: name.to_string(),
+                recipe: recipe.to_string(),
+                image_tag: None,
+                created_at: now,
+            };
+            document.templates.push(template.clone());
+            Ok(template)
+        })
+        .map_err(|e| e.to_string())
+    }
+
+    /// 按 name 删除模板(不影响已从它创建的实例)。
+    pub fn delete_template(&self, name: &str) -> Result<(), String> {
+        self.update(|document| {
+            document.templates.retain(|template| template.name != name);
+            Ok(())
+        })
+        .map_err(|e| e.to_string())
+    }
+
+    /// 某沙箱的全部回放帧(UI 回放查看器要全量,不按 limit 截断)。
+    pub fn all_frames(&self, sandbox_id: &str) -> Result<Vec<ReplayFrame>, String> {
+        self.load().map_err(|e| e.to_string()).map(|document| {
+            document
+                .frames
+                .into_iter()
+                .filter(|f| f.sandbox_id == sandbox_id)
+                .map(|f| ReplayFrame {
+                    action: f.action,
+                    shot_path: f.shot_path,
+                    created_at: f.created_at,
+                })
+                .collect()
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,6 +408,7 @@ mod tests {
             novnc_port: 15900,
             status: "running".to_string(),
             task: "test".to_string(),
+            created_at: 0,
         }
     }
 
@@ -397,6 +473,59 @@ mod tests {
         store.seed_default_template().await.unwrap();
         store.seed_default_template().await.unwrap();
         assert_eq!(store.list_templates().await.unwrap().len(), 1, "播种幂等");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---------- UI 面方法 ----------
+
+    #[tokio::test]
+    async fn upsert_template_updates_by_name_and_delete_removes_it() {
+        let (store, dir) = store_in_temp("ui-template");
+        let created = store
+            .upsert_template("box", "name = \"box\"\nresolution = \"1280x800\"\n")
+            .unwrap();
+        assert_eq!(created.name, "box");
+        let first_id = created.id.clone();
+        // 同名再存:更新配方,不新增行,id 不变
+        let updated = store
+            .upsert_template("box", "name = \"box\"\nresolution = \"1920x1080\"\n")
+            .unwrap();
+        assert_eq!(updated.id, first_id, "同名更新不换 id");
+        assert!(updated.recipe.contains("1920x1080"));
+        assert_eq!(store.list_templates().await.unwrap().len(), 1);
+        store.delete_template("box").unwrap();
+        assert!(store.list_templates().await.unwrap().is_empty());
+        // 删除不存在的模板幂等
+        store.delete_template("ghost").unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn all_instances_and_frames_expose_the_ui_projection() {
+        let (store, dir) = store_in_temp("ui-frames");
+        let mut first = instance("box-1");
+        first.created_at = 100;
+        let mut second = instance("box-2");
+        second.created_at = 200;
+        store.insert_instance(&first, "tpl", "s1").await.unwrap();
+        store.insert_instance(&second, "tpl", "s1").await.unwrap();
+        store
+            .insert_frame("box-1", "click(1,2)", Some("/tmp/shot.png"))
+            .await
+            .unwrap();
+
+        let instances = store.all_instances().unwrap();
+        assert_eq!(instances.len(), 2);
+        // created_at DESC:新的在前
+        assert_eq!(instances[0].id, "box-2");
+        assert_eq!(instances[0].created_at, 200);
+        assert_eq!(instances[0].container_id, "container-box-2");
+
+        let frames = store.all_frames("box-1").unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].action, "click(1,2)");
+        assert_eq!(frames[0].shot_path.as_deref(), Some("/tmp/shot.png"));
+        assert!(store.all_frames("ghost").unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

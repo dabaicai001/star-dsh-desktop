@@ -18,6 +18,9 @@ pub struct InstanceRow {
     pub novnc_port: i64,
     pub status: String,
     pub task: String,
+    /// 创建时间(Unix 秒;UI 总览按它倒序,对应 SQL 的 created_at 列)。
+    #[serde(default)]
+    pub created_at: i64,
 }
 
 /// 模板行。

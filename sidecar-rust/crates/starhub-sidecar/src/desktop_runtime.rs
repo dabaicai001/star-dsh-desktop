@@ -86,6 +86,11 @@ impl FileSettingsStore {
         Self { path }
     }
 
+    /// 用指定路径构造(测试 / 装配点用)。
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
     /// 读全部设置(扁平 key→value 对象;文件不存在 = 空)。
     pub fn read_all(&self) -> Result<serde_json::Map<String, serde_json::Value>, String> {
         match std::fs::read(&self.path) {
@@ -98,6 +103,40 @@ impl FileSettingsStore {
                 self.path.display()
             )),
         }
+    }
+
+    /// 写一个设置(UI 面:沙箱平台 / 浏览器引擎 / adb 路径等)。
+    ///
+    /// 与 [`SettingsStore::get`] 同一份文件,写穿透保持一致;不在 trait 上——
+    /// 域工具只需要读,UI 面才需要写。
+    pub fn set(&self, key: &str, value: &str) -> Result<(), String> {
+        let mut settings = self.read_all()?;
+        settings.insert(
+            key.to_string(),
+            serde_json::Value::String(value.to_string()),
+        );
+        self.persist(&settings)
+    }
+
+    /// 删一个设置(空值即清除,回落默认行为)。
+    pub fn remove(&self, key: &str) -> Result<(), String> {
+        let mut settings = self.read_all()?;
+        settings.remove(key);
+        self.persist(&settings)
+    }
+
+    /// 整体落盘(内部用)。
+    fn persist(&self, settings: &serde_json::Map<String, serde_json::Value>) -> Result<(), String> {
+        if let Some(parent) = self.path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|error| format!("设置目录创建失败({}): {error}", parent.display()))?;
+            }
+        }
+        let text = serde_json::to_string_pretty(settings)
+            .map_err(|error| format!("设置文件序列化失败: {error}"))?;
+        std::fs::write(&self.path, text)
+            .map_err(|error| format!("设置文件写入失败({}): {error}", self.path.display()))
     }
 }
 
@@ -178,9 +217,45 @@ impl DesktopRuntime {
         }
     }
 
+    /// 用显式存储路径装配(测试 / 装配点用;路径缺省时与 [`Self::new`] 一致)。
+    pub fn with_paths(
+        db: Arc<DbRuntime>,
+        assets: Arc<AssetStore>,
+        known_hosts: FileKnownHostsStore,
+        events: Arc<dyn EventSink>,
+        store_path: impl Into<PathBuf>,
+        settings_path: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            manager: DesktopManager::new(),
+            sidecar: GoSidecarCaller::new(db),
+            store: FileInstanceStore::new(store_path),
+            settings: FileSettingsStore::new(settings_path),
+            cache: EnvCacheDir,
+            events: NotifyEventBroadcast::new(events),
+            known_hosts,
+            assets,
+        }
+    }
+
     /// 管理器(前端接管开关 / 人工介入应答经此进出)。
     pub fn manager(&self) -> &DesktopManager {
         &self.manager
+    }
+
+    /// 沙箱持久化存储(UI 面 `desktop_ui_*` 的总览/模板/回放帧)。
+    pub fn store(&self) -> &FileInstanceStore {
+        &self.store
+    }
+
+    /// 资产存储(UI 面沙箱平台选择写前校验资产类型)。
+    pub fn assets(&self) -> &Arc<AssetStore> {
+        &self.assets
+    }
+
+    /// 设置存储(UI 面沙箱平台选择;与 Android 域共用同一份文件)。
+    pub fn settings(&self) -> &FileSettingsStore {
+        &self.settings
     }
 
     /// 装配执行上下文。

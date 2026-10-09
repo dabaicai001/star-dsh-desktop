@@ -715,6 +715,7 @@ async fn create_sandbox(
                 novnc_port,
                 status: "running".to_string(),
                 task: task.clone(),
+                created_at: chrono::Utc::now().timestamp(),
             },
             &record.id,
             desktop.session_id,

@@ -107,6 +107,11 @@ impl FileFrameStore {
         Self { path }
     }
 
+    /// 用指定路径构造(测试 / 装配点用)。
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
     fn read_all(&self) -> Result<Vec<serde_json::Value>, String> {
         match std::fs::read(&self.path) {
             Ok(bytes) => serde_json::from_slice::<Vec<serde_json::Value>>(&bytes)

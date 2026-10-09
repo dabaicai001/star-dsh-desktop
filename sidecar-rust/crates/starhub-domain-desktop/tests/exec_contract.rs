@@ -329,6 +329,7 @@ async fn seed_authorized_instance(desktop: &Desktop<'_>) -> String {
                 novnc_port: 15900,
                 status: "running".to_string(),
                 task: "test".to_string(),
+                created_at: 0,
             },
             "tpl-default",
             desktop.session_id,

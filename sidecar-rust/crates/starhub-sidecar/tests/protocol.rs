@@ -830,6 +830,19 @@ fn capabilities_lists_the_android_method_surface() {
         "ui.alert_delete",
         "ui.alert_list",
         "ui.alert_test_webhook",
+        // D 组第二批:Android 设备设置 + 沙箱桌面 UI
+        "ui.android_ui_get_config",
+        "ui.android_ui_set_adb_path",
+        "ui.android_ui_list_devices",
+        "ui.android_ui_open_live",
+        "ui.desktop_ui_overview",
+        "ui.desktop_ui_set_platform",
+        "ui.desktop_ui_upsert_template",
+        "ui.desktop_ui_delete_template",
+        "ui.desktop_ui_replay_frames",
+        "ui.desktop_ui_lifecycle",
+        "ui.desktop_ui_open_live_window",
+        "ui.desktop_user_action_reply",
     ] {
         assert!(
             methods.contains(&expected),
@@ -838,8 +851,9 @@ fn capabilities_lists_the_android_method_surface() {
     }
     // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)+ 16(browser)
     // + 4 桥命令 + 4 UI 面(资产 CRUD)+ 30 UI 面 B 组(交互会话)
-    // + 86 UI 面 C 组(数据面连接)+ 8 UI 面 D 组(审计/告警)= 217
-    assert_eq!(methods.len(), 217, "方法面总数: {methods:?}");
+    // + 86 UI 面 C 组(数据面连接)+ 8 UI 面 D 组(审计/告警)
+    // + 12 UI 面 D 组(Android/沙箱)= 229
+    assert_eq!(methods.len(), 229, "方法面总数: {methods:?}");
 }
 
 /// Android 方法面 roundtrip(不触设备的分支):未授权写操作硬错误;
@@ -1570,6 +1584,186 @@ fn ui_settings_methods_roundtrip_through_the_real_binary() {
         "告警规则应已落盘: {:?}",
         dir.join("alerts.json")
     );
+
+    drop(child.stdin.take());
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// UI 面 D 组第二批(Android 设备设置 + 沙箱桌面 UI)真二进制 roundtrip:
+/// 模板 upsert/delete、平台资产校验、回放帧包装、人工介入幂等、直播降级。
+#[test]
+fn ui_devices_methods_roundtrip_through_the_real_binary() {
+    let unique = format!(
+        "starhub-sidecar-devices-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+    let dir = std::env::temp_dir().join(unique);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let assets = dir.join("assets.json");
+    std::fs::write(
+        &assets,
+        r#"{"assets":[{"id":"docker-1","type":"docker","name":"本机 Docker","config":{"dockerTransport":"socket"}},{"id":"ssh-1","type":"ssh","name":"ssh","config":{"host":"10.0.0.7","username":"root"}}]}"#,
+    )
+    .expect("seed assets file");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_starhub-sidecar-rust"));
+    command
+        .env("STARHUB_ASSETS_FILE", &assets)
+        .env("STARHUB_SECRETS_FILE", "")
+        .env("STARHUB_KNOWN_HOSTS_FILE", dir.join("known-hosts.json"))
+        .env("STARHUB_SANDBOX_FILE", dir.join("sandbox.json"))
+        .env("STARHUB_SETTINGS_FILE", dir.join("settings.json"))
+        .env("STARHUB_CACHE_DIR", dir.join("cache"))
+        .env("STARHUB_AUDIT_FILE", dir.join("audit.json"))
+        .env("STARHUB_ALERTS_FILE", dir.join("alerts.json"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().expect("sidecar binary spawns");
+
+    fn roundtrip(child: &mut Child, request: &str) -> String {
+        let stdin = child.stdin.as_mut().expect("stdin piped");
+        stdin.write_all(request.as_bytes()).expect("write request");
+        stdin.write_all(b"\n").expect("write newline");
+        stdin.flush().expect("flush request");
+        read_response(child)
+    }
+
+    // 空总览
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-1","method":"ui.desktop_ui_overview"}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(value["result"]["instances"], serde_json::json!([]));
+    assert_eq!(value["result"]["templates"], serde_json::json!([]));
+    assert_eq!(value["result"]["platformAssetId"], serde_json::Value::Null);
+
+    // 平台选择:docker 资产接受,ssh 资产拒绝(文案与 Tauri 版一致)
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-2","method":"ui.desktop_ui_set_platform","params":{"assetId":"docker-1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-3","method":"ui.desktop_ui_set_platform","params":{"assetId":"ssh-1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(
+        value["error"]["message"], "资产 ssh-1 不是 Docker 连接(ssh)",
+        "{response}"
+    );
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-4","method":"ui.desktop_ui_overview"}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["result"]["platformAssetId"], "docker-1");
+
+    // 模板 upsert(配方 name 必须与模板名一致)+ delete
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-5","method":"ui.desktop_ui_upsert_template","params":{"name":"box","recipeToml":"name = \"box\"\nresolution = \"1280x800\"\n"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-6","method":"ui.desktop_ui_upsert_template","params":{"name":"other","recipeToml":"name = \"box\"\n"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(
+        value["error"]["message"], "配方内 name(box)与模板名(other)不一致",
+        "{response}"
+    );
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-7","method":"ui.desktop_ui_overview"}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    let templates = value["result"]["templates"].as_array().expect("array");
+    assert_eq!(templates.len(), 1);
+    assert_eq!(templates[0]["name"], "box");
+    assert!(templates[0]["createdAt"].as_i64().unwrap() > 0);
+
+    // 回放帧:未知沙箱 = 空数组(形状与 Tauri 版一致)
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-8","method":"ui.desktop_ui_replay_frames","params":{"sandboxId":"ghost"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["result"]["frames"], serde_json::json!([]));
+
+    // 生命周期:未知沙箱硬错误;未知动作文案
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-9","method":"ui.desktop_ui_lifecycle","params":{"sandboxId":"ghost","action":"pause"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("ghost")),
+        "{response}"
+    );
+
+    // 人工介入应答:未知 requestId 幂等
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-10","method":"ui.desktop_user_action_reply","params":{"requestId":"ghost","done":true}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert!(value["result"].is_null());
+
+    // adb 配置:未配置时两个字段都是 null
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-11","method":"ui.android_ui_get_config"}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(value["result"]["adbPath"], serde_json::Value::Null);
+    assert_eq!(value["result"]["resolvedAdb"], serde_json::Value::Null);
+    // 写一个不存在的 adb 路径:文案与 Tauri 版一致
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-12","method":"ui.android_ui_set_adb_path","params":{"path":"/nope/adb"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("adb 路径不存在或不是文件")),
+        "{response}"
+    );
+
+    // 两个窗口类动作显式降级(不是 -32601)
+    for (id, request) in [
+        (
+            "e-13",
+            r#"{"jsonrpc":"2.0","id":"e-13","method":"ui.android_ui_open_live","params":{"serial":"s1"}}"#,
+        ),
+        (
+            "e-14",
+            r#"{"jsonrpc":"2.0","id":"e-14","method":"ui.desktop_ui_open_live_window","params":{"sandboxId":"box-1","containerId":"c1","novncPort":15900,"takeover":true}}"#,
+        ),
+    ] {
+        let response = roundtrip(&mut child, request);
+        let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+        assert_eq!(value["error"]["code"], -32603, "{id}: {response}");
+        assert!(
+            value["error"]["message"]
+                .as_str()
+                .expect("message")
+                .contains("M3"),
+            "{id}: {response}"
+        );
+    }
 
     drop(child.stdin.take());
     let _ = child.wait();

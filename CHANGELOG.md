@@ -8,6 +8,8 @@
 ## [未发布]
 
 ### 变更
+- ✨ **sidecar UI 方法面 D 组第二批:Android 设备设置 + 沙箱桌面 UI**(去 Tauri 化 M2):新增 `methods/ui_devices.rs`,**12 个 `ui.*` 方法,方法面 217 → 229**。`ui.android_ui_get_config` / `ui.android_ui_set_adb_path`(设置键 `android.adb_path`,写前校验文件存在、保存后清 adb 解析缓存,文案逐字)/ `ui.android_ui_list_devices`(adb devices -l,只读)/ `ui.android_ui_open_live`;`ui.desktop_ui_overview`(实例 + 模板 + 平台选择,camelCase 线形状)/ `set_platform`(只允许 docker 资产,`资产 {id} 不是 Docker 连接({other})` 文案逐字)/ `upsert_template`(配方先 `parse_recipe` 校验、name 必须匹配,按 name 唯一 upsert)/ `delete_template` / `replay_frames`(`{frames}` 包装)/ `lifecycle`(复用域编排 `exec::ui_lifecycle`,**不经任务授权**——按钮点击即审批表达)/ `ui.desktop_user_action_reply`(未知 requestId 幂等)。两个窗口类动作(`android_ui_open_live` / `desktop_ui_open_live_window`)显式降级:直播/接管面板随 M3 面板化落地。
+- 🔧 **sidecar 存储补两个 UI 面能力(不动域契约)**:`FileInstanceStore` 增加 UI 投影方法(全量实例 / 模板 upsert / 删除 / 全量回放帧,`insert_frame` 抽出同步版供 trait 与 UI 测试共用);`FileSettingsStore` 增加 `set` / `remove`——**不扩大到 `SettingsStore` trait**:域工具只需要读,UI 面才需要写,避免为 UI 面改动域契约与另一侧宿主实现。`InstanceRow` 补 `created_at`(UI 总览按它倒序,对应 SQL 既有列;Tauri 侧同步读该列,`#[serde(default)]` 保证存量 JSON 仍可读)。
 - ✨ **sidecar UI 方法面 D 组第一批:审计 + 告警**(去 Tauri 化 M2):新增 `audit_store.rs` / `alert_store.rs` / `ui_runtime.rs` / `methods/ui_settings.rs`,**8 个 `ui.*` 方法,方法面 209 → 217**。Tauri 版是 SQLite 表(`audit_log` / `alert_rule`),sidecar 换自有 JSON 存储(`STARHUB_AUDIT_FILE` / `STARHUB_ALERTS_FILE`),**字段、缺省、排序、文案逐字保持**:`ui.audit_list`(limit 缺省 200 / 上限 1000,负 limit 沿用 SQLite「不限」语义)/ `ui.audit_clear`(缺省清空,返回删除条数)/ `ui.audit_stats`(按「类别 + 本地日期」分组,day DESC + category ASC);`ui.alert_create` / `ui.alert_update`(`input` 信封,缺省 enabled=true / duration_sec=0 / cooldown_sec=300,update 保留 created_at 刷新 updated_at)/ `ui.alert_delete` / `ui.alert_list`(created_at DESC)/ `ui.alert_test_webhook`。审计超 5000 条只保留最新的(纯函数 `trim_to_max` 直测,避免 5000 次写穿透的 O(n²) 测试)。
 - ✨ **AI 工具审计回写**(设置 → 审计「AI」类别):stdio 主循环对每个域工具方法(成功与失败都记)写一条 category="ai" 的审计——action = 工具名,target = 会话绑定资产名(资产已删回退 id),detail 只取白名单参数(命令/SQL/索引/容器/路径等定位信息,**绝不取凭据**)+ durationMs,失败附 error 原文。与 Tauri 版 `harness::tools` 同口径;`ui.*` 方法不记(那是用户自己的操作)。
 - 🔧 **`ui.alert_test_webhook` 显式降级**:sidecar 刻意零 HTTP 依赖(不为一个测试按钮引入 reqwest 全家桶),返回指明原因的中文硬错误;webhook 外发归 Electron 壳 / M3。
@@ -27,6 +29,7 @@
 - 🐛 **live-context 快照段永久丢失修复**:`sdk-transport` 改为每次 pre-step 现取——bridge 的 apply 是异步的(spawn + 健康探针之后才 provide),effect 注册时读一次会在 provide 晚于 apply 的组合里永久丢掉快照段。
 
 ### 文档
+- 📝 `docs/去Tauri化-M2-命令映射清单.md`:第 5 步(D 组)第二批(Android 设备设置 + 沙箱桌面 UI,12 个 `ui.*` 方法、方法面 217 → 229、存储侧两个 UI 面能力、`InstanceRow.created_at` 补齐)标记完成;第三批(浏览器引擎 / AI key / local_shell_exec / screenshot / plugin:*)待办。验收口径更新为 78 项检查,并记下「验收脚本必须把**全部**状态文件指到临时目录」的教训(D 组落地时发现沙箱与设置两个文件还落在 cwd)。
 - 📝 `docs/去Tauri化-M2-命令映射清单.md`:第 5 步(D 组)标记为进行中——第一批(审计 + 告警,8 个 `ui.*` 方法、方法面 209 → 217、AI 工具审计回写、webhook 降级)完成并列明契约细节;第二批(android_ui / desktop_ui / 浏览器引擎 / AI key / local_shell_exec / screenshot / plugin:*)待办。验收口径更新为 65 项检查。
 - 📝 `docs/去Tauri化-M2-命令映射清单.md`:第 4 步(C 组数据面连接)标记完成——86 个 `ui.*` 方法的表驱动转发设计、两种参数形态(Wrapped 拆封 / Flat 平铺)、参数白名单与 broker kind 白名单契约;方法面 123 → 209;C 组行状态 ⬜ → ✅。验收口径更新为 52 项检查。
 - 📝 `docs/去Tauri化-M2-命令映射清单.md`:第 3 步(B 组交互会话)标记完成——30 个 `ui.*` 方法逐面列举(SSH 12 + SFTP 17 + 窗口类降级 1)、契约逐字保持清单、测试与验收结果;方法面 93 → 123;B 组行状态 ⬜ → ✅。验收口径更新为 41 项检查。
