@@ -13,6 +13,8 @@
  *  5. `starhub/live.snapshot`(registries / transfers / recentExecs / taskTrails)
  *  6. 域工具成功后的 `starhub/domain.event` 通知(因果顺序:事件在响应之前)
  *  7. 未实现的方法 → -32601,进程不死;畸形行被忽略
+ *  8. UI 面(M2):`ui.<tauriCommand>` 资产 CRUD(建/列/改/删、snake_case 线形状、
+ *     敏感字段不回流、删除后域工具报「资产不存在」、Excel 类型已删)
  *
  * 与 `verify_sidecar_ssh.py`(真 SSH e2e)分工:那条验 Rust 侧域逻辑,这条验
  * 「插件协议 → 兼容层 → sidecar」的最后一公里。
@@ -192,6 +194,51 @@ async function main() {
       args: {},
     })
     check('未知 exec_id 的中止通知不杀进程', typeof stillAlive === 'string' && stillAlive.startsWith('{"'))
+
+    // ── 8. UI 面(M2):工作台命令 ui.<tauriCommand>,经 bridge 的 invoke 端点 ──
+    console.log('\n[8] UI 面资产 CRUD(ui.get_assets / create / update / delete)')
+    const ui = {
+      request: (method, params) => transport.request(`ui.${method}`, params ?? {}),
+    }
+    const created = await ui.request('create_asset', {
+      id: 'acc-1',
+      type: 'ssh',
+      name: '验收机',
+      config: { host: '10.0.0.1', port: 22, username: 'root', password: 's3cret' },
+      groupId: 2,
+      tags: ['prod'],
+      favorite: true,
+    })
+    check('create 返回 snake_case 线形状(工作台 RustAsset)',
+      created?.id === 'acc-1' && created.group_id === 2 && created.favorite === true
+      && created.key_id === 'asset:acc-1' && created.created_at > 0,
+      JSON.stringify(created).slice(0, 90))
+    check('敏感字段不回流', created?.config?.password === undefined)
+
+    const listed = await ui.request('get_assets')
+    // 种子资产 a1 + 新建的 acc-1
+    check('get_assets 列出新建资产',
+      Array.isArray(listed) && listed.length === 2 && listed.some(a => a.name === '验收机'),
+      `${String(listed.length)} 项`)
+    check('清单不带密钥', !JSON.stringify(listed).includes('s3cret'))
+
+    const updated = await ui.request('update_asset', {
+      id: 'acc-1', type: 'ssh', name: '新名', config: { host: '10.0.0.2' },
+    })
+    check('update 改名且不新增行', updated?.name === '新名'
+      && (await ui.request('get_assets')).length === 2)
+
+    const deleted = await ui.request('delete_asset', { id: 'acc-1' })
+    check('delete 返回 ok', deleted?.ok === true)
+    check('删除后只剩种子资产', (await ui.request('get_assets')).length === 1)
+
+    const afterDelete = await transport.request('ssh_exec', { assetId: 'acc-1', command: 'ls' })
+      .catch((error) => error.message)
+    check('删除后域工具报「资产不存在」', String(afterDelete).includes('资产不存在'), afterDelete)
+
+    const badType = await ui.request('create_asset', { id: 'x', type: 'excel', name: 'x' })
+      .catch((error) => error.message)
+    check('Excel 类型已删 → 参数错误', String(badType).includes('不支持的资产类型'), badType)
   } finally {
     child.stdin.end()
     await new Promise((resolve) => {
