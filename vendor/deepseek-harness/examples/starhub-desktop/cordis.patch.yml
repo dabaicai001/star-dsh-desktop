@@ -91,7 +91,7 @@
       config:
         # provisioning 占位:两个 sidecar 二进制的绝对路径(部署变化项,
         # 按上游「No hardcoded tunables」规约走 Config,不写死在插件里)
-        sidecarCommand: '@@STARHUB_SIDECAR_COMMAND@@'
+        @@STARHUB_SIDECAR_COMMAND@@
         healthTimeoutMs: 15000
     # 会话历史搜索:AI 会话存档检索从 StarHub 桥接 session_search 切换到 DSH
     # 原生 tool-session-query(session_search/session_event_search/session_trace/

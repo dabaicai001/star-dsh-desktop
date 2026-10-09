@@ -103,18 +103,18 @@ function isConfigLine(line, indent) {
 }
 
 /**
- * 归一化 config 文本块:统一换行、去空行,并按行缩进重新对齐。
+ * 归一化 config 文本块:统一换行、去空行,并按**相对缩进**重新对齐。
  *
- * `config:` 自身在 `id` 缩进 + 2,它的子行在 + 4。输入行来自模板(已是 +4 起步)
- * 或调用方手写(同样 +4),这里统一按目标缩进重排,避免不同来源的缩进打架。
+ * 去掉整块的最小缩进再加回目标缩进(`id` 缩进 + 4,即 `config:` 之子),这样
+ * 块内更深的结构(`sidecarCommand:` 之下的 `- `)原样保留。按固定宽度 strip 会把
+ * 相对层级抹平,拼出 YAML 认为非法的缩进。
  */
 function splitConfig(config, indent) {
   const body = config.replace(/\r\n/g, '\n').split('\n').filter(line => line.trim() !== '')
+  if (body.length === 0) return []
+  const shallowest = Math.min(...body.map(line => line.search(/\S/)))
   const target = `${indent}    `
-  return body.map(line => {
-    const stripped = line.replace(/^ {0,12}/, '')
-    return target + stripped
-  })
+  return body.map(line => target + line.slice(shallowest))
 }
 
 /**

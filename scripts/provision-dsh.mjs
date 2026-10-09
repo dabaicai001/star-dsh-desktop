@@ -28,7 +28,7 @@
  *
  * 用法:
  *   node scripts/provision-dsh.mjs --home <DSH_HOME> [--profile desktop]
- *     [--vendor <vendorRoot>] [--resources <dir>]
+ *     [--vendor <vendorRoot>] [--resources <dir>] [--runtime <dir>]
  *     [--sidecar-rust <path>] [--sidecar-go <path>] [--window-dist <dir>]
  *     [--port <n>] [--host <addr>] [--dry-run]
  */
@@ -62,6 +62,20 @@ const PACKAGE_COPY_ENTRIES = ['package.json', 'lib']
 /** profile manifest 的初始 bundle 层(上游 `PROFILE_TEMPLATES.web`)。 */
 const PROFILE_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
 
+/**
+ * 两个 sidecar 在 resources 里的落地名。
+ *
+ * 名字不是随便起的:Rust sidecar 用 `GoSidecar::binary_name()` 找 Go 兄弟进程,
+ * Windows 上是 `starhub-sidecar.exe`(即 `exe_dir.join(binary_name)`)——与 Tauri
+ * 打包期的布局一致(`build-sidecar.mjs` 把 Go 产物同步到
+ * `src-tauri/target/debug/starhub-sidecar.exe`)。所以 Go 侧必须落成
+ * `starhub-sidecar[.exe]`,Rust 侧落成 `starhub-sidecar-rust[.exe]`。
+ */
+const SIDECAR_TARGET_NAMES = {
+  rust: process.platform === 'win32' ? 'starhub-sidecar-rust.exe' : 'starhub-sidecar-rust',
+  go: process.platform === 'win32' ? 'starhub-sidecar.exe' : 'starhub-sidecar',
+}
+
 /** provisioning 负责维护的 patch 行 id(其余行一律视为用户/上游所有)。 */
 const MANAGED_PATCH_IDS = ['webserver', 'starhub-bridge', 'starhub-host-static']
 
@@ -74,6 +88,16 @@ const PLACEHOLDERS = {
   sidecarCommand: '@@STARHUB_SIDECAR_COMMAND@@',
 }
 
+/**
+ * patch 直接按包名引用、但**不在** dsh CLI 依赖闭包里的包。
+ *
+ * 与 Rust web.rs 的 `RUNTIME_HOSTED_PATCH_DEPS` 同一份清单:bundle 名由 profile
+ * loader 从安装闭包解析,而 insert 块里的裸包名走 Node 解析——`$DSH_HOME` 不在
+ * 安装树里,不把这些包放进 `<profile>/node_modules` 就 ERR_MODULE_NOT_FOUND /
+ * failed to import。
+ */
+const RUNTIME_HOSTED_PATCH_DEPS = ['dsh-tool-session-query']
+
 /** CLI 参数(缺省值面向仓库内开发布局;安装形态由安装脚本显式传全)。 */
 const DEFAULTS = {
   home: join(repoRoot, 'tmp', 'dsh-desktop-home'),
@@ -82,6 +106,7 @@ const DEFAULTS = {
   resources: null,
   sidecarRust: null,
   sidecarGo: null,
+  runtime: join(repoRoot, 'src-tauri', 'binaries', 'dsh-runtime'),
   windowDist: join(repoRoot, 'dist-starhub-react'),
   host: '127.0.0.1',
   port: 0,
@@ -107,6 +132,7 @@ function parseArgs(argv) {
       case '--resources': values.resources = next(); break
       case '--sidecar-rust': values.sidecarRust = next(); break
       case '--sidecar-go': values.sidecarGo = next(); break
+      case '--runtime': values.runtime = next(); break
       case '--window-dist': values.windowDist = next(); break
       case '--host': values.host = next(); break
       case '--port': values.port = Number.parseInt(next(), 10); break
@@ -132,6 +158,7 @@ function usage() {
     '  --home <dir>          DSH_HOME(profile 的父目录)。',
     '  --profile <name>      profile 名,缺省 desktop。',
     '  --vendor <dir>        vendor/deepseek-harness 根。',
+    '  --runtime <dir>       打包好的 dsh 运行时根(取其 node_modules 里闭包外的 patch 依赖),缺省 src-tauri/binaries/dsh-runtime。',
     '  --resources <dir>     sidecar 与工作台 dist 的落地目录,缺省 <home>/starhub/resources。',
     '  --sidecar-rust <path> starhub-sidecar-rust 二进制(缺省构建输出)。',
     '  --sidecar-go <path>   starhub-sidecar-go 二进制(缺省构建输出)。',
@@ -174,9 +201,16 @@ async function copyDirFresh(source, target) {
 /** 读模板 patch,把占位符换成实际值。 */
 async function renderTemplate(templatePath, values) {
   const template = await readFile(templatePath, 'utf8')
+  // sidecarCommand 写成 YAML 块序列而不是流序列:Windows 路径里的反斜杠在流序列
+  // 里要靠引号转义,而整行再加一层引号会被 YAML 解析成字符串——桥的 Config 校验
+  // 直接报「expected array but got [...]」。块序列 + 单引号没有这个歧义。
+  // 块的第一行**不能**再带缩进:模板那一行已经有 8 空格,替换的只是占位符本身,
+  // 再带一份会把 `sidecarCommand:` 推到 16 列。
+  const escaped = values.sidecarRust.replaceAll('\\', '\\\\').replaceAll("'", "''")
+  const sidecarBlock = `sidecarCommand:\n${' '.repeat(10)}- '${escaped}'`
   const rendered = template
     .replaceAll(PLACEHOLDERS.windowDist, values.windowDist)
-    .replaceAll(PLACEHOLDERS.sidecarCommand, values.sidecarCommand)
+    .replaceAll(PLACEHOLDERS.sidecarCommand, sidecarBlock)
   if (rendered.includes(PLACEHOLDERS.windowDist) || rendered.includes(PLACEHOLDERS.sidecarCommand)) {
     throw new Error(`patch 模板占位符未全部替换: ${templatePath}`)
   }
@@ -189,6 +223,7 @@ async function main() {
   const profileDir = join(home, 'profiles', options.profile)
   const resources = resolve(options.resources ?? join(home, 'starhub', 'resources'))
   const vendor = resolve(options.vendor)
+  const runtime = resolve(options.runtime)
   const sidecars = options.sidecarRust !== null || options.sidecarGo !== null
     ? { rust: options.sidecarRust, go: options.sidecarGo, vendor }
     : defaultSidecarPaths(vendor)
@@ -198,6 +233,11 @@ async function main() {
   for (const name of STARHUB_PACKAGES) {
     const kind = await pathKind(join(vendor, 'packages', 'starhub', name))
     if (kind !== 'dir') problems.push(`StarHub 包目录缺失: packages/starhub/${name}`)
+  }
+  const runtimeRoot = resolve(options.runtime)
+  for (const name of RUNTIME_HOSTED_PATCH_DEPS) {
+    const kind = await pathKind(join(runtimeRoot, 'node_modules', '@deepseek-ai', name))
+    if (kind !== 'dir') problems.push(`闭包外依赖缺失(--runtime 指向的运行时里没有 @deepseek-ai/${name}): ${runtimeRoot}`)
   }
   const rustKind = await pathKind(sidecars.rust)
   if (rustKind !== 'file') problems.push(`sidecar-rust 二进制缺失: ${sidecars.rust}(先跑 npm run sidecar-rust:build)`)
@@ -214,7 +254,7 @@ async function main() {
   }
 
   const plan = {
-    home, profileDir, resources, sidecars, options,
+    home, profileDir, resources, sidecars, runtime, options,
     patchPath: join(profileDir, 'cordis.patch.yml'),
     manifestPath: join(profileDir, 'package.json'),
     provisionManifestPath: join(home, 'starhub', PROVISION_MANIFEST),
@@ -224,6 +264,7 @@ async function main() {
   console.log(`  DSH_HOME     ${home}`)
   console.log(`  profile      ${plan.profileDir}`)
   console.log(`  resources    ${resources}`)
+  console.log(`  runtime      ${runtime}`)
   console.log(`  sidecar-rust ${sidecars.rust}`)
   console.log(`  sidecar-go   ${sidecars.go}`)
   console.log(`  window-dist  ${options.windowDist}`)
@@ -283,10 +324,28 @@ async function main() {
   }
   console.log(`[provision-dsh] 落包 ${STARHUB_PACKAGES.length} 个 → ${packagesRoot}`)
 
+  // ── 2.1 patch 直接引用但不在 CLI 闭包里的包(与 Rust RUNTIME_HOSTED_PATCH_DEPS
+  //        同一份清单):不落就是 failed to import / ERR_MODULE_NOT_FOUND。
+  for (const name of RUNTIME_HOSTED_PATCH_DEPS) {
+    const source = join(runtime, 'node_modules', '@deepseek-ai', name)
+    const target = join(packagesRoot, name)
+    await rm(target, { recursive: true, force: true })
+    await mkdir(target, { recursive: true })
+    for (const entry of PACKAGE_COPY_ENTRIES) {
+      const from = join(source, entry)
+      if (!existsSync(from)) continue
+      await cp(from, join(target, entry), entry === 'package.json' ? undefined : { recursive: true })
+    }
+  }
+  console.log(`[provision-dsh] 落闭包外依赖 ${RUNTIME_HOSTED_PATCH_DEPS.length} 个 → ${packagesRoot}`)
+
   // ── 3. sidecar 二进制 + 工作台 dist → resources ──
+  // Go 侧必须落成 Rust sidecar 的 `GoSidecar::binary_name()` 期待的名字
+  // (`starhub-sidecar[.exe]`,与 exe 同级),否则 db 工具第一次调用才报
+  // 「Go sidecar not found」——那已经晚了。
   await mkdir(resources, { recursive: true })
-  const rustTarget = join(resources, 'starhub-sidecar-rust')
-  const goTarget = join(resources, 'starhub-sidecar-go')
+  const rustTarget = join(resources, SIDECAR_TARGET_NAMES.rust)
+  const goTarget = join(resources, SIDECAR_TARGET_NAMES.go)
   await copyDirFresh(sidecars.rust, rustTarget)
   await copyDirFresh(sidecars.go, goTarget)
   const windowTarget = join(resources, 'starhub-react')
@@ -294,20 +353,20 @@ async function main() {
   console.log(`[provision-dsh] 落资源 → ${resources}`)
 
   // ── 4. cordis.patch.yml:行级幂等合并 ──
-  const sidecarCommand = JSON.stringify([rustTarget])
   const rendered = await renderTemplate(templatePath, {
     windowDist: windowTarget,
-    sidecarCommand,
+    sidecarRust: rustTarget,
   })
   // webserver 行由本次调用参数构造(不取模板:模板里的 port 只是文档性缺省,
   // 从模板取会让 --port / --host 静默失效);另两行来自模板(占位符已替换)。
+  // 注意首次物化也要过一遍合并:模板里的 webserver 行是文档性缺省,
+  // 直接落地会让 --port / --host 静默失效。
   const rows = [
     webserverRow(options.host, options.port),
     ...rowsFromTemplate(rendered, MANAGED_PATCH_IDS).filter(row => row.id !== 'webserver'),
   ]
   const existing = existsSync(plan.patchPath) ? await readFile(plan.patchPath, 'utf8') : ''
-  // 首次物化:模板整体落地(注释与说明对用户可读);之后只按 id 合并受管行。
-  const merged = existing === '' ? rendered : mergePatchRows(existing, rows)
+  const merged = mergePatchRows(existing === '' ? rendered : existing, rows)
   if (merged !== existing || !existsSync(plan.patchPath)) {
     await writeFile(plan.patchPath, merged)
     console.log(`[provision-dsh] ${existing === '' ? '写入' : '合并'} cordis.patch.yml(${rows.length} 个受管行)`)
@@ -322,7 +381,8 @@ async function main() {
     profileDir,
     resources,
     packages: STARHUB_PACKAGES,
-    sidecarCommand,
+    runtimeHostedDeps: RUNTIME_HOSTED_PATCH_DEPS,
+    sidecars: { rust: rustTarget, go: goTarget },
     windowDist: windowTarget,
     webserver: { host: options.host, port: options.port },
     provisionedAt: new Date().toISOString(),

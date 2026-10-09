@@ -32,6 +32,7 @@
     "verify:web-dist": "node scripts/verify-web-dist.mjs",
     "package:dsh-runtime": "pnpm --dir vendor/deepseek-harness exec tsx scripts/package-dsh-runtime.ts",
     "provision:dsh": "node scripts/provision-dsh.mjs",
+    "smoke:dsh-desktop": "node scripts/smoke-dsh-desktop.mjs",
     "test:provision": "node --test tests/provision-dsh.test.mjs",
     "tauri:dev": "npm run tauri dev",
     "tauri:build": "npm run tauri build"

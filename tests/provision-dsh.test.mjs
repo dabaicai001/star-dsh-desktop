@@ -17,6 +17,9 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { mergePatchRows, rowsFromTemplate, validProfileName } from '../scripts/lib/provision-patch.mjs'
 
+/** patch 直接引用但不在 CLI 闭包里的包(与 provisioning 同一份清单)。 */
+const RUNTIME_HOSTED_PATCH_DEPS = ['dsh-tool-session-query']
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const scriptPath = join(repoRoot, 'scripts', 'provision-dsh.mjs')
 const templatePath = join(repoRoot, 'vendor', 'deepseek-harness', 'examples', 'starhub-desktop', 'cordis.patch.yml')
@@ -129,6 +132,13 @@ function buildFakeTree() {
   const go = join(bin, 'starhub-sidecar-go')
   writeFileSync(rust, 'fake-rust')
   writeFileSync(go, 'fake-go')
+  // 打包运行时:闭包外的 patch 依赖住在这里(与 Rust RUNTIME_HOSTED_PATCH_DEPS 同源)
+  for (const name of RUNTIME_HOSTED_PATCH_DEPS) {
+    const pkg = join(root, 'runtime', 'node_modules', '@deepseek-ai', name)
+    mkdirSync(join(pkg, 'lib'), { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), `${JSON.stringify({ name: `@deepseek-ai/${name}`, version: '0.0.1', type: 'module' }, undefined, 2)}\n`)
+    writeFileSync(join(pkg, 'lib', 'index.js'), 'export function apply() {}\n')
+  }
   const dist = join(root, 'dist')
   mkdirSync(join(dist, 'assets'), { recursive: true })
   writeFileSync(join(dist, 'index.html'), '<html><script src="/starhub-react/assets/index.js"></script></html>')
@@ -140,6 +150,7 @@ function provision(tree, home, extraArgs = []) {
     scriptPath,
     '--home', home,
     '--vendor', tree.vendor,
+    '--runtime', join(tree.root, 'runtime'),
     '--sidecar-rust', tree.rust,
     '--sidecar-go', tree.go,
     '--window-dist', tree.dist,
@@ -168,11 +179,19 @@ test('provisioning materializes the profile, the packages and the resources', (t
     assert.ok(existsSync(join(pkg, 'lib', 'index.js')), `${name} lib`)
     assert.ok(!existsSync(join(pkg, 'src')), `${name} 不搬 src/(运行时段之外不入包)`)
   }
+  // 2.1 闭包外的 patch 依赖也要落(不落就是 failed to import)
+  for (const name of RUNTIME_HOSTED_PATCH_DEPS) {
+    const pkg = join(profile, 'node_modules', '@deepseek-ai', name)
+    assert.ok(existsSync(join(pkg, 'package.json')), `${name} manifest`)
+    assert.ok(existsSync(join(pkg, 'lib', 'index.js')), `${name} lib`)
+  }
 
   // 3. 资源
   const resources = join(home, 'starhub', 'resources')
-  assert.ok(existsSync(join(resources, 'starhub-sidecar-rust')))
-  assert.ok(existsSync(join(resources, 'starhub-sidecar-go')))
+  const goName = process.platform === 'win32' ? 'starhub-sidecar.exe' : 'starhub-sidecar'
+  const rustName = process.platform === 'win32' ? 'starhub-sidecar-rust.exe' : 'starhub-sidecar-rust'
+  assert.ok(existsSync(join(resources, rustName)), 'Rust sidecar 落地')
+  assert.ok(existsSync(join(resources, goName)), 'Go sidecar 落地(名字必须与 GoSidecar::binary_name 一致)')
   assert.ok(existsSync(join(resources, 'starhub-react', 'index.html')))
   assert.ok(existsSync(join(home, 'starhub', 'provision.json')), '物化清单')
 
@@ -182,7 +201,10 @@ test('provisioning materializes the profile, the packages and the resources', (t
   assert.match(patch, /host: "?127\.0\.0\.1"?/)
   assert.match(patch, /port: 0(?!\d)/)
   assert.match(patch, new RegExp(`windowDist: '?${escapeRegExp(join(resources, 'starhub-react'))}'?`))
-  assert.match(patch, /sidecarCommand: '?\[".*starhub-sidecar-rust"\]'?/)
+  assert.match(patch, /sidecarCommand:\n {10}- '.*starhub-sidecar-rust(\.exe)?'/)
+  // sidecarCommand 必须是 YAML 数组:写成带引号的流序列会被解析成字符串,
+  // 桥的 Config 校验直接报「expected array but got [...]」(冒烟实测踩到)
+  assert.doesNotMatch(patch, /sidecarCommand: '/, '不能是带引号的流序列')
   // bridge 取代 sdk-jsonrpc-server(两者提供同一对服务,同时组合会 fail loud)
   assert.match(patch, /- id: starhub-bridge/)
   assert.doesNotMatch(patch, /^[ ]*- id: sdk-jsonrpc-server/m, 'desktop 组合不带 sdk-jsonrpc-server 行')
@@ -242,6 +264,12 @@ test('provisioning fails loud when an input is missing', (t) => {
   const third = provision(missingPackage, home)
   assert.notEqual(third.status, 0)
   assert.match(third.stderr, /StarHub 包目录缺失/)
+
+  // 闭包外依赖没了也要 fail loud(否则启动时才 failed to import)
+  const noRuntime = { ...tree, runtime: join(tree.root, 'no-runtime') }
+  const fourth = provision(noRuntime, home, ['--runtime', join(tree.root, 'no-runtime')])
+  assert.notEqual(fourth.status, 0)
+  assert.match(fourth.stderr, /闭包外依赖缺失/)
 })
 
 test('provisioning rejects an illegal profile name and port', (t) => {

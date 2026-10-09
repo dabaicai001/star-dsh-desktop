@@ -22,30 +22,59 @@ junction 本地包、spawn 便携 node。壳换成上游 Electron 之后没有 R
 
 ## 二、施工顺序
 
-1. ✅ **provisioning 脚本 + host-static dist Config 化**(本批):
-   - `scripts/provision-dsh.mjs`:物化 `$DSH_HOME/profiles/desktop/`
-     (manifest + `cordis.patch.yml` + `pnpm-workspace.yaml`)、落 10 个 StarHub
-     包、落两个 sidecar 二进制与 React 工作台 dist、按 id **行级幂等合并**
-     受管 patch 行、写物化清单;
-   - `scripts/lib/provision-patch.mjs`:合并纯逻辑(单独成模块才能单测);
-   - `vendor/.../examples/starhub-desktop/cordis.patch.yml`:desktop 组合的
-     patch 模板——与 starhub-web 模板只差两处:`starhub-bridge` 取代
-     `sdk-jsonrpc-server`(两者提供同一对私有服务,同时组合会 fail loud),
-     以及部署变化项写成占位符由 provisioning 填;
-   - `packages/starhub/host-static` 增加 `windowDist` Config:安装形态下 dist
-     不在仓库里,provisioning 把绝对路径写进 patch(遵守上游「No hardcoded
-     tunables」——部署变化项是 validated Config,不是插件里的常量);
-   - 测试:`tests/provision-dsh.test.mjs` 12 例(合并纯逻辑 6 + 端到端 6)、
-     `packages/starhub/host-static/tests/host-static.spec.ts` 3 例。
-2. ⬜ **打包 smoke**:用上游 electron-builder 打一个包 → 装到干净机器 →
-   跑 provisioning → 起壳 → 断言 9 插件激活 + sidecar 探活 + 工作台可开。
-   (上游 `apps/desktop/scripts/smoke-runtime.ts` 是同款路径的实证。)
+1. ✅ **provisioning 脚本 + host-static dist Config 化**(本批):见上。
+2. ✅ **打包冒烟**(本批,就在开发机上跑):`scripts/smoke-dsh-desktop.mjs`
+   —— provisioning 一个一次性 `$DSH_HOME` → 用**打包进去的便携 node**
+   (`src-tauri/binaries/dsh-runtime/node.exe`) boot 宿主进程 → 断言五条。
 3. ⬜ **CI 切换**:`release.yml` 的 `tauri:build` 链换成「上游 installer +
    StarHub provisioning」链;`linux-compat.yml` 同步。
 4. ⬜ **退役 `src-tauri/`**:删目录 + 清引用(根 `package.json` 脚本、
    `scripts/dev-dsh-shell.mjs`、`scripts/package-dsh-runtime.ts` 的
    `STARHUB_BINARIES_DIR`、CI)。**放在打包 smoke 通过之后**——smoke 需要
    Rust 侧的对照实现做 diff。
+
+### 第 2 步落地细节(打包冒烟)
+
+不拉 Electron,直接 boot 宿主进程——上游 `apps/desktop/scripts/smoke-runtime.ts`
+就是这么验「Host 启动 + 外部插件」的,同款路径。要证的只有一件事:
+**provisioning 装好的组合能真的跑起来**。
+
+```
+node scripts/smoke-dsh-desktop.mjs [--keep] [--port <n>] [--timeout <ms>]
+```
+
+断言五条:
+
+| 断言 | 证明什么 |
+|---|---|
+| `GET /starhub-react/` 返回工作台 index.html | host-static 用上了 provisioning 注入的 `windowDist`(安装形态没有仓库可回退) |
+| `POST /starhub/api/invoke get_assets` → `{ok:true,result:[]}` | bridge 真的 spawn 了 sidecar 并打通 JSON-RPC |
+| 未知命令 → `{ok:false,error}` 含 `method not found` | bridge 的 `ui.` 前缀 + 错误通路 |
+| `GET /starhub/api/events` 是 SSE 流 | 工作台事件面的共享连接 |
+| `db_mysql_test` 走到连接失败 | **Go sidecar 活着**(Rust 侧 lazy start 它) |
+
+**冒烟实测抓到的三个真 bug**(都已修,前两个有测试钉住):
+
+1. **`sidecarCommand` 被 YAML 解析成字符串而不是数组。** 模板里写成
+   `sidecarCommand: '@@占位符@@'`,provisioning 把占位符换成
+   `["C:\\...\\starhub-sidecar-rust.exe"]`——引号让 YAML 把它当字符串,桥的
+   Config 校验直接报 `expected array but got [...]`,插件 fail loud,连带
+   `starhub-session-registry` / `starhub-domain-events` 因等不到
+   `sdk-notifications` 全部 pending。改成 **YAML 块序列 + 单引号**(Windows
+   反斜杠在流序列里要靠引号转义,整行再加一层引号就有这个歧义)。
+2. **`--port` / `--host` 静默失效。** 首次物化直接落地模板,而模板里的
+   `webserver` 行是文档性缺省(`port: 0`)——构造好的受管行从没被合并进去。
+   改成首次物化也过一遍 `mergePatchRows`。
+3. **`tool-session-query` failed to import。** 它被 patch 的 insert 块按包名
+   引用,但不在 dsh CLI 的依赖闭包里;`$DSH_HOME` 又不在安装树里,Node 解析不到。
+   Rust 侧的答案是把这类包 junction 进 `profiles/node_modules`
+   (`RUNTIME_HOSTED_PATCH_DEPS`)——provisioning 照样做:新增 `--runtime`
+   指向打包好的 dsh 运行时,从它的 `node_modules` 里拷。
+
+另有一个环境坑记录在案:CLI 入口用 `import.meta.main` 自决是否执行,该特性要
+Node ≥24.2。本机开发的 node v24.0.0 会让它静默退出 0(不报错、不输出),冒烟
+因此必须用**打包进去的便携 node**(v24.19.0)——这也更接近生产,desktop 宿主
+spawn 的就是它。
 
 ## 三、本批的关键决定
 
@@ -86,16 +115,20 @@ spawn 的两个 sidecar。
 - `npm run test:provision`:12 例全绿(含端到端:假 vendor 树 + 假 sidecar +
   假 dist 跑真脚本;重跑幂等;用户 patch 行不被冲掉;缺输入 fail loud 且不物化
   半套);
+- `npm run smoke:dsh-desktop`:**五条断言全绿**(开发机实跑,见第 2 节);
 - `packages/starhub/host-static`:`tsc -b` 零错误 + 3 例新 spec 全绿;
 - provisioning 的受管行在 patch 里**各只有一个 `config:` 块**(防摞叠);
 - patch 里不出现 `- id: sdk-jsonrpc-server`(bridge 已取代);
+- `sidecarCommand` 是 YAML **数组**(块序列),不是带引号的流序列字符串。
 
 ## 五、仍挂着的事
 
-- **打包 smoke 未跑**:需要一台干净机器(或容器)装包验证。
+- **Electron 壳本身的冒烟**:本批 boot 的是宿主进程(上游 smoke-runtime.ts 同款
+  路径),Electron 窗口层要等一次真安装包。
 - **真机联调(M3-6)**:Android 设备接上后跑 scrcpy H.264 + 接管互斥 + 延迟实测。
 - **`npm run cargo:test`(src-tauri 全量)**:机器内存在链接阶段跑不完;
   `cargo check` / `check --tests` 均通过。
 - **`ui.alert_test_webhook` 降级**:要不要单独开一个「给 sidecar 加 reqwest」
   的小提交。
 - **16 个 `browser_*` 模型面工具**:是否整体删除(连同能力文本契约)单独评审。
+- **CI 未切**:`release.yml` 仍是 `tauri:build` 链。
