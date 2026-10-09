@@ -110,18 +110,6 @@ const bundledPath = join(binDir, `starhub-sidecar-${rustTargetTriple()}${extensi
 copyFileSync(outputPath, bundledPath)
 ensureExecutable(bundledPath)
 verifySidecar(bundledPath)
-console.log(`Tauri external binary verified: ${bundledPath}`)
-
-const targetProfiles = release ? ['release', 'debug'] : ['debug']
-for (const profile of targetProfiles) {
-  const targetDir = join(projectRoot, 'src-tauri', 'target', profile)
-  if (existsSync(targetDir)) {
-    const syncedPath = join(targetDir, outputName)
-    copyFileSync(outputPath, syncedPath)
-    ensureExecutable(syncedPath)
-    verifySidecar(syncedPath)
-    console.log(`Sidecar synced and verified: ${syncedPath}`)
-  }
-}
+console.log(`Target-tagged sidecar verified: ${bundledPath}`)
 
 console.log(`Sidecar built: ${outputPath}`)

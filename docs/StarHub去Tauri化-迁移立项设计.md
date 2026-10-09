@@ -32,7 +32,8 @@ DeepSeek Harness desktop(上游 Electron 壳,零改动)
     └── 直播/接管面板(client-nav 的 keyed main 槽;帧源只有 Android 真机)
 
 消亡:src-tauri 的 harness/(7320 行,Electron Host 取代)、246 个 tauri::command
-     层(平移为 sidecar JSON-RPC 方法面)、Tauri 打包/ACL/窗口/更新栈。
+     层(平移为 sidecar JSON-RPC 方法面)、Tauri 打包/ACL/窗口/更新栈
+      ——**M4 已整体删除**。
 保留:Go sidecar(零改动)、Rust 域逻辑(Tauri 无关部分 ~85-90%)及其单测、
       9 插件、React 工作台(dist-starhub-react)。
 ```
@@ -177,7 +178,8 @@ DeepSeek Harness desktop(上游 Electron 壳,零改动)
   提供 browser-use / computer-use 及其可见面,StarHub 重复造一份只会双轨维护
   (2026-10-09 定稿)。
 - **M4 发布链**:provisioning + electron-builder 打包 smoke + 退役
-  src-tauri + CI 切换。
+  src-tauri + CI 切换。**已全部完成(2026-10-09)**:Linux 不发版(上游无
+  Linux desktop target,决策 A:等上游);macOS 缺签名证书,本期只发 Windows。
 
 ## 九、验收总纲
 

@@ -1,1 +1,0 @@
-{"function": "() => { const style = document.createElement('style'); style.textContent = '.debug-tool-call-host { width: 164px; border: 1px dashed red; padding: 0; background: #222; }'; document.head.appendChild(style); const host = document.createElement('div'); host.className = 'debug-tool-call-host'; document.body.appendChild(host); return 'ok'; }"}

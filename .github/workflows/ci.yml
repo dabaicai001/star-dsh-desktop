@@ -76,8 +76,9 @@ jobs:
         run: go test ./...
 
       - name: Test Rust sidecar (domains + protocol)
-        # sidecar-rust 是 M1 起域逻辑的新家;src-tauri 的全量 cargo test 内存峰值
-        # 极高(本地 27GB 机都 OOM),M4 退役 src-tauri 之后这道门由它独担。
+        # sidecar-rust 是 M1 起域逻辑的新家。src-tauri 已退役(M4 第 4 步),
+        # 这道门由它独担——原来的 src-tauri 全量 cargo test 内存峰值 27GB,
+        # CI 上跑不动。
         # ARM64 runner 仅 16GB 内存,限制并行编译单元。
         env:
           CARGO_BUILD_JOBS: ${{ matrix.name == 'ARM64' && '2' || '4' }}

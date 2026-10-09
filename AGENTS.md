@@ -4,41 +4,31 @@
 
 ## 项目是什么
 
-StarHub 是跨平台(Windows / macOS / Linux)DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / PostgreSQL / SQLite / Redis / ClickHouse / SQL Server / Elasticsearch)、SSH 终端、SFTP、Docker 面板、AI 助手。
+StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / PostgreSQL / SQLite / Redis / ClickHouse / SQL Server / Elasticsearch)、SSH 终端、SFTP、Docker 面板、Android 真机、AI 助手。
+
+**StarHub 不是桌面项目,是上游 DeepSeek Harness Electron 壳的外部插件集**:桌面壳、品牌/签名/更新栈都是上游的,StarHub 交付「插件 + 两个 sidecar 子进程 + 静态资产」三件套。去 Tauri 化(M1–M4)已把原来的 Tauri 壳整体退役,详见 `docs/去Tauri化-M1..M4-*.md` 四份清单。
 
 | 项 | 值 |
 |---|---|
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.127.0(**AI 内核整体升级到上游 `dsh-v0.2.1-alpha.1`(commit `5badb15009`,上游 master HEAD,跨越 0.1.7-rc.2 / 0.2.0-rc.1 / 0.2.0-rc.2 四个上游发布)**:`vendor/deepseek-harness` 整树替换;差异盘点为上游演进 4011 / 新增 1914 / 移除 1006 / 本地独有 315 全保留,`packages/starhub/*`、`apps/starhub-window`、`examples/starhub-*` 在上游演进清单里为 0 条,解耦目标继续成立;适配上游 `dsh-v0.2.0-rc.2`「runtime invariants 移除」破坏性变更——9 个插件包 + 2 个兼容垫片包的 `./invariant` 伴生插件按官方迁移指南整体移除;`pnpm-workspace.yaml` overrides 钉回上游 lockfile 的 micromark 三包版本(新发补丁版与 `mdast-util-from-markdown@2.0.3` 在 `exactOptionalPropertyTypes` 下类型不兼容);lockfile 带全部 StarHub importer,CI 冻结安装通过;验证:build:lib:host/client(含上游新增 desktop bundle 链)、build:window、vitest 69 spec/1088 例、Rust 230 passed 全绿;适配清单 `docs/DSH升级适配清单-v0.2.1-alpha1.md`。) |
+| 当前版本 | v0.127.0 |
 
 ## 架构一句话
 
-三层进程:**Rust 主进程(Tauri 2,`src-tauri/`)** 管窗口、SSH/SFTP、密钥环、AI 浏览器 → **Go Sidecar(`sidecar/`)** 经 stdio JSON-RPC 管全部数据库/中间件适配 → **前端** 是 DeepSeek Harness 主壳 + StarHub React 工作台(`vendor/deepseek-harness/`,上游 `deepseek-ai/deepseek-harness` 的 vendored 副本,随仓库直接版本化)。
+三层进程:**上游 Electron 壳(零改动)** 跑 dsh Host(Node)进程 → Host 里的 **starhub-bridge 插件** spawn 两个 sidecar:**Rust sidecar(`sidecar-rust/`,ssh/sftp/android/desktop/browser 契约层 + 直播帧枢纽)** 与 **Go Sidecar(`sidecar/`,数据库/中间件适配)**,均经 stdio 换行分帧 JSON-RPC 通话 → **前端**是 DSH 主壳 + StarHub React 工作台(`vendor/deepseek-harness/`,上游 `deepseek-ai/deepseek-harness` 的 vendored 副本,随仓库直接版本化)。
 
 ## 目录结构
 
 ```
 starhub/
-├── src-tauri/               # Rust 主进程(Tauri 2)
-│   ├── src/
-│   │   ├── main.rs           # 入口(主窗口关闭联动销毁其余窗口)
-│   │   ├── commands/         # 全部 Tauri Command:ssh / sftp / db / docker / ai_memory /
-│   │   │                     # android(Android 设备设置)/ asset / audit / alert / broker /
-│   │   │                     # browser / desktop(沙箱桌面 UI)/ harness /
-│   │   │                     # local(仅 local_shell_exec)/ mcp / screenshot / secret / sidecar
-│   │   ├── ssh/              # SSH 会话(russh):auth / session / known_hosts / sftp_transport
-│   │   ├── sftp/             # SFTP 会话与传输(russh-sftp)
-│   │   ├── android/          # Android 实体机(adb):mod(授权/直播双模/scrcpy 通道/20 工具)
-│   │   ├── browser/          # AI 浏览器(无痕独立窗口):mod / script / cdp(Win)/ snapshot_*(mac/Linux)
-│   │   ├── desktop/          # 沙箱桌面(Ubuntu 容器沙箱平台):mod(编排/授权/接管)/ recipe(配方)
-│   │   ├── harness/          # dsh 桥与插件宿主(harness/plugins)
-│   │   ├── db/               # 本地 SQLite 持久化(sqlx)
-│   │   ├── keyring/          # 系统 Keyring 封装
-│   │   └── sidecar/          # Go Sidecar 启动器
-│   ├── capabilities/         # Tauri 权限(按窗口收窄)
-│   └── tauri.conf.json
+├── sidecar-rust/           # Rust sidecar(M1 起域逻辑的新家)
+│   └── crates/
+│       ├── starhub-sidecar      # 二进制 + stdio JSON-RPC 方法面(模型面 + ui.* 面)
+│       ├── starhub-live         # 直播/接管帧枢纽(M3):本地 WS + Android 帧源
+│       ├── starhub-contract     # 领域事件 schema + 模型可读能力文本
+│       └── starhub-domain-{ssh,db,desktop,android,browser}
 │
 ├── sidecar/                 # Go 1.25 Sidecar — 数据库/中间件代理
 │   ├── main.go               # stdio JSON-RPC server 入口
@@ -53,24 +43,35 @@ starhub/
 │   ├── apps/
 │   │   ├── starhub-window/   # StarHub 资产工作台构建入口(产物 dist-starhub-react/)
 │   │   ├── web/  cli/        # DSH 自身应用
-│   │   └── desktop/ desktop-host/  # 上游 DSH 自家 Electron 桌面壳(随整树 vendored,StarHub 不启动它)
-│   └── packages/starhub/     # 9 个内置插件:approval-bridge / client-nav / commit-message /
-│                             # domain-events / host-static / live-context /
+│   │   └── desktop/ desktop-host/  # 上游 DSH 自家 Electron 桌面壳(发布链用它打包)
+│   ├── examples/
+│   │   ├── starhub-web/      # web 组合的 profile 模板(旧 Tauri 壳用)
+│   │   └── starhub-desktop/  # desktop 组合的 profile 模板(provisioning 用)
+│   └── packages/starhub/     # 10 个内置插件:approval-bridge / bridge / client-nav /
+│                             # commit-message / domain-events / host-static / live-context /
 │                             # session-registry / tool-context / tools
 │
-├── legacy-core/             # 脱离前端的纯 TS 工具与服务(node --test 覆盖)
-├── scripts/                 # 构建脚本:build-sidecar / build-window / dev-dsh-shell /
-│                            # bump-version / cargo-env.bat(MSVC)/ refresh-icons / verify-linux-bundles
-├── tests/                   # node --test 单测(utils、AI 上下文/滚动/记忆、SSH prompt/cwd/后台任务)
-├── docs/                    # 技术方案 / 设计系统 / 踩坑记录 / 已知坑索引 / 架构图.html
-└── .github/                 # CI(lint / test / build / release)
+├── scripts/
+│   ├── provision-dsh.mjs     # M4:把 StarHub 组合装进 dsh profile
+│   ├── smoke-dsh-desktop.mjs # M4:provisioning + 宿主进程冒烟
+│   ├── build-sidecar.*       # Go sidecar 构建
+│   ├── build-window.mjs      # React 工作台构建
+│   ├── bump-version.mjs      # 版本号同步
+│   └── cargo-sidecar.bat     # Windows 上跑 sidecar-rust 的 cargo(MSVC + 工具链)
+│
+├── dsh-runtime/             # 打包好的 dsh 运行时(gitignore;package:dsh-runtime 产出)
+├── dist-starhub-react/      # React 工作台产物(gitignore)
+├── docs/                    # 技术方案 / 设计系统 / 踩坑记录 / 已知坑索引 / 去Tauri化 M1-M4 清单
+├── test-sftp/               # SSH/SFTP stub + 桥兼容验收脚本
+└── tests/                   # node --test 单测(utils、AI 上下文/滚动/记忆、SSH prompt/cwd/后台任务、provisioning)
 ```
 
 ## 技术栈速查
 
 - **前端**:React + TypeScript 5(strict)+ Vite 5;xterm.js 6(终端)、CodeMirror 6(SQL)、zmodem.js
-- **Rust**:tauri 2、tokio、russh 0.62 + russh-sftp 2、sqlx(SQLite + FTS5)、reqwest、keyring-core、serde、tracing、thiserror/anyhow;AI 浏览器平台 crate(webview2-com / objc2-web-kit / webkit2gtk 2.0.2)版本必须与 wry 0.55 锁定一致
+- **Rust**:tokio、russh 0.62 + russh-sftp 2、serde、thiserror/anyhow;sidecar-rust 是独立 workspace(零 tauri 依赖,`cargo tree` 不应出现 tauri crate)
 - **Go**:go-sql-driver/mysql、jackc/pgx、modernc.org/sqlite(纯 Go)、go-redis、clickhouse-go、go-mssqldb、go-elasticsearch、docker/docker、zerolog
+- **Node**:上游 dsh Host(desktop profile)+ starhub-bridge 插件
 
 **铁律 — 新功能优先以 dsh 插件形式注入,禁止改 vendor 内核源码。** 新能力落在 `vendor/deepseek-harness/packages/starhub/*`,经槽位系统(`ctx.slots.register` / `slots.inject`)或 Cordis 服务(`ctx.provide` / `ctx.get`)接入。仅两种例外可动 vendor 源码:(1) 修 DSH 自身的 bug(注释标注「上游补丁」);(2) 扩展点上无法表达且改动最小。不新增 Vue 系依赖。
 
@@ -79,34 +80,36 @@ starhub/
 ```bash
 npm install && pnpm --dir vendor/deepseek-harness install   # 安装依赖
 
-npm run tauri:dev            # 完整开发:构建 sidecar + React 工作台,启动桌面壳
-npm run build:window         # 只构建 React 工作台(→ dist-starhub-react/)
+npm run build:window         # 构建 React 工作台(→ dist-starhub-react/)
 npm run sidecar:build        # Go Sidecar(加 :release 为 release 构建)
-
-npm run cargo:check          # Rust 检查(scripts/cargo-env.bat 先加载 MSVC 环境;
-npm run cargo:test           #   vcvars64.bat 路径取 STARHUB_VCVARS,缺省回退 D:\c++1)
+npm run sidecar-rust:build   # Rust sidecar(Windows 经 scripts/cargo-sidecar.bat 加载 MSVC)
 
 npm run test:utils           # node --test 纯逻辑套件;其余套件见 package.json scripts
-npm run package:dsh-runtime  # 打包 DSH runtime
-npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排全链路)
+npm run test:provision       # provisioning 合并逻辑单测
+npm run smoke:dsh-desktop    # provisioning + 宿主进程冒烟(五条断言)
+npm run verify:bridge-compat # 真 sidecar 二进制 ↔ 桥兼容层全工具面验收
+
+npm run package:dsh-runtime  # 打包 dsh 运行时(→ dsh-runtime/)
+npm run provision:dsh        # 把 StarHub 组合装进一个 dsh profile
+npm run version              # 版本号同步(见下)
+
+# 上游 Electron 壳(发布链)
+pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 ```
 
 ## 开发约定
 
-**提交信息**:Conventional Commits + emoji 前缀:`✨ feat` / `🐛 fix` / `📝 docs` / `🔧 chore` / `⬆️ upgrade` / `⚡ perf` / `✅ test` / `🎨 style`,格式 `<emoji> <type>(scope): <subject>`。一次 commit 只装一个主题。
+**提交信息**:Conventional Commits + emoji 前缀:`✨ feat` / `🐛 fix` / `📝 docs` / `🔧 chore` / `⬆️ upgrade` / `⚡ perf` / `✅ test` / `🎨 style` / `♻️ refactor` / `🗑️ remove`,格式 `<emoji> <type>(scope): <subject>`。一次 commit 只装一个主题。
 
 **分支**:`main` 主干;`feat/<name>` / `fix/<name>` / `docs/<name>` / `refactor/<name>` / `release/v<x.y.z>`。
 
 **代码风格**:TS `strict`、禁 `any`(用 `unknown`);Rust 过 `cargo fmt` + `clippy`;Go 过 `gofmt`;公共 API 写文档注释;面向用户文案走 i18n,禁硬编码;全仓库 UTF-8 无 BOM。
 
-**新增 Tauri command 三道同步(反复踩坑,勿再犯)**:tauri 2.x 对 remote origin(127.0.0.1 dsh 主壳)的 app command 也走 ACL,新增/重命名 command 必须同时改三处 `generate_handler!`(`src-tauri/src/main.rs`)、`permissions/commands.toml` 的 `starhub-commands` 白名单、前端调用方。`tauri-build` **不会**因白名单缺 command 报错(构建/单测全绿),只有从 dsh 主壳真实点按钮才暴露「Command xxx not allowed by ACL」。曾多次踩坑(如 v0.106.2 `desktop_ui_open_live_window`、v0.113.2 `dsh_web_restart`)。
-
 ## 版本与提交纪律(强制)
 
 1. **改完立即 commit + push**:工作区不允许长期挂未提交改动;不把自己的改动和用户已有的未提交改动塞进同一个 commit(diff 不干净时只 commit 自己审过的部分,其余明确告知用户)。
 2. **代码或构建链改动必须升版**,纯文档改动(docs/、README 正文、注释)免升版。判断标准:会不会改变打包产物或用户可感知行为?不会 → 免升版;拿不准 → 升。
-3. **升版同步七处**:`package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/tauri.conf.json`、`CHANGELOG.md`、`AGENTS.md`(本节「当前版本」)、`README.md`(版本 badge)。七处必须一致。
-   - **README「当前版本」只保留最新一条**:`README.md` 顶部的「当前版本」章节只写**当前发布版**那一节,其余历史版本一律不写(历史版本只在 `CHANGELOG.md` 里,README 用一行「历史版本见 CHANGELOG.md」替代)。新增/升版时把这一节整体替换为最新版本,避免 README 越积越长。
+3. **升版同步四处**(M4 退役 src-tauri 之后从七处降下来):`package.json`、`CHANGELOG.md`、`AGENTS.md`(本节「当前版本」)、`README.md`(版本 badge)。`npm run version` 一键搞定。
 4. **版本号规则**:主版本 = 架构不兼容变更;次版本 = 新功能;修订版 = bug 修复 / 小改进 / 构建脚本调整。
 5. **CHANGELOG**:改动在 `[未发布]` 下补条目,发布时移到 `[x.y.z] - YYYY-MM-DD` 下。
 6. **tag 与 Release**:`release.yml` 由 `v*.*.*` tag 触发;一次 push 最多触发 3 个 tag,超出静默丢弃;多版本只在最后推最新 tag,单个推(`git tag vX.Y.Z && git push origin vX.Y.Z`);纯文档修订版不打 tag。
@@ -115,10 +118,11 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 | 层 | 工具 | 命令 |
 |---|---|---|
-| 前端纯逻辑 | node --test | `npm run test:utils` / `test:ai-context` / `test:ai-scroll` / `test:ai-steering` / `test:ssh-prompt` / `test:terminal-cwd` / `test:ssh-bg` 等(见 `package.json`) |
-| 前端组件 | Vitest | vendor/deepseek-harness 内 `pnpm` 脚本 |
-| Rust | cargo test | `npm run cargo:test` |
-| Go | go test | `cd sidecar && go test ./...`(adapters 已有 `*_test.go`) |
+| 前端纯逻辑 | node --test | `npm run test:utils` 等(见 package.json scripts) |
+| 前端组件 | Vitest | `vendor/deepseek-harness` 内 `pnpm` 脚本 |
+| Rust | cargo test | `npm run sidecar-rust:test`(Windows)/ `cargo test --manifest-path sidecar-rust/Cargo.toml` |
+| Go | go test | `cd sidecar && go test ./...` |
+| 发布链 | node --test + 冒烟 | `npm run test:provision` + `npm run smoke:dsh-desktop` |
 
 ## 文档维护(强制)
 
@@ -133,4 +137,4 @@ npm run tauri:build          # 当前平台打包(beforeBuildCommand 已编排�
 
 ---
 
-*最后更新: 2026-10-08 (v0.127.0)*
+*最后更新: 2026-10-09 (v0.127.0)*

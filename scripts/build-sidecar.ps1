@@ -66,18 +66,7 @@ try {
     $extension = if ($targetOS -eq "windows") { ".exe" } else { "" }
     $bundledPath = Join-Path $binDir "starhub-sidecar-$targetTriple$extension"
     Copy-Item $outputPath $bundledPath -Force
-    Write-Host "  Tauri external binary: $bundledPath" -ForegroundColor DarkGray
-
-    # 同步到 Tauri target 目录,防止运行时优先命中历史二进制
-    $projectRoot = Join-Path $PSScriptRoot ".."
-    $profiles = if ($Release) { @("release", "debug") } else { @("debug") }
-    foreach ($profile in $profiles) {
-        $targetDir = Join-Path $projectRoot "src-tauri" "target" $profile
-        if (Test-Path $targetDir) {
-            Copy-Item $outputPath (Join-Path $targetDir $outputName) -Force
-            Write-Host "  Synced to $targetDir" -ForegroundColor DarkGray
-        }
-    }
+    Write-Host "  Target-tagged sidecar: $bundledPath" -ForegroundColor DarkGray
 } finally {
     Pop-Location
 }

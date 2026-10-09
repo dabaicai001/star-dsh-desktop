@@ -5,8 +5,7 @@
  * Tauri 壳退役后,「把 StarHub 组合装进 dsh」这件事原来由 Rust 主进程在启动时
  * 做(`src-tauri/src/harness/web.rs`:物化 profile、junction 本地包、改写
  * webserver 端口、spawn 便携 node)。壳换成上游 Electron 之后没有 Rust 主进程
- * 了,同样的活由本脚本在**安装后 / 首次启动前**做一次:
- *
+ * 了,同样的活由本脚本在**安装后 / 首次启动前**做一次: *
  * 1. 物化 `$DSH_HOME/profiles/<profile>/`——`package.json`(manifest,含
  *    `dsh.profile.bundles`)、`cordis.patch.yml`、`pnpm-workspace.yaml`
  *    (上游 `initProfile` 的同款三件套,不跑包管理器);
@@ -68,7 +67,7 @@ const PROFILE_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
  * 名字不是随便起的:Rust sidecar 用 `GoSidecar::binary_name()` 找 Go 兄弟进程,
  * Windows 上是 `starhub-sidecar.exe`(即 `exe_dir.join(binary_name)`)——与 Tauri
  * 打包期的布局一致(`build-sidecar.mjs` 把 Go 产物同步到
- * `src-tauri/target/debug/starhub-sidecar.exe`)。所以 Go 侧必须落成
+ * `sidecar/bin/starhub-sidecar.exe`)。所以 Go 侧必须落成
  * `starhub-sidecar[.exe]`,Rust 侧落成 `starhub-sidecar-rust[.exe]`。
  */
 const SIDECAR_TARGET_NAMES = {
@@ -106,7 +105,7 @@ const DEFAULTS = {
   resources: null,
   sidecarRust: null,
   sidecarGo: null,
-  runtime: join(repoRoot, 'src-tauri', 'binaries', 'dsh-runtime'),
+  runtime: join(repoRoot, 'dsh-runtime'),
   windowDist: join(repoRoot, 'dist-starhub-react'),
   host: '127.0.0.1',
   port: 0,
@@ -158,7 +157,7 @@ function usage() {
     '  --home <dir>          DSH_HOME(profile 的父目录)。',
     '  --profile <name>      profile 名,缺省 desktop。',
     '  --vendor <dir>        vendor/deepseek-harness 根。',
-    '  --runtime <dir>       打包好的 dsh 运行时根(取其 node_modules 里闭包外的 patch 依赖),缺省 src-tauri/binaries/dsh-runtime。',
+    '  --runtime <dir>       打包好的 dsh 运行时根(取其 node_modules 里闭包外的 patch 依赖),缺省 dsh-runtime。',
     '  --resources <dir>     sidecar 与工作台 dist 的落地目录,缺省 <home>/starhub/resources。',
     '  --sidecar-rust <path> starhub-sidecar-rust 二进制(缺省构建输出)。',
     '  --sidecar-go <path>   starhub-sidecar-go 二进制(缺省构建输出)。',

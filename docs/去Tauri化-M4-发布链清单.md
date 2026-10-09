@@ -22,16 +22,13 @@ junction 本地包、spawn 便携 node。壳换成上游 Electron 之后没有 R
 
 ## 二、施工顺序
 
-1. ✅ **provisioning 脚本 + host-static dist Config 化**(本批):见上。
-2. ✅ **打包冒烟**(本批,就在开发机上跑):`scripts/smoke-dsh-desktop.mjs`
-   —— provisioning 一个一次性 `$DSH_HOME` → 用**打包进去的便携 node**
-   (`src-tauri/binaries/dsh-runtime/node.exe`) boot 宿主进程 → 断言五条。
-3. ✅ **CI 切换**(本批):`linux-compat.yml` → `.github/workflows/ci.yml`
+1. ✅ **provisioning 脚本 + host-static dist Config 化**:见上。
+2. ✅ **打包冒烟**(开发机实跑):`scripts/smoke-dsh-desktop.mjs`
+   —— provisioning 一个一次性 `$DSH_HOME` → 用 `dsh-runtime/` 里的便携 node
+   boot 宿主进程 → 断言五条。
+3. ✅ **CI 切换**:`linux-compat.yml` → `.github/workflows/ci.yml`
    (PR 门),`release.yml` 的 windows job 换链。
-4. ⬜ **退役 `src-tauri/`**:删目录 + 清引用(根 `package.json` 脚本、
-   `scripts/dev-dsh-shell.mjs`、`scripts/package-dsh-runtime.ts` 的
-   `STARHUB_BINARIES_DIR`、CI)。**放在打包 smoke 通过之后**——smoke 需要
-   Rust 侧的对照实现做 diff。
+4. ✅ **退役 `src-tauri/`**(本批):删目录 + 清全部引用。
 
 ### 第 3 步落地细节(CI 切换)
 
@@ -46,9 +43,36 @@ junction 本地包、spawn 便携 node。壳换成上游 Electron 之后没有 R
 | **provisioning + 宿主冒烟** | `npm run smoke:dsh-desktop` |
 
 Rust 门从 src-tauri 的全量 `cargo test` 换成 sidecar-rust 的:前者内存峰值
-27GB(本地机都 OOM),而且 src-tauri 随第 4 步退役。冒烟前置要构建两个
-sidecar + 工作台 dist + `package:dsh-runtime`(冒烟用打包进去的便携 node 启动
-宿主进程)。
+27GB(本地机都 OOM)。冒烟前置要构建两个 sidecar + 工作台 dist +
+`package:dsh-runtime`(冒烟用 `dsh-runtime/` 里的便携 node 启动宿主进程)。
+
+### 第 4 步落地细节(退役 src-tauri)
+
+**先把依赖挪走,再删。** 冒烟与 provisioning 都指着 `src-tauri/binaries/dsh-runtime`
+(便携 node + 运行时树),所以第一步是把产物目录挪到仓库根 `dsh-runtime/`:
+`package-dsh-runtime.ts` 的 `STARHUB_BINARIES_DIR`、provisioning 的 `--runtime`
+缺省、冒烟的 `resolveNode()` 三处同改;`.gitignore` 的忽略项跟着换。挪完立刻
+重跑 `test:provision` + `smoke:dsh-desktop` 确认没踩空。
+
+然后删目录与清引用:
+
+| 删 | 原因 |
+|---|---|
+| `src-tauri/` | Tauri 壳整体退役(246 command / capabilities / 窗口栈 / 打包链) |
+| `shell-placeholder/` | Tauri 跳板页(壳没了,没有 webview 要导 URL) |
+| `icons/` | Tauri 打包图标(上游 electron-builder 用自己的品牌图标) |
+| `scripts/dev-dsh-shell.mjs` | Tauri dev 壳的 beforeDevCommand |
+| `scripts/cargo-env.bat` | 只认 src-tauri;`cargo-sidecar.bat` 已取代 |
+| `scripts/refresh-icons.ps1` / `verify-linux-bundles.sh` / `build-linux-jammy.sh` / `build-wsl-linux.sh` | 分别服务 Tauri 图标、Tauri 包审计、Linux Tauri 构建 |
+| obscura 构建/测试五个脚本 | browser 帧源已在 M3 定稿去掉 |
+| 根 `package.json` 的 tauri/cargo/obscura 脚本 + `@tauri-apps/*` 依赖 | 壳没了 |
+
+`release.yml` 的 linux / linux-legacy 两个 job **整体删除**(决策 A:等上游出
+Linux target,不保留禁用僵尸);`publish` 的 `needs` 只剩 `windows`。
+
+**升版同步从七处降到四处**:`package.json` / `CHANGELOG.md` / `AGENTS.md` /
+`README.md`——原 `src-tauri/Cargo.toml`、`Cargo.lock`、`tauri.conf.json` 三处
+随壳消失,`scripts/bump-version.mjs` 的三步删除、编号重排。
 
 **发布链(`release.yml` windows job)**:
 
@@ -150,18 +174,20 @@ spawn 的两个 sidecar。
 - `packages/starhub/host-static`:`tsc -b` 零错误 + 3 例新 spec 全绿;
 - provisioning 的受管行在 patch 里**各只有一个 `config:` 块**(防摞叠);
 - patch 里不出现 `- id: sdk-jsonrpc-server`(bridge 已取代);
-- `sidecarCommand` 是 YAML **数组**(块序列),不是带引号的流序列字符串。
+- `sidecarCommand` 是 YAML **数组**(块序列),不是带引号的流序列字符串;
+- `src-tauri` 删除后:`npm run sidecar-rust:test` 全绿、`npm run smoke:dsh-desktop`
+  全绿、`npm run test:provision` 全绿、`verify:bridge-compat` 全绿;
+  仓库里 `src-tauri` / `tauri` 引用只存在于历史文档(CHANGELOG / docs 踩坑记录)。
 
 ## 五、仍挂着的事
 
-- **Electron 壳本身的冒烟**:本批 boot 的是宿主进程(上游 smoke-runtime.ts 同款
+- **Electron 壳本身的冒烟**:boot 的是宿主进程(上游 smoke-runtime.ts 同款
   路径),Electron 窗口层要等一次真安装包。
-- **Linux 发布路径待决策**:上游 Electron 壳没有 Linux target,deb/rpm 没有
-  对应物。两个 job 已禁用但保留,决策后再接回或删除。
+- **Linux 不发版(决策 A:等上游)**:上游没有 Linux desktop target,deb/rpm 随
+  Tauri 壳退役;`release.yml` 的 linux job 已删,上游出 target 后加回来即可。
 - **真机联调(M3-6)**:Android 设备接上后跑 scrcpy H.264 + 接管互斥 + 延迟实测。
-- **`npm run cargo:test`(src-tauri 全量)**:机器内存在链接阶段跑不完;
-  `cargo check` / `check --tests` 均通过。第 4 步删掉 src-tauri 之后这道门
-  由 sidecar-rust 独担。
 - **`ui.alert_test_webhook` 降级**:要不要单独开一个「给 sidecar 加 reqwest」
   的小提交。
 - **16 个 `browser_*` 模型面工具**:是否整体删除(连同能力文本契约)单独评审。
+- **凭据迁移(§六/R7)**:Tauri SQLite + Keyring → sidecar JSON + dsh credentials;
+  src-tauri 已删,SQLite 里的资产数据需要一次性导入工具(见 M2 清单 §六)。

@@ -1,8 +1,8 @@
 /**
- * StarHub dsh-runtime 入包脚本(P4b):便携 Node + vendor prod 闭包整体入包。
+ * StarHub dsh-runtime 打包脚本(P4b):便携 Node + vendor prod 闭包整体打包。
  *
- * 产出 `src-tauri/binaries/dsh-runtime/`(由 tauri.conf.json 的 bundle.resources
- * 引用,Tauri 打包后落在 `resource_dir()/dsh-runtime`):
+ * 产出 `dsh-runtime/`(仓库根;M4 退役 src-tauri 之后 Tauri 的 bundle.resources
+ * 不再引用它,改用它的两处:provisioning 的 `--runtime` 与冒烟的便携 node):
  *   node(.exe)                    # 官方 node24 portable(按目标平台)
  *   node_modules/                 # pnpm deploy --prod 物化后的依赖闭包
  *                                  # (含补入的 dsh web 运行时包,见
@@ -41,8 +41,8 @@ const root = resolve(import.meta.dirname, '..')
 const DEPLOY_ROOT_PACKAGE = 'dsh-python-runtime-closure'
 /** staging 目录(vendor 内,打包后即可丢弃)。 */
 const STAGING_DIR = 'dist-exe/.starhub-staging'
-/** StarHub src-tauri/binaries(相对 vendor 根向上两级)。 */
-const STARHUB_BINARIES_DIR = resolve(root, '..', '..', 'src-tauri', 'binaries')
+/** StarHub 仓库根的 dsh-runtime 产物目录(相对 vendor 根向上两级)。 */
+const STARHUB_BINARIES_DIR = resolve(root, '..', '..')
 /** 最终资源目录名。 */
 const OUTPUT_DIR = 'dsh-runtime'
 /** legacy deploy 可能把直接依赖 hoist 回 deploy source 的 node_modules。 */

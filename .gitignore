@@ -2,12 +2,10 @@
 #  依赖与构建产物
 # ============================================
 
-# Rust / Tauri
+# Rust
 target/
 **/*.rs.bk
 Cargo.lock.bak
-# 保留根 Cargo.lock,Tauri workspace 模式需要
-!**/Cargo.lock
 
 # Node / Vue
 node_modules/
@@ -70,13 +68,6 @@ coverage/
 .directory
 .Trash-*
 
-# Tauri 特定
-src-tauri/target/
-src-tauri/target-*/
-src-tauri/gen/
-# dsh runtime 入包产物(由 npm run package:dsh-runtime 生成)
-src-tauri/binaries/
-
 # 跨平台
 # Windows
 $RECYCLE.BIN/
@@ -93,6 +84,9 @@ ehthumbs.db
 # Docker
 .dockerignore-target/
 
+# dsh runtime 打包产物(由 npm run package:dsh-runtime 生成;M4 退役 src-tauri
+# 之后从 src-tauri/binaries/ 挪到仓库根,provisioning 与冒烟都指到这里)
+dsh-runtime/
 # 数据库本地数据(开发用)
 *.db
 *.db-journal
@@ -103,10 +97,6 @@ data/local/
 # 用户资产与配置(不要提交)
 assets.local.json
 config.local.toml
-
-# Logo 候选与临时备份(手动迭代用,不入仓;注意 src-tauri/icons/ 是 Tauri 必需资源,不能误伤)
-/icons/_candidates/
-/icons/_original/
 
 # Python 虚拟环境(e2e 测试服务器依赖)
 test-sftp/.venv/

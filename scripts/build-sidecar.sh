@@ -59,17 +59,4 @@ EXTENSION=""
 if [[ "$TARGET_OS" == "windows" ]]; then EXTENSION=".exe"; fi
 BUNDLED_PATH="$BIN_DIR/starhub-sidecar-$TARGET_TRIPLE$EXTENSION"
 cp "$OUTPUT_PATH" "$BUNDLED_PATH"
-echo "  Tauri external binary: $BUNDLED_PATH"
-
-# 同步到 Tauri target 目录,防止运行时优先命中历史二进制
-PROFILES=("debug")
-if [[ "${1:-}" == "--release" ]]; then
-    PROFILES=("release" "debug")
-fi
-for PROFILE in "${PROFILES[@]}"; do
-    TARGET_DIR="$SCRIPT_DIR/../src-tauri/target/$PROFILE"
-    if [ -d "$TARGET_DIR" ]; then
-        cp "$OUTPUT_PATH" "$TARGET_DIR/$OUTPUT_NAME"
-        echo "  Synced to $TARGET_DIR"
-    fi
-done
+echo "  Target-tagged sidecar: $BUNDLED_PATH"

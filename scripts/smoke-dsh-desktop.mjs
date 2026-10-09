@@ -11,8 +11,7 @@
  * 1. 前置校验(vendor lib / sidecar / 工作台 dist 缺失即 fail loud);
  * 2. `scripts/provision-dsh.mjs` 物化一个一次性 `$DSH_HOME`(profile=web,
  *    因为 `bin.js web` 用的就是 web profile);
- * 3. spawn `bin.js web`,等 webserver 起来;
- * 4. 断言四条:
+ * 3. spawn `bin.js web`,等 webserver 起来; * 4. 断言四条:
  *    - `GET /starhub-react/` 返回工作台 index.html(host-static 用上了
  *      provisioning 注入的 windowDist——安装形态没有仓库可回退);
  *    - `POST /starhub/api/invoke {cmd:'get_assets'}` 回 `{ok:true,result:[]}`
@@ -109,41 +108,39 @@ async function waitForHttp(port, timeoutMs) {
 /**
  * 挑一个能跑 dsh CLI 的 Node。
  *
- * 必须优先打包进去的便携 node(`src-tauri/binaries/dsh-runtime/node.exe`,
- * v24.19.0):CLI 入口用 `import.meta.main` 自决是否执行,而这个特性要 Node
- * ≥24.2——本机开发用的 node v24.0.0 会让 `import.meta.main` 为 undefined,
- * 进程静默退出 0(不报错、不输出),冒烟会误判成「起不来」。用运行时的 node
- * 同时也更接近生产:desktop 宿主 spawn 的就是它。
+ * 必须优先打包进去的便携 node(`dsh-runtime/node.exe`,由 `npm run
+ * package:dsh-runtime` 生成):CLI 入口用 `import.meta.main` 自决是否执行,
+ * 而这个特性要 Node ≥24.2——本机开发用的 node v24.0.0 会让 `import.meta.main`
+ * 为 undefined,进程静默退出 0(不报错、不输出),冒烟会误判成「起不来」。用
+ * 运行时的 node 同时也更接近生产:desktop 宿主 spawn 的就是它。
  *
- * @returns `{ executable, args }`,args 是 CLI 之前的固定前缀。
+ * @returns `{ executable, cliBin }`。
  */
 function resolveNode() {
-  const bundled = join(repoRoot, 'src-tauri', 'binaries', 'dsh-runtime',
-    process.platform === 'win32' ? 'node.exe' : 'node')
-  if (existsSync(bundled)) return { executable: bundled }
-  console.log('[smoke] 未找到打包运行时 node,回退 process.execPath(若其 <24.2,CLI 会静默退出)')
-  return { executable: process.execPath }
+  const runtimeRoot = join(repoRoot, 'dsh-runtime')
+  const bundled = join(runtimeRoot, process.platform === 'win32' ? 'node.exe' : 'node')
+  const cliFromRuntime = join(runtimeRoot, 'apps', 'cli', 'lib', 'bin.js')
+  const cli = existsSync(cliFromRuntime) ? cliFromRuntime : join(vendorRoot, 'apps', 'cli', 'lib', 'bin.js')
+  if (existsSync(bundled)) return { executable: bundled, cliBin: cli }
+  console.log('[smoke] 未找到 dsh-runtime/node,回退 process.execPath(若其 <24.2,CLI 会静默退出)')
+  return { executable: process.execPath, cliBin: cli }
 }
 
 async function main() {
   const options = parseArgs(process.argv.slice(2))
   const node = resolveNode()
-  const runtimeRoot = join(repoRoot, 'src-tauri', 'binaries', 'dsh-runtime')
-  const cliBin = existsSync(join(runtimeRoot, 'apps', 'cli', 'lib', 'bin.js'))
-    ? join(runtimeRoot, 'apps', 'cli', 'lib', 'bin.js')
-    : join(vendorRoot, 'apps', 'cli', 'lib', 'bin.js')
   const rustSidecar = join(repoRoot, 'sidecar-rust', 'target', 'debug',
     process.platform === 'win32' ? 'starhub-sidecar-rust.exe' : 'starhub-sidecar-rust')
   const goSidecar = join(repoRoot, 'sidecar', 'bin',
     process.platform === 'win32' ? 'starhub-sidecar.exe' : 'starhub-sidecar')
   const windowDist = join(repoRoot, 'dist-starhub-react')
   console.log(`[smoke] node    ${node.executable}`)
-  console.log(`[smoke] cli     ${cliBin}`)
+  console.log(`[smoke] cli     ${node.cliBin}`)
 
   // ── 1. 前置校验 ──
   const problems = []
   for (const [label, path, kind] of [
-    ['dsh CLI', cliBin, 'file'],
+    ['dsh CLI', node.cliBin, 'file'],
     ['Rust sidecar', rustSidecar, 'file'],
     ['Go sidecar', goSidecar, 'file'],
     ['工作台 dist', windowDist, 'dir'],
@@ -181,7 +178,7 @@ async function main() {
   console.log('[smoke] provisioning 完成')
 
   // ── 3. boot 宿主进程 ──
-  const child = spawn(node.executable, [cliBin, 'web'], {
+  const child = spawn(node.executable, [node.cliBin, 'web'], {
     cwd: vendorRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {

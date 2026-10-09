@@ -12,16 +12,17 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# 去 Tauri 化 M4 第 3 步:发布链从「StarHub 自己的 Tauri 壳」换成
-# 「上游 Electron installer 原样分发 + StarHub provisioning」。
+# 去 Tauri 化 M4 第 4 步:发布链是「上游 Electron installer 原样分发 + StarHub
+# provisioning」,src-tauri 已退役。
 #
-# 上游桌面壳只支持 mac-arm64 / mac-x64 / win-x64 三个 target
-# (vendor/deepseek-harness/apps/desktop/scripts/desktop-build-paths.mjs 的
-# SUPPORTED_TARGETS)——**没有 Linux target**。原来 Tauri 链产出的 deb/rpm 因此
-# 没有对应物,这不是漏做,是上游能力的边界。Linux 用户要么等上游出 target,
-# 要么保留一条独立的 Linux 打包路径(需要单独决策,见 M4 清单「仍挂着的事」)。
-# 在决策之前,linux / linux-legacy 两个 job 原样保留但**默认不参与发布**
-# (needs 里不列它们),避免发布被一个已知发不出去的 target 卡住。
+# **Linux 不发版(决策 A:等上游)**。上游桌面壳的 SUPPORTED_TARGETS 只有
+# mac-arm64 / mac-x64 / win-x64,没有 Linux target
+# (vendor/deepseek-harness/apps/desktop/scripts/desktop-build-paths.mjs);
+# 原来 Tauri 链产出 deb/rpm 的能力随 src-tauri 一起退役。等上游出了 Linux
+# target,这里加一个 job 即可,StarHub 不需要自己维护第二条打包路径。
+#
+# macOS 同理:上游支持 mac-arm64 / mac-x64,但没有签名/公证证书,本期只发
+# Windows(证书就位后照抄 windows job 改 target 名即可)。
 
 jobs:
   windows:
@@ -30,9 +31,9 @@ jobs:
     timeout-minutes: 90
     # 打包路径根治:仓库被 checkout 到 D:\a\<org>\<repo>\<repo>(~84 字符),叠加
     # pnpm deploy 嵌套 node_modules 与 mistralai/otel 超长文件名,总路径超出
-    # Windows 260 字符上限 → NSIS `File /r` 报 "failed opening file" 打包失败。
-    # 这里把工作区 subst 到短盘符 S:\,所有 run 默认以 S:\ 为 working-directory,
-    # 最长路径被压到 ~200 字符内(方案 A;配合 package-dsh-runtime 的 .d.ts 裁剪)。
+    # Windows 260 字符上限 → electron-builder 的 `File /r` 报 "failed opening
+    # file" 打包失败。这里把工作区 subst 到短盘符 S:\,所有 run 默认以 S:\ 为
+    # working-directory,最长路径被压到 ~200 字符内。
     defaults:
       run:
         working-directory: 'S:\'
@@ -101,6 +102,11 @@ jobs:
           Pop-Location
           exit $testExit
 
+      - name: Test Rust sidecar
+        # src-tauri 退役后域单测全在 sidecar-rust;M4 之前这道门是 src-tauri 的
+        # 全量 cargo test(内存峰值 27GB,CI 上也跑不动)。
+        run: scripts\cargo-sidecar.bat test
+
       - name: Build release sidecars
         # provisioning 要装的就是这两个二进制;release 构建。
         run: |
@@ -118,13 +124,10 @@ jobs:
         run: npm run build:window
 
       - name: Smoke: provisioning + host boot
-        # 发布前的最后一道可离线验的门:provisioning 一个一次性 DSH_HOME 并用打包
-        # 进去的便携 node boot 宿主进程,断言五条(工作台 index / invoke 打通 /
-        # 未知命令错误通路 / SSE 流 / Go sidecar 活着)。
-        # 注意:冒烟用的是 debug 侧 sidecar;release 侧由上面的构建步骤单独验证存在性。
-        run: |
-          npm run sidecar-rust:build
-          npm run smoke:dsh-desktop
+        # 发布前的最后一道可离线验的门:provisioning 一个一次性 DSH_HOME 并用
+        # dsh-runtime 里的便携 node boot 宿主进程,断言五条(工作台 index /
+        # invoke 打通 / 未知命令错误通路 / SSE 流 / Go sidecar 活着)。
+        run: npm run smoke:dsh-desktop
 
       - name: Package upstream Electron shell (unsigned)
         # 上游 electron-builder 链原样用;`--unsigned` 因为没有代码签名证书。
@@ -132,10 +135,10 @@ jobs:
         # 签名/公证是上游的品牌与更新栈,见 M4 清单 §五。
         run: pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
-      - name: Provision StarHub into the packaged shell
+      - name: Provision StarHub into a clean profile
         # 上游壳不会知道 StarHub 的存在:把 10 个包 + 两个 sidecar + 工作台 dist
-        # 装进壳将要使用的 DSH_HOME。部署形态下由安装后置脚本做同一件事,
-        # 这里在 CI 里先验一遍「装的顺序与内容是对的」。
+        # 装进一个干净的 DSH_HOME。部署形态下由安装后置脚本做同一件事,这里在 CI
+        # 里先验一遍「装的顺序与内容是对的」(真安装包的验收见 M4 清单待办)。
         run: |
           node scripts/provision-dsh.mjs `
             --home $env:RUNNER_TEMP\starhub-dsh-home `
@@ -151,210 +154,8 @@ jobs:
           path: vendor/deepseek-harness/apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe
           if-no-files-found: error
 
-  # ── Linux:上游 Electron 壳没有 Linux target,发布路径待决策 ──
-  # 这两个 job 原样保留(Tauri 链仍在 src-tauri 里,退役是 M4 第 4 步),但不进
-  # publish 的 needs——发布不会被一个已知发不出去的 target 卡住。决策完成后再
-  # 要么接回、要么整体删除。
-
-  linux:
-    name: Linux / ${{ matrix.name }} (blocked: upstream has no Linux desktop target)
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: x86_64
-            runner: ubuntu-24.04
-            deb_arch: amd64
-          - name: ARM64
-            runner: ubuntu-24.04-arm
-            deb_arch: arm64
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    if: ${{ false }}
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Tauri Linux dependencies
-        run: |
-          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries
-          sudo apt-get update
-          for i in 1 2 3; do
-            sudo apt-get install --no-install-recommends -y \
-              build-essential cpio file libayatana-appindicator3-dev libdbus-1-dev \
-              libegl-dev libfuse2 libgbm-dev libgtk-3-dev libpipewire-0.3-dev \
-              libspa-0.2-dev librsvg2-dev libsqlite3-dev libssl-dev libwayland-dev \
-              libwebkit2gtk-4.1-dev libxcb1-dev libxdo-dev libxrandr-dev \
-              patchelf pkg-config rpm && break
-            echo "apt-get install attempt $i failed, retrying in 10s..."
-            sleep 10
-            sudo apt-get update
-          done
-          dpkg -s libwebkit2gtk-4.1-dev >/dev/null 2>&1 || { echo "ERROR: libwebkit2gtk-4.1-dev not installed"; exit 1; }
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.25.x
-          cache-dependency-path: sidecar/go.sum
-
-      - name: Set up Rust
-        run: |
-          rustup toolchain install 1.96.0 --profile minimal
-          rustup default 1.96.0
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Install dsh runtime dependencies
-        run: pnpm --dir vendor/deepseek-harness install --frozen-lockfile
-
-      - name: Test frontend and Go sidecar
-        run: |
-          npm run test:utils
-          (cd sidecar && go test ./...)
-
-      - name: Build release sidecar
-        run: npm run sidecar:build:release
-
-      - name: Package dsh runtime
-        run: npm run package:dsh-runtime
-
-      - name: Build StarHub React window resources
-        run: npm run build:window
-
-      - name: Build Obscura engine
-        run: npm run obscura:build
-
-      - name: Test Tauri backend
-        working-directory: src-tauri
-        env:
-          CARGO_BUILD_JOBS: ${{ matrix.name == 'ARM64' && '2' || '4' }}
-        run: cargo test --locked
-
-      - name: Build Linux desktop bundles
-        run: npx tauri build --bundles deb,rpm
-
-      - name: Audit packages, sidecar and shared libraries
-        run: bash scripts/verify-linux-bundles.sh src-tauri/target/release/bundle "${{ matrix.deb_arch }}"
-
-      - name: Upload Linux bundles
-        uses: actions/upload-artifact@v4
-        with:
-          name: starhub-linux-${{ matrix.name }}-${{ github.ref_name }}
-          path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
-          if-no-files-found: error
-
-  linux-legacy:
-    name: Linux legacy / Ubuntu 22.04 (blocked: upstream has no Linux desktop target)
-    runs-on: ubuntu-22.04
-    timeout-minutes: 90
-    if: ${{ false }}
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Tauri Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
-            build-essential cpio file libayatana-appindicator3-dev libdbus-1-dev \
-            libegl-dev libfuse2 libgbm-dev libgtk-3-dev libpipewire-0.3-dev \
-            libspa-0.2-dev librsvg2-dev libsqlite3-dev libssl-dev libwayland-dev \
-            libwebkit2gtk-4.1-dev libxcb1-dev libxdo-dev libxrandr-dev \
-            patchelf pkg-config rpm
-          dpkg -s libwebkit2gtk-4.1-dev >/dev/null 2>&1 || { echo "ERROR: libwebkit2gtk-4.1-dev not installed"; exit 1; }
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.25.x
-          cache-dependency-path: sidecar/go.sum
-
-      - name: Set up Rust
-        run: |
-          rustup toolchain install 1.96.0 --profile minimal
-          rustup default 1.96.0
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Install dsh runtime dependencies
-        run: pnpm --dir vendor/deepseek-harness install --frozen-lockfile
-
-      - name: Build release sidecar
-        run: npm run sidecar:build:release
-
-      - name: Package dsh runtime
-        run: npm run package:dsh-runtime
-
-      - name: Build StarHub React window resources
-        run: npm run build:window
-
-      - name: Build Linux desktop bundles (no screenshot, glibc 2.35 baseline)
-        run: npx tauri build --bundles deb,rpm -- --no-default-features
-
-      - name: Audit packages, sidecar and shared libraries
-        run: bash scripts/verify-linux-bundles.sh src-tauri/target/release/bundle amd64
-
-      - name: Rename legacy bundles (distinct from the glibc 2.39 build)
-        run: |
-          cd src-tauri/target/release/bundle
-          for f in deb/*.deb rpm/*.rpm; do
-            dir="$(dirname "$f")"
-            base="$(basename "$f")"
-            name="${base%.*}"
-            ext="${base##*.}"
-            case "$base" in
-              *ubuntu2204*) : ;;
-              *) mv "$f" "$dir/${name}-ubuntu2204.${ext}" ;;
-            esac
-          done
-          ls -la deb rpm
-
-      - name: Upload Linux legacy bundles
-        uses: actions/upload-artifact@v4
-        with:
-          name: starhub-linux-ubuntu2204-${{ github.ref_name }}
-          path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
-          if-no-files-found: error
-
   publish:
     name: Publish GitHub Release
-    # 只等 windows:linux 两个 job 已禁用(上游无 Linux desktop target),
-    # 把它们列进 needs 会让发布永远起不来。
     needs: [windows]
     runs-on: ubuntu-22.04
 
@@ -408,5 +209,3 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             release-artifacts/**/*.exe
-            release-artifacts/**/*.deb
-            release-artifacts/**/*.rpm

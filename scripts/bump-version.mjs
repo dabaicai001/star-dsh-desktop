@@ -7,14 +7,12 @@
  *   npm run version -- 0.43.0              # 直接指定新版本
  *   npm run version -- patch --dry-run     # 只打印将修改的文件,不落盘
  *
- * 覆盖 AGENTS.md 6.5 节要求的七处版本号:
+ * 覆盖 AGENTS.md 6.5 节要求的版本号位置(M4 退役 src-tauri 之后从七处降到
+ * 四处——原 Cargo.toml / Cargo.lock / tauri.conf.json 三处随壳一起没了):
  *   1. package.json
- *   2. src-tauri/Cargo.toml
- *   3. src-tauri/Cargo.lock (starhub 包)
- *   4. src-tauri/tauri.conf.json
- *   5. CHANGELOG.md ([未发布] 已完成条目移入新版本区块)
- *   6. AGENTS.md (第 2 节「当前版本」+ 末尾「最后更新」)
- *   7. README.md (version badge + 「当前版本」区)
+ *   2. CHANGELOG.md ([未发布] 已完成条目移入新版本区块)
+ *   3. AGENTS.md (第 2 节「当前版本」+ 末尾「最后更新」)
+ *   4. README.md (version badge + 「当前版本」区)
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -165,30 +163,11 @@ function main() {
   pkg.version = newVersion;
   writeText("package.json", `${JSON.stringify(pkg, null, 2)}\n`, "\n", dryRun, changes);
 
-  // 2. src-tauri/Cargo.toml (首个 version 字段即 [package] 版本)
-  const cargoToml = readText("src-tauri/Cargo.toml");
-  const tomlNext = cargoToml.text.replace(/^version = "[^"]*"/m, `version = "${newVersion}"`);
-  if (tomlNext === cargoToml.text) fail("Cargo.toml 未找到 version 字段");
-  writeText("src-tauri/Cargo.toml", tomlNext, cargoToml.eol, dryRun, changes);
-
-  // 3. src-tauri/Cargo.lock (starhub 包)
-  const cargoLock = readText("src-tauri/Cargo.lock");
-  const lockPattern = new RegExp(`(name = "starhub"\\nversion = ")${escapeRegExp(oldVersion)}(")`);
-  const lockNext = cargoLock.text.replace(lockPattern, `$1${newVersion}$2`);
-  if (lockNext === cargoLock.text) fail(`Cargo.lock 未找到 starhub v${oldVersion} 条目`);
-  writeText("src-tauri/Cargo.lock", lockNext, cargoLock.eol, dryRun, changes);
-
-  // 4. src-tauri/tauri.conf.json
-  const tauriFile = readText("src-tauri/tauri.conf.json");
-  const tauriConf = JSON.parse(tauriFile.text);
-  tauriConf.version = newVersion;
-  writeText("src-tauri/tauri.conf.json", `${JSON.stringify(tauriConf, null, 2)}\n`, "\n", dryRun, changes);
-
-  // 5. CHANGELOG.md
+  // 2. CHANGELOG.md
   const changelog = readText("CHANGELOG.md");
   const changelogNext = releaseChangelog(changelog.text, newVersion, dryRun, changes, changelog.eol);
 
-  // 6. AGENTS.md
+  // 3. AGENTS.md
   //    replace 的替换串会解释 `$$` / `$&` / `` $` `` / `$1` 等 special patterns:
   //    CHANGELOG 条目里的 `ps -p $$` 被写成 `ps -p $`、`` \w\$` `` 把「匹配前的
   //    整段文件头」嵌进行内(曾把 AGENTS.md 写坏)。用函数式替换,返回值不解释。
@@ -202,7 +181,7 @@ function main() {
   if (agentsNext === agents.text) fail("AGENTS.md 未找到「当前版本」或「最后更新」行");
   writeText("AGENTS.md", agentsNext, agents.eol, dryRun, changes);
 
-  // 7. README.md(badge + 「当前版本」区整体替换:只保留最新一条,旧版本段落丢弃)
+  // 4. README.md(badge + 「当前版本」区整体替换:只保留最新一条,旧版本段落丢弃)
   const readme = readText("README.md");
   let readmeNext = readme.text.replace(/badge\/version-v[\d.]+-cyan/, () => `badge/version-v${newVersion}-cyan`);
   const anchor = "## 当前版本\n";
