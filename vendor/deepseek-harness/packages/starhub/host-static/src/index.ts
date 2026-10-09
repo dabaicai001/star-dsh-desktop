@@ -9,8 +9,11 @@
  * A miss on a GET falls back to the prefix's index.html with 200; traversal
  * outside the dist root is 403; non-GET/HEAD is 405. The dist must use vite
  * base `/starhub-react/` so bare asset URLs do not escape to the dsh fallback.
- * Location resolution uses `STARHUB_WINDOW_DIST` first, then repo
- * `dist-starhub-react`; a missing dist fails loud at plugin load.
+ *
+ * Location resolution order (first hit wins): the `windowDist` Config field
+ * (what the M4 provisioning script writes into the profile patch), then
+ * `STARHUB_WINDOW_DIST`, then repo `dist-starhub-react`; a missing dist fails
+ * loud at plugin load.
  *
  * @module @deepseek-ai/dsh-starhub-host-static
  */
@@ -21,6 +24,7 @@ import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import z from '@deepseek-ai/schemastery'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 
@@ -29,6 +33,20 @@ export const name = 'starhub-host-static'
 
 /** Service required before the prefix route can be claimed. */
 export const inject = ['webServer']
+
+/**
+ * Plugin config. `windowDist` is the deployment-varying dist location: the M4
+ * provisioning script writes the absolute path of the dist it installed, so an
+ * installed shell never depends on a StarHub checkout being present.
+ */
+export const Config: z<{ windowDist?: string }> = z.object({
+  windowDist: z.string().default(''),
+})
+
+/** apply 收到的已解析配置。 */
+export interface HostStaticConfig {
+  windowDist?: string
+}
 
 /** URL prefix for the standalone React workbench window app (matches its vite base). */
 export const WINDOW_PREFIX = '/starhub-react'
@@ -98,12 +116,19 @@ export function resolveDist(
 
 /**
  * Resolve the standalone React window app dist root.
+ *
+ * Precedence: the `windowDist` Config field (provisioning-installed layout),
+ * then `STARHUB_WINDOW_DIST`, then repo `dist-starhub-react`.
+ * @param config - resolved plugin config.
  * @returns absolute dist root.
  */
-export function resolveWindowDistRoot(): string {
+export function resolveWindowDistRoot(config: HostStaticConfig = {}): string {
+  const configured = config.windowDist?.trim() ?? ''
   return resolveDist(
-    WINDOW_PREFIX, process.env.STARHUB_WINDOW_DIST, ['dist-starhub-react'],
-    'starhub-host-static: 未找到 StarHub React window dist(先构建 starhub-window,或用 STARHUB_WINDOW_DIST 指定)',
+    WINDOW_PREFIX,
+    configured !== '' ? configured : process.env.STARHUB_WINDOW_DIST,
+    ['dist-starhub-react'],
+    'starhub-host-static: 未找到 StarHub React window dist(先构建 starhub-window,或用 STARHUB_WINDOW_DIST / windowDist 配置指定)',
   )
 }
 
@@ -174,9 +199,10 @@ export function staticHandler(
  * missing build prevents plugin startup instead of silently registering an
  * unusable fallback.
  * @param ctx - plugin context carrying the webServer service.
+ * @param config - resolved plugin config (dist location).
  */
-export function apply(ctx: Context): void {
-  const distRoot = resolveWindowDistRoot()
+export function apply(ctx: Context, config: HostStaticConfig = {}): void {
+  const distRoot = resolveWindowDistRoot(config)
   const distIndex = join(distRoot, 'index.html')
   ctx.effect(
     () => ctx.webServer.register({

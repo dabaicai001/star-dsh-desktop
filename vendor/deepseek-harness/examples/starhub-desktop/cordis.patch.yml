@@ -1,0 +1,135 @@
+# StarHub × dsh **desktop** 组合的 profile 用户层(去 Tauri 化 M4)。
+#
+# 与 `starhub-web/cordis.patch.yml`(Tauri 壳内嵌 web runtime 用的那一份)的差别
+# 只有两处,都是「壳换了」的必然:
+#
+# 1. **`starhub-bridge` 取代 `sdk-jsonrpc-server`**。两者提供同一对私有服务
+#    (`sdk-transport` / `sdk-notifications`),同时组合会在加载期 fail loud
+#    (duplicate service)。Tauri 壳里应答方是 Rust 主进程,所以走
+#    sdk-jsonrpc-server;desktop 壳里没有 Rust 主进程,应答方换成 bridge 插件
+#    spawn 的两个 sidecar(见 packages/starhub/bridge)。
+# 2. **部署变化项写成占位,由 provisioning 脚本填**:`webserver` 的 host/port、
+#    `starhub-bridge` 的 `sidecarCommand`(两个 sidecar 二进制的绝对路径)、
+#    `starhub-host-static` 的 `windowDist`(React 工作台 dist 的绝对路径)。
+#    脚本按 id 做行级幂等合并——用户经 GUI 设置面板写进本文件的行一律保留
+#    (v0.122.0 回归的教训:整体覆盖会把用户设置全重置)。
+#
+# boot.mjs / provisioning 会把本文件物化到 $DSH_HOME/profiles/desktop/。
+# patch 语义(cordis-plugin-include 的 applyEntryPatches):裸 `- id:` 行按 id
+# 整段替换目标行 config(last write wins);`- insert:` 块追加新行;匹配不到
+# 已有行的裸 id 只 warn 跳过,不会插入。
+
+# webserver 端口模板:占位 0 = 让内核分配空闲端口,desktop 宿主把实际 URL 经
+# stdout 回给 Electron 壳(上游 smoke-runtime.ts 同款)。provisioning 可把它
+# 改写为固定端口(需要防火墙放行的部署)。
+- id: webserver
+  config:
+    host: 127.0.0.1
+    port: 0
+
+# 开启会话历史全文检索(替代 StarHub 桥接 session_search):web-app 层把
+# session-query-sqlite 钉成 `:memory:` + `openAt: never`(只读部署不建索引,
+# 且 openAt=never 会让全文调用直接以 SESSION_QUERY_SEARCH_DISABLED 拒绝)。
+# 这里整段替换 config:维持内存索引(不落盘、无陈旧索引),改 first-search——
+# 首次搜索时从会话存储 + 活跃会话重建索引,之后进程内复用。桌面场景会话量
+# 有界,首搜一次重建的成本可接受;需要持久化索引的部署可改 path 为文件路径。
+- id: session-query-sqlite
+  config:
+    path: ':memory:'
+    openAt: first-search
+
+# 全访问语义收窄(v0.106.1):danger-full-access 的 approval 由 never 改 ask。
+# never 会让 dsh-user-approval 的 decide() 先于所有 answerer 直接拒,StarHub
+# 风险门的 hard 档(DELETE FROM / rm -rf / desktop_exec 等删除/高危确认)被
+# 静默驳回——「全访问」变成「hard 确认卡必拒」。改 ask 后由 starhub-approval-bridge
+# 风险门按 preset 判定:全访问预设下软确认(普通写操作)静默放行,hard 档照弹;
+# dsh 自家 bash/fs 工具在 sandbox danger-full-access 下本就不走审批升级,行为不变。
+# 约束:base 侧 approval 插件的组合默认 policy 由 DSH_PERMISSION_MODE 表达式给出,
+# 该 env 为 danger-full-access 时默认 never 与本表 ask 不匹配,permission-presets
+# 会派生 custom 并 fail loud——StarHub 不设置该环境变量(web.rs 注入,勿加)。
+- id: permission
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: ask
+
+# StarHub 壳导航由 client-nav 注册 DSH React 原生工作台入口(侧栏行 + 主面板:
+# 工具 / 工作台 / 直播三个 keyed main 槽)。starhub-host-static 将 React 资产
+# 工作台托管在 /starhub-react/,dist 路径由 provisioning 注入(windowDist)。
+- insert:
+    - id: client-nav
+      name: '@deepseek-ai/dsh-starhub-client-nav'
+    - id: starhub-host-static
+      name: '@deepseek-ai/dsh-starhub-host-static'
+      config:
+        # provisioning 占位:安装后的 React 工作台 dist 绝对路径
+        windowDist: '@@STARHUB_WINDOW_DIST@@'
+    # AI 上下文绑定(方案 4.3):host 插件,pre-step 时把当前 StarHub 工具
+    # 选择(settings 里由 client-nav 写入)注入 agent 请求。
+    - id: starhub-tool-context
+      name: '@deepseek-ai/dsh-starhub-tool-context'
+    # 联动(2026-08-18):壳内(desktop)会话获得 starhub_* 域工具——bridge 插件
+    # 暴露 sdk-transport / sdk-notifications(它自己 spawn 两个 sidecar),
+    # starhub-tools 经这套服务把工具调用打到 sidecar;session-registry /
+    # domain-events / live-context 消费 sidecar 推送的注册表与领域事件,
+    # pre-step 注入活性上下文;approval-bridge 只保留权限固定与风险门
+    # (answerer:false,应答交给 desktop 自己的审批 UI,避免双应答)。
+    # 依赖:这些包由 provisioning 落进 profiles/desktop/node_modules。
+    # ownsPermissionSettings:false —— permission 命名空间由 dsh-base 的
+    # permission-presets 持有(GUI「设置 → 通用 → 权限」的写入方),本桥只读消费;
+    # 双注册会触发 settings 的 duplicate-registration 硬失败,先注册者胜出后
+    # permission-presets 静默失效,GUI 权限行读到无 defaultPreset 的裸注册。
+    - id: starhub-bridge
+      name: '@deepseek-ai/dsh-starhub-bridge'
+      config:
+        # provisioning 占位:两个 sidecar 二进制的绝对路径(部署变化项,
+        # 按上游「No hardcoded tunables」规约走 Config,不写死在插件里)
+        sidecarCommand: '@@STARHUB_SIDECAR_COMMAND@@'
+        healthTimeoutMs: 15000
+    # 会话历史搜索:AI 会话存档检索从 StarHub 桥接 session_search 切换到 DSH
+    # 原生 tool-session-query(session_search/session_event_search/session_trace/
+    # session_event_trace/session_event_read 五个只读工具;session-query-sqlite
+    # 已随 base 挂载)。该包由 provisioning 一并落进 profile。
+    - id: tool-session-query
+      name: '@deepseek-ai/dsh-tool-session-query'
+    # MCP 外部工具(v0.121.9 起从 StarHub 桥接 mcp_list/mcp_call 切换到 DSH 原生
+    # dsh-mcp-client;包由 provisioning 落进 profile)。原生路径为「每 server 一行」
+    # 静态配置(DSH 无 MCP 配置 UI):需要接入时取消下面注释并按 server 改一行,
+    # 工具会以 mcp__<serverName>__ 形式直接注册给模型。
+    # 注意:stdio server 会在 dsh 进程内 spawn 子进程,请只配可信来源。
+    # - id: mcp-client
+    #   name: '@deepseek-ai/dsh-mcp-client'
+    #   config:
+    #     transport: stdio
+    #     serverName: myserver
+    #     command: npx
+    #     args: ['-y', '@modelcontextprotocol/server-everything']
+    - id: starhub-tools
+      name: '@deepseek-ai/dsh-starhub-tools'
+    - id: starhub-approval-bridge
+      name: '@deepseek-ai/dsh-starhub-approval-bridge'
+      config:
+        answerer: false
+        ownsPermissionSettings: false
+    - id: starhub-session-registry
+      name: '@deepseek-ai/dsh-starhub-session-registry'
+    - id: starhub-domain-events
+      name: '@deepseek-ai/dsh-starhub-domain-events'
+    - id: starhub-live-context
+      name: '@deepseek-ai/dsh-starhub-live-context'
+    # AI 生成提交信息(2026-08-22):分支胶囊「AI」按钮的 host 端点
+    # (POST /starhub/git/commit-message),经 agentDefaultModel 当前路由做
+    # one-shot LLM 调用;输入/输出/超时预算在此显式配置。
+    - id: starhub-commit-message
+      name: '@deepseek-ai/dsh-starhub-commit-message'
+      config:
+        maxInputBytes: 16384
+        maxOutputTokens: 512
+        timeoutMs: 30000

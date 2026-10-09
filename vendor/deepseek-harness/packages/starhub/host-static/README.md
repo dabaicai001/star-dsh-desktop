@@ -2,7 +2,9 @@
 
 StarHub-local host plugin (not upstream). Registers the `/starhub-react` prefix route on the dsh `webServer` for the standalone React workbench window app (`npm run build:window` → repo `dist-starhub-react/`, vite base `/starhub-react/`). Independent windows opened for Tools instance clicks load this entry and reuse the client-nav React workbenches full-window.
 
-The plugin resolves the dist from `STARHUB_WINDOW_DIST` or repo `dist-starhub-react` (the repo root is found by walking up to the directory containing `vendor/deepseek-harness`). Its `index.html` must reference `/starhub-react`-prefixed assets. A missing or incorrectly based build fails plugin startup.
+The plugin resolves the dist in this order: the `windowDist` Config field, `STARHUB_WINDOW_DIST`, then repo `dist-starhub-react` (the repo root is found by walking up to the directory containing `vendor/deepseek-harness`). Its `index.html` must reference `/starhub-react`-prefixed assets; a wrong base fails loud on the Config/env tier and is skipped on the repo tier. A missing build fails plugin startup.
+
+The `windowDist` Config field exists for the installed shell: the M4 provisioning script (`scripts/provision-dsh.mjs` in the StarHub repo) installs the workbench dist under `$DSH_HOME/starhub/resources/starhub-react` and writes that absolute path into the profile patch, so an installed shell never depends on a StarHub checkout being present.
 
 ## Model Experience
 
