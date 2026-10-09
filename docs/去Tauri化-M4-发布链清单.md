@@ -46,6 +46,9 @@ junction 本地包、spawn 便携 node。壳换成上游 Electron 之后没有 R
    `url` 必填(-32602)、非 http(s) 请求前拒绝、3s 超时、2xx → `{ok,status}`。
    单测与验收都只钉**不摸网络**的两条契约(缺 url / 协议不符),真实外发由
    人工在设置页点一次验证(CI 无外网)。
+7. ✅ **凭据迁移:一次性导入工具**(§六 / R7):`scripts/migrate-tauri-data.mjs`
+   —— src-tauri 已删,但用户机器上的老数据(Tauri SQLite `starhub.db` + 系统
+   Keyring)还在。工具把它搬进 sidecar 自己的存储,并做**双跑期校验**。
 
 ### 第 3 步落地细节(CI 切换)
 
@@ -194,7 +197,11 @@ spawn 的两个 sidecar。
 - `sidecarCommand` 是 YAML **数组**(块序列),不是带引号的流序列字符串;
 - `src-tauri` 删除后:`npm run sidecar-rust:test` 全绿、`npm run smoke:dsh-desktop`
   全绿、`npm run test:provision` 全绿、`verify:bridge-compat` 全绿;
-  仓库里 `src-tauri` / `tauri` 引用只存在于历史文档(CHANGELOG / docs 踩坑记录)。
+  仓库里 `src-tauri` / `tauri` 引用只存在于历史文档(CHANGELOG / docs 踩坑记录);
+- `npm run test:migrate`:9 例全绿(资产/设置/告警/审计/known_hosts 五种线形状、
+  密钥导出与裸字符串归一、双跑期校验抓「条数不一致」与「内容不一致」、重跑
+  幂等不产生第二份 .bak、dry-run 不落盘、审计修剪到 5000 保留最新、缺库
+  fail loud)。
 
 ## 五、仍挂着的事
 
@@ -203,5 +210,6 @@ spawn 的两个 sidecar。
 - **Linux 不发版(决策 A:等上游)**:上游没有 Linux desktop target,deb/rpm 随
   Tauri 壳退役;`release.yml` 的 linux job 已删,上游出 target 后加回来即可。
 - **真机联调(M3-6)**:Android 设备接上后跑 scrcpy H.264 + 接管互斥 + 延迟实测。
-- **凭据迁移(§六/R7)**:Tauri SQLite + Keyring → sidecar JSON + dsh credentials;
-  src-tauri 已删,SQLite 里的资产数据需要一次性导入工具(见 M2 清单 §六)。
+- **凭据迁移的 Keyring 半边**:Windows 凭据管理器没有官方 CLI,需用户在旧壳
+  导出 `--secrets-export`(工具已支持并在报告里列出读不到的 key_id);dsh
+  credentials 服务作为密钥长期归属仍未接线(§六)。

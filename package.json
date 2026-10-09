@@ -29,7 +29,9 @@
     "package:dsh-runtime": "pnpm --dir vendor/deepseek-harness exec tsx scripts/package-dsh-runtime.ts",
     "provision:dsh": "node scripts/provision-dsh.mjs",
     "smoke:dsh-desktop": "node scripts/smoke-dsh-desktop.mjs",
-    "test:provision": "node --test tests/provision-dsh.test.mjs"
+    "test:provision": "node --test tests/provision-dsh.test.mjs",
+    "migrate:tauri-data": "node scripts/migrate-tauri-data.mjs",
+    "test:migrate": "node --test tests/migrate-tauri-data.test.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.0",
