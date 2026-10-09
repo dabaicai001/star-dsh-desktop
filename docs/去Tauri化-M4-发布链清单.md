@@ -38,6 +38,14 @@ junction 本地包、spawn 便携 node。壳换成上游 Electron 之后没有 R
    死面继续暴露给模型。留下三个**与具体域无关**的 `ui.*_ai_model_api_key`
    方法(新模块 `methods/ui_keys.rs`)。反向断言钉住回归:tools spec 断言
    `BRIDGED_TOOLS` 不含任何 `browser_` 前缀工具。
+6. ✅ **`ui.alert_test_webhook` 实做**(用户拍板「做」):sidecar 引入 reqwest
+   0.12(`default-features = false` + `rustls-tls`,本地 registry 缓存可离线
+   装)。当初判「不为一个测试按钮引入 reqwest 全家桶」不划算;现在判「划算」——
+   sidecar 已有 tokio runtime,reqwest 只是复用它的连接器,且告警外发本就是
+   sidecar 该做的事(归口后不再依赖 Electron 壳是否暴露同类能力)。语义:
+   `url` 必填(-32602)、非 http(s) 请求前拒绝、3s 超时、2xx → `{ok,status}`。
+   单测与验收都只钉**不摸网络**的两条契约(缺 url / 协议不符),真实外发由
+   人工在设置页点一次验证(CI 无外网)。
 
 ### 第 3 步落地细节(CI 切换)
 
@@ -195,7 +203,5 @@ spawn 的两个 sidecar。
 - **Linux 不发版(决策 A:等上游)**:上游没有 Linux desktop target,deb/rpm 随
   Tauri 壳退役;`release.yml` 的 linux job 已删,上游出 target 后加回来即可。
 - **真机联调(M3-6)**:Android 设备接上后跑 scrcpy H.264 + 接管互斥 + 延迟实测。
-- **`ui.alert_test_webhook` 降级**:要不要单独开一个「给 sidecar 加 reqwest」
-  的小提交。
 - **凭据迁移(§六/R7)**:Tauri SQLite + Keyring → sidecar JSON + dsh credentials;
   src-tauri 已删,SQLite 里的资产数据需要一次性导入工具(见 M2 清单 §六)。

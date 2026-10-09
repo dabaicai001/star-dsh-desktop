@@ -289,8 +289,9 @@ pub fn registry_with_domains(
                 crate::methods::ui_settings::alert_list(&ui, params)
             });
             let ui = Arc::clone(&ui_state);
+            let runtime = Arc::clone(&runtime);
             registry.register("ui.alert_test_webhook", move |params| {
-                crate::methods::ui_settings::alert_test_webhook(&ui, params)
+                runtime.block_on(crate::methods::ui_settings::alert_test_webhook(&ui, params))
             });
         }
 

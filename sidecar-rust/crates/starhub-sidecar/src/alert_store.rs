@@ -9,8 +9,8 @@
 //! - `update` / `delete` 对不存在的 id 报 `Alert rule not found`;
 //! - `update` 保留 `created_at`、刷新 `updated_at`(与 SQL 版一致)。
 //!
-//! `alert_check`(规则求值 + webhook 外发)工作台不调用,且 sidecar 刻意零 HTTP
-//! 依赖,故不在本批平移;`ui.alert_test_webhook` 显式降级(见 methods/ui_settings)。
+//! `alert_check`(规则求值 + webhook 外发)工作台不调用,故不在本批平移;
+//! `ui.alert_test_webhook` 自 M4 起实做(reqwest 外发,见 methods/ui_settings)。
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

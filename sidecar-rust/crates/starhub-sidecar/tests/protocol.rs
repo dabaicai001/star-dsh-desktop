@@ -1480,16 +1480,28 @@ fn ui_settings_methods_roundtrip_through_the_real_binary() {
         .expect("message")
         .contains("缺少 input"));
 
-    // webhook 测试显式降级(零 HTTP 依赖)
+    // webhook 测试:M4 实做(reqwest 外发)。这里不断言网络结果(CI 无外网),
+    // 只钉住「url 缺失 → -32602」与「非 http(s) → 请求前拒绝」两条不摸网络的
+    // 契约;真实外发由人工在设置页点一次验证。
     let response = roundtrip(
         &mut child,
-        r#"{"jsonrpc":"2.0","id":"d-8","method":"ui.alert_test_webhook","params":{"url":"https://hooks.example/x"}}"#,
+        r#"{"jsonrpc":"2.0","id":"d-8a","method":"ui.alert_test_webhook","params":{}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32602, "{response}");
+    assert!(value["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("缺少 url"));
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-8b","method":"ui.alert_test_webhook","params":{"url":"ftp://x"}}"#,
     );
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     assert!(value["error"]["message"]
         .as_str()
         .expect("message")
-        .contains("零 HTTP 依赖"));
+        .contains("必须以 http:// 或 https:// 开头"));
 
     // 域工具调用 → AI 审计回写(设置 → 审计「AI」类别)
     let response = roundtrip(

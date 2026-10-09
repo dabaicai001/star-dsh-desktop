@@ -20,7 +20,7 @@
  * 10. UI 面 C 组(M2):`ui.db_*` / `ui.docker_*` / `ui.broker_*` 数据面连接(接假
  *     Go sidecar:Wrapped 拆封 / Flat 平铺 / 参数白名单 / broker kind 白名单)
  * 11. UI 面 D 组第一批(M2):`ui.audit_*` / `ui.alert_*` 设置页(JSON 存储、
- *     snake_case 线形状、SQL 同款缺省、AI 工具审计回写、webhook 降级)
+ *     snake_case 线形状、SQL 同款缺省、AI 工具审计回写、webhook 测试(M4 实做))
  * 12. UI 面 D 组第二批(M2):`ui.android_ui_*` / `ui.desktop_ui_*` 设备面(总览 /
  *     平台资产校验 / 模板 upsert / 回放帧 / 人工介入幂等 / 直播降级)
  * 13. UI 面:AI 模型密钥(`ui.*_ai_model_api_key`)、`ui.local_shell_exec` 本机
@@ -443,9 +443,15 @@ async function main() {
     const noInput = await su.request('alert_create', {}).catch((error) => error.message)
     check('缺 input → 参数错误', String(noInput).includes('缺少 input'), String(noInput))
 
-    const webhook = await su.request('alert_test_webhook', { url: 'https://hooks.example/x' })
+    // webhook 测试:M4 实做(reqwest 外发)。CI 无外网,不断言真实外发结果,
+    // 只钉住两条不摸网络的契约:缺 url → 参数错误、非 http(s) → 请求前拒绝。
+    const webhookNoUrl = await su.request('alert_test_webhook', {})
       .catch((error) => error.message)
-    check('webhook 测试显式降级(零 HTTP 依赖)', String(webhook).includes('零 HTTP 依赖'), String(webhook))
+    check('webhook 测试缺 url → 参数错误', String(webhookNoUrl).includes('缺少 url'), String(webhookNoUrl))
+    const webhookBadScheme = await su.request('alert_test_webhook', { url: 'ftp://x' })
+      .catch((error) => error.message)
+    check('webhook 测试非 http(s) → 请求前拒绝',
+      String(webhookBadScheme).includes('必须以 http:// 或 https:// 开头'), String(webhookBadScheme))
 
     // 域工具调用 → AI 审计回写(设置 → 审计「AI」类别)
     await settingsPeer.request('starhub/tool.execute', { sessionId: 's1', name: 'android_replay', args: { serial: 'nope' } })

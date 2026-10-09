@@ -32,6 +32,10 @@ starhub-live = { path = "../starhub-live" }
 # 异步域方法经 Runtime::block_on 在 stdio 线程上执行;process/io-util 供
 # ui.local_shell_exec 的本机 shell 捕获输出
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util"] }
+# M4:告警 webhook 测试外发(ui.alert_test_webhook)。引入 reqwest 是权衡后的
+# 决定——sidecar 已有 tokio runtime,它只是复用连接器;告警外发本就是 sidecar
+# 该做的事,归口后不再依赖 Electron 壳是否暴露同类能力。
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 uuid = { version = "1", features = ["v4"] }
 anyhow = "1"
 chrono = "0.4"

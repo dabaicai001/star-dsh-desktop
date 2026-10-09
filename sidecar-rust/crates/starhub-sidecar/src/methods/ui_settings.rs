@@ -105,14 +105,46 @@ pub fn alert_list(ui: &UiRuntime, _params: &Value) -> Result<Value, RpcError> {
 
 /// `ui.alert_test_webhook`:webhook 连通性测试。
 ///
-/// **显式降级**:sidecar 刻意零 HTTP 依赖(不为一个测试按钮引入 reqwest 全家桶),
-/// webhook 外发归 Electron 壳/M3。返回明确的中文指引,而不是假装成功。
-pub fn alert_test_webhook(_ui: &UiRuntime, params: &Value) -> Result<Value, RpcError> {
-    let _url = required_str(params, "url")?;
-    Err(RpcError::internal(
-        "Webhook 测试暂不可用:去 Tauri 化 M2 的 sidecar 刻意零 HTTP 依赖,\
-         webhook 外发随 Electron 壳能力落地(M3)",
-    ))
+/// **M4 实做**:给 sidecar 引入 reqwest(0.12,本地 registry 缓存可离线装)。
+/// 当初判「不为一个测试按钮引入 reqwest 全家桶」不划算;现在判「划算」——
+/// sidecar 已有 tokio runtime,reqwest 只是复用它的连接器,且告警外发本就是
+/// sidecar 该做的事(归口后不再依赖 Electron 壳是否暴露同类能力)。
+///
+/// 语义(与 Tauri 版 `alert_test_webhook` 对齐):
+/// - `url` 必填,缺失即 -32602;非 http(s) 直接报错(不发起请求);
+/// - POST 一个探测载荷,3s 超时(测试按钮不该让用户等);
+/// - 2xx → `{ok:true,status}`;非 2xx / 网络错误 → 硬错误,文案带原因。
+pub async fn alert_test_webhook(_ui: &UiRuntime, params: &Value) -> Result<Value, RpcError> {
+    let url = required_str(params, "url")?;
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(RpcError::internal(format!(
+            "Webhook 地址必须以 http:// 或 https:// 开头: {url}"
+        )));
+    }
+    let payload = json!({
+        "msgtype": "text",
+        "text": { "content": "StarHub 告警 Webhook 测试:这是一条连通性探测消息。" }
+    });
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .map_err(|e| RpcError::internal(format!("Webhook 客户端创建失败: {e}")))?;
+    let response = client
+        .post(&url)
+        .header("content-type", "application/json")
+        .body(payload.to_string())
+        .send()
+        .await
+        .map_err(|e| RpcError::internal(format!("Webhook 请求失败: {e}")))?;
+    let status = response.status();
+    if status.is_success() {
+        Ok(json!({ "ok": true, "status": status.as_u16() }))
+    } else {
+        Err(RpcError::internal(format!(
+            "Webhook 返回非 2xx 状态: {}",
+            status.as_u16()
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -279,14 +311,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn webhook_test_is_degraded_with_a_clear_reason() {
+    #[tokio::test]
+    async fn webhook_test_validates_the_url_before_any_request() {
         let (ui, dir) = ui_in_temp("webhook");
-        let error = alert_test_webhook(&ui, &json!({ "url": "https://hooks.example/x" }))
-            .expect_err("M2 显式降级");
-        assert!(error.message.contains("零 HTTP 依赖"), "{}", error.message);
-        let error = alert_test_webhook(&ui, &json!({})).expect_err("缺 url");
+        // 缺 url:参数错误(不发起请求)
+        let error = alert_test_webhook(&ui, &json!({}))
+            .await
+            .expect_err("缺 url");
+        assert_eq!(error.code, crate::jsonrpc::error_codes::INVALID_PARAMS);
         assert!(error.message.contains("缺少 url"), "{}", error.message);
+        // 非 http(s):同样在请求前拒绝(不摸网络)
+        for bad in ["ftp://x", "example.com", ""] {
+            let error = alert_test_webhook(&ui, &json!({ "url": bad }))
+                .await
+                .expect_err("协议不符");
+            assert!(
+                error.message.contains("必须以 http:// 或 https:// 开头"),
+                "{bad}: {}",
+                error.message
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

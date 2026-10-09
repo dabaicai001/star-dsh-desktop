@@ -104,7 +104,8 @@ mod tests {
     fn ai_model_api_key_requires_an_id() {
         let (assets, dir) = assets_in_temp("no-id");
         for method in [
-            get_ai_model_api_key as fn(&AssetStore, &Value) -> Result<Value, crate::jsonrpc::RpcError>,
+            get_ai_model_api_key
+                as fn(&AssetStore, &Value) -> Result<Value, crate::jsonrpc::RpcError>,
             set_ai_model_api_key,
             delete_ai_model_api_key,
         ] {
