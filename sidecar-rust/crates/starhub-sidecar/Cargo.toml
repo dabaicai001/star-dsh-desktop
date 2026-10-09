@@ -27,8 +27,6 @@ starhub-domain-db = { path = "../starhub-domain-db" }
 starhub-domain-desktop = { path = "../starhub-domain-desktop" }
 # Android 域:adb 调用 + 任务授权 + 20 个工具执行体
 starhub-domain-android = { path = "../starhub-domain-android" }
-# Browser 域:16 个工具的参数契约 + 页面注入脚本(引擎层随 M3)
-starhub-domain-browser = { path = "../starhub-domain-browser" }
 # 直播/接管帧枢纽(M3):本地 WS 帧出口 + Android 帧源(scrcpy/轮询)
 starhub-live = { path = "../starhub-live" }
 # 异步域方法经 Runtime::block_on 在 stdio 线程上执行;process/io-util 供

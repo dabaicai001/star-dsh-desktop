@@ -29,6 +29,15 @@ junction 本地包、spawn 便携 node。壳换成上游 Electron 之后没有 R
 3. ✅ **CI 切换**:`linux-compat.yml` → `.github/workflows/ci.yml`
    (PR 门),`release.yml` 的 windows job 换链。
 4. ✅ **退役 `src-tauri/`**(本批):删目录 + 清全部引用。
+5. ✅ **AI 浏览器整体删除**(用户拍板「整体删除」):16 个 `browser_*` 模型面
+   工具 + 4 个 `ui.browser_*` 设置 + 设置页「AI 浏览器」tab +
+   `starhub-domain-browser` crate + approval-bridge 的 browser 档位与
+   `browser_auto` 定时授权(`autoGrantActive` / `autoGrantMinutes`)一并删除,
+   方法面 246 → **226**。理由:上游 dsh 原生提供 browser-use 及其可见面,
+   StarHub 重复造一份只会双轨维护;保留方法面而执行体答「归上游」是把
+   死面继续暴露给模型。留下三个**与具体域无关**的 `ui.*_ai_model_api_key`
+   方法(新模块 `methods/ui_keys.rs`)。反向断言钉住回归:tools spec 断言
+   `BRIDGED_TOOLS` 不含任何 `browser_` 前缀工具。
 
 ### 第 3 步落地细节(CI 切换)
 
@@ -188,6 +197,5 @@ spawn 的两个 sidecar。
 - **真机联调(M3-6)**:Android 设备接上后跑 scrcpy H.264 + 接管互斥 + 延迟实测。
 - **`ui.alert_test_webhook` 降级**:要不要单独开一个「给 sidecar 加 reqwest」
   的小提交。
-- **16 个 `browser_*` 模型面工具**:是否整体删除(连同能力文本契约)单独评审。
 - **凭据迁移(§六/R7)**:Tauri SQLite + Keyring → sidecar JSON + dsh credentials;
   src-tauri 已删,SQLite 里的资产数据需要一次性导入工具(见 M2 清单 §六)。

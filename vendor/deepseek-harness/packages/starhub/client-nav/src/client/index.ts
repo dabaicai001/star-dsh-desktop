@@ -66,7 +66,6 @@ import {
 import { StarHubLivePanel, type StarHubLivePanelInjected } from './live/StarHubLivePanel.tsx'
 import { AboutTab } from './settings/about.tsx'
 import { AndroidSettingsTab } from './settings/android.tsx'
-import { BrowserSettingsTab } from './settings/browser.tsx'
 import { SandboxSettingsTab } from './settings/sandbox.tsx'
 import { SshSettingsTab } from './settings/ssh.tsx'
 import { SandboxUserActionBanner } from './sandbox/SandboxUserActionBanner.tsx'
@@ -480,9 +479,8 @@ export function apply(ctx: Context): void {
     { id: 'starhub-alert', order: 31, label: '告警规则', component: AlertTab },
     { id: 'starhub-sandbox', order: 32, label: '沙箱平台', component: SandboxSettingsTab },
     { id: 'starhub-android', order: 33, label: 'Android 设备', component: AndroidSettingsTab },
-    { id: 'starhub-browser', order: 34, label: 'AI 浏览器', component: BrowserSettingsTab },
-    { id: 'starhub-ssh', order: 35, label: 'SSH', component: SshSettingsTab },
-    { id: 'starhub-about', order: 36, label: '关于', component: AboutTab },
+    { id: 'starhub-ssh', order: 34, label: 'SSH', component: SshSettingsTab },
+    { id: 'starhub-about', order: 35, label: '关于', component: AboutTab },
   ]
   for (const tab of starhubTabs) {
     ctx.slots.inject('settings.section', () => ctx.slots.register({

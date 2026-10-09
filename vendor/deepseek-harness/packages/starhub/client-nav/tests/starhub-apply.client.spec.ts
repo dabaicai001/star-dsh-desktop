@@ -32,7 +32,6 @@ import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
 import { SandboxUserActionBanner } from '../src/client/sandbox/SandboxUserActionBanner.tsx'
 import { SandboxSettingsTab } from '../src/client/settings/sandbox.tsx'
 import { AndroidSettingsTab } from '../src/client/settings/android.tsx'
-import { BrowserSettingsTab } from '../src/client/settings/browser.tsx'
 import { SshSettingsTab } from '../src/client/settings/ssh.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
 import { AboutTab } from '../src/client/settings/about.tsx'
@@ -134,7 +133,7 @@ describe('client-nav apply (rc.2)', () => {
       'sidebar.panellist', 'sidebar.panellist', 'main', 'main', 'main',
       'conversation.session.header.actions', 'conversation.session.header.actions',
       'conversation.input.left',
-      'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
+      'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
     ])
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
@@ -142,7 +141,7 @@ describe('client-nav apply (rc.2)', () => {
       ToolsPanelIcon, ToolsPanelIcon, StarHubToolWorkspace, StarHubWorkbenchPanel, StarHubLivePanel,
       GitBranchPill, ExecDrawerButton,
       ScreenshotButton,
-      AuditTab, AlertTab, SandboxSettingsTab, AndroidSettingsTab, BrowserSettingsTab, SshSettingsTab, AboutTab,
+      AuditTab, AlertTab, SandboxSettingsTab, AndroidSettingsTab, SshSettingsTab, AboutTab,
     ])
   })
 

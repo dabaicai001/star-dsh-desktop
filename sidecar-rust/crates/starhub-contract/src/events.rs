@@ -104,8 +104,6 @@ pub fn kind_for_tool(tool: &str) -> &'static str {
         // db 查询类(db_query / redis_exec / es_* 查询)
         "db_query" | "redis_exec" => "db.query_executed",
         other if other.starts_with("es_") => "db.query_executed",
-        // AI 浏览器(无痕独立窗口)动作类
-        other if other.starts_with("browser_") => "browser.action",
         // 沙箱桌面动作类
         other if other.starts_with("desktop_") => "desktop.action",
         // Android 实体机动作类
@@ -161,14 +159,6 @@ fn tool_summary(tool: &str, args: &serde_json::Value) -> String {
                 format!("{other} 执行成功")
             } else {
                 format!("{other}: {index}")
-            }
-        }
-        other if other.starts_with("browser_") => {
-            let url = get("url");
-            if url.is_empty() {
-                format!("{other} 执行成功")
-            } else {
-                format!("{other}: {url}")
             }
         }
         // 沙箱桌面:desktop_type 只记输入长度(凭据防御),exec 记命令全文(箱内执行),

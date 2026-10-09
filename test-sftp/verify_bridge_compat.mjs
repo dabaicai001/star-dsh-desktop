@@ -23,9 +23,9 @@
  *     snake_case 线形状、SQL 同款缺省、AI 工具审计回写、webhook 降级)
  * 12. UI 面 D 组第二批(M2):`ui.android_ui_*` / `ui.desktop_ui_*` 设备面(总览 /
  *     平台资产校验 / 模板 upsert / 回放帧 / 人工介入幂等 / 直播降级)
- * 13. UI 面 D 组第三批(M2):`ui.browser_*` 引擎与 Jev 配置、AI 模型密钥、
- *     `ui.local_shell_exec` 本机 shell 实做,以及区域截图 / 文件对话框 / 版本号
- *     的显式降级
+ * 13. UI 面:AI 模型密钥(`ui.*_ai_model_api_key`)、`ui.local_shell_exec` 本机
+ *     shell 实做,以及区域截图 / 文件对话框 / 版本号的显式降级
+ *     (M4 定稿:AI 浏览器整体删除,归上游 dsh browser-use)
  *
  * 与 `verify_sidecar_ssh.py`(真 SSH e2e)分工:那条验 Rust 侧域逻辑,这条验
  * 「插件协议 → 兼容层 → sidecar」的最后一公里。
@@ -290,8 +290,8 @@ async function main() {
     // ── 9. UI 面 B 组(交互会话):ui.ssh_* / ui.sftp_*(connId 面) ──
     console.log('\n[9] UI 面 B 组交互会话(ui.ssh_* / ui.sftp_*)')
     const methodSurface = await transport.request('starhub/capabilities', {})
-    check('方法面覆盖 B 组(总数 246)',
-      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 246
+    check('方法面覆盖 B 组(总数 226)',
+      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 226
       && methodSurface.methods.includes('ui.ssh_connect') && methodSurface.methods.includes('ui.sftp_start_upload'),
       `${String(methodSurface?.methods?.length)} 个方法`)
 
@@ -397,8 +397,8 @@ async function main() {
     check('白名单内 kind 走 broker.{kind}.{verb}', String(kafka).includes('broker.kafka.overview'), String(kafka))
 
     const methodSurface = await go.transport.request('starhub/capabilities', {})
-    check('方法面覆盖 C 组(总数 246)',
-      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 246
+    check('方法面覆盖 C 组(总数 226)',
+      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 226
       && methodSurface.methods.includes('ui.db_mysql_connect')
       && methodSurface.methods.includes('ui.docker_exec_session_read'),
       `${String(methodSurface?.methods?.length)} 个方法`)
@@ -542,8 +542,8 @@ async function main() {
     }
 
     const deviceSurface = await devices.transport.request('starhub/capabilities', {})
-    check('方法面覆盖 D 组设备面(总数 246)',
-      Array.isArray(deviceSurface?.methods) && deviceSurface.methods.length === 246
+    check('方法面覆盖 D 组设备面(总数 226)',
+      Array.isArray(deviceSurface?.methods) && deviceSurface.methods.length === 226
       && deviceSurface.methods.includes('ui.desktop_ui_overview')
       && deviceSurface.methods.includes('ui.android_ui_list_devices'),
       `${String(deviceSurface?.methods?.length)} 个方法`)
@@ -557,41 +557,15 @@ async function main() {
     rmSync(devices.dir, { recursive: true, force: true })
   }
 
-  // ── 13. UI 面 D 组第三批(AI 浏览器设置 + AI 密钥 + 宿主持有能力) ──
-  console.log('\n[13] UI 面 D 组浏览器/密钥/宿主(ui.browser_* / ai key / local_shell_exec)')
+  // ── 13. UI 面:AI 模型密钥 + 宿主持有能力 ──
+  // M4 定稿:AI 浏览器整体删除(16 个 browser_* 工具 + 4 个 ui.browser_* 设置),
+  // 上游 dsh 原生提供 browser-use;这里只验剩下的密钥与宿主面。
+  console.log('\n[13] UI 面密钥/宿主(ai key / local_shell_exec)')
   const host = startSidecar(seedAssets)
   const ho = {
     request: (method, params) => host.transport.request(`ui.${method}`, params ?? {}),
   }
   try {
-    check('引擎缺省 webview', (await ho.request('browser_get_engine')) === 'webview')
-    await ho.request('browser_set_engine', { engine: 'obscura' })
-    check('引擎设置落库', (await ho.request('browser_get_engine')) === 'obscura')
-    const badEngine = await ho.request('browser_set_engine', { engine: 'gecko' })
-      .catch((error) => error.message)
-    check('非法引擎文案逐字保持',
-      String(badEngine) === '未知浏览器引擎「gecko」,只支持 webview/obscura', String(badEngine))
-
-    const jev = await ho.request('browser_get_jev_config')
-    check('Jev 配置缺省全关 + 官方端点(camelCase 线形状)',
-      jev?.enabled === false && jev.baseUrl === 'https://api.typesafe.ai'
-      && jev.autoMaxSteps === 50 && 'timeoutMs' in jev,
-      JSON.stringify(jev).slice(0, 90))
-    await ho.request('browser_set_jev_config', {
-      enabled: true, baseUrl: 'https://jev.internal', model: 'jev-2',
-      threshold: 0.7, timeoutMs: 9000, autoMaxSteps: 120,
-    })
-    const saved = await ho.request('browser_get_jev_config')
-    check('Jev 配置保存后回读一致',
-      saved?.enabled === true && saved.baseUrl === 'https://jev.internal'
-      && saved.threshold === 0.7 && saved.timeoutMs === 9000 && saved.autoMaxSteps === 120,
-      JSON.stringify(saved).slice(0, 90))
-    const badJev = await ho.request('browser_set_jev_config', {
-      enabled: true, baseUrl: '', model: 'm', threshold: 2, timeoutMs: 9000, autoMaxSteps: 10,
-    }).catch((error) => error.message)
-    check('Jev 校验文案逐字保持',
-      String(badJev) === '阈值必须在 0.00–1.00 之间,收到 2', String(badJev))
-
     const missingKey = await ho.request('get_ai_model_api_key', { id: 'jev' })
       .catch((error) => error.message)
     check('AI key 不存在时报 no entry found', String(missingKey).includes('no entry found'), String(missingKey))
@@ -619,8 +593,8 @@ async function main() {
     check('版本号返回明确占位', (await ho.request('plugin:app|version', {})) === '版本归 Electron 壳(M2 占位)')
 
     const hostSurface = await host.transport.request('starhub/capabilities', {})
-    check('方法面覆盖 D 组浏览器/密钥/宿主(总数 246)',
-      Array.isArray(hostSurface?.methods) && hostSurface.methods.length === 246
+    check('方法面覆盖密钥/宿主(总数 226)',
+      Array.isArray(hostSurface?.methods) && hostSurface.methods.length === 226
       && hostSurface.methods.includes('ui.local_shell_exec')
       && hostSurface.methods.includes('ui.plugin:app|version'),
       `${String(hostSurface?.methods?.length)} 个方法`)
@@ -713,8 +687,8 @@ async function main() {
       String(badDesktop).includes('M3 定稿仅 android'), String(badDesktop))
 
     const liveSurface = await live.transport.request('starhub/capabilities', {})
-    check('方法面覆盖 M3 直播面(总数 246)',
-      Array.isArray(liveSurface?.methods) && liveSurface.methods.length === 246
+    check('方法面覆盖 M3 直播面(总数 226)',
+      Array.isArray(liveSurface?.methods) && liveSurface.methods.length === 226
       && liveSurface.methods.includes('ui.live_open')
       && liveSurface.methods.includes('starhub/live.endpoint'),
       `${String(liveSurface?.methods?.length)} 个方法`)

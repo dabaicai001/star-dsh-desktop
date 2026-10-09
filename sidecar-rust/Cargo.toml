@@ -6,7 +6,6 @@ members = [
     "crates/starhub-domain-db",
     "crates/starhub-domain-desktop",
     "crates/starhub-domain-android",
-    "crates/starhub-domain-browser",
     "crates/starhub-live",
 ]
 resolver = "2"

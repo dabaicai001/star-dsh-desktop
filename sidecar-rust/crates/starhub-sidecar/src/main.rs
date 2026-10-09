@@ -275,7 +275,6 @@ fn main() {
         Arc::clone(&db),
         Arc::clone(&desktop),
         Arc::clone(&android),
-        Arc::new(()),
         Arc::clone(&sink),
         Arc::clone(&bridge_state),
         Arc::clone(&ui_state),

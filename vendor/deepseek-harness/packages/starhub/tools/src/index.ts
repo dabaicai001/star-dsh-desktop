@@ -162,9 +162,11 @@ function registerBridged(ctx: Context, getTransport: () => JsonRpcTransportPeer,
  * 全部桥接工具规格(schema 声明在此,执行统一走 callHost)。
  *
  * 导出供 tools 包 spec 机械校验:调用方名单必须与 Rust 侧
- * `src-tauri/src/browser/mod.rs` 的 `BROWSER_TOOLS`(以及 approval-bridge 的
- * `STARHUB_DOMAIN_TOOLS`)保持一致——三张表此前只靠注释互引,没有任何机械
- * 校验,加新工具时漏登记某一张表的代价是风险门失效或分发 404。
+ * `sidecar-rust/crates/starhub-sidecar/src/methods/` 的各域方法面(以及
+ * approval-bridge 的 `STARHUB_DOMAIN_TOOLS`)保持一致——三张表此前只靠注释
+ * 互引,没有任何机械校验,加新工具时漏登记某一张表的代价是风险门失效或分发
+ * 404。M4 定稿:AI 浏览器(`browser_*` 16 工具)整体删除,上游 dsh 原生提供
+ * browser-use。
  */
 export const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
   // ── SSH(会话绑定 SSH 资产)──
@@ -342,118 +344,6 @@ export const BRIDGED_TOOLS: readonly BridgedToolSpec[] = [
     parameters: {
       container: { type: 'string', required: true, description: '容器 ID 或名称' },
       command: { type: 'string', required: true, description: '要执行的命令,例如 "ls /"' },
-    },
-  },
-  // ── AI 浏览器(无痕独立窗口,Rust 主进程执行;用户全程可见 AI 操作)──
-  {
-    toolName: 'browser_open',
-    description: '打开(或聚焦)无痕 AI 浏览器窗口:独立 Tauri 窗口,不共用主界面登录态,用户可全程观看 AI 操作。可选初始 URL(裸域名自动补 https://;只允许 http/https)。首次操作浏览器前必须先调用本工具。',
-    parameters: {
-      url: { type: 'string', description: '可选初始 URL,例如 "example.com" 或 "https://a.internal:8080"' },
-    },
-  },
-  {
-    toolName: 'browser_navigate',
-    description: '在 AI 浏览器中导航到指定 URL(只允许 http/https;javascript:/file: 等伪协议会被拒绝)。导航后自动等待文档就绪并返回页面标题。',
-    parameters: {
-      url: { type: 'string', required: true, description: '目标 URL,例如 "https://example.com/login"' },
-    },
-  },
-  {
-    toolName: 'browser_back',
-    description: 'AI 浏览器后退一页(history.back),自动等待文档就绪。',
-    parameters: {},
-  },
-  {
-    toolName: 'browser_forward',
-    description: 'AI 浏览器前进一页(history.forward),自动等待文档就绪。',
-    parameters: {},
-  },
-  {
-    toolName: 'browser_reload',
-    description: '刷新 AI 浏览器当前页面,自动等待文档就绪。',
-    parameters: {},
-  },
-  {
-    toolName: 'browser_state',
-    description: '获取 AI 浏览器当前页面状态:url、标题、readyState、滚动位置。',
-    parameters: {},
-  },
-  {
-    toolName: 'browser_extract',
-    description: '提取当前页面的结构化内容:所有可见可交互元素按 1..N 编号([id] <标签> "文本" 属性…,含 open Shadow DOM 与同源 iframe 递归),附正文文本。browser_click/browser_type 等按编号定位元素;页面任何变化(导航/点击/局部刷新)后必须重新 extract,旧编号会失效。',
-    parameters: {
-      max_chars: { type: 'number', description: '正文文本最大字符数,默认 6000,上限 20000' },
-    },
-  },
-  {
-    toolName: 'browser_click',
-    description: '点击 browser_extract 输出的编号元素(链接/按钮/复选框等)。Windows 上优先走可信输入事件;元素失效会返回错误并要求重新 extract。',
-    parameters: {
-      id: { type: 'string', required: true, description: 'browser_extract 输出的元素编号(纯数字)' },
-    },
-  },
-  {
-    toolName: 'browser_type',
-    description: '向编号输入框(input/textarea/contenteditable)输入文本,触发完整 input/change 事件链(兼容 React/Vue 受控组件)。Windows 上走可信输入管线。',
-    parameters: {
-      id: { type: 'string', required: true, description: 'browser_extract 输出的元素编号(纯数字)' },
-      text: { type: 'string', required: true, description: '要输入的文本' },
-      clear: { type: 'boolean', description: '输入前先清空现有内容,默认 false(追加)' },
-    },
-  },
-  {
-    toolName: 'browser_press_key',
-    description: '向当前焦点元素按键:Enter/Tab/Escape/Backspace/Delete/方向键/Home/End/PageUp/PageDown/空格。常用于提交表单(聚焦输入框后按 Enter)。',
-    parameters: {
-      key: { type: 'string', required: true, description: '按键名,例如 "Enter"、"Tab"、"ArrowDown"' },
-    },
-  },
-  {
-    toolName: 'browser_select_option',
-    description: '为编号 <select> 元素选择选项(按 option 的 value 或显示文本精确匹配);不匹配时返回可选值列表。',
-    parameters: {
-      id: { type: 'string', required: true, description: 'browser_extract 输出的元素编号(纯数字)' },
-      value: { type: 'string', required: true, description: '目标选项的 value 或显示文本' },
-    },
-  },
-  {
-    toolName: 'browser_scroll',
-    description: '滚动 AI 浏览器页面:up/down(按像素,默认 600)/top/bottom。返回滚动后位置与页面总高度。',
-    parameters: {
-      direction: { type: 'string', description: 'up / down / top / bottom,默认 down' },
-      amount: { type: 'number', description: 'up/down 时的像素数,默认 600' },
-    },
-  },
-  {
-    toolName: 'browser_screenshot',
-    description: '截取 AI 浏览器当前可视区域(PNG),保存到应用缓存目录并返回文件路径与大小。截图内容暂不回灌模型上下文(文本通道),用于留档与用户核对。',
-    parameters: {},
-  },
-  {
-    toolName: 'browser_eval',
-    description: '在 AI 浏览器当前页面执行任意 JavaScript(函数体形态,末尾用 return 返回结果;支持 await,结果需可 JSON 序列化,输出截断至 8000 字符)。执行会写入审计日志,但不弹确认卡。优先使用 browser_extract/click/type 等结构化工具,只在它们不够用时才用本工具。',
-    parameters: {
-      expression: { type: 'string', required: true, description: 'JS 函数体,例如 "return document.querySelectorAll(\'img\').length;"' },
-    },
-  },
-  {
-    toolName: 'browser_decide',
-    description: 'Jev 决策(只读,需在 设置 → AI 浏览器 启用并配置):把「当前子目标 + 页面快照」发给 TypeSafe Jev 决策模型,返回下一步动作建议(click/type/scroll/press_key/select_option/done + 元素编号 + 置信度)。本工具不执行任何动作,也不弹确认卡。Jev 决策启用后,每次浏览器动作(click/type/scroll/press_key/select_option)执行前必须先调用本工具拿到新决策,否则动作会被拒绝;页面变化(导航/刷新/重新 extract/eval)后旧决策自动失效,需重新决策。当页面候选元素较多、目标明确时优先用它代替自己从 extract 输出里挑编号,再按建议调用 browser_click/browser_type 等。未配置时返回软错误,照常改用 browser_extract 即可。快照缺省时自动内部提取。',
-    parameters: {
-      goal: { type: 'string', required: true, description: '当前子目标,例如「找到登录按钮并点击」或「在搜索框输入关键词」' },
-      snapshot: { type: 'string', description: '可选,直接提供 browser_extract 的原文(编号元素列表);不传则内部自动提取一次' },
-    },
-  },
-  {
-    toolName: 'browser_auto',
-    description: 'Jev 连续执行循环(需在 设置 → AI 浏览器 启用并配置):把「目标」交给 Jev 在 Rust 内部循环执行——每步自动 extract → Jev 决策 → 执行,主模型一次调用完成最多 N 步真实页面操作,返回逐步汇总。适合步骤多、目标明确的连续操作(如「找到登录并进入」「在搜索框输入关键词并回车」)。会弹一次确认卡:确认即授权本次循环内的全部步骤;确认后一段时间内(默认 10 分钟,可配)本会话的后续 browser_auto 不再逐一确认。终止原因写入汇总:done(目标达成)/ 达到步数上限 / [LOWCONF](置信度低,交还主模型判断)/ [HANDOFF](Jev 不生成自由文本:select_option 或未提供 input_text 的 type 交还主模型)/ [STALL](页面无进展)/ [Error](元素失效等软错误)。步数上限可在 设置 → AI 浏览器 自定义(默认 50),max_steps 超过上限时按上限执行。',
-    parameters: {
-      goal: { type: 'string', required: true, description: '当前子目标,例如「找到登录按钮并点击」或「在搜索框输入关键词并回车」' },
-      max_steps: { type: 'number', description: '本次循环最多执行多少步,默认 8;超过设置里的步数上限时按上限执行' },
-      stop_on_lowconf: { type: 'boolean', description: '置信度低于阈值时是否中断并交还主模型,默认 true' },
-      input_text: { type: 'string', description: '循环遇到「输入」动作时要键入的文本(Jev 只做判断不生成文本);不提供则遇到输入时交接回主模型' },
-      snapshot: { type: 'string', description: '可选,直接提供首屏 browser_extract 原文;不传则内部自动提取' },
     },
   },
   // ── 沙箱桌面(Ubuntu 容器沙箱平台,设计 docs/superpowers/specs/2026-08-28-desktop-automation-design.md)──

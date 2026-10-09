@@ -660,79 +660,6 @@ fn desktop_methods_roundtrip_through_the_real_binary() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// ---------- Browser 方法面(M1 第 6 步) ----------
-
-#[test]
-fn capabilities_lists_the_browser_method_surface() {
-    let mut sidecar = Sidecar::spawn();
-    let response = sidecar
-        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-browser","method":"starhub/capabilities"}"#);
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    let methods: Vec<&str> = value["result"]["methods"]
-        .as_array()
-        .expect("methods array")
-        .iter()
-        .map(|m| m.as_str().expect("method name"))
-        .collect();
-    for expected in [
-        "browser_open",
-        "browser_navigate",
-        "browser_back",
-        "browser_forward",
-        "browser_reload",
-        "browser_state",
-        "browser_extract",
-        "browser_click",
-        "browser_type",
-        "browser_press_key",
-        "browser_select_option",
-        "browser_scroll",
-        "browser_screenshot",
-        "browser_eval",
-        "browser_decide",
-        "browser_auto",
-    ] {
-        assert!(
-            methods.contains(&expected),
-            "missing {expected}: {methods:?}"
-        );
-    }
-}
-
-/// Browser 方法面 roundtrip:参数契约(软错误)先于引擎提示返回;
-/// 未知方法仍是 -32601。
-#[test]
-fn browser_methods_roundtrip_through_the_real_binary() {
-    let mut sidecar = Sidecar::spawn_with_fake_go_sidecar(DB_ASSETS);
-
-    // 合法参数 → 引擎归上游提示(M3 定稿后的确定性应答)
-    let response = sidecar.roundtrip(
-        r#"{"jsonrpc":"2.0","id":"b-1","method":"browser_open","params":{"url":"example.com"}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(value["error"].is_null(), "{response}");
-    assert!(value["result"]["text"]
-        .as_str()
-        .unwrap()
-        .contains("browser-use"));
-
-    // 非法参数 → 软错误(与 Tauri 版文案一致)
-    let response = sidecar.roundtrip(
-        r#"{"jsonrpc":"2.0","id":"b-2","method":"browser_click","params":{"id":"12a"}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(value["error"].is_null(), "{response}");
-    assert!(value["result"]["text"].as_str().unwrap().contains("纯数字"));
-
-    let response = sidecar
-        .roundtrip(r#"{"jsonrpc":"2.0","id":"b-3","method":"browser_navigate","params":{}}"#);
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(value["result"]["text"]
-        .as_str()
-        .unwrap()
-        .contains("url 不能为空"));
-}
-
 #[test]
 fn capabilities_lists_the_android_method_surface() {
     let mut sidecar = Sidecar::spawn();
@@ -846,11 +773,7 @@ fn capabilities_lists_the_android_method_surface() {
         "ui.desktop_ui_lifecycle",
         "ui.desktop_ui_open_live_window",
         "ui.desktop_user_action_reply",
-        // D 组第三批:AI 浏览器设置 + AI 模型密钥 + 宿主持有能力
-        "ui.browser_get_engine",
-        "ui.browser_set_engine",
-        "ui.browser_get_jev_config",
-        "ui.browser_set_jev_config",
+        // AI 模型密钥(按 id 寻址)+ 归 Electron 壳的宿主持有能力
         "ui.get_ai_model_api_key",
         "ui.set_ai_model_api_key",
         "ui.delete_ai_model_api_key",
@@ -874,12 +797,14 @@ fn capabilities_lists_the_android_method_surface() {
         methods.contains(&"starhub/live.endpoint"),
         "missing starhub/live.endpoint: {methods:?}"
     );
-    // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)+ 16(browser)
+    // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)
     // + 5 桥命令 + 4 UI 面(资产 CRUD)+ 30 UI 面 B 组(交互会话)
     // + 86 UI 面 C 组(数据面连接)+ 8 UI 面 D 组(审计/告警)
-    // + 12 UI 面 D 组(Android/沙箱)+ 11 UI 面 D 组(浏览器/密钥/宿主)
-    // + 5 UI 面 M3(直播通道)+ 1 桥命令(live.endpoint)= 246
-    assert_eq!(methods.len(), 246, "方法面总数: {methods:?}");
+    // + 12 UI 面 D 组(Android/沙箱)+ 7 UI 面(密钥/宿主)
+    // + 5 UI 面 M3(直播通道)+ 1 桥命令(live.endpoint)= 226
+    // M4 定稿:AI 浏览器整体删除(16 个 browser_* 工具 + 4 个 ui.browser_* 设置),
+    // 上游 dsh 原生提供 browser-use。
+    assert_eq!(methods.len(), 226, "方法面总数: {methods:?}");
 }
 
 /// Android 方法面 roundtrip(不触设备的分支):未授权写操作硬错误;
@@ -1853,9 +1778,9 @@ fn ui_devices_methods_roundtrip_through_the_real_binary() {
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&dir);
 }
-/// UI 面 D 组第三批(AI 浏览器设置 + AI 模型密钥 + 宿主持有能力)真二进制
-/// roundtrip:引擎/Jev 配置的设置往返与校验、AI key 的密钥往返、本机 shell 实做、
-/// 以及区域截图/文件对话框的显式降级。
+
+/// UI 面密钥与宿主持有能力真二进制 roundtrip:AI key 的密钥往返、本机 shell
+/// 实做,以及区域截图/文件对话框的显式降级。
 #[test]
 fn ui_host_methods_roundtrip_through_the_real_binary() {
     let unique = format!(
@@ -1888,68 +1813,6 @@ fn ui_host_methods_roundtrip_through_the_real_binary() {
         stdin.flush().expect("flush request");
         read_response(child)
     }
-
-    // 引擎:缺省 webview → 设置 → 回读;非法值文案逐字
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"h-1","method":"ui.browser_get_engine"}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(value["result"], "webview", "{response}");
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"h-2","method":"ui.browser_set_engine","params":{"engine":"obscura"}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(value["error"].is_null(), "{response}");
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"h-3","method":"ui.browser_get_engine"}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(value["result"], "obscura");
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"h-4","method":"ui.browser_set_engine","params":{"engine":"gecko"}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(
-        value["error"]["message"], "未知浏览器引擎「gecko」,只支持 webview/obscura",
-        "{response}"
-    );
-
-    // Jev 配置:缺省全关 + 官方端点 → 保存 → 回读;越界文案逐字
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"h-5","method":"ui.browser_get_jev_config"}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(value["result"]["enabled"], false, "{response}");
-    assert_eq!(value["result"]["baseUrl"], "https://api.typesafe.ai");
-    assert_eq!(value["result"]["autoMaxSteps"], 50);
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"h-6","method":"ui.browser_set_jev_config","params":{"enabled":true,"baseUrl":"https://jev.internal","model":"jev-2","threshold":0.7,"timeoutMs":9000,"autoMaxSteps":120}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(value["error"].is_null(), "{response}");
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"h-7","method":"ui.browser_get_jev_config"}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(value["result"]["enabled"], true);
-    assert_eq!(value["result"]["baseUrl"], "https://jev.internal");
-    assert_eq!(value["result"]["timeoutMs"], 9000);
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"h-8","method":"ui.browser_set_jev_config","params":{"enabled":true,"baseUrl":"","model":"m","threshold":2,"timeoutMs":9000,"autoMaxSteps":10}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(
-        value["error"]["message"],
-        "阈值必须在 0.00–1.00 之间,收到 2"
-    );
 
     // AI 模型密钥:不存在 → 硬错误 → 写入 → 回读 → 删除 → 再读又错
     let response = roundtrip(
