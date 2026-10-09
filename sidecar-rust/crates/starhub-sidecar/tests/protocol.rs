@@ -68,6 +68,9 @@ impl Sidecar {
             // 空串 = 内存密钥存储:测试不碰任何真实密钥环
             .env("STARHUB_SECRETS_FILE", "")
             .env("STARHUB_KNOWN_HOSTS_FILE", dir.join("known-hosts.json"))
+            // 审计/告警也落临时目录:域工具调用会写 AI 审计,不能污染 cwd
+            .env("STARHUB_AUDIT_FILE", dir.join("audit.json"))
+            .env("STARHUB_ALERTS_FILE", dir.join("alerts.json"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -602,6 +605,9 @@ fn desktop_methods_roundtrip_through_the_real_binary() {
         .env("STARHUB_SANDBOX_FILE", &sandbox)
         .env("STARHUB_SETTINGS_FILE", dir.join("settings.json"))
         .env("STARHUB_CACHE_DIR", dir.join("cache"))
+        // 域工具调用会写 AI 审计,落临时目录(不污染 cwd)
+        .env("STARHUB_AUDIT_FILE", dir.join("audit.json"))
+        .env("STARHUB_ALERTS_FILE", dir.join("alerts.json"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -815,6 +821,15 @@ fn capabilities_lists_the_android_method_surface() {
         "ui.docker_prune_images",
         "ui.broker_test",
         "ui.broker_overview",
+        // D 组第一批(设置页):审计 + 告警
+        "ui.audit_list",
+        "ui.audit_clear",
+        "ui.audit_stats",
+        "ui.alert_create",
+        "ui.alert_update",
+        "ui.alert_delete",
+        "ui.alert_list",
+        "ui.alert_test_webhook",
     ] {
         assert!(
             methods.contains(&expected),
@@ -823,8 +838,8 @@ fn capabilities_lists_the_android_method_surface() {
     }
     // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)+ 16(browser)
     // + 4 桥命令 + 4 UI 面(资产 CRUD)+ 30 UI 面 B 组(交互会话)
-    // + 86 UI 面 C 组(数据面连接)= 209
-    assert_eq!(methods.len(), 209, "方法面总数: {methods:?}");
+    // + 86 UI 面 C 组(数据面连接)+ 8 UI 面 D 组(审计/告警)= 217
+    assert_eq!(methods.len(), 217, "方法面总数: {methods:?}");
 }
 
 /// Android 方法面 roundtrip(不触设备的分支):未授权写操作硬错误;
@@ -852,6 +867,9 @@ fn android_methods_roundtrip_through_the_real_binary() {
             "STARHUB_ANDROID_FRAMES_FILE",
             dir.join("android-frames.json"),
         )
+        // 域工具调用会写 AI 审计,落临时目录(不污染 cwd)
+        .env("STARHUB_AUDIT_FILE", dir.join("audit.json"))
+        .env("STARHUB_ALERTS_FILE", dir.join("alerts.json"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -992,6 +1010,9 @@ fn a_domain_tool_success_emits_the_ai_origin_event_first() {
             "STARHUB_ANDROID_FRAMES_FILE",
             dir.join("android-frames.json"),
         )
+        // 域工具调用会写 AI 审计,落临时目录(不污染 cwd)
+        .env("STARHUB_AUDIT_FILE", dir.join("audit.json"))
+        .env("STARHUB_ALERTS_FILE", dir.join("alerts.json"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -1310,7 +1331,6 @@ fn ui_ssh_methods_roundtrip_through_the_real_binary() {
 #[test]
 fn ui_db_methods_roundtrip_through_the_real_binary() {
     let mut sidecar = Sidecar::spawn_with_fake_go_sidecar(DB_ASSETS);
-
     // Wrapped:connect 把配置包在 params 里,必须拆封后转发
     let response = sidecar.roundtrip(
         r#"{"jsonrpc":"2.0","id":"c-1","method":"ui.db_mysql_connect","params":{"params":{"host":"db.internal","port":3306,"username":"root"}}}"#,
@@ -1393,4 +1413,165 @@ fn ui_db_methods_roundtrip_through_the_real_binary() {
             .contains("broker.kafka.overview"),
         "{response}"
     );
+}
+
+/// UI 面 D 组第一批(审计 + 告警)真二进制 roundtrip:JSON 存储落盘、snake_case
+/// 线形状、AI 工具审计回写(域工具调用后 audit_list 能查到「ai」类别)。
+#[test]
+fn ui_settings_methods_roundtrip_through_the_real_binary() {
+    let unique = format!(
+        "starhub-sidecar-settings-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+    let dir = std::env::temp_dir().join(unique);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let assets = dir.join("assets.json");
+    std::fs::write(&assets, br#"{"assets":[]}"#).expect("seed assets file");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_starhub-sidecar-rust"));
+    command
+        .env("STARHUB_ASSETS_FILE", &assets)
+        .env("STARHUB_SECRETS_FILE", "")
+        .env("STARHUB_KNOWN_HOSTS_FILE", dir.join("known-hosts.json"))
+        .env("STARHUB_AUDIT_FILE", dir.join("audit.json"))
+        .env("STARHUB_ALERTS_FILE", dir.join("alerts.json"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().expect("sidecar binary spawns");
+
+    fn roundtrip(child: &mut Child, request: &str) -> String {
+        let stdin = child.stdin.as_mut().expect("stdin piped");
+        stdin.write_all(request.as_bytes()).expect("write request");
+        stdin.write_all(b"\n").expect("write newline");
+        stdin.flush().expect("flush request");
+        read_response(child)
+    }
+
+    // 空库:清单为空
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-1","method":"ui.alert_list"}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(value["result"], serde_json::json!([]));
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-2","method":"ui.audit_list","params":{}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["result"], serde_json::json!([]));
+
+    // 告警规则 CRUD:input 信封 + snake_case 线形状 + 缺省值
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-3","method":"ui.alert_create","params":{"input":{"name":"错误率","category":"ai","metric":"ai.error_rate","operator":">","threshold":5}}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    let rule_id = value["result"]["id"].as_str().expect("id").to_string();
+    assert_eq!(value["result"]["name"], "错误率");
+    assert_eq!(value["result"]["enabled"], true);
+    assert_eq!(value["result"]["duration_sec"], 0);
+    assert_eq!(value["result"]["cooldown_sec"], 300);
+    assert!(value["result"].get("webhook_url").is_some(), "{response}");
+    assert!(value["result"].get("created_at").is_some(), "{response}");
+
+    let response = roundtrip(
+        &mut child,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":"d-4","method":"ui.alert_update","params":{{"id":"{rule_id}","input":{{"name":"新名","enabled":false,"category":"ai","metric":"ai.error_rate","operator":">=","threshold":9}}}}}}"#
+        ),
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["result"]["name"], "新名");
+    assert_eq!(value["result"]["enabled"], false);
+
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-5","method":"ui.alert_list"}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["result"].as_array().map(Vec::len), Some(1));
+
+    // 不存在的规则:硬错误,文案与 Tauri 版一致
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-6","method":"ui.alert_delete","params":{"id":"ghost"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["message"], "Alert rule not found");
+
+    // 缺 input / 缺 id:参数错误
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-7","method":"ui.alert_create","params":{}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32602);
+    assert!(value["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("缺少 input"));
+
+    // webhook 测试显式降级(零 HTTP 依赖)
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-8","method":"ui.alert_test_webhook","params":{"url":"https://hooks.example/x"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("零 HTTP 依赖"));
+
+    // 域工具调用 → AI 审计回写(设置 → 审计「AI」类别)
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-9","method":"android_replay","params":{"serial":"nope"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-10","method":"ui.audit_list","params":{"categoryFilter":"ai"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    let entries = value["result"].as_array().expect("array");
+    assert_eq!(entries.len(), 1, "{response}");
+    assert_eq!(entries[0]["category"], "ai");
+    assert_eq!(entries[0]["action"], "android_replay");
+    assert_eq!(entries[0]["success"], true);
+    assert!(entries[0].get("session_id").is_some(), "{response}");
+    assert_eq!(entries[0]["detail"]["tool"], "android_replay");
+
+    // 统计与清理
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-11","method":"ui.audit_stats"}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    let stats = value["result"].as_array().expect("array");
+    assert_eq!(stats.len(), 1);
+    assert_eq!(stats[0]["category"], "ai");
+    assert_eq!(stats[0]["total"], 1);
+    assert_eq!(stats[0]["failed"], 0);
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"d-12","method":"ui.audit_clear","params":{}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["result"], 1);
+
+    // 落盘:告警文件仍在(审计已清空)
+    assert!(
+        dir.join("alerts.json").exists(),
+        "告警规则应已落盘: {:?}",
+        dir.join("alerts.json")
+    );
+
+    drop(child.stdin.take());
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&dir);
 }

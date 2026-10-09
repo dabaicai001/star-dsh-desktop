@@ -54,6 +54,8 @@ struct FrameContext<'a> {
     sink: &'a Arc<dyn EventSink>,
     bridge_state: &'a BridgeState,
     runtime: &'a tokio::runtime::Runtime,
+    /// UI 面设置状态(AI 工具审计写入用)。
+    ui: &'a starhub_sidecar::ui_runtime::UiRuntime,
 }
 
 /// 处理一条入站帧;返回待应答的响应,期间产生的事件通知排队到 `events`。
@@ -66,6 +68,7 @@ fn handle_frame(frame: &InboundFrame, ctx: &FrameContext<'_>) -> Option<Outbound
     match frame.kind() {
         FrameKind::Request { id, method, params } => {
             let params = params.unwrap_or(serde_json::Value::Null);
+            let started = std::time::Instant::now();
             let outcome = if method == EXEC_ABORT_METHOD {
                 // 停止生成:中断在途 exec(以请求形态调用时同样受理,便于对端确认)
                 handle_exec_abort(ctx.ssh, ctx.runtime, &params)
@@ -92,6 +95,11 @@ fn handle_frame(frame: &InboundFrame, ctx: &FrameContext<'_>) -> Option<Outbound
                     Ok(result)
                 })
             };
+            // 审计(设置 → 审计「AI」类别):域工具调用成功与失败都记,与 Tauri 版
+            // harness::tools 同口径;UI 面方法(ui.*)不记——那是用户自己的操作。
+            if bridge::is_tool_method(&method) {
+                record_tool_audit(ctx, &method, &params, &outcome, started.elapsed());
+            }
             Some(match outcome {
                 Ok(result) => OutboundResponse::ok(id, result),
                 Err(error) => OutboundResponse::fail(id, error),
@@ -120,6 +128,48 @@ fn handle_frame(frame: &InboundFrame, ctx: &FrameContext<'_>) -> Option<Outbound
 ///
 /// 既是请求也是通知(停止信号不等应答);不占注册表——它是信号,不是方法。
 const EXEC_ABORT_METHOD: &str = "starhub/exec.abort";
+
+/// 域工具调用的审计回写(设置 → 审计「AI」类别)。
+///
+/// target = 会话绑定资产的名称(资产已删回退 id,无绑定为空);detail 只取白名单
+/// 参数,失败时附错误原文。解析不出资产上下文时 asset_id/target 为空——
+/// 与 Tauri 版一致(审计不因缺少绑定而丢失)。
+fn record_tool_audit(
+    ctx: &FrameContext<'_>,
+    method: &str,
+    params: &serde_json::Value,
+    outcome: &Result<serde_json::Value, starhub_sidecar::jsonrpc::RpcError>,
+    elapsed: std::time::Duration,
+) {
+    let (asset_type, asset_id) = params
+        .get("sessionId")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|session_id| ctx.ssh.resolve_bound_asset(session_id))
+        .unzip();
+    let _ = asset_type;
+    let asset_name = asset_id
+        .as_deref()
+        .and_then(|asset_id| ctx.ssh.assets().get(asset_id).ok())
+        .map(|record| record.name);
+    let error = match outcome {
+        Ok(_) => None,
+        Err(error) => Some(error.message.as_str()),
+    };
+    let success = outcome.is_ok();
+    starhub_sidecar::audit_store::record_tool_call(
+        ctx.ui.audit(),
+        &starhub_sidecar::audit_store::ToolCallRecord {
+            name: method,
+            args: params,
+            asset_name: asset_name.as_deref().or(asset_id.as_deref()),
+            session_id: params.get("sessionId").and_then(serde_json::Value::as_str),
+            asset_id: asset_id.as_deref(),
+            success,
+            duration_ms: elapsed.as_millis(),
+            error,
+        },
+    );
+}
 
 /// 停止生成:按 exec_id 中断在途 SSH exec。exec_id 未知(已结束)按未中断返回。
 fn handle_exec_abort(
@@ -197,6 +247,7 @@ fn main() {
         Arc::clone(&sink),
     ));
     let bridge_state = Arc::new(BridgeState::default());
+    let ui_state = Arc::new(starhub_sidecar::ui_runtime::UiRuntime::from_env());
     let registry = methods::registry_with_domains(
         Arc::clone(&runtime),
         Arc::clone(&ssh),
@@ -206,6 +257,7 @@ fn main() {
         Arc::new(()),
         Arc::clone(&sink),
         Arc::clone(&bridge_state),
+        Arc::clone(&ui_state),
     );
 
     let stdin = std::io::stdin();
@@ -229,6 +281,7 @@ fn main() {
             sink: &sink,
             bridge_state: &bridge_state,
             runtime: &runtime,
+            ui: &ui_state,
         };
         let Some(response) = handle_frame(&frame, &context) else {
             // 通知/响应帧:它自己可能也产生了事件(如停止生成的中断确认),

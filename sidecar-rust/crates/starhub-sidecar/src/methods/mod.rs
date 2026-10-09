@@ -31,6 +31,7 @@ pub mod desktop;
 pub mod ssh;
 pub mod ui;
 pub mod ui_db;
+pub mod ui_settings;
 pub mod ui_ssh;
 
 /// Liveness probe.
@@ -109,7 +110,8 @@ macro_rules! register_async_all {
 ///
 /// `sink` and `bridge_state` complete the non-tool bridge surface
 /// (`starhub/open.asset`, `starhub/focus.tool`, `starhub/live.snapshot`), so
-/// the method inventory covers the whole protocol.
+/// the method inventory covers the whole protocol. `ui_state` carries the
+/// UI-plane settings stores (audit log, alert rules) behind the `ui.*` methods.
 #[allow(clippy::too_many_arguments)]
 pub fn registry_with_domains(
     runtime: Arc<Runtime>,
@@ -120,6 +122,7 @@ pub fn registry_with_domains(
     _browser: Arc<()>,
     sink: Arc<dyn starhub_domain_ssh::events::EventSink>,
     bridge_state: Arc<crate::bridge::BridgeState>,
+    ui_state: Arc<crate::ui_runtime::UiRuntime>,
 ) -> Arc<MethodRegistry> {
     Arc::new_cyclic(|weak| {
         let mut registry = MethodRegistry::new();
@@ -246,6 +249,43 @@ pub fn registry_with_domains(
             let db = Arc::clone(&db);
             registry.register(spec.command, move |params| {
                 runtime.block_on(crate::methods::ui_db::forward(&db, spec, params))
+            });
+        }
+
+        // UI 面 D 组第一批(设置页):审计 + 告警。Tauri 版是 SQLite 表,sidecar
+        // 换自有 JSON 存储;字段/缺省/排序/文案逐字保持(工作台接口是 snake_case)。
+        {
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.audit_list", move |params| {
+                crate::methods::ui_settings::audit_list(&ui, params)
+            });
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.audit_clear", move |params| {
+                crate::methods::ui_settings::audit_clear(&ui, params)
+            });
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.audit_stats", move |params| {
+                crate::methods::ui_settings::audit_stats(&ui, params)
+            });
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.alert_create", move |params| {
+                crate::methods::ui_settings::alert_create(&ui, params)
+            });
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.alert_update", move |params| {
+                crate::methods::ui_settings::alert_update(&ui, params)
+            });
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.alert_delete", move |params| {
+                crate::methods::ui_settings::alert_delete(&ui, params)
+            });
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.alert_list", move |params| {
+                crate::methods::ui_settings::alert_list(&ui, params)
+            });
+            let ui = Arc::clone(&ui_state);
+            registry.register("ui.alert_test_webhook", move |params| {
+                crate::methods::ui_settings::alert_test_webhook(&ui, params)
             });
         }
 

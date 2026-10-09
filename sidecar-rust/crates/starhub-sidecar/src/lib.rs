@@ -23,9 +23,14 @@
 //! | [`bindings`] | session → asset bindings (subagent parent chain) |
 //! | [`session_registry`] | assetId → session attachment view (`registry.sync`) |
 //! | [`known_hosts_store`] | TOFU host-key policy over a JSON file |
+//! | [`audit_store`] | audit log (JSON file) + AI tool-call audit records |
+//! | [`alert_store`] | alert rules (JSON file) |
+//! | [`ui_runtime`] | UI-plane settings state (audit + alerts) for the `ui.*` methods |
 
+pub mod alert_store;
 pub mod android_runtime;
 pub mod assets;
+pub mod audit_store;
 pub mod bindings;
 pub mod bridge;
 pub mod db_runtime;
@@ -37,3 +42,4 @@ pub mod methods;
 pub mod registry;
 pub mod runtime;
 pub mod session_registry;
+pub mod ui_runtime;

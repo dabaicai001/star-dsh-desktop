@@ -50,7 +50,7 @@ M1 建立了**模型面**(方法名 = 模型工具名,结果 `{text}`)。M2 需�
 | A. sidecar 已有存储/会话,加 `ui.*` 包装即可 | `get_assets` / `create_asset` / `update_asset` / `delete_asset` | sidecar `AssetStore`(assets.json + 密钥存储) | ✅ 本批落地 |
 | B. 交互会话面(工作台持有 connId/sessionId) | `ssh_connect` / `ssh_write` / `ssh_write_binary` / `ssh_resize` / `ssh_disconnect` / `ssh_get_sessions` / `ssh_get_trusted_host_key` / `ssh_kb_response` / `ssh_hostkey_response` / `ssh_bastion_response` / `ssh_open_web_window` / `test_ssh_connection`;`sftp_ensure_session` / `sftp_home_dir` / `sftp_list` / `sftp_stat` / `sftp_mkdir` / `sftp_remove` / `sftp_rename` / `sftp_start_upload` / `sftp_start_download` / `sftp_pause_transfer` / `sftp_resume_transfer` / `sftp_cancel_transfer` / `sftp_retry_transfer` / `sftp_set_speed_limit` / `sftp_clear_transfers` / `sftp_list_transfers` / `sftp_reveal_local` | sidecar `SshManager` + `TransferManager`(会话实体已在 sidecar 手里) | ✅ 本批落地 |
 | C. 数据面连接(connId 生命周期) | `db_mysql_execute` / `db_mysql_list_columns` / `db_redis_*`(13)/ `db_es_*`(9)/ `docker_connect` / `docker_test` / `docker_disconnect` / `docker_list_containers` / `docker_list_images` / `docker_inspect_container` / `docker_container_logs` / `docker_container_stats` / `docker_start|stop|restart|remove_container` / `docker_pull_image` / `docker_remove_image` / `docker_prune_images` / `docker_exec*`(5)/ `broker_test` / `broker_overview` / `db_mysql_export_data` 等 | sidecar 的 Go sidecar 客户端(连接池在 Go 侧,connId 已是跨进程概念) | ✅ 本批落地 |
-| D. 设置/审计/告警/本机/对话框 | `audit_list` / `audit_clear` / `audit_stats` / `alert_*`(5)/ `android_ui_*`(4)/ `desktop_ui_*`(7)/ `desktop_user_action_reply` / `browser_get_engine` / `browser_set_engine` / `browser_get_jev_config` / `browser_set_jev_config` / `get_ai_model_api_key` / `set_ai_model_api_key` / `delete_ai_model_api_key` / `local_shell_exec` / `screenshot_begin_region` / `get_ai_model_api_key` | 设置/审计/告警走 sidecar 自有 JSON 存储(与资产同套路);`local_shell_exec` 与 `screenshot_*` 是**宿主持有能力**,在 dsh 桌面端应由上游 shell/fs 工具或 M3 帧服务承担,不做 sidecar 平移 | ⬜ M2 第四步(D 组其余) |
+| D. 设置/审计/告警/本机/对话框 | `audit_list` / `audit_clear` / `audit_stats` / `alert_*`(5)/ `android_ui_*`(4)/ `desktop_ui_*`(7)/ `desktop_user_action_reply` / `browser_get_engine` / `browser_set_engine` / `browser_get_jev_config` / `browser_set_jev_config` / `get_ai_model_api_key` / `set_ai_model_api_key` / `delete_ai_model_api_key` / `local_shell_exec` / `screenshot_begin_region` / `get_ai_model_api_key` | 设置/审计/告警走 sidecar 自有 JSON 存储(与资产同套路);`local_shell_exec` 与 `screenshot_*` 是**宿主持有能力**,在 dsh 桌面端应由上游 shell/fs 工具或 M3 帧服务承担,不做 sidecar 平移 | 🚧 进行中(审计/告警 ✅,其余 ⬜) |
 
 事件面(工作台 `tauriListen` 的 14 个名字)已由 M1 的通知出口覆盖:
 `ssh:data:<id>` / `ssh:close:<id>` / `ssh:exec-done` / `ssh:kb-interactive*` /
@@ -128,7 +128,30 @@ Electron 壳。工作台侧改为「调 bridge 的 `ui.*` 占位 → 由 dsh GUI
      保持;Go 侧错误原文透传(与 Tauri 版 `sidecar.call` 用户可读文本一致)。
    - 测试:`ui_db.rs` 5 个单测(表结构 / Wrapped 拆封 / Flat 平铺 / 必填键 /
      broker 白名单)+ `protocol.rs` 集成 roundtrip(接假 Go sidecar)。
-5. ⬜ **D 组其余**:设置/审计/告警的 sidecar JSON 存储;`plugin:*` 交 dsh GUI。
+5. 🚧 **D 组其余**(进行中):
+   - ✅ **第一批:审计 + 告警**(本批):sidecar 新增 `audit_store.rs` /
+     `alert_store.rs` / `ui_runtime.rs` / `methods/ui_settings.rs`,8 个 `ui.*`
+     方法,方法面 209 → **217**。Tauri 版是 SQLite 表(`audit_log` / `alert_rule`),
+     sidecar 换自有 JSON 存储(**字段、缺省、排序、文案逐字保持**):
+     - `ui.audit_list`(limit 缺省 200 / 上限 1000,负 limit 沿用 SQLite「不限」
+       语义)/ `ui.audit_clear`(beforeTimestamp 缺省清空,返回删除条数)/
+       `ui.audit_stats`(按「类别 + 本地日期」分组,day DESC + category ASC);
+     - `ui.alert_create` / `ui.alert_update`(`input` 信封;缺省 enabled=true /
+       duration_sec=0 / cooldown_sec=300;update 保留 created_at、刷新
+       updated_at)/ `ui.alert_delete` / `ui.alert_list`(created_at DESC)/
+       `ui.alert_test_webhook`;
+     - **AI 工具审计回写**:stdio 主循环对每个域工具方法(成功与失败)写一条
+       category="ai" 的审计(action=工具名、target=绑定资产名、detail 只取
+       白名单参数 + durationMs,失败附 error)——与 Tauri 版 `harness::tools`
+       同口径,设置 → 审计「AI」类别自此有数据;
+     - 修剪语义:审计超 5000 条只保留最新的(纯函数 `trim_to_max` 直测);
+     - **`ui.alert_test_webhook` 显式降级**:sidecar 刻意零 HTTP 依赖(不为一个
+       测试按钮引入 reqwest 全家桶),返回指明原因的中文硬错误;webhook 外发归
+       Electron 壳/M3。
+   - ⬜ **第二批**:`android_ui_*`(4)/ `desktop_ui_*`(7)+ `desktop_user_action_reply`
+     (存储/管理器多已在 sidecar,补 `ui.*` 包装 + 直播窗口交 M3 面板)/
+     浏览器引擎与 Jev 配置(设置存储)/ AI key(密钥存储)/ `local_shell_exec`
+     (同机 shell)/ `screenshot_begin_region`(M3 帧服务)/ `plugin:*`(交 dsh GUI)。
 6. ⬜ **iframe 搬入**:工作台从「新开独立窗口/tab」改为壳内面板(client-nav 的
    `openNewPage` → 面板槽位;`starhub://open-asset` 的 focus 语义随面板重写)。
 7. ⬜ **验收**:dsh desktop dev 壳内全功能可用(窗口类除外)。
@@ -138,8 +161,9 @@ Electron 壳。工作台侧改为「调 bridge 的 `ui.*` 占位 → 由 dsh GUI
 - 每个 `ui.*` 方法一个 roundtrip 契约测试(与 M1 的 `protocol.rs` 同纪律):
   参数白名单、错误码、**模型/用户可读文本逐字保持**(Tauri 版文案是契约)。
 - `npm run verify:bridge-compat` 扩到 UI 面:经 `POST /starhub/api/invoke`
-  打真二进制,断言资产 CRUD 往返。**当前 52 项检查全绿**(第 8 节资产 CRUD 12 项
-  + 第 9 节 B 组交互会话 18 项 + 第 10 节 C 组数据面 11 项;C 组一节接假 Go
-  sidecar,验 Wrapped 拆封 / Flat 平铺 / 必填键 / broker 白名单;脚本里的 Go
-  sidecar 用「python fixture + 包装脚本」承载 `STARHUB_GO_SIDECAR` 单程序路径)。
+  打真二进制,断言资产 CRUD 往返。**当前 65 项检查全绿**(第 8 节资产 CRUD 12 项
+  + 第 9 节 B 组交互会话 18 项 + 第 10 节 C 组数据面 11 项 + 第 11 节 D 组
+  审计/告警 13 项;D 组一节验 snake_case 线形状、SQL 同款缺省、AI 审计回写、
+  webhook 降级)。脚本另加 120s 看门狗——曾经因复用已关闭实例的 peer 挂住
+  10 分钟,现在大声失败而不是无限挂起。
 - client-nav vitest 全绿(传输 seam 替身的单测替代 `__TAURI_INTERNALS__` 存根)。

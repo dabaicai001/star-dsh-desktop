@@ -19,6 +19,8 @@
  *     无待应答 / 传输任务表 / 窗口类降级 / 参数校验)
  * 10. UI 面 C 组(M2):`ui.db_*` / `ui.docker_*` / `ui.broker_*` 数据面连接(接假
  *     Go sidecar:Wrapped 拆封 / Flat 平铺 / 参数白名单 / broker kind 白名单)
+ * 11. UI 面 D 组第一批(M2):`ui.audit_*` / `ui.alert_*` 设置页(JSON 存储、
+ *     snake_case 线形状、SQL 同款缺省、AI 工具审计回写、webhook 降级)
  *
  * 与 `verify_sidecar_ssh.py`(真 SSH e2e)分工:那条验 Rust 侧域逻辑,这条验
  * 「插件协议 → 兼容层 → sidecar」的最后一公里。
@@ -70,6 +72,9 @@ function startSidecar(assets, { fakeGo = false } = {}) {
       STARHUB_SECRETS_FILE: '',
       STARHUB_KNOWN_HOSTS_FILE: join(dir, 'known-hosts.json'),
       STARHUB_ANDROID_FRAMES_FILE: join(dir, 'android-frames.json'),
+      // 审计/告警落临时目录:绝不写进仓库或 vendor 树
+      STARHUB_AUDIT_FILE: join(dir, 'audit.json'),
+      STARHUB_ALERTS_FILE: join(dir, 'alerts.json'),
       ...(fakeGo ? { STARHUB_GO_SIDECAR: writeGoWrapper(dir) } : {}),
     },
   })
@@ -124,6 +129,12 @@ const seedAssets = [
 ]
 
 async function main() {
+  // 看门狗:任一条请求挂住(对端进程消失 / 协议呆死)时大声失败,而不是无限挂起。
+  const watchdog = setTimeout(() => {
+    console.error('验收脚本超时(120s):有请求未得到应答')
+    process.exit(1)
+  }, 120_000)
+  watchdog.unref()
   const { child, transport, notifications, dir } = startSidecar(seedAssets)
   const peer = createBridgePeer(transport)
   try {
@@ -271,8 +282,8 @@ async function main() {
     // ── 9. UI 面 B 组(交互会话):ui.ssh_* / ui.sftp_*(connId 面) ──
     console.log('\n[9] UI 面 B 组交互会话(ui.ssh_* / ui.sftp_*)')
     const methodSurface = await transport.request('starhub/capabilities', {})
-    check('方法面覆盖 B 组(总数 209)',
-      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 209
+    check('方法面覆盖 B 组(总数 217)',
+      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 217
       && methodSurface.methods.includes('ui.ssh_connect') && methodSurface.methods.includes('ui.sftp_start_upload'),
       `${String(methodSurface?.methods?.length)} 个方法`)
 
@@ -378,8 +389,8 @@ async function main() {
     check('白名单内 kind 走 broker.{kind}.{verb}', String(kafka).includes('broker.kafka.overview'), String(kafka))
 
     const methodSurface = await go.transport.request('starhub/capabilities', {})
-    check('方法面覆盖 C 组(总数 209)',
-      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 209
+    check('方法面覆盖 C 组(总数 217)',
+      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 217
       && methodSurface.methods.includes('ui.db_mysql_connect')
       && methodSurface.methods.includes('ui.docker_exec_session_read'),
       `${String(methodSurface?.methods?.length)} 个方法`)
@@ -391,6 +402,69 @@ async function main() {
       setTimeout(() => { go.child.kill('SIGKILL'); resolve() }, 2000).unref()
     })
     rmSync(go.dir, { recursive: true, force: true })
+  }
+
+  // ── 11. UI 面 D 组第一批(设置页):审计 + 告警 ──
+  console.log('\n[11] UI 面 D 组设置页(ui.audit_* / ui.alert_*)')
+  const settings = startSidecar(seedAssets)
+  const settingsPeer = createBridgePeer(settings.transport)
+  const su = {
+    request: (method, params) => settings.transport.request(`ui.${method}`, params ?? {}),
+  }
+  try {
+    check('空库:告警清单为空', Array.isArray(await su.request('alert_list')) && (await su.request('alert_list')).length === 0)
+    check('空库:审计清单为空', (await su.request('audit_list', {})).length === 0)
+
+    const rule = await su.request('alert_create', {
+      input: { name: '错误率', category: 'ai', metric: 'ai.error_rate', operator: '>', threshold: 5 },
+    })
+    check('alert_create 返回 snake_case 线形状 + SQL 同款缺省',
+      typeof rule?.id === 'string' && rule.name === '错误率' && rule.enabled === true
+      && rule.duration_sec === 0 && rule.cooldown_sec === 300 && 'webhook_url' in rule,
+      JSON.stringify(rule).slice(0, 90))
+
+    const updated = await su.request('alert_update', {
+      id: rule.id,
+      input: { name: '新名', enabled: false, category: 'ai', metric: 'ai.error_rate', operator: '>=', threshold: 9 },
+    })
+    check('alert_update 改名并刷新启用位', updated?.name === '新名' && updated.enabled === false, JSON.stringify(updated).slice(0, 60))
+    check('alert_list 一条', (await su.request('alert_list')).length === 1)
+
+    const missing = await su.request('alert_delete', { id: 'ghost' }).catch((error) => error.message)
+    check('删除不存在的规则文案逐字保持', String(missing) === 'Alert rule not found', String(missing))
+    const noInput = await su.request('alert_create', {}).catch((error) => error.message)
+    check('缺 input → 参数错误', String(noInput).includes('缺少 input'), String(noInput))
+
+    const webhook = await su.request('alert_test_webhook', { url: 'https://hooks.example/x' })
+      .catch((error) => error.message)
+    check('webhook 测试显式降级(零 HTTP 依赖)', String(webhook).includes('零 HTTP 依赖'), String(webhook))
+
+    // 域工具调用 → AI 审计回写(设置 → 审计「AI」类别)
+    await settingsPeer.request('starhub/tool.execute', { sessionId: 's1', name: 'android_replay', args: { serial: 'nope' } })
+    const audit = await su.request('audit_list', { categoryFilter: 'ai' })
+    check('AI 工具调用写审计(ai 类别)',
+      Array.isArray(audit) && audit.length === 1 && audit[0].action === 'android_replay'
+      && audit[0].success === true && audit[0].detail?.tool === 'android_replay',
+      JSON.stringify(audit).slice(0, 90))
+    check('审计条目是 snake_case 线形状',
+      Array.isArray(audit) && audit.length === 1 && 'session_id' in audit[0] && 'asset_id' in audit[0])
+
+    const stats = await su.request('audit_stats')
+    check('audit_stats 按类别 + 日期分组',
+      Array.isArray(stats) && stats.length === 1 && stats[0].category === 'ai' && stats[0].total === 1
+      && stats[0].failed === 0,
+      JSON.stringify(stats).slice(0, 90))
+    const cleared = await su.request('audit_clear', {})
+    check('audit_clear 返回删除条数', cleared === 1, String(cleared))
+    check('清理后审计为空', (await su.request('audit_list', {})).length === 0)
+  } finally {
+    settings.child.stdin.end()
+    await new Promise((resolve) => {
+      if (settings.child.exitCode !== null) { resolve(); return }
+      settings.child.once('exit', () => resolve())
+      setTimeout(() => { settings.child.kill('SIGKILL'); resolve() }, 2000).unref()
+    })
+    rmSync(settings.dir, { recursive: true, force: true })
   }
 
   console.log(`\n验收结果: ${passed} passed, ${failed} failed`)
