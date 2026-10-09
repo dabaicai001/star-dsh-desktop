@@ -17,7 +17,7 @@
     "sidecar-rust:build": "scripts\\cargo-env.bat build --manifest-path ..\\sidecar-rust\\Cargo.toml",
     "sidecar-rust:build:release": "scripts\\cargo-env.bat build --release --manifest-path ..\\sidecar-rust\\Cargo.toml",
     "sidecar-rust:test": "scripts\\cargo-env.bat test --manifest-path ..\\sidecar-rust\\Cargo.toml",
-    "verify:bridge-compat": "pnpm --dir vendor/deepseek-harness exec tsx test-sftp/verify_bridge_compat.mjs",
+    "verify:bridge-compat": "pnpm --dir vendor/deepseek-harness exec tsx ../../test-sftp/verify_bridge_compat.mjs",
     "test:ssh-bg": "node --test tests/ssh-background-task.test.mjs",
     "test:utils": "node --test tests/utils/crypto.test.mjs tests/utils/ddlGenerator.test.mjs tests/utils/sqlHistory.test.mjs tests/utils/commandGuard.test.mjs tests/utils/sqlTables.test.mjs tests/utils/xshellQuickCommand.test.mjs tests/utils/aiMention.test.mjs tests/utils/aiCompaction.test.mjs",
     "version": "node scripts/bump-version.mjs",

@@ -15,13 +15,15 @@
  *  7. 未实现的方法 → -32601,进程不死;畸形行被忽略
  *  8. UI 面(M2):`ui.<tauriCommand>` 资产 CRUD(建/列/改/删、snake_case 线形状、
  *     敏感字段不回流、删除后域工具报「资产不存在」、Excel 类型已删)
+ *  9. UI 面 B 组(M2):`ui.ssh_*` / `ui.sftp_*` 交互会话(会话不存在 / 无写通道 /
+ *     无待应答 / 传输任务表 / 窗口类降级 / 参数校验)
  *
  * 与 `verify_sidecar_ssh.py`(真 SSH e2e)分工:那条验 Rust 侧域逻辑,这条验
  * 「插件协议 → 兼容层 → sidecar」的最后一公里。
  *
  * 运行(仓库根):
  *   npm run sidecar-rust:build
- *   pnpm --dir vendor/deepseek-harness exec tsx test-sftp/verify_bridge_compat.mjs
+ *   npm run verify:bridge-compat
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -239,6 +241,65 @@ async function main() {
     const badType = await ui.request('create_asset', { id: 'x', type: 'excel', name: 'x' })
       .catch((error) => error.message)
     check('Excel 类型已删 → 参数错误', String(badType).includes('不支持的资产类型'), badType)
+
+    // ── 9. UI 面 B 组(交互会话):ui.ssh_* / ui.sftp_*(connId 面) ──
+    console.log('\n[9] UI 面 B 组交互会话(ui.ssh_* / ui.sftp_*)')
+    const methodSurface = await transport.request('starhub/capabilities', {})
+    check('方法面覆盖 B 组(总数 123)',
+      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 123
+      && methodSurface.methods.includes('ui.ssh_connect') && methodSurface.methods.includes('ui.sftp_start_upload'),
+      `${String(methodSurface?.methods?.length)} 个方法`)
+
+    const sessions = await ui.request('ssh_get_sessions')
+    check('空会话表返回空数组', Array.isArray(sessions) && sessions.length === 0, JSON.stringify(sessions))
+
+    // 无写通道时写操作静默成功(由 ssh:close 事件告知前端,与 Tauri 版一致)
+    const written = await ui.request('ssh_write', { id: 'ghost', data: 'ls\n' })
+    check('无写通道的 ssh_write 静默成功(null)', written === null || written === undefined, JSON.stringify(written))
+
+    // 断开会话幂等
+    const disconnected = await ui.request('ssh_disconnect', { id: 'ghost' })
+    check('断开未知会话幂等(null)', disconnected === null || disconnected === undefined, JSON.stringify(disconnected))
+
+    for (const [method, params] of [
+      ['sftp_list', { id: 'ghost', path: '/tmp' }],
+      ['sftp_home_dir', { id: 'ghost' }],
+      ['sftp_ensure_session', { id: 'ghost' }],
+      ['ssh_resize', { id: 'ghost', cols: 80, rows: 24 }],
+    ]) {
+      const error = await ui.request(method, params).catch((caught) => caught.message)
+      check(`${method} 会话不存在 → Session not found`, String(error) === 'Session not found', String(error))
+    }
+
+    const kbMissing = await ui.request('ssh_kb_response', { id: 'ghost', responses: ['123456'] })
+      .catch((error) => error.message)
+    check('无待应答的 kb_response 文案逐字保持',
+      String(kbMissing) === 'No pending kb prompt for session ghost', String(kbMissing))
+    const hostkeyMissing = await ui.request('ssh_hostkey_response', { id: 'ghost', allowed: true, persist: false })
+      .catch((error) => error.message)
+    check('无待应答的 hostkey_response 文案逐字保持',
+      String(hostkeyMissing) === 'No pending hostkey prompt for session ghost', String(hostkeyMissing))
+
+    const tasks = await ui.request('sftp_list_transfers', { id: 'ghost' })
+    check('传输任务表为空', Array.isArray(tasks) && tasks.length === 0, JSON.stringify(tasks))
+    const cleared = await ui.request('sftp_clear_transfers', { id: 'ghost' })
+    check('清除终态任务返回 0', cleared === 0, String(cleared))
+    const resumeMissing = await ui.request('sftp_resume_transfer', { id: 'ghost', transferId: 't1' })
+      .catch((error) => error.message)
+    check('恢复未知传输是硬错误', String(resumeMissing).includes('Transfer not found'), String(resumeMissing))
+
+    const trusted = await ui.request('ssh_get_trusted_host_key', { host: '10.0.0.1', port: 22 })
+    check('空 known_hosts 的受信任主机密钥为 null', trusted === null, JSON.stringify(trusted))
+
+    const webWindow = await ui.request('ssh_open_web_window', { sessionId: 'ghost', assetName: 'x' })
+      .catch((error) => error.message)
+    check('窗口类动作显式降级(指明 M3)', String(webWindow).includes('M3'), String(webWindow))
+
+    const missingId = await ui.request('ssh_write', { data: 'x' }).catch((error) => error.message)
+    check('缺 id → 参数错误', String(missingId).includes('缺少 id'), String(missingId))
+    const missingPaths = await ui.request('sftp_start_upload', { id: 's1', remoteDir: '/tmp' })
+      .catch((error) => error.message)
+    check('缺 localPaths → 参数错误', String(missingPaths).includes('缺少 localPaths'), String(missingPaths))
   } finally {
     child.stdin.end()
     await new Promise((resolve) => {

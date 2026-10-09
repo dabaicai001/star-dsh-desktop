@@ -79,6 +79,11 @@ impl SshRuntime {
         Ok(Self::new(assets, sink, known_hosts, bindings))
     }
 
+    /// SSH 会话管理器(UI 面 `ui.ssh_*` / `ui.sftp_*` 的会话实体入口)。
+    pub fn manager(&self) -> &SshManager {
+        &self.manager
+    }
+
     /// 资产存储(全局方法 `starhub_list_assets` 用)。
     pub fn assets(&self) -> &Arc<AssetStore> {
         &self.assets

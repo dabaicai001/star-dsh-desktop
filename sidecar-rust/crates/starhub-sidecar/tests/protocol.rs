@@ -767,6 +767,37 @@ fn capabilities_lists_the_android_method_surface() {
         "ui.create_asset",
         "ui.update_asset",
         "ui.delete_asset",
+        // B 组交互会话(connId 面):SSH 终端 + SFTP 面板
+        "ui.ssh_connect",
+        "ui.ssh_write",
+        "ui.ssh_write_binary",
+        "ui.ssh_resize",
+        "ui.ssh_disconnect",
+        "ui.ssh_get_sessions",
+        "ui.ssh_exec",
+        "ui.ssh_kb_response",
+        "ui.ssh_hostkey_response",
+        "ui.ssh_bastion_response",
+        "ui.ssh_get_trusted_host_key",
+        "ui.test_ssh_connection",
+        "ui.ssh_open_web_window",
+        "ui.sftp_ensure_session",
+        "ui.sftp_home_dir",
+        "ui.sftp_list",
+        "ui.sftp_stat",
+        "ui.sftp_mkdir",
+        "ui.sftp_remove",
+        "ui.sftp_rename",
+        "ui.sftp_start_upload",
+        "ui.sftp_start_download",
+        "ui.sftp_pause_transfer",
+        "ui.sftp_resume_transfer",
+        "ui.sftp_cancel_transfer",
+        "ui.sftp_retry_transfer",
+        "ui.sftp_set_speed_limit",
+        "ui.sftp_clear_transfers",
+        "ui.sftp_list_transfers",
+        "ui.sftp_reveal_local",
     ] {
         assert!(
             methods.contains(&expected),
@@ -774,8 +805,8 @@ fn capabilities_lists_the_android_method_surface() {
         );
     }
     // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)+ 16(browser)
-    // + 4 桥命令 + 4 UI 面(资产 CRUD)= 93
-    assert_eq!(methods.len(), 93, "方法面总数: {methods:?}");
+    // + 4 桥命令 + 4 UI 面(资产 CRUD)+ 30 UI 面 B 组(交互会话)= 123
+    assert_eq!(methods.len(), 123, "方法面总数: {methods:?}");
 }
 
 /// Android 方法面 roundtrip(不触设备的分支):未授权写操作硬错误;
@@ -1081,4 +1112,177 @@ fn ui_asset_methods_validate_parameters() {
         .as_str()
         .expect("message")
         .contains("缺少 id"));
+}
+
+/// UI 面 B 组(交互会话)真二进制 roundtrip:会话不存在 / 无写通道 / 无待应答
+/// 三条不触网路径,错误码与文案与 Tauri command 逐字一致。
+#[test]
+fn ui_ssh_methods_roundtrip_through_the_real_binary() {
+    let mut sidecar = Sidecar::spawn();
+
+    // 空会话表:ssh_get_sessions 返回空数组
+    let response =
+        sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"b-1","method":"ui.ssh_get_sessions"}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(value["result"], serde_json::json!([]));
+
+    // 会话不存在:SFTP 浏览面硬错误(文案与 Tauri 版一致)
+    for (id, method) in [
+        ("b-2", "ui.sftp_list"),
+        ("b-3", "ui.sftp_stat"),
+        ("b-4", "ui.sftp_home_dir"),
+        ("b-5", "ui.sftp_ensure_session"),
+        ("b-6", "ui.sftp_mkdir"),
+        ("b-7", "ui.sftp_remove"),
+        ("b-8", "ui.sftp_rename"),
+    ] {
+        let response = sidecar.roundtrip(&format!(
+            r#"{{"jsonrpc":"2.0","id":"{id}","method":"{method}","params":{{"id":"ghost","path":"/tmp","from":"/a","to":"/b"}}}}"#
+        ));
+        let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+        assert_eq!(value["error"]["code"], -32603, "{response}");
+        assert_eq!(
+            value["error"]["message"], "Session not found",
+            "{method}: {response}"
+        );
+    }
+    // resize 同样按会话定位
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-9","method":"ui.ssh_resize","params":{"id":"ghost","cols":80,"rows":24}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["message"], "Session not found", "{response}");
+
+    // 无写通道时写操作静默成功(由 ssh:close 事件告知前端,与 Tauri 版一致)
+    let response = sidecar
+        .roundtrip(r#"{"jsonrpc":"2.0","id":"b-10","method":"ui.ssh_write","params":{"id":"ghost","data":"ls\n"}}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert!(
+        value["result"].is_null(),
+        "Result<(), String> 的形状是 null"
+    );
+
+    // 断开会话幂等;断开未知会话不发 registry.sync(无多余通知帧)
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-11","method":"ui.ssh_disconnect","params":{"id":"ghost"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert!(value["result"].is_null(), "{response}");
+
+    // 无待应答的三条回复通道:文案逐字保持
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-12","method":"ui.ssh_kb_response","params":{"id":"ghost","responses":["123456"]}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(
+        value["error"]["message"], "No pending kb prompt for session ghost",
+        "{response}"
+    );
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-13","method":"ui.ssh_hostkey_response","params":{"id":"ghost","allowed":true,"persist":false}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(
+        value["error"]["message"], "No pending hostkey prompt for session ghost",
+        "{response}"
+    );
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-14","method":"ui.ssh_bastion_response","params":{"id":"ghost","selection":""}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(
+        value["error"]["message"], "No pending bastion prompt for session ghost",
+        "{response}"
+    );
+
+    // 空 known_hosts:受信任主机密钥为 null
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-15","method":"ui.ssh_get_trusted_host_key","params":{"host":"10.0.0.1","port":22}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert!(value["result"].is_null(), "{response}");
+
+    // 传输任务表:空清单 / 清除 0 条 / 未知任务的暂停与取消幂等
+    let response = sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"b-16","method":"ui.sftp_list_transfers","params":{"id":"ghost"}}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["result"], serde_json::json!([]));
+    let response = sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"b-17","method":"ui.sftp_clear_transfers","params":{"id":"ghost"}}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["result"], 0);
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-18","method":"ui.sftp_pause_transfer","params":{"id":"ghost","transferId":"t1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-19","method":"ui.sftp_cancel_transfer","params":{"id":"ghost","transferId":"t1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    // resume / retry 对未知任务是硬错误(不能假装成功)
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-20","method":"ui.sftp_resume_transfer","params":{"id":"ghost","transferId":"t1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32603, "{response}");
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-21","method":"ui.sftp_retry_transfer","params":{"id":"ghost","transferId":"t1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32603, "{response}");
+
+    // 窗口类动作显式降级(不是 -32601 的晦涩错误)
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-22","method":"ui.ssh_open_web_window","params":{"sessionId":"ghost","assetName":"x"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32603, "{response}");
+    assert!(value["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("M3"));
+
+    // 参数校验:-32602,文案与 A 组一致
+    for (id, request) in [
+        (
+            "b-23",
+            r#"{"jsonrpc":"2.0","id":"b-23","method":"ui.ssh_write","params":{"data":"x"}}"#,
+        ),
+        (
+            "b-25",
+            r#"{"jsonrpc":"2.0","id":"b-25","method":"ui.sftp_start_upload","params":{"id":"s1","remoteDir":"/tmp"}}"#,
+        ),
+        (
+            "b-26",
+            r#"{"jsonrpc":"2.0","id":"b-26","method":"ui.ssh_hostkey_response","params":{"id":"s1","allowed":true}}"#,
+        ),
+    ] {
+        let response = sidecar.roundtrip(request);
+        let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+        assert_eq!(value["error"]["code"], -32602, "{id}: {response}");
+        assert!(
+            value["error"]["message"]
+                .as_str()
+                .expect("message")
+                .starts_with("缺少"),
+            "{id}: {response}"
+        );
+    }
+    // 二进制写通道的字节越界是独立的参数错误
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"b-24","method":"ui.ssh_write_binary","params":{"id":"s1","data":[300]}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32602, "{response}");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("data 必须是字节数组"),
+        "{response}"
+    );
 }

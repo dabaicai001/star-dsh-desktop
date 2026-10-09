@@ -30,6 +30,7 @@ pub mod db;
 pub mod desktop;
 pub mod ssh;
 pub mod ui;
+pub mod ui_ssh;
 
 /// Liveness probe.
 pub fn ping(_params: &Value) -> Result<Value, RpcError> {
@@ -85,6 +86,15 @@ macro_rules! register_async {
             let state = Arc::clone(&$state);
             move |params: &Value| runtime.block_on($handler(&state, params))
         });
+    };
+}
+
+/// 批量注册同一运行时的异步域方法(UI 面 B 组:方法多、形态完全一致)。
+macro_rules! register_async_all {
+    ($registry:expr, $runtime:expr, $state:expr, $( $name:literal => $handler:path ),+ $(,)?) => {
+        $(
+            register_async!($registry, $runtime, $state, $name, $handler);
+        )+
     };
 }
 
@@ -186,6 +196,47 @@ pub fn registry_with_domains(
                 move |params| crate::methods::ui::delete_asset(&assets, params)
             });
         }
+
+        // UI 面 B 组(交互会话):工作台持有 connId,命令形状与返回形状以
+        // Tauri command 为契约(`src-tauri/src/commands/{ssh,sftp}.rs`)。
+        register_async_all!(
+            registry,
+            runtime,
+            ssh,
+            "ui.ssh_connect" => crate::methods::ui_ssh::ssh_connect,
+            "ui.ssh_write" => crate::methods::ui_ssh::ssh_write,
+            "ui.ssh_write_binary" => crate::methods::ui_ssh::ssh_write_binary,
+            "ui.ssh_resize" => crate::methods::ui_ssh::ssh_resize,
+            "ui.ssh_disconnect" => crate::methods::ui_ssh::ssh_disconnect,
+            "ui.ssh_get_sessions" => crate::methods::ui_ssh::ssh_get_sessions,
+            "ui.ssh_exec" => crate::methods::ui_ssh::ssh_exec,
+            "ui.ssh_kb_response" => crate::methods::ui_ssh::ssh_kb_response,
+            "ui.ssh_hostkey_response" => crate::methods::ui_ssh::ssh_hostkey_response,
+            "ui.ssh_bastion_response" => crate::methods::ui_ssh::ssh_bastion_response,
+            "ui.ssh_get_trusted_host_key" => crate::methods::ui_ssh::ssh_get_trusted_host_key,
+            "ui.test_ssh_connection" => crate::methods::ui_ssh::test_ssh_connection,
+            "ui.sftp_ensure_session" => crate::methods::ui_ssh::sftp_ensure_session,
+            "ui.sftp_home_dir" => crate::methods::ui_ssh::sftp_home_dir,
+            "ui.sftp_list" => crate::methods::ui_ssh::sftp_list,
+            "ui.sftp_stat" => crate::methods::ui_ssh::sftp_stat,
+            "ui.sftp_mkdir" => crate::methods::ui_ssh::sftp_mkdir,
+            "ui.sftp_remove" => crate::methods::ui_ssh::sftp_remove,
+            "ui.sftp_rename" => crate::methods::ui_ssh::sftp_rename,
+            "ui.sftp_start_upload" => crate::methods::ui_ssh::sftp_start_upload,
+            "ui.sftp_start_download" => crate::methods::ui_ssh::sftp_start_download,
+            "ui.sftp_pause_transfer" => crate::methods::ui_ssh::sftp_pause_transfer,
+            "ui.sftp_resume_transfer" => crate::methods::ui_ssh::sftp_resume_transfer,
+            "ui.sftp_cancel_transfer" => crate::methods::ui_ssh::sftp_cancel_transfer,
+            "ui.sftp_retry_transfer" => crate::methods::ui_ssh::sftp_retry_transfer,
+            "ui.sftp_set_speed_limit" => crate::methods::ui_ssh::sftp_set_speed_limit,
+            "ui.sftp_clear_transfers" => crate::methods::ui_ssh::sftp_clear_transfers,
+            "ui.sftp_list_transfers" => crate::methods::ui_ssh::sftp_list_transfers,
+            "ui.sftp_reveal_local" => crate::methods::ui_ssh::sftp_reveal_local,
+        );
+        // 窗口类动作:网页访问面板随 M3 面板化落地,本批显式降级(无状态,同步即可)。
+        registry.register("ui.ssh_open_web_window", |params| {
+            crate::methods::ui_ssh::ssh_open_web_window(params)
+        });
 
         // SSH / SFTP 域:8 个方法,方法名 = 工具名
         register_async!(
