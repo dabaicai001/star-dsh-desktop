@@ -11,6 +11,7 @@ import type { ClientSessionContext, InputTriggerPick } from '@deepseek-ai/dsh-cl
 import { createStarHubAssets, createToolSelectionBridge, type RustAsset } from '../src/client/store.ts'
 import { assetToolBadge, renderAssetReference, createStarHubAssetSource } from '../src/client/asset-source.ts'
 import { TOOL_CONTEXT_NAMESPACE, type SettingsUpdateWriter } from '../src/client/tool-context.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 /** 构造一个最小资产(只带匹配所需的字段)。 */
 function rustAsset(id: string, name: string, config: Record<string, unknown> = {}): RustAsset {
@@ -51,8 +52,7 @@ function makeHarness(assets: ReturnType<typeof createStarHubAssets>, update: Ret
 
 afterEach(() => {
   vi.restoreAllMocks()
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('renderAssetReference', () => {
@@ -154,8 +154,7 @@ describe('createStarHubAssetSource', () => {
   })
 
   it('warm refreshes the asset list (snapshot leaves the preview state after get_assets)', async () => {
-    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-    w.__TAURI_INTERNALS__ = { invoke: () => Promise.resolve([rustAsset('a1', 'web-1')]) }
+    stubHostBridge(() => [rustAsset('a1', 'web-1')])
     try {
       const assets = createStarHubAssets()
       const { source } = makeHarness(assets, vi.fn())
@@ -164,7 +163,7 @@ describe('createStarHubAssetSource', () => {
       await vi.waitFor(() =>{  expect(assets.source.getSnapshot().loading).toBe(false) })
       expect(assets.source.getSnapshot().assets).toHaveLength(1)
     } finally {
-      delete w.__TAURI_INTERNALS__
+      restoreHostBridge()
     }
   })
 

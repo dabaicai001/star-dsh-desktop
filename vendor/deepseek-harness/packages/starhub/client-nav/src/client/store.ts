@@ -38,12 +38,12 @@ export interface StarHubAssetListState {
   loading: boolean
   /** 最近一次拉取的错误;null = 无错误。 */
   error: string | null
-  /** 浏览器预览(无 Tauri IPC):资产后端不可达,组件展示预览提示而非错误。 */
+  /** 浏览器预览(无宿主桥):资产后端不可达,组件展示预览提示而非错误。 */
   preview: boolean
 }
 
-/** 顶层帧 Tauri IPC 直调(共享桥,见 tauri.ts);浏览器预览(无 Tauri)时 reject。 */
-import { tauriInvoke } from './tauri.ts'
+/** 顶层帧宿主桥直调(共享桥,见 tauri.ts);无宿主桥(裸浏览器预览)时 reject。 */
+import { isTauriRuntime, tauriInvoke } from './tauri.ts'
 
 /**
  * 资产列表 holder:apply 持有的裸 source + refresh 回调。session-maybe 席位
@@ -65,9 +65,9 @@ export function createStarHubAssets(): StarHubAssets {
   const source = createSnapshotStore<StarHubAssetListState>({ assets: [], loading: false, error: null, preview: false })
   const refresh = (): void => {
     if (source.getSnapshot().loading) return
-    // 浏览器预览无 Tauri IPC:不发请求,直接落 preview 态(组件据此展示
+    // 无宿主桥(裸浏览器预览):不发请求,直接落 preview 态(组件据此展示
     // 「请在桌面应用中使用」提示,而不是一条红错)。
-    if ((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === undefined) {
+    if (!isTauriRuntime()) {
       source.update((d) => { d.loading = false; d.error = null; d.preview = true })
       return
     }

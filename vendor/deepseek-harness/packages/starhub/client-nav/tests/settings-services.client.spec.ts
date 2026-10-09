@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Settings 服务层(services.ts):isTauriRuntime 守卫分支、命令转发参数、
- * updater 的 plugin:updater|* 直调。
+ * Settings 服务层(services.ts):isTauriRuntime 守卫分支、命令转发参数;
+ * 自更新归 Electron 壳(checkForUpdates 恒无更新、downloadAndInstall 无动作)。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -11,43 +11,50 @@ import {
   testAlertWebhook,
   updateAlertRule,
 } from '../src/client/settings/services.ts'
+import {
+  hostBridgeCalls, restoreHostBridge, stubHostBridge,
+} from './host-bridge.ts'
 
-/** jsdom 全局下的 Tauri IPC stub 挂载/卸载。 */
+/** 安装宿主桥 invoke 替身;返回还原回调。 */
 function stubTauriInternals(invoke: (cmd: string, args?: unknown) => Promise<unknown>): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = { invoke }
-  return () => {
-    if (prev === undefined) {
-      delete w.__TAURI_INTERNALS__
-    } else {
-      w.__TAURI_INTERNALS__ = prev
-    }
+  stubHostBridge(invoke)
+  return () => { restoreHostBridge() }
+}
+
+/** 模拟无宿主桥:移除 fetch 使 isTauriRuntime() 为 false(替代旧「无 Tauri internals」预览态)。 */
+async function withoutHostBridge<T>(run: () => Promise<T>): Promise<T> {
+  const original = globalThis.fetch
+  Reflect.deleteProperty(globalThis, 'fetch')
+  try {
+    return await run()
+  } finally {
+    globalThis.fetch = original
   }
 }
 
 afterEach(() => {
   vi.restoreAllMocks()
   localStorage.clear()
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('isTauriRuntime', () => {
-  it('detects the injected Tauri surface', () => {
-    expect(isTauriRuntime()).toBe(false)
-    const restore = stubTauriInternals(() => Promise.resolve(null))
+  it('detects the host bridge; false while fetch is absent', () => {
+    expect(isTauriRuntime()).toBe(true)
+    // 移除 fetch = 无宿主可达(裸浏览器预览)
+    const original = globalThis.fetch
+    Reflect.deleteProperty(globalThis, 'fetch')
     try {
-      expect(isTauriRuntime()).toBe(true)
+      expect(isTauriRuntime()).toBe(false)
     } finally {
-      restore()
+      globalThis.fetch = original
     }
   })
 })
 
 describe('audit services', () => {
   it('fetchAuditLogs forwards the fixed 200/0 pagination and filter', async () => {
-    expect(await fetchAuditLogs({})).toEqual([])
+    await withoutHostBridge(async () => { expect(await fetchAuditLogs({})).toEqual([]) })
     const invoke = vi.fn((..._args: unknown[]) => Promise.resolve([{ id: 1 }]))
     const restore = stubTauriInternals(invoke)
     try {
@@ -60,8 +67,10 @@ describe('audit services', () => {
   })
 
   it('clearAuditLogs and fetchAuditStats degrade in preview and forward in desktop', async () => {
-    expect(await clearAuditLogs()).toBe(0)
-    expect(await fetchAuditStats()).toEqual([])
+    await withoutHostBridge(async () => {
+      expect(await clearAuditLogs()).toBe(0)
+      expect(await fetchAuditStats()).toEqual([])
+    })
     const invoke = vi.fn((cmd: string) => {
       if (cmd === 'audit_clear') return Promise.resolve(3)
       if (cmd === 'audit_stats') return Promise.resolve([{ category: 'ssh' }])
@@ -79,20 +88,23 @@ describe('audit services', () => {
 
 describe('alert services', () => {
   it('createAlertRule returns a browser mock in preview', async () => {
-    const rule = await createAlertRule({ name: 'r', category: 'ssh', metric: 'ssh.error_count', operator: '>', threshold: 1 })
-    expect(rule.id).toMatch(/^browser-/)
-    expect(rule.enabled).toBe(true)
-    expect(rule.duration_sec).toBe(0)
-    expect(rule.cooldown_sec).toBe(300)
-    expect(rule.created_at).toBeGreaterThan(0)
+    await withoutHostBridge(async () => {
+      const rule = await createAlertRule({ name: 'r', category: 'ssh', metric: 'ssh.error_count', operator: '>', threshold: 1 })
+      expect(rule.id).toMatch(/^browser-/)
+      expect(rule.enabled).toBe(true)
+      expect(rule.duration_sec).toBe(0)
+      expect(rule.cooldown_sec).toBe(300)
+      expect(rule.created_at).toBeGreaterThan(0)
+    })
   })
 
   it('update/delete/test/fetch/list degrade or throw in preview and forward in desktop', async () => {
-    await expect(updateAlertRule('x', {} as never)).rejects.toThrow('桌面端')
-    await expect(deleteAlertRule('x')).resolves.toBeUndefined()
-    await expect(testAlertWebhook('http://x')).rejects.toThrow('桌面端')
-    expect(await fetchAlertRules()).toEqual([])
-
+    await withoutHostBridge(async () => {
+      await expect(updateAlertRule('x', {} as never)).rejects.toThrow('桌面端')
+      await expect(deleteAlertRule('x')).resolves.toBeUndefined()
+      await expect(testAlertWebhook('http://x')).rejects.toThrow('桌面端')
+      expect(await fetchAlertRules()).toEqual([])
+    })
     const invoke = vi.fn((cmd: string) => {
       if (cmd === 'alert_update') return Promise.resolve({ id: 'x' })
       if (cmd === 'alert_delete') return Promise.resolve(null)
@@ -115,45 +127,15 @@ describe('alert services', () => {
 })
 
 describe('updater services', () => {
-  it('degrades to no-update in preview', async () => {
+  it('reports no update — self-update moved to the Electron shell', async () => {
     await expect(checkForUpdates()).resolves.toEqual({ available: false })
     await expect(downloadAndInstall()).resolves.toBeUndefined()
   })
 
-  it('checkForUpdates maps the metadata and downloadAndInstall drives the plugin commands', async () => {
-    const invoke = vi.fn((cmd: string, _args?: unknown) => {
-      if (cmd === 'plugin:updater|check') return Promise.resolve({ rid: 1, version: '9.9.9', date: '2026-01-01', body: 'b' })
-      if (cmd === 'plugin:updater|download_and_install') return Promise.resolve(null)
-      if (cmd === 'plugin:process|restart') return Promise.resolve(null)
-      return Promise.resolve(null)
-    })
-    const w = window as unknown as { __TAURI_INTERNALS__: { invoke: unknown; transformCallback: unknown } }
-    const restore = stubTauriInternals(invoke)
-    w.__TAURI_INTERNALS__.transformCallback = () => 42
-    try {
-      await expect(checkForUpdates()).resolves.toEqual({
-        available: true, version: '9.9.9', date: '2026-01-01', body: 'b',
-      })
-      await downloadAndInstall()
-      expect(invoke.mock.calls.map(c => c[0])).toEqual([
-        'plugin:updater|check', 'plugin:updater|check', 'plugin:updater|download_and_install', 'plugin:process|restart',
-      ])
-      const downloadArgs = invoke.mock.calls[2]![1]! as { onEvent: { toJSON: () => string }; rid: number }
-      expect(downloadArgs.rid).toBe(1)
-      expect(downloadArgs.onEvent.toJSON()).toBe('__CHANNEL__:42')
-    } finally {
-      restore()
-    }
-  })
-
-  it('downloadAndInstall stops when the check finds no update', async () => {
-    const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(null))
-    const restore = stubTauriInternals(invoke)
-    try {
-      await downloadAndInstall()
-      expect(invoke).toHaveBeenCalledTimes(1)
-    } finally {
-      restore()
-    }
+  it('makes no bridge calls — self-update belongs to the Electron shell', async () => {
+    stubHostBridge(vi.fn((..._args: unknown[]) => Promise.resolve(null)))
+    await expect(checkForUpdates()).resolves.toEqual({ available: false })
+    await expect(downloadAndInstall()).resolves.toBeUndefined()
+    expect(hostBridgeCalls()).toEqual([])
   })
 })

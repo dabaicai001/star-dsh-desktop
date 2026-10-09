@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { DbWorkbench, collectStatementResults } from '../src/client/DbWorkbench.tsx'
 import type { RustAsset } from '../src/client/store.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 const dbAsset: RustAsset = {
   id: 'db1', type: 'db', name: 'prod', group_id: null,
@@ -56,7 +57,7 @@ function stubInvoke(scenario: {
       default: return Promise.reject(new Error(`unexpected ${cmd}`))
     }
   })
-  ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+  stubHostBridge(invoke)
   return { invoke, calls }
 }
 
@@ -83,7 +84,7 @@ afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   localStorage.clear()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
   delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver
 })
 

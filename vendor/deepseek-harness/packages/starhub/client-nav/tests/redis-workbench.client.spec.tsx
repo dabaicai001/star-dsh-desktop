@@ -9,17 +9,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { buildCreateKeyCommand, RedisWorkbench } from '../src/client/redis/RedisWorkbench.tsx'
 import type { RustAsset } from '../src/client/store.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 type InvokeHandler = (cmd: string, args?: Record<string, unknown>) => unknown
 
+/** 安装宿主桥 invoke 替身;返回还原回调。 */
 function stubInvoke(handler: InvokeHandler): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = { invoke: handler }
-  return () => {
-    if (prev === undefined) delete w.__TAURI_INTERNALS__
-    else w.__TAURI_INTERNALS__ = prev
-  }
+  stubHostBridge(handler)
+  return () => { restoreHostBridge() }
 }
 
 const asset: RustAsset = {
@@ -91,7 +88,7 @@ async function expandDb0WithKeys() {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('RedisWorkbench connect & DB tree', () => {

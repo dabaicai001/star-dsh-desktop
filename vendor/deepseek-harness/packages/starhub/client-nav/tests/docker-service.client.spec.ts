@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * Docker 服务层(docker-service.ts)与工作台纯辅助(toDockerConnectParams /
- * countContainers / formatAge):命令转发参数、预览模式拒绝,以及纯函数边界。
+ * countContainers / formatAge):命令转发参数、宿主桥错误拒绝,以及纯函数边界。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -13,16 +13,12 @@ import {
   formatBytes,
 } from '../src/client/docker/docker-service.ts'
 import { countContainers, formatAge, toDockerConnectParams } from '../src/client/docker/DockerWorkbench.tsx'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
-/** 安装 Tauri IPC stub,记录 invoke 调用并返回预设结果;返回还原原状态的回调。 */
+/** 安装宿主桥 invoke 替身,记录 invoke 调用并返回预设结果;返回还原原状态的回调。 */
 function stubInvoke(handler: (cmd: string, args?: Record<string, unknown>) => unknown): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = { invoke: handler }
-  return () => {
-    if (prev === undefined) delete w.__TAURI_INTERNALS__
-    else w.__TAURI_INTERNALS__ = prev
-  }
+  stubHostBridge(handler)
+  return () => { restoreHostBridge() }
 }
 
 /** 记录命令与参数的 invoke helper。 */
@@ -48,7 +44,7 @@ function recordingInvoke() {
 
 afterEach(() => {
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('docker service commands', () => {
@@ -142,8 +138,9 @@ describe('docker service commands', () => {
     }
   })
 
-  it('rejects in browser preview when no Tauri internals are present', async () => {
-    await expect(dockerConnect({ transport: 'socket' })).rejects.toThrow('Tauri IPC unavailable')
+  it('rejects when the host bridge reports an error', async () => {
+    stubHostBridge(() => Promise.reject(new Error('host bridge unavailable')))
+    await expect(dockerConnect({ transport: 'socket' })).rejects.toThrow('host bridge unavailable')
   })
 })
 

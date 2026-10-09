@@ -2,14 +2,15 @@
 /**
  * GitBranchPill:会话头部 git 分支胶囊(v0.118.0 起为 Git 工作台入口)——
  * 分支与脏点展示、隐藏条件(非 git 工作区 / 无 cwd)、点击回调 openWorkbench、
- * 视图开关 aria-expanded、10s 轮询与页面可见刷新,全部经
- * __TAURI_INTERNALS__.invoke stub 走 local_shell_exec。
+ * 视图开关 aria-expanded、10s 轮询与页面可见刷新,全部经宿主桥 invoke
+ * 替身走 local_shell_exec。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createSnapshotStore, type SessionId, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { GitBranchPill, type GitBranchPillProps } from '../src/client/git/GitBranchPill.tsx'
 import type { GitWorkbenchState } from '../src/client/git/git-workbench-state.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 const SID = 'sess-1' as SessionId
 
@@ -25,30 +26,20 @@ function ok(stdout: string): ShellResult {
   return { stdout, stderr: '', exitCode: 0, elapsedMs: 1, truncated: false }
 }
 
-/** 按命令前缀分派的 local_shell_exec stub;返回调用记录。 */
+/** 按命令前缀分派的 local_shell_exec 替身;返回调用记录。 */
 function stubGit(commands: Record<string, ShellResult>) {
   const calls: string[] = []
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: { command?: string }) => {
-      if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
-      const command = args?.command ?? ''
-      calls.push(command)
-      const hit = Object.entries(commands).find(([prefix]) => command.startsWith(prefix))
-      if (hit === undefined) {
-        return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
-      }
-      return Promise.resolve(hit[1])
-    },
-  }
-  return {
-    calls,
-    restore: () => {
-      if (prev === undefined) delete w.__TAURI_INTERNALS__
-      else w.__TAURI_INTERNALS__ = prev
-    },
-  }
+  stubHostBridge((cmd, args) => {
+    if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
+    const command = (args as { command?: string }).command ?? ''
+    calls.push(command)
+    const hit = Object.entries(commands).find(([prefix]) => command.startsWith(prefix))
+    if (hit === undefined) {
+      return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
+    }
+    return Promise.resolve(hit[1])
+  })
+  return { calls, restore: () => { restoreHostBridge() } }
 }
 
 let restore: (() => void) | undefined
@@ -147,25 +138,20 @@ describe('GitBranchPill', () => {
     vi.useFakeTimers()
     let branch = 'feat/wb'
     const calls: string[] = []
-    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-    const prev = w.__TAURI_INTERNALS__
-    w.__TAURI_INTERNALS__ = {
-      invoke: (cmd: string, args?: { command?: string }) => {
-        if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
-        const command = args?.command ?? ''
-        calls.push(command)
-        if (command.startsWith('git branch --show-current')) {
-          return Promise.resolve(branch !== '' ? ok(branch) : { stdout: '', stderr: '', exitCode: 1, elapsedMs: 1, truncated: false })
-        }
-        if (command.startsWith('git rev-parse --short HEAD')) {
-          return Promise.resolve(branch !== '' ? ok('abc1234') : { stdout: '', stderr: '', exitCode: 1, elapsedMs: 1, truncated: false })
-        }
-        return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
-      },
-    }
+    stubHostBridge((cmd, args) => {
+      if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
+      const command = (args as { command?: string }).command ?? ''
+      calls.push(command)
+      if (command.startsWith('git branch --show-current')) {
+        return Promise.resolve(branch !== '' ? ok(branch) : { stdout: '', stderr: '', exitCode: 1, elapsedMs: 1, truncated: false })
+      }
+      if (command.startsWith('git rev-parse --short HEAD')) {
+        return Promise.resolve(branch !== '' ? ok('abc1234') : { stdout: '', stderr: '', exitCode: 1, elapsedMs: 1, truncated: false })
+      }
+      return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
+    })
     restore = () => {
-      if (prev === undefined) delete w.__TAURI_INTERNALS__
-      else w.__TAURI_INTERNALS__ = prev
+      restoreHostBridge()
       vi.useRealTimers()
     }
     try {
@@ -189,21 +175,14 @@ describe('GitBranchPill', () => {
 
   it('refreshes the branch when the page becomes visible again', async () => {
     let branch = 'fix/one'
-    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-    const prev = w.__TAURI_INTERNALS__
-    w.__TAURI_INTERNALS__ = {
-      invoke: (cmd: string, args?: { command?: string }) => {
-        if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
-        const command = args?.command ?? ''
-        if (command.startsWith('git branch --show-current')) return Promise.resolve(ok(branch))
-        if (command.startsWith('git rev-parse --short HEAD')) return Promise.resolve(ok('abc1234'))
-        return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
-      },
-    }
-    restore = () => {
-      if (prev === undefined) delete w.__TAURI_INTERNALS__
-      else w.__TAURI_INTERNALS__ = prev
-    }
+    stubHostBridge((cmd, args) => {
+      if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
+      const command = (args as { command?: string }).command ?? ''
+      if (command.startsWith('git branch --show-current')) return Promise.resolve(ok(branch))
+      if (command.startsWith('git rev-parse --short HEAD')) return Promise.resolve(ok('abc1234'))
+      return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
+    })
+    restore = () => { restoreHostBridge() }
     try {
       render(<GitBranchPill {...pillProps(CWD).props} />)
       await screen.findByRole('button', { name: /fix\/one/ })

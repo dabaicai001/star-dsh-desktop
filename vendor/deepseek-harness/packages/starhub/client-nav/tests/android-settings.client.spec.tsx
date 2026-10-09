@@ -6,26 +6,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AndroidSettingsTab } from '../src/client/settings/android.tsx'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 let invokeCalls: Array<{ cmd: string; args: unknown }> = []
 
+/** 安装宿主桥 invoke 替身:get_config 返回 config,其余命令 null。 */
 function stubTauri(config: unknown) {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: unknown) => {
-      invokeCalls.push({ cmd, args })
-      if (cmd === 'android_ui_get_config') return Promise.resolve(config)
-      return Promise.resolve(null)
-    },
-  }
+  stubHostBridge((cmd, args) => {
+    invokeCalls.push({ cmd, args })
+    if (cmd === 'android_ui_get_config') return Promise.resolve(config)
+    return Promise.resolve(null)
+  })
 }
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   invokeCalls = []
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('AndroidSettingsTab', () => {
@@ -65,13 +63,10 @@ describe('AndroidSettingsTab', () => {
   })
 
   it('surfaces save failures', async () => {
-    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-    w.__TAURI_INTERNALS__ = {
-      invoke: (cmd: string) => {
-        if (cmd === 'android_ui_get_config') return Promise.resolve({ adbPath: null, resolvedAdb: null })
-        return Promise.reject(new Error('adb 路径不存在或不是文件'))
-      },
-    }
+    stubHostBridge((cmd) => {
+      if (cmd === 'android_ui_get_config') return Promise.resolve({ adbPath: null, resolvedAdb: null })
+      return Promise.reject(new Error('adb 路径不存在或不是文件'))
+    })
     render(<AndroidSettingsTab />)
     const input = await screen.findByPlaceholderText(/adb\.exe/)
     fireEvent.change(input, { target: { value: 'D:\\nope\\adb.exe' } })
@@ -79,9 +74,8 @@ describe('AndroidSettingsTab', () => {
     await waitFor(() => expect(screen.getByText('adb 路径不存在或不是文件')).toBeTruthy())
   })
 
-  it('shows load failure when config fetch rejects', async () => {
-    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-    w.__TAURI_INTERNALS__ = { invoke: () => Promise.reject(new Error('Tauri IPC unavailable (browser preview)')) }
+  it('shows load failure when the host bridge reports an error', async () => {
+    stubHostBridge(() => Promise.reject(new Error('host bridge unavailable (browser preview)')))
     render(<AndroidSettingsTab />)
     await waitFor(() => expect(screen.getByText(/browser preview/)).toBeTruthy())
   })

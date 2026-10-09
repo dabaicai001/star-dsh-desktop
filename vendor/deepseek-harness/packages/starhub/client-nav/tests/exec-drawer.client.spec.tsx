@@ -15,24 +15,21 @@ import {
 } from '../src/client/conn/exec-records.ts'
 import { ExecDrawerButton } from '../src/client/conn/ExecDrawerButton.tsx'
 import { ExecRecordList } from '../src/client/conn/ExecRecordList.tsx'
+import {
+  emitHostEvent, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
+} from './host-bridge.ts'
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
+  restoreHostEvents()
 })
 
-/** 挂载 Tauri internals:transformCallback 记录监听回调,invoke 记录调用。 */
-function stubInternals(callbacks: Array<(event: unknown) => void>, invoke: ReturnType<typeof vi.fn>) {
-  ;(window as unknown as {
-    __TAURI_INTERNALS__: { invoke: typeof invoke; transformCallback: (cb: (event: unknown) => void) => number }
-  }).__TAURI_INTERNALS__ = {
-    invoke,
-    transformCallback: (callback) => {
-      callbacks.push(callback)
-      return callbacks.length
-    },
-  }
+/** 挂载宿主桥替身:invoke 记录调用,事件订阅走共享 SSE 连接。 */
+function stubInternals(invoke: ReturnType<typeof vi.fn>) {
+  stubHostBridge(invoke)
+  stubHostEvents()
 }
 
 function makeEvent(sessionId: string, command: string, output: string): SshExecDoneEvent {
@@ -137,24 +134,23 @@ describe('createExecRecordsBridge', () => {
 })
 
 describe('subscribeSshExecEvents', () => {
-  it('feeds dsh events into note and unlistens on dispose', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
-    const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
-      if (command === 'plugin:event|unlisten') return Promise.resolve(null)
-      return Promise.resolve(null)
-    })
-    stubInternals(callbacks, invoke)
+  it('feeds dsh events into note and stops feeding after dispose', async () => {
+    const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(null))
+    stubInternals(invoke)
 
     const bridge = createExecRecordsBridge()
     const dispose = subscribeSshExecEvents(bridge.note)
-    await waitFor(() => { expect(invoke).toHaveBeenCalledWith('plugin:event|listen', expect.objectContaining({ event: 'ssh:exec-done', target: { kind: 'Any' } })) })
+    // 订阅走共享 SSE 连接(按事件名 ssh:exec-done 监听)。
+    await waitFor(() => { expect(hostEventListeners('ssh:exec-done')).toBe(1) })
 
-    callbacks[0]!({ event: 'ssh:exec-done', id: 1, payload: makeEvent('dsh:a1:ssh', 'ls', 'out') })
+    emitHostEvent('ssh:exec-done', makeEvent('dsh:a1:ssh', 'ls', 'out'))
     await waitFor(() => { expect(bridge.source.getSnapshot().records).toHaveLength(1) })
 
     void dispose()
-    await waitFor(() => { expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', expect.objectContaining({ event: 'ssh:exec-done' })) })
+    // dispose 后不再派发到桥(handler 已从扇出表移除)。
+    emitHostEvent('ssh:exec-done', makeEvent('dsh:a2:ssh', 'df', 'out2'))
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    expect(bridge.source.getSnapshot().records).toHaveLength(1)
   })
 })
 

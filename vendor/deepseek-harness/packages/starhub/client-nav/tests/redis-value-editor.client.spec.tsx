@@ -10,13 +10,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RedisValueEditor, delVerb, fieldPlaceholders, ttlToInput } from '../src/client/redis/RedisValueEditor.tsx'
 import type { RedisValueResult } from '../src/client/redis/redis-service.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 /** 测试拒绝:统一为 Error(组件展示文本与直接 reject 原值一致)。 */
 function rejectAsError(e: Error | string): Promise<never> {
   return Promise.reject(typeof e === 'string' ? new Error(e) : e)
 }
 
-/** 安装 Tauri 调用分发 stub;`values` 按 key 提供 get_value 载荷。 */
+/** 安装宿主桥调用分发替身;`values` 按 key 提供 get_value 载荷。 */
 function installInvoke(
   values: Record<string, RedisValueResult>,
   opts?: { getError?: Error | string; executeError?: Error | string; setError?: Error | string },
@@ -33,7 +34,7 @@ function installInvoke(
       default: return Promise.resolve(null)
     }
   })
-  ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+  stubHostBridge(invoke)
   return invoke
 }
 
@@ -44,7 +45,7 @@ function renderEditor(key = 'foo', type = 'string') {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('RedisValueEditor exports', () => {
@@ -113,7 +114,7 @@ describe('RedisValueEditor load & key switching', () => {
       }
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderEditor('foo', 'string')
     // error 同时出现在中央错误块与底部 footer
     await waitFor(() =>{  expect(screen.getAllByText('fetch-boom').length).toBeGreaterThan(0) })
@@ -365,7 +366,7 @@ describe('RedisValueEditor structural failure & empty value', () => {
       if (cmd === 'db_redis_execute') return Promise.resolve({ result: null, durationMs: 1, error: 'internal-err' })
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderEditor('h', 'hash')
     await waitFor(() =>{  expect(screen.getAllByPlaceholderText('字段').length).toBe(1) })
     fireEvent.change(screen.getAllByPlaceholderText('值')[0]!, { target: { value: '2' } })

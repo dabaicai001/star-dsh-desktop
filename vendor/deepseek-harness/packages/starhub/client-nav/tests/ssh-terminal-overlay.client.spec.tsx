@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-
 const xterm = vi.hoisted(() => ({
   dispose: vi.fn(),
   input: undefined as ((data: string) => void) | undefined,
   write: vi.fn(),
   writeln: vi.fn(),
 }))
-
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 80
@@ -25,13 +23,11 @@ vi.mock('@xterm/xterm', () => ({
     }
   },
 }))
-
 vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
     fit() {}
   },
 }))
-
 // ZMODEM sentry mock: forwards terminal octets to to_terminal (so the data
 // path keeps rendering) and exposes the latest options so tests can drive
 // on_detect / the receive offer handler directly.
@@ -45,7 +41,6 @@ const zmodemMock = vi.hoisted(() => ({
   sendFiles: vi.fn(),
   saveToDisk: vi.fn(),
 }))
-
 vi.mock('zmodem.js/src/zmodem_browser.js', () => ({
   default: {
     Sentry: class {
@@ -63,24 +58,29 @@ vi.mock('zmodem.js/src/zmodem_browser.js', () => ({
     },
   },
 }))
-
 import { SshTerminalOverlay } from '../src/client/terminal/SshTerminalOverlay.tsx'
-
+import {
+  emitHostEvent, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
+} from './host-bridge.ts'
 class ResizeObserverMock {
   observe() {}
   disconnect() {}
 }
-
+/** 挂载宿主桥替身:invoke 记录调用,事件订阅走共享 SSE 连接(按事件名监听)。 */
+function stubInternals(invoke: ReturnType<typeof vi.fn>) {
+  stubHostBridge(invoke)
+  stubHostEvents()
+}
 const asset = {
   id: 'ssh-1', type: 'ssh', name: 'server', group_id: null,
   config: { host: '10.0.0.5', port: 22, username: 'deploy', password: 'secret' },
   key_id: null, tags: [], favorite: false, last_used_at: null, created_at: 0, updated_at: 0,
 }
-
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
+  restoreHostEvents()
   delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver
   xterm.dispose.mockReset()
   xterm.input = undefined
@@ -89,28 +89,16 @@ afterEach(() => {
   zmodemMock.sendFiles.mockReset()
   zmodemMock.saveToDisk.mockReset()
 })
-
 describe('SshTerminalOverlay', () => {
   it('subscribes before connecting, streams terminal bytes, and releases resources', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
+    // 订阅必须先于连接:连接发生时 data 事件监听已就位(共享 SSE 连接)。
+    let dataListenerAtConnect = -1
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
+      if (command === 'ssh_connect') dataListenerAtConnect = hostEventListeners('ssh:data:ssh-1')
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => {
-        callbacks.push(callback)
-        return callbacks.length
-      },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver = ResizeObserverMock
-
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', {
       id: 'ssh-1',
@@ -124,35 +112,29 @@ describe('SshTerminalOverlay', () => {
         pty_rows: 24,
       },
     }) })
-    expect(invoke.mock.calls.findIndex(([command]) => command === 'plugin:event|listen'))
-      .toBeLessThan(invoke.mock.calls.findIndex(([command]) => command === 'ssh_connect'))
-
-    callbacks[0]?.({ event: 'ssh:data:ssh-1', id: 1, payload: [104, 105] })
+    expect(dataListenerAtConnect).toBe(1)
+    emitHostEvent('ssh:data:ssh-1', [104, 105])
     expect(xterm.write).toHaveBeenCalledTimes(1)
     expect(xterm.write).toHaveBeenCalledWith('hi')
     xterm.input?.('ls\r')
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-1', data: 'ls\r' }) })
-
     unmount()
     expect(xterm.dispose).toHaveBeenCalledTimes(1)
     expect(invoke).toHaveBeenCalledWith('ssh_disconnect', { id: 'ssh-1' })
-    expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', { event: 'ssh:data:ssh-1', eventId: 1 })
-    expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', { event: 'ssh:close:ssh-1', eventId: 2 })
-    expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', { event: 'ssh:kb-interactive:ssh-1', eventId: 3 })
-    expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', { event: 'ssh:hostkey-confirm:ssh-1', eventId: 4 })
+    // 卸载即退订:四个事件名的监听全部摘除(替代旧 plugin:event|unlisten 断言)。
+    expect(hostEventListeners('ssh:data:ssh-1')).toBe(0)
+    expect(hostEventListeners('ssh:close:ssh-1')).toBe(0)
+    expect(hostEventListeners('ssh:kb-interactive:ssh-1')).toBe(0)
+    expect(hostEventListeners('ssh:hostkey-confirm:ssh-1')).toBe(0)
   })
-
   it('calls onClose from the workspace close control', () => {
     const onClose = vi.fn()
     render(<SshTerminalOverlay asset={asset} onClose={onClose} />)
     fireEvent.click(screen.getByRole('button', { name: '关闭 SSH 工作区' }))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
-
   it('switches to the SFTP tab which reuses the live terminal session', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string, args?: Record<string, unknown>) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'sftp_ensure_session') return Promise.resolve({ mode: 'subsystem' })
       if (command === 'sftp_home_dir') return Promise.resolve('/home/deploy')
       if (command === 'sftp_list') {
@@ -164,23 +146,11 @@ describe('SshTerminalOverlay', () => {
       if (command === 'sftp_list_transfers') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => {
-        callbacks.push(callback)
-        return callbacks.length
-      },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const { getByText, getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     // two tabs offered: 终端 + 文件 (SFTP)
     expect(getByText('终端')).toBeTruthy()
@@ -194,47 +164,32 @@ describe('SshTerminalOverlay', () => {
     await waitFor(() =>{  expect(getByText('docs')).toBeTruthy() })
     unmount()
   })
-
   it('opens SFTP at the current terminal directory when cwd tracking has reported one', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'sftp_ensure_session') return Promise.resolve({ mode: 'subsystem' })
       if (command === 'sftp_home_dir') return Promise.resolve('/home/deploy')
       if (command === 'sftp_list') return Promise.resolve([])
       if (command === 'sftp_list_transfers') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const { getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    callbacks[0]?.({ event: 'ssh:data:ssh-1', id: 1, payload: Array.from(new TextEncoder().encode('\u001b]7;/srv/app\u0007')) })
+    emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode('\u001b]7;/srv/app\u0007')))
     fireEvent.click(getByRole('button', { name: /文件/ }))
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/srv/app' }) })
     expect(invoke).not.toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/home/deploy' })
     unmount()
   })
-
   it('injects the OSC 7 hook on an ANSI-colored prompt and SFTP follows the extracted cwd', async () => {
     // 回归:Ubuntu 默认 PS1 带 OSC 0 标题 + ANSI 颜色,裸正则永远识别不出
     // prompt → 注入永不发生,SFTP 只能在用户手敲 pwd 后跟随。剥控制序列后
     // 必须命中 prompt 并注入;~ 依登录 home 展开为 cwd,面板自动跟随。
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'ssh_exec') return Promise.resolve('/root\nbash\nbash') // pwd + $0 + ps probe
       if (command === 'sftp_ensure_session') return Promise.resolve({ mode: 'subsystem' })
       if (command === 'sftp_home_dir') return Promise.resolve('/home/deploy') // ≠ home probe:初始打开在 /home/deploy
@@ -242,20 +197,11 @@ describe('SshTerminalOverlay', () => {
       if (command === 'sftp_list_transfers') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const { getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_exec', expect.objectContaining({ id: 'ssh-1' })) })
@@ -266,7 +212,7 @@ describe('SshTerminalOverlay', () => {
     // Ubuntu default PS1 (`\u@\h:\w\$` → deploy@server:~/src$): OSC-0 title + colors
     const ubuntuPrompt = '\u001b]0;deploy@server: ~/src\u0007\u001b[01;32mdeploy@server\u001b[00m:\u001b[01;34m~/src\u001b[00m$ '
     act(() => {
-      callbacks[0]?.({ event: 'ssh:data:ssh-1', id: 1, payload: Array.from(new TextEncoder().encode(ubuntuPrompt)) })
+      emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode(ubuntuPrompt)))
     })
     // prompt recognized through the control-stripped line → hook injected
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-1', data: expect.stringContaining('__starhub_osc7') }) })
@@ -274,11 +220,8 @@ describe('SshTerminalOverlay', () => {
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/root/src' }) })
     unmount()
   })
-
   it('injects the fish dialect hook for a fish login shell', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'ssh_exec') return Promise.resolve('/root\nfish\nfish')
       if (command === 'sftp_ensure_session') return Promise.resolve({ mode: 'subsystem' })
       if (command === 'sftp_home_dir') return Promise.resolve('/root')
@@ -286,37 +229,25 @@ describe('SshTerminalOverlay', () => {
       if (command === 'sftp_list_transfers') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const { getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_exec', expect.objectContaining({ id: 'ssh-1' })) })
     await act(async () => {}) // probe settles: loginShellRef = fish
     fireEvent.click(getByRole('button', { name: /文件/ }))
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: 'ssh-1' }) })
     act(() => {
-      callbacks[0]?.({ event: 'ssh:data:ssh-1', id: 1, payload: Array.from(new TextEncoder().encode('deploy@server:~>')) })
+      emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode('deploy@server:~>')))
     })
     // the bash dialect would only print an error line in fish; the event hook runs
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-1', data: expect.stringContaining('--on-event fish_prompt') }) })
     unmount()
   })
-
   it('skips injection for shells immune to it (tcsh) while prompt extraction still tracks cwd', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string, _args?: Record<string, unknown>) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'ssh_exec') return Promise.resolve('/root\ntcsh\ntcsh')
       if (command === 'sftp_ensure_session') return Promise.resolve({ mode: 'subsystem' })
       if (command === 'sftp_home_dir') return Promise.resolve('/root')
@@ -324,27 +255,18 @@ describe('SshTerminalOverlay', () => {
       if (command === 'sftp_list_transfers') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const { getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_exec', expect.objectContaining({ id: 'ssh-1' })) })
     await act(async () => {}) // probe settles: loginShellRef = tcsh
     fireEvent.click(getByRole('button', { name: /文件/ }))
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: 'ssh-1' }) })
     act(() => {
-      callbacks[0]?.({ event: 'ssh:data:ssh-1', id: 1, payload: Array.from(new TextEncoder().encode('[user@server /var/log]>')) })
+      emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode('[user@server /var/log]>')))
     })
     await act(async () => {})
     // no hook ever written (it would only error in tcsh)…
@@ -355,11 +277,8 @@ describe('SshTerminalOverlay', () => {
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/var/log' }) })
     unmount()
   })
-
   it('opens the broadcast dialog, lists connected sessions, sends a command, and reports success', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'ssh_get_sessions') {
         return Promise.resolve([
           { id: 'ssh-1', host: '10.0.0.5', port: 22, username: 'deploy', connected: true },
@@ -369,22 +288,14 @@ describe('SshTerminalOverlay', () => {
       }
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
     const { getByText, getByLabelText, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     fireEvent.click(getByText('广播'))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_get_sessions', undefined) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_get_sessions', {}) })
     // 只有 connected 的会话进列表(ssh-1 / ssh-2)。
     expect(screen.getByText('已选 2 / 2')).toBeTruthy()
     // 输入命令并提交 → 每个选中会话写 command\n。
@@ -395,23 +306,12 @@ describe('SshTerminalOverlay', () => {
     await waitFor(() =>{  expect(screen.getByText('已广播到 2 个会话')).toBeTruthy() })
     unmount()
   })
-
   it('shows a notice when there are no connected sessions to broadcast to', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'ssh_get_sessions') return Promise.resolve([{ id: 'ssh-1', connected: false }])
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
@@ -421,23 +321,12 @@ describe('SshTerminalOverlay', () => {
     await waitFor(() =>{  expect(screen.getByText('没有已连接的会话可用于广播')).toBeTruthy() })
     unmount()
   })
-
   it('dismisses a broadcast notice via its close button', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'ssh_get_sessions') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
@@ -451,22 +340,11 @@ describe('SshTerminalOverlay', () => {
     expect(queryByText('没有已连接的会话可用于广播')).toBeNull()
     unmount()
   })
-
   it('opens the web browser in a standalone window from the 网页 button', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
@@ -478,11 +356,8 @@ describe('SshTerminalOverlay', () => {
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_open_web_window', { sessionId: 'ssh-1', assetName: 'server' }) })
     unmount()
   })
-
   it('reports partial failure when some broadcast sends reject', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string, args?: Record<string, unknown>) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'ssh_get_sessions') {
         return Promise.resolve([
           { id: 'ssh-1', connected: true },
@@ -495,15 +370,7 @@ describe('SshTerminalOverlay', () => {
       }
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
@@ -516,27 +383,15 @@ describe('SshTerminalOverlay', () => {
     await waitFor(() =>{  expect(screen.getByText(/1 个会话发送失败/)).toBeTruthy() })
     unmount()
   })
-
   it('sends kb_interactive for MFA assets so the server prompt can be shown', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const mfaAsset = {
       ...asset,
       config: {
@@ -561,37 +416,24 @@ describe('SshTerminalOverlay', () => {
     }) })
     unmount()
   })
-
   it('shows the MFA prompt on kb-interactive and submits answers via ssh_kb_response', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    // 3 个子scription:data / close / kb-interactive
-    const kbCallback = callbacks[2]!
-    kbCallback({ event: 'ssh:kb-interactive:ssh-1', id: 3, payload: {
+    // kb-interactive 事件(SSE 事件名带 sessionId)
+    emitHostEvent('ssh:kb-interactive:ssh-1', {
       sessionId: 'ssh-1',
       instructions: '2FA required',
       prompts: [{ prompt: 'Verification code', echo: false }],
       autoFill: [null],
-    } })
+    })
     await waitFor(() =>{  expect(screen.getByLabelText('MFA 验证')).toBeTruthy() })
     expect(screen.getByText('2FA required')).toBeTruthy()
     expect(screen.getByText('Verification code')).toBeTruthy()
@@ -603,34 +445,22 @@ describe('SshTerminalOverlay', () => {
   })
 
   it('submits the MFA code when Enter is pressed in the input', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    const kbCallback = callbacks[2]!
-    kbCallback({ event: 'ssh:kb-interactive:ssh-1', id: 3, payload: {
+    emitHostEvent('ssh:kb-interactive:ssh-1', {
       sessionId: 'ssh-1',
       instructions: '',
       prompts: [{ prompt: 'OTP:', echo: false }],
       autoFill: [null],
-    } })
+    })
     await waitFor(() =>{  expect(screen.getByLabelText('MFA 验证')).toBeTruthy() })
     fireEvent.change(screen.getByLabelText('OTP:'), { target: { value: '654321' } })
     // Enter 在验证码输入框内提交(等价点击「提交验证码」)。
@@ -641,29 +471,17 @@ describe('SshTerminalOverlay', () => {
   })
 
   it('prefills kb answers from autoFill and clears the prompt on submit', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    const kbCallback = callbacks[2]!
-    kbCallback({ event: 'ssh:kb-interactive:ssh-1', id: 3, payload: {
+    emitHostEvent('ssh:kb-interactive:ssh-1', {
       sessionId: 'ssh-1',
       instructions: '',
       prompts: [
@@ -671,7 +489,7 @@ describe('SshTerminalOverlay', () => {
         { prompt: 'TOTP', echo: false },
       ],
       autoFill: ['pre-filled-pwd', null],
-    } })
+    })
     await waitFor(() =>{  expect(screen.getByLabelText('MFA 验证')).toBeTruthy() })
     expect((screen.getByLabelText('Password') as HTMLInputElement).value).toBe('pre-filled-pwd')
     expect((screen.getByLabelText('TOTP') as HTMLInputElement).value).toBe('')
@@ -680,35 +498,22 @@ describe('SshTerminalOverlay', () => {
     expect(screen.queryByLabelText('MFA 验证')).toBeNull()
     unmount()
   })
-
   it('shows the host-key prompt on first connect, lets the user trust & persist, and replies via ssh_hostkey_response', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    // hostkey-confirm 是第 4 个 listen(顺序:data / close / kb-interactive / hostkey-confirm)
-    const hkCallback = callbacks[3]!
-    hkCallback({ event: 'ssh:hostkey-confirm:ssh-1', id: 4, payload: {
+    // hostkey-confirm 事件(SSE 事件名带 sessionId)
+    emitHostEvent('ssh:hostkey-confirm:ssh-1', {
       hostname: '10.0.0.5', port: 22, remote: '10.0.0.5:22',
       keyType: 'ssh-ed25519', sha256: 'SHA256:c3R1Yi1lZDI1NTE5LWZpbmdlcnByaW50',
-    } })
+    })
     await waitFor(() =>{  expect(screen.getByLabelText('主机密钥确认')).toBeTruthy() })
     expect(screen.getByText('10.0.0.5:22')).toBeTruthy()
     expect(screen.getByText('ssh-ed25519')).toBeTruthy()
@@ -720,33 +525,21 @@ describe('SshTerminalOverlay', () => {
   })
 
   it('rejects an unknown host key by responding allowed=false, disconnecting, and keeping the reason visible', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const onClose = vi.fn()
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={onClose} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    const hkCallback = callbacks[3]!
-    hkCallback({ event: 'ssh:hostkey-confirm:ssh-1', id: 4, payload: {
+    emitHostEvent('ssh:hostkey-confirm:ssh-1', {
       hostname: '10.0.0.5', port: 22, remote: '10.0.0.5:22',
       keyType: 'ssh-rsa', sha256: 'SHA256:dW50cnVzdGVkLWZpbmdlcnByaW50',
-    } })
+    })
     await waitFor(() =>{  expect(screen.getByLabelText('主机密钥确认')).toBeTruthy() })
     fireEvent.click(screen.getByText('拒绝'))
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_hostkey_response', { id: 'ssh-1', allowed: false, persist: false }) })
@@ -760,33 +553,21 @@ describe('SshTerminalOverlay', () => {
     expect(screen.queryByLabelText('主机密钥确认')).toBeNull()
     unmount()
   })
-
   it('marks a remotely closed session as disconnected and reconnects on demand', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
     // 连接成功 → 「已连接」
     await waitFor(() =>{  expect(screen.getByText('已连接')).toBeTruthy() })
     // 远端关闭事件(第 2 个监听 = ssh:close)
-    callbacks[1]!({ event: 'ssh:close:ssh-1', id: 2, payload: 'Connection reset by peer' })
+    emitHostEvent('ssh:close:ssh-1', 'Connection reset by peer')
     await waitFor(() =>{  expect(screen.getByText('已断开')).toBeTruthy() })
     // 断开后不再谎报「连接中」,并给出重新连接入口
     expect(screen.queryByText('连接中')).toBeNull()
@@ -798,27 +579,15 @@ describe('SshTerminalOverlay', () => {
     })
     unmount()
   })
-
   it('runs a ZMODEM send session (remote rz), picks a file and streams it back', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     const session = {
       type: 'send', on: vi.fn(() => session), start: vi.fn(),
       close: vi.fn().mockResolvedValue(undefined), abort: vi.fn(),
@@ -847,27 +616,15 @@ describe('SshTerminalOverlay', () => {
     await waitFor(() =>{  expect(screen.getByText('已发送 a.txt')).toBeTruthy() })
     unmount()
   })
-
   it('receives a remote sz file (offer → accept → save to disk) and cancels cleanly', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke: typeof invoke
-        transformCallback: (callback: (event: unknown) => void) => number
-      }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (callback) => { callbacks.push(callback); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
     }
-
     let offerHandler: ((...args: unknown[]) => void) | undefined
     const session = {
       type: 'receive',
@@ -896,7 +653,6 @@ describe('SshTerminalOverlay', () => {
     expect(screen.queryByText('已接收 remote.tar')).toBeNull()
     unmount()
   })
-
   it('builds every SSH auth mode and the kb_interactive config from the asset config', async () => {
     const cases: Array<{ config: Record<string, unknown>; expectAuth: Record<string, unknown> }> = [
       // password only (the common case)
@@ -909,17 +665,10 @@ describe('SshTerminalOverlay', () => {
       { config: { host: 'h', port: 22, username: 'u' }, expectAuth: { Password: '' } },
     ]
     for (const { config, expectAuth } of cases) {
-      const callbacks: Array<(event: unknown) => void> = []
       const invoke = vi.fn((command: string, _args?: Record<string, unknown>) => {
-        if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
         return Promise.resolve(null)
       })
-      ;(window as unknown as {
-        __TAURI_INTERNALS__: { invoke: typeof invoke; transformCallback: (c: (e: unknown) => void) => number }
-      }).__TAURI_INTERNALS__ = {
-        invoke,
-        transformCallback: (c) => { callbacks.push(c); return callbacks.length },
-      }
+      stubInternals(invoke)
       ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
       const { unmount } = render(<SshTerminalOverlay asset={{ ...asset, config } as unknown as typeof asset} onClose={vi.fn()} />)
       await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
@@ -928,17 +677,10 @@ describe('SshTerminalOverlay', () => {
       unmount()
     }
     // kb_interactive: mfaPassword present → password field
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string, _args?: Record<string, unknown>) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: { invoke: typeof invoke; transformCallback: (c: (e: unknown) => void) => number }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (c) => { callbacks.push(c); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
     const mfaAsset = { ...asset, config: { ...asset.config, mfaEnabled: true, mfaPassword: 'main-secret' } }
     const { unmount } = render(<SshTerminalOverlay asset={mfaAsset} onClose={vi.fn()} />)
@@ -947,19 +689,11 @@ describe('SshTerminalOverlay', () => {
     expect((connectCall[1]! as { config: { kb_interactive: unknown } }).config.kb_interactive).toEqual({ enabled: true, password: 'main-secret' })
     unmount()
   })
-
   it('covers zmodem send guard, multi-file, zero-byte, send failure and cancel', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: { invoke: typeof invoke; transformCallback: (c: (e: unknown) => void) => number }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (c) => { callbacks.push(c); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
     const session = {
       type: 'send', on: vi.fn(() => session), start: vi.fn(),
@@ -993,42 +727,27 @@ describe('SshTerminalOverlay', () => {
     fireEvent.click(screen.getByText('取消'))
     unmount()
   })
-
   it('re-runs the terminal data path through the zmodem sentry for chunk edges', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: { invoke: typeof invoke; transformCallback: (c: (e: unknown) => void) => number }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (c) => { callbacks.push(c); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
     // data (non-zmodem) → sentry.consume → to_terminal → handleChunk
-    act(() => { callbacks[0]?.({ event: 'ssh:data:ssh-1', id: 1, payload: [] }) }) // empty chunk → early return
-    act(() => { callbacks[0]?.({ event: 'ssh:data:ssh-1', id: 1, payload: Array.from(new TextEncoder().encode('\u001b]7;/srv\u0007')) }) }) // OSC 7 cwd
+    act(() => { emitHostEvent('ssh:data:ssh-1', []) }) // empty chunk → early return
+    act(() => { emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode('\u001b]7;/srv\u0007'))) }) // OSC 7 cwd
     // pwd output chunk → cwd fallback
-    act(() => { callbacks[0]?.({ event: 'ssh:data:ssh-1', id: 1, payload: Array.from(new TextEncoder().encode('\n/opt/x\r\n')) }) })
+    act(() => { emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode('\n/opt/x\r\n'))) })
     unmount()
   })
 
   it('covers the follow-terminal toggle and a second receive offer (null size, stale timer)', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: { invoke: typeof invoke; transformCallback: (c: (e: unknown) => void) => number }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (c) => { callbacks.push(c); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
@@ -1049,21 +768,13 @@ describe('SshTerminalOverlay', () => {
     await waitFor(() =>{  expect(zmodemMock.saveToDisk).toHaveBeenCalled() })
     unmount()
   })
-
   it('covers kb-absent mfa, ssh_exec cwd, sentry sender catch and on_retract', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string, _args?: Record<string, unknown>) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'ssh_exec') return Promise.resolve('/srv/work') // pwd fallback → applyCwd
       if (command === 'ssh_write_binary') return Promise.reject(new Error('bin')) // sender catch
       return Promise.resolve(null)
     })
-    ;(window as unknown as {
-      __TAURI_INTERNALS__: { invoke: typeof invoke; transformCallback: (c: (e: unknown) => void) => number }
-    }).__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (c) => { callbacks.push(c); return callbacks.length },
-    }
+    stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
     // mfa enabled WITHOUT mfaPassword → kb_interactive has no password field
     const kbAsset = { ...asset, config: { ...asset.config, mfaEnabled: true } }

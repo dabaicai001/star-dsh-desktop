@@ -8,57 +8,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { useTransferTasks } from '../src/client/terminal/use-transfer-tasks.ts'
 import type { TransferTask } from '../src/client/terminal/sftp-service.ts'
+import {
+  emitHostEvent, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
+} from './host-bridge.ts'
 
-type Listener = (envelope: { event: string; id: number; payload: unknown }) => void
-
-/** Tauri internals stub:按事件名登记监听器,seed 来自 sftp_list_transfers。 */
+/** 宿主桥替身:seed 来自 sftp_list_transfers,事件订阅走共享 SSE 连接。 */
 function installTauri(seed: TransferTask[] = []) {
-  const listeners = new Map<string, Array<{ eventId: number; cb: Listener }>>()
-  const callbacks = new Map<number, Listener>()
-  let nextId = 0
-  let nextEventId = 100
-  const invoke = vi.fn((command: string, args?: Record<string, unknown>): Promise<unknown> => {
-    if (command === 'plugin:event|listen') {
-      const event = args?.event as string
-      const cb = callbacks.get(args?.handler as number)
-      const eventId = ++nextEventId
-      if (cb !== undefined) {
-        const arr = listeners.get(event) ?? []
-        arr.push({ eventId, cb })
-        listeners.set(event, arr)
-      }
-      return Promise.resolve(eventId)
-    }
-    if (command === 'plugin:event|unlisten') {
-      const event = args?.event as string
-      const eventId = args?.eventId as number
-      const arr = listeners.get(event) ?? []
-      listeners.set(event, arr.filter(l => l.eventId !== eventId))
-      return Promise.resolve(null)
-    }
+  const invoke = vi.fn((command: string, _args?: Record<string, unknown>): Promise<unknown> => {
     if (command === 'sftp_list_transfers') return Promise.resolve(seed)
     if (command === 'sftp_clear_transfers') return Promise.resolve(1)
     return Promise.resolve(null)
   })
-  ;(window as unknown as {
-    __TAURI_INTERNALS__: {
-      invoke: typeof invoke
-      transformCallback: (cb: Listener) => number
-    }
-  }).__TAURI_INTERNALS__ = {
-    invoke,
-    transformCallback: (cb) => {
-      const id = ++nextId
-      callbacks.set(id, cb)
-      return id
-    },
-  }
+  stubHostBridge(invoke)
+  stubHostEvents()
   const emit = (event: string, payload: Record<string, unknown>): void => {
-    for (const l of listeners.get(event) ?? []) {
-      act(() => { l.cb({ event, id: l.eventId, payload }) })
-    }
+    act(() => { emitHostEvent(event, payload) })
   }
-  const listenerCount = (event: string): number => (listeners.get(event) ?? []).length
+  const listenerCount = (event: string): number => hostEventListeners(event)
   return { invoke, emit, listenerCount }
 }
 
@@ -72,7 +38,8 @@ function task(partial: Partial<TransferTask> & { id: string }): TransferTask {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
+  restoreHostEvents()
 })
 
 describe('useTransferTasks', () => {
@@ -203,7 +170,6 @@ describe('useTransferTasks', () => {
     const t = installTauri([])
     t.invoke.mockImplementation((command: string, _args?: Record<string, unknown>) => {
       if (command === 'sftp_list_transfers') return Promise.reject(new Error('no session'))
-      if (command === 'plugin:event|listen') return Promise.resolve(999)
       return Promise.resolve(null)
     })
     const { result } = renderHook(() => useTransferTasks('ssh-1'))
@@ -278,7 +244,6 @@ describe('useTransferTasks', () => {
 
     // 真源清除失败 → 重 seed 对齐(本地乐观删除被纠正回来)
     t.invoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(1)
       if (command === 'sftp_clear_transfers') return Promise.reject(new Error('channel dead'))
       if (command === 'sftp_list_transfers') {
         void args
@@ -293,7 +258,6 @@ describe('useTransferTasks', () => {
 
     // 重 seed 也失败 → 保持本地投影(不抛错)
     t.invoke.mockImplementation((command: string, _args?: Record<string, unknown>) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(1)
       if (command === 'sftp_clear_transfers') return Promise.reject(new Error('channel dead'))
       if (command === 'sftp_list_transfers') return Promise.reject(new Error('still dead'))
       return Promise.resolve(null)

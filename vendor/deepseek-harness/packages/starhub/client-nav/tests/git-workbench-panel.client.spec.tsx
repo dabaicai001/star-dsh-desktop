@@ -3,12 +3,14 @@
  * GitWorkbenchPanel:工具抽屉内跟随会话 cwd 的 Git 工作台视图——非 git 空态、
  * 变更三段列表与暂存/取消暂存/两步确认(放弃/删除未跟踪)/diff 查看/提交已
  * 暂存(含引号转义)/AI 草稿/历史(git log + git show 展开)/分支搜索与切换/
- * 同步远程·拉取·推送(超时参数与行内错误),全部经 __TAURI_INTERNALS__.invoke
- * stub 走 local_shell_exec(命令形状断言含在 handler 分派里)。
+ * 同步远程·拉取·推送(超时参数与行内错误),全部经宿主桥 invoke 替身走
+ * local_shell_exec(命令形状断言含在 handler 分派里)。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { GitWorkbenchPanel } from '../src/client/git/GitWorkbenchPanel.tsx'
+import { COMMIT_MESSAGE_ENDPOINT } from '../src/client/git/git-service.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 interface ShellResult {
   stdout: string
@@ -29,33 +31,27 @@ function fail(stderr: string): ShellResult {
 /** 变更页探测的标准三分状态:已暂存/未暂存/未跟踪各一。 */
 const STATUS_THREE = 'M  staged.ts\0 M modified.ts\0?? untracked.ts\0'
 
-/** 按命令前缀分派的 local_shell_exec stub;记录 workingDir::command 与原始 args。 */
+/** 按命令前缀分派的 local_shell_exec 替身;记录 workingDir::command 与原始 args。 */
 function stubGit(commands: Record<string, ShellResult>) {
   const calls: string[] = []
   const argsLog: Array<{ command?: string; workingDir?: string; timeoutSec?: number }> = []
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: { command?: string; workingDir?: string; timeoutSec?: number }) => {
-      if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
-      const command = args?.command ?? ''
-      calls.push(`${args?.workingDir ?? ''}::${command}`)
-      argsLog.push(args ?? {})
-      // 更长前缀优先:git status --porcelain=v1 -z 须先于 git status --porcelain。
-      const hit = Object.entries(commands).find(([prefix]) => command.startsWith(prefix))
-      if (hit === undefined) {
-        return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
-      }
-      return Promise.resolve(hit[1])
-    },
-  }
+  stubHostBridge((cmd, args) => {
+    if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
+    const a = args as { command?: string; workingDir?: string; timeoutSec?: number }
+    const command = a.command ?? ''
+    calls.push(`${a.workingDir ?? ''}::${command}`)
+    argsLog.push(a)
+    // 更长前缀优先:git status --porcelain=v1 -z 须先于 git status --porcelain。
+    const hit = Object.entries(commands).find(([prefix]) => command.startsWith(prefix))
+    if (hit === undefined) {
+      return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
+    }
+    return Promise.resolve(hit[1])
+  })
   return {
     calls,
     argsLog,
-    restore: () => {
-      if (prev === undefined) delete w.__TAURI_INTERNALS__
-      else w.__TAURI_INTERNALS__ = prev
-    },
+    restore: () => { restoreHostBridge() },
   }
 }
 
@@ -220,7 +216,13 @@ describe('GitWorkbenchPanel', () => {
       'git log -8 "--pretty=%s"': ok('feat: prior work'),
     })
     restore = stub.restore
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ message: 'feat: draft it' }), { status: 200 })))
+    // AI 草稿端点与宿主桥 invoke 共用全局 fetch:invoke 路径仍走桥替身,
+    // commit-message 路径走 AI 桩(替代旧 vi.stubGlobal 整体替换)。
+    const bridgeFetch = globalThis.fetch
+    const aiFetch = vi.fn(async () => new Response(JSON.stringify({ message: 'feat: draft it' }), { status: 200 }))
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => (
+      String(input).endsWith(COMMIT_MESSAGE_ENDPOINT) ? aiFetch() : bridgeFetch(input, init)
+    )) as typeof fetch
     renderPanel()
     fireEvent.click(await screen.findByRole('button', { name: /AI/ }))
     await act(async () => {})
@@ -231,11 +233,15 @@ describe('GitWorkbenchPanel', () => {
   it('surfaces AI draft failures for clean trees', async () => {
     const stub = stubGit(probeCommands())
     restore = stub.restore
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'provider down' }), { status: 502 })))
+    const bridgeFetch = globalThis.fetch
+    const aiFetch = vi.fn(async () => new Response(JSON.stringify({ error: 'provider down' }), { status: 502 }))
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => (
+      String(input).endsWith(COMMIT_MESSAGE_ENDPOINT) ? aiFetch() : bridgeFetch(input, init)
+    )) as typeof fetch
     renderPanel()
     fireEvent.click(await screen.findByRole('button', { name: /AI/ }))
     expect(await screen.findByText(/没有改动/)).toBeTruthy()
-    expect(vi.mocked(fetch)).not.toHaveBeenCalled()
+    expect(aiFetch).not.toHaveBeenCalled()
   })
 
   it('lists history, expands a commit patch and collapses on the second click', async () => {
@@ -326,28 +332,21 @@ describe('GitWorkbenchPanel', () => {
 
   it('blocks concurrent actions while one is running', async () => {
     let resolveAdd: (r: ShellResult) => void = () => {}
-    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-    const prev = w.__TAURI_INTERNALS__
     const calls: string[] = []
-    w.__TAURI_INTERNALS__ = {
-      invoke: (cmd: string, args?: { command?: string; workingDir?: string }) => {
-        if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
-        const command = args?.command ?? ''
-        calls.push(command)
-        if (command.startsWith('git add -- ')) {
-          return new Promise((res) => { resolveAdd = res })
-        }
-        if (command.startsWith('git branch --show-current')) return Promise.resolve(ok('main'))
-        if (command.startsWith('git rev-parse --short HEAD')) return Promise.resolve(ok('abc1234'))
-        if (command.startsWith('git status --porcelain=v1 -z')) return Promise.resolve(ok(STATUS_THREE))
-        if (command.startsWith('git status --porcelain')) return Promise.resolve(ok(STATUS_THREE))
-        return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
-      },
-    }
-    restore = () => {
-      if (prev === undefined) delete w.__TAURI_INTERNALS__
-      else w.__TAURI_INTERNALS__ = prev
-    }
+    stubHostBridge((cmd, args) => {
+      if (cmd !== 'local_shell_exec') return Promise.reject(new Error(`unexpected: ${cmd}`))
+      const command = (args as { command?: string }).command ?? ''
+      calls.push(command)
+      if (command.startsWith('git add -- ')) {
+        return new Promise((res) => { resolveAdd = res })
+      }
+      if (command.startsWith('git branch --show-current')) return Promise.resolve(ok('main'))
+      if (command.startsWith('git rev-parse --short HEAD')) return Promise.resolve(ok('abc1234'))
+      if (command.startsWith('git status --porcelain=v1 -z')) return Promise.resolve(ok(STATUS_THREE))
+      if (command.startsWith('git status --porcelain')) return Promise.resolve(ok(STATUS_THREE))
+      return Promise.resolve({ stdout: '', stderr: `unknown: ${command}`, exitCode: 1, elapsedMs: 1, truncated: false })
+    })
+    restore = () => { restoreHostBridge() }
     renderPanel()
     const modifiedRow = await rowOf('modified.ts')
     fireEvent.click(within(modifiedRow).getByRole('button', { name: '暂存' }))
@@ -448,15 +447,8 @@ describe('GitWorkbenchPanel', () => {
   })
 
   it('reports status loading before the first probe settles', async () => {
-    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-    const prev = w.__TAURI_INTERNALS__
-    w.__TAURI_INTERNALS__ = {
-      invoke: () => new Promise(() => { /* 永不 resolve:探测挂起 */ }),
-    }
-    restore = () => {
-      if (prev === undefined) delete w.__TAURI_INTERNALS__
-      else w.__TAURI_INTERNALS__ = prev
-    }
+    stubHostBridge(() => new Promise(() => { /* 永不 resolve:探测挂起 */ }))
+    restore = () => { restoreHostBridge() }
     renderPanel()
     expect(await screen.findByText('读取 git 状态…')).toBeTruthy()
   })

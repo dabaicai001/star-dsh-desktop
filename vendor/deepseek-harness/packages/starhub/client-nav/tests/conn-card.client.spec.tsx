@@ -7,10 +7,14 @@
  *   浮层重挂载丢失——修复「命令已执行但按钮卡在『执行中…』、浮层不关」;
  * - `ssh_bastion_response` 失败不再静默:复位按钮并提示;
  * - 互斥:同一时刻至多一张卡,新请求顶掉旧卡。
+ * IPC 走宿主桥 invoke 替身,事件订阅走共享 SSE 连接(emitHostEvent 派发)。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { StarHubConnCard } from '../src/client/conn/StarHubConnCard.tsx'
+import {
+  emitHostEvent, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
+} from './host-bridge.ts'
 
 beforeEach(() => {
   // xterm 在 jsdom 下依赖 matchMedia(DPR 探测)与 ResizeObserver(fit 布局),
@@ -43,20 +47,14 @@ afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   vi.useRealTimers()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
+  restoreHostEvents()
 })
 
-/** 挂载 Tauri internals:transformCallback 记录监听回调,invoke 记录调用。 */
-function stubInternals(callbacks: Array<(event: unknown) => void>, invoke: ReturnType<typeof vi.fn>) {
-  ;(window as unknown as {
-    __TAURI_INTERNALS__: { invoke: typeof invoke; transformCallback: (cb: (event: unknown) => void) => number }
-  }).__TAURI_INTERNALS__ = {
-    invoke,
-    transformCallback: (callback) => {
-      callbacks.push(callback)
-      return callbacks.length
-    },
-  }
+/** 挂载宿主桥替身:invoke 记录调用,事件订阅走共享 SSE 连接。 */
+function stubInternals(invoke: ReturnType<typeof vi.fn>) {
+  stubHostBridge(invoke)
+  stubHostEvents()
 }
 
 const kbPayload = {
@@ -68,20 +66,17 @@ const kbPayload = {
 
 describe('StarHubConnCard', () => {
   it('prompts MFA for dsh sessions and submits answers via ssh_kb_response', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
-    const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
-      return Promise.resolve(null)
-    })
-    stubInternals(callbacks, invoke)
+    const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(null))
+    stubInternals(invoke)
 
     const { unmount } = render(<StarHubConnCard />)
-    // plugin:event|listen 的 handler 是每次注册递增的 callback id,只断言事件名与 target。
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('plugin:event|listen', expect.objectContaining({ event: 'ssh:kb-interactive', target: { kind: 'Any' } })) })
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('plugin:event|listen', expect.objectContaining({ event: 'ssh:bastion-select', target: { kind: 'Any' } })) })
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('plugin:event|listen', expect.objectContaining({ event: 'ssh:bastion-done', target: { kind: 'Any' } })) })
-
-    callbacks[0]!({ event: 'ssh:kb-interactive', id: 1, payload: kbPayload })
+    // 三个通用事件各订阅一次(共享 SSE 连接按事件名监听)。
+    await waitFor(() => {
+      expect(hostEventListeners('ssh:kb-interactive')).toBe(1)
+      expect(hostEventListeners('ssh:bastion-select')).toBe(1)
+      expect(hostEventListeners('ssh:bastion-done')).toBe(1)
+    })
+    emitHostEvent('ssh:kb-interactive', kbPayload)
     await waitFor(() =>{  expect(screen.getByLabelText('MFA 验证')).toBeTruthy() })
     expect(screen.getByText('Enter 2FA code')).toBeTruthy()
     expect(screen.getByText(/AI 连接 asset-1/)).toBeTruthy()
@@ -95,20 +90,16 @@ describe('StarHubConnCard', () => {
   })
 
   it('shows connected feedback when ssh:mfa-connected arrives, then closes on 完成', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
-    const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
-      return Promise.resolve(null)
-    })
-    stubInternals(callbacks, invoke)
+    const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(null))
+    stubInternals(invoke)
 
     const { unmount } = render(<StarHubConnCard />)
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
-    callbacks[0]!({ event: 'ssh:kb-interactive', id: 1, payload: kbPayload })
+    await waitFor(() =>{  expect(hostEventListeners('ssh:kb-interactive')).toBe(1) })
+    emitHostEvent('ssh:kb-interactive', kbPayload)
     await waitFor(() =>{  expect(screen.getByLabelText('MFA 验证')).toBeTruthy() })
-    // 精确 connected 监听是 mfa 卡挂载后的最后一个 listen。
-    const connectedEvent = callbacks[callbacks.length - 1]!
-    connectedEvent({ event: 'ssh:mfa-connected:dsh:asset-1:ssh', id: 2, payload: { sessionId: 'dsh:asset-1:ssh' } })
+    // 精确 connected 监听按当前 mfa 卡 sessionId 订阅(事件名带 sessionId)。
+    await waitFor(() =>{  expect(hostEventListeners('ssh:mfa-connected:dsh:asset-1:ssh')).toBe(1) })
+    emitHostEvent('ssh:mfa-connected:dsh:asset-1:ssh', { sessionId: 'dsh:asset-1:ssh' })
     await waitFor(() =>{  expect(screen.getByText(/连接成功/)).toBeTruthy() })
     expect(screen.getByText(/会话可复用/)).toBeTruthy()
     fireEvent.click(screen.getByText('完成'))
@@ -117,41 +108,32 @@ describe('StarHubConnCard', () => {
   })
 
   it('opens the bastion terminal on ssh:bastion-select and closes on generic ssh:bastion-done', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
-    const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
-      return Promise.resolve(null)
-    })
-    stubInternals(callbacks, invoke)
+    const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(null))
+    stubInternals(invoke)
 
     const { unmount } = render(<StarHubConnCard />)
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
+    await waitFor(() =>{  expect(hostEventListeners('ssh:bastion-select')).toBe(1) })
 
-    // bastion-select 是第 2 个注册的通用监听。
-    const bastionSelect = callbacks[1]!
-    bastionSelect({ event: 'ssh:bastion-select', id: 1, payload: { sessionId: 'dsh:asset-1:ssh' } })
+    emitHostEvent('ssh:bastion-select', { sessionId: 'dsh:asset-1:ssh' })
     await waitFor(() =>{  expect(screen.getByLabelText('堡垒机选择机器')).toBeTruthy() })
     expect(screen.getByText(/AI 连接 asset-1 需选择目标机器/)).toBeTruthy()
 
     // 组件级通用 done 事件(带 sessionId)到达即关闭浮层,不依赖浮层重挂载。
-    const bastionDone = callbacks[2]!
-    bastionDone({ event: 'ssh:bastion-done', id: 1, payload: { sessionId: 'dsh:asset-1:ssh' } })
+    emitHostEvent('ssh:bastion-done', { sessionId: 'dsh:asset-1:ssh' })
     await waitFor(() =>{  expect(screen.queryByLabelText('堡垒机选择机器')).toBeNull() })
     unmount()
   })
 
   it('resets the button and shows an error when ssh_bastion_response fails (no silent stuck)', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
     const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
       if (command === 'ssh_bastion_response') return Promise.reject(new Error('No pending bastion prompt'))
       return Promise.resolve(null)
     })
-    stubInternals(callbacks, invoke)
+    stubInternals(invoke)
 
     const { unmount } = render(<StarHubConnCard />)
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
-    callbacks[1]!({ event: 'ssh:bastion-select', id: 1, payload: { sessionId: 'dsh:asset-1:ssh' } })
+    await waitFor(() =>{  expect(hostEventListeners('ssh:bastion-select')).toBe(1) })
+    emitHostEvent('ssh:bastion-select', { sessionId: 'dsh:asset-1:ssh' })
     await waitFor(() =>{  expect(screen.getByLabelText('堡垒机选择机器')).toBeTruthy() })
 
     fireEvent.click(screen.getByText('执行 AI 命令'))
@@ -162,41 +144,33 @@ describe('StarHubConnCard', () => {
   })
 
   it('new request replaces the previous card (mutual exclusion)', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
-    const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
-      return Promise.resolve(null)
-    })
-    stubInternals(callbacks, invoke)
+    const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(null))
+    stubInternals(invoke)
 
     const { unmount } = render(<StarHubConnCard />)
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
-    callbacks[0]!({ event: 'ssh:kb-interactive', id: 1, payload: kbPayload })
+    await waitFor(() =>{  expect(hostEventListeners('ssh:bastion-select')).toBe(1) })
+    emitHostEvent('ssh:kb-interactive', kbPayload)
     await waitFor(() =>{  expect(screen.getByLabelText('MFA 验证')).toBeTruthy() })
-    callbacks[1]!({ event: 'ssh:bastion-select', id: 1, payload: { sessionId: 'dsh:asset-2:ssh' } })
+    emitHostEvent('ssh:bastion-select', { sessionId: 'dsh:asset-2:ssh' })
     await waitFor(() =>{  expect(screen.getByLabelText('堡垒机选择机器')).toBeTruthy() })
     expect(screen.queryByLabelText('MFA 验证')).toBeNull()
     unmount()
   })
 
   it('ignores non-dsh sessions and stays null', async () => {
-    const callbacks: Array<(event: unknown) => void> = []
-    const invoke = vi.fn((command: string) => {
-      if (command === 'plugin:event|listen') return Promise.resolve(callbacks.length)
-      return Promise.resolve(null)
-    })
-    stubInternals(callbacks, invoke)
+    const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(null))
+    stubInternals(invoke)
     const { queryByLabelText, unmount } = render(<StarHubConnCard />)
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalled() })
+    await waitFor(() =>{  expect(hostEventListeners('ssh:bastion-select')).toBe(1) })
 
-    callbacks[0]!({ event: 'ssh:kb-interactive', id: 1, payload: { ...kbPayload, sessionId: 'asset-1' } })
-    callbacks[1]!({ event: 'ssh:bastion-select', id: 1, payload: { sessionId: 'test-123' } })
+    emitHostEvent('ssh:kb-interactive', { ...kbPayload, sessionId: 'asset-1' })
+    emitHostEvent('ssh:bastion-select', { sessionId: 'test-123' })
     expect(queryByLabelText('MFA 验证')).toBeNull()
     expect(queryByLabelText('堡垒机选择机器')).toBeNull()
     unmount()
   })
 
-  it('returns null in preview mode where tauri internals are absent', () => {
+  it('returns null in preview mode where the host bridge is absent', () => {
     const { container } = render(<StarHubConnCard />)
     expect(container.firstChild).toBeNull()
   })

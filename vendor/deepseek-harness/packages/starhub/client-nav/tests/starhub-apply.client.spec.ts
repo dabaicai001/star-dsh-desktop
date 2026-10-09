@@ -34,11 +34,11 @@ import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
 import { AboutTab } from '../src/client/settings/about.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
 import { AuditTab } from '../src/client/settings/audit.tsx'
+import { restoreHostBridge } from './host-bridge.ts'
 
 afterEach(() => {
   vi.restoreAllMocks()
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 /** Register-options face the client apply passes to slots.register, typed for the call log. */
@@ -219,7 +219,7 @@ describe('client-nav apply (rc.2)', () => {
 
   it('opens every asset page in a React window (preview: new tab), no shell overlay hooks', () => {
     const { ctx, register } = fakeContext()
-    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => ({}) as Window)
     try {
       applyPlugin(ctx)
       const panel = register.mock.calls[4]![0].inject() as { openAsset: (asset: unknown) => void }
@@ -230,7 +230,8 @@ describe('client-nav apply (rc.2)', () => {
       }
       panel.openAsset(esAsset)
       expect(openSpy).toHaveBeenCalledTimes(1)
-      expect(openSpy.mock.calls[0]![0]).toContain('starhub-react/index.html?asset=es1')
+      // openNewPage 传 new URL(path, origin):断言其绝对化后的 URL 含资产路径。
+      expect(String(openSpy.mock.calls[0]![0])).toContain('starhub-react/index.html?asset=es1')
     } finally {
       openSpy.mockRestore()
     }

@@ -6,17 +6,27 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AndroidPanel } from '../src/client/android/AndroidPanel.tsx'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 let invokeCalls: Array<{ cmd: string; args: unknown }> = []
 let invokeResult: (cmd: string) => unknown = () => null
 
+/** 安装宿主桥 invoke 替身:记录调用并按 invokeResult 返回。 */
 function stubTauri() {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: unknown) => {
-      invokeCalls.push({ cmd, args })
-      return Promise.resolve(invokeResult(cmd))
-    },
+  stubHostBridge((cmd, args) => {
+    invokeCalls.push({ cmd, args })
+    return Promise.resolve(invokeResult(cmd))
+  })
+}
+
+/** 模拟无宿主桥:移除 fetch 使 isTauriRuntime() 为 false(替代旧「无 Tauri internals」预览态)。 */
+function withoutHostBridge<T>(run: () => T): T {
+  const original = globalThis.fetch
+  Reflect.deleteProperty(globalThis, 'fetch')
+  try {
+    return run()
+  } finally {
+    globalThis.fetch = original
   }
 }
 
@@ -28,8 +38,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   invokeCalls = []
   invokeResult = () => null
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 async function renderPanel(devices: unknown = [READY]) {
@@ -44,7 +53,7 @@ describe('AndroidPanel', () => {
     await renderPanel()
     expect(screen.getByText('Xiaomi 14')).toBeTruthy()
     expect(screen.getByText(/303d7c9b · 就绪/)).toBeTruthy()
-    expect(invokeCalls[0]).toEqual({ cmd: 'android_ui_list_devices', args: undefined })
+    expect(invokeCalls[0]).toEqual({ cmd: 'android_ui_list_devices', args: {} })
   })
 
   it('shows the error banner and retries on failure', async () => {
@@ -58,8 +67,8 @@ describe('AndroidPanel', () => {
     })
   })
 
-  it('falls into the preview hint without Tauri IPC', async () => {
-    render(<AndroidPanel />)
+  it('falls into the preview hint without a host bridge', async () => {
+    withoutHostBridge(() => { render(<AndroidPanel />) })
     await waitFor(() => expect(screen.getByText(/浏览器里/)).toBeTruthy())
   })
 

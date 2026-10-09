@@ -18,6 +18,17 @@ import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
 
 afterEach(cleanup)
 
+/** 模拟无宿主桥:移除 fetch 使 isTauriRuntime() 为 false(替代旧「无 Tauri internals」预览态)。 */
+async function withoutHostBridge<T>(run: () => Promise<T>): Promise<T> {
+  const original = globalThis.fetch
+  Reflect.deleteProperty(globalThis, 'fetch')
+  try {
+    return await run()
+  } finally {
+    globalThis.fetch = original
+  }
+}
+
 /**
  * Compose the full workspace props share: a real selection bridge plus an
  * asset-list bare source (both stand in for the apply-owned holders injected
@@ -148,20 +159,22 @@ describe('StarHubToolWorkspace', () => {
     const props = workspaceProps()
     props.bridge.selectSubcategory('sandbox')
     render(<StarHubToolWorkspace {...props} />)
-    // 沙箱子类无资产概念:展开即 SandboxPanel;无 Tauri IPC(测试环境)时
+    // 沙箱子类无资产概念:展开即 SandboxPanel;无宿主桥(测试环境)时
     // 面板落到概览错误态而不是资产加载态。
     await waitFor(() => expect(screen.getByText(/沙箱概览不可用/)).toBeTruthy())
     expect(screen.queryByText(/暂无 沙箱桌面 连接/)).toBeNull()
   })
 
   it('renders the android panel (no asset list) for the android subcategory', async () => {
-    const props = workspaceProps()
-    props.bridge.selectSubcategory('android')
-    render(<StarHubToolWorkspace {...props} />)
-    // Android 子类无资产概念:展开即 AndroidPanel;无 Tauri IPC(测试环境)时
-    // 面板落到浏览器预览提示而不是资产加载态。
-    await waitFor(() => expect(screen.getByText(/浏览器里/)).toBeTruthy())
-    expect(screen.queryByText(/暂无 Android 连接/)).toBeNull()
+    await withoutHostBridge(async () => {
+      const props = workspaceProps()
+      props.bridge.selectSubcategory('android')
+      render(<StarHubToolWorkspace {...props} />)
+      // Android 子类无资产概念:展开即 AndroidPanel;无宿主桥(测试环境)时
+      // 面板落到浏览器预览提示而不是资产加载态。
+      await waitFor(() => expect(screen.getByText(/浏览器里/)).toBeTruthy())
+      expect(screen.queryByText(/暂无 Android 连接/)).toBeNull()
+    })
   })
 
   it('shows the per-subcategory empty state with a 新建连接 button when no assets match', () => {
@@ -446,7 +459,7 @@ describe('StarHubToolWorkspace', () => {
     const props = workspaceProps({ cwd: 'E:\\ws\\demo', sessionId: 'sess-1' })
     props.gitWorkbench.update((d) => { d.open = true })
     render(<StarHubToolWorkspace {...props} />)
-    // 测试环境无 Tauri IPC → 探测失败后渲染非 git 空态(面板确已挂载)
+    // 测试环境无宿主桥 → 探测失败后渲染非 git 空态(面板确已挂载)
     expect(await screen.findByText('当前工作区不是 git 仓库')).toBeTruthy()
     expect(screen.getByText('E:\\ws\\demo')).toBeTruthy()
     // 面板头「关闭」走注入的 closeGitWorkbench

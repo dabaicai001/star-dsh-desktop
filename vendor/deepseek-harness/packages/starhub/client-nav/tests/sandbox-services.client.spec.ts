@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * 沙箱桌面前端服务(sandbox/services.ts):Tauri 命令名/参数契约、
- * Docker 资产过滤、直播窗口命令参数、fileSrc 预览降级。
+ * 沙箱桌面前端服务(sandbox/services.ts):宿主桥命令名/参数契约、
+ * Docker 资产过滤、直播窗口命令参数、fileSrc 同源 URL 化。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -9,18 +9,20 @@ import {
   listDockerAssets, onUserActionRequest, openSandboxLiveWindow, replyUserAction,
   sandboxLifecycle, setSandboxPlatform, upsertSandboxTemplate,
 } from '../src/client/sandbox/services.ts'
+import {
+  emitHostEvent, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
+} from './host-bridge.ts'
 
 afterEach(() => {
   vi.restoreAllMocks()
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
+  restoreHostEvents()
 })
 
-/** 挂一个记录调用的 invoke stub,返回 invoke 的 mock。 */
+/** 挂一个记录调用的 invoke 替身,返回 handler 的 mock。 */
 function stubInvoke(result: unknown = null) {
   const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(result))
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  w.__TAURI_INTERNALS__ = { invoke }
+  stubHostBridge(invoke)
   return invoke
 }
 
@@ -28,7 +30,7 @@ describe('sandbox services', () => {
   it('fetchSandboxOverview calls desktop_ui_overview', async () => {
     const invoke = stubInvoke({ instances: [], templates: [], platformAssetId: null })
     await expect(fetchSandboxOverview()).resolves.toEqual({ instances: [], templates: [], platformAssetId: null })
-    expect(invoke).toHaveBeenCalledWith('desktop_ui_overview', undefined)
+    expect(invoke).toHaveBeenCalledWith('desktop_ui_overview', {})
   })
 
   it('setSandboxPlatform passes null for 本机默认 and id otherwise', async () => {
@@ -73,17 +75,15 @@ describe('sandbox services', () => {
     })
   })
 
-  it('onUserActionRequest subscribes to starhub://desktop-user-action', async () => {
-    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown; transformCallback: unknown } }
-    const invoke = vi.fn((cmd: string) => Promise.resolve(cmd === 'plugin:event|listen' ? 7 : null))
-    const transformCallback = vi.fn(() => 3)
-    w.__TAURI_INTERNALS__ = { invoke, transformCallback }
-    await onUserActionRequest(() => {})
-    expect(invoke).toHaveBeenCalledWith('plugin:event|listen', {
-      event: 'starhub://desktop-user-action',
-      target: { kind: 'Any' },
-      handler: 3,
-    })
+  it('onUserActionRequest subscribes to starhub://desktop-user-action and delivers payloads', async () => {
+    const seen: unknown[] = []
+    stubHostBridge(vi.fn((..._args: unknown[]) => Promise.resolve(null)))
+    stubHostEvents()
+    await onUserActionRequest((event) => { seen.push(event) })
+    // 事件订阅走共享 SSE 连接(按事件名 addEventListener),不再经 invoke。
+    expect(hostEventListeners('starhub://desktop-user-action')).toBe(1)
+    emitHostEvent('starhub://desktop-user-action', { requestId: 'r-1' })
+    expect(seen).toEqual([{ requestId: 'r-1' }])
   })
 
   it('listDockerAssets filters to docker assets only', async () => {
@@ -98,10 +98,8 @@ describe('sandbox services', () => {
     ])
   })
 
-  it('fileSrc uses convertFileSrc when injected, empty string in preview', () => {
-    expect(fileSrc('/tmp/a.png')).toBe('')
-    const w = window as unknown as { __TAURI_INTERNALS__?: { convertFileSrc: (p: string) => string } }
-    w.__TAURI_INTERNALS__ = { convertFileSrc: (p: string) => `asset://${p}` }
-    expect(fileSrc('/tmp/a.png')).toBe('asset:///tmp/a.png')
+  it('fileSrc resolves same-origin URLs, empty string for no path', () => {
+    expect(fileSrc('')).toBe('')
+    expect(fileSrc('/tmp/a.png')).toBe(new URL('/tmp/a.png', window.location.origin).toString())
   })
 })

@@ -2,12 +2,13 @@
 /**
  * ElasticsearchWorkbench.tsx 组件测试:连接生命周期、概览/检索/索引 tab、
  * DSL 格式化与分页、表格/JSON 视图、新建索引与删除确认、连接失败与关闭。
- * 通过 mock window.__TAURI_INTERNALS__.invoke 驱动 db_es_* 命令。
+ * 通过宿主桥 invoke 替身驱动 db_es_* 命令。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { RustAsset } from '../src/client/store.ts'
 import { ElasticsearchWorkbench } from '../src/client/es/ElasticsearchWorkbench.tsx'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 const esAsset: RustAsset = {
   id: 'es1', type: 'db', name: 'es-prod', group_id: null,
@@ -15,14 +16,10 @@ const esAsset: RustAsset = {
   last_used_at: null, created_at: 0, updated_at: 0,
 }
 
+/** 安装宿主桥 invoke 替身;返回还原回调。 */
 function stubInvoke(handler: (cmd: string, args?: Record<string, unknown>) => unknown): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = { invoke: handler }
-  return () => {
-    if (prev === undefined) delete w.__TAURI_INTERNALS__
-    else w.__TAURI_INTERNALS__ = prev
-  }
+  stubHostBridge(handler)
+  return () => { restoreHostBridge() }
 }
 
 /** 模拟未类型化的 IPC 拒绝(真实 Tauri 载荷可能是纯字符串而非 Error)。 */
@@ -62,7 +59,7 @@ function okInvoke() {
 beforeEach(cleanup)
 afterEach(() => {
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('ElasticsearchWorkbench connect lifecycle', () => {

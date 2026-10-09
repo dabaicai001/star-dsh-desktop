@@ -15,20 +15,17 @@ import {
   parseMysqlMetrics, parsePostgresMetrics, detailRecords,
   MYSQL_STATUS_SQL, MYSQL_VARIABLES_SQL, PG_SUMMARY_SQL,
 } from '../src/client/dashboard/db-dashboard-service.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
+/** 安装宿主桥 invoke 替身;返回还原回调。 */
 function stubInvoke(handler: (cmd: string, args?: Record<string, unknown>) => unknown): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = { invoke: handler }
-  return () => {
-    if (prev === undefined) delete w.__TAURI_INTERNALS__
-    else w.__TAURI_INTERNALS__ = prev
-  }
+  stubHostBridge(handler)
+  return () => { restoreHostBridge() }
 }
 
 afterEach(() => {
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('db dashboard commands', () => {

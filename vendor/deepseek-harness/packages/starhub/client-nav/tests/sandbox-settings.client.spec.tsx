@@ -6,27 +6,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { SandboxSettingsTab } from '../src/client/settings/sandbox.tsx'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 let invokeCalls: Array<{ cmd: string; args: unknown }> = []
 
+/** 安装宿主桥 invoke 替身:overview / get_assets 分别返回,其余 null。 */
 function stubTauri(overview: unknown, assets: unknown) {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: unknown) => {
-      invokeCalls.push({ cmd, args })
-      if (cmd === 'desktop_ui_overview') return Promise.resolve(overview)
-      if (cmd === 'get_assets') return Promise.resolve(assets)
-      return Promise.resolve(null)
-    },
-  }
+  stubHostBridge((cmd, args) => {
+    invokeCalls.push({ cmd, args })
+    if (cmd === 'desktop_ui_overview') return Promise.resolve(overview)
+    if (cmd === 'get_assets') return Promise.resolve(assets)
+    return Promise.resolve(null)
+  })
 }
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   invokeCalls = []
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('SandboxSettingsTab', () => {
@@ -67,25 +65,21 @@ describe('SandboxSettingsTab', () => {
   })
 
   it('surfaces save failures', async () => {
-    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-    w.__TAURI_INTERNALS__ = {
-      invoke: (cmd: string) => {
-        if (cmd === 'desktop_ui_overview') {
-          return Promise.resolve({ instances: [], templates: [], platformAssetId: null })
-        }
-        if (cmd === 'get_assets') return Promise.resolve([{ id: 'd1', type: 'docker', name: '远程 Docker' }])
-        return Promise.reject(new Error('资产不存在'))
-      },
-    }
+    stubHostBridge((cmd) => {
+      if (cmd === 'desktop_ui_overview') {
+        return Promise.resolve({ instances: [], templates: [], platformAssetId: null })
+      }
+      if (cmd === 'get_assets') return Promise.resolve([{ id: 'd1', type: 'docker', name: '远程 Docker' }])
+      return Promise.reject(new Error('资产不存在'))
+    })
     render(<SandboxSettingsTab />)
     const select = await screen.findByRole('combobox')
     fireEvent.change(select, { target: { value: 'd1' } })
     await waitFor(() => expect(screen.getByText('资产不存在')).toBeTruthy())
   })
 
-  it('shows load failure when overview fetch rejects', async () => {
-    const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-    w.__TAURI_INTERNALS__ = { invoke: () => Promise.reject(new Error('Tauri IPC unavailable (browser preview)')) }
+  it('shows load failure when the host bridge reports an error', async () => {
+    stubHostBridge(() => Promise.reject(new Error('host bridge unavailable (browser preview)')))
     render(<SandboxSettingsTab />)
     await waitFor(() => expect(screen.getByText(/browser preview/)).toBeTruthy())
   })

@@ -10,15 +10,12 @@ import {
   mysqlConnUsage, postgresConnUsage, mysqlDataRatio,
 } from '../src/client/dashboard/DbDashboard.tsx'
 import type { MysqlMetrics, PostgresMetrics } from '../src/client/dashboard/db-dashboard-service.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
+/** 安装宿主桥 invoke 替身;返回还原回调。 */
 function stubInvoke(handler: (cmd: string, args?: Record<string, unknown>) => unknown): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = { invoke: handler }
-  return () => {
-    if (prev === undefined) delete w.__TAURI_INTERNALS__
-    else w.__TAURI_INTERNALS__ = prev
-  }
+  stubHostBridge(handler)
+  return () => { restoreHostBridge() }
 }
 
 /** 从 db_mysql_execute 参数取 SQL 文本(与 RPC 契约一致,缺失回退空串)。 */
@@ -120,7 +117,7 @@ function pgInvoke() {
 beforeEach(cleanup)
 afterEach(() => {
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('MySQL dashboard', () => {

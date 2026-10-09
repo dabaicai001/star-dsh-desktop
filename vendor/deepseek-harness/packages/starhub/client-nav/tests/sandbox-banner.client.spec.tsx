@@ -7,38 +7,33 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { SandboxUserActionBanner } from '../src/client/sandbox/SandboxUserActionBanner.tsx'
+import {
+  emitHostEvent, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
+} from './host-bridge.ts'
 
-/** 事件回调注册表(transformCallback 捕获)。 */
-let eventHandlers: Array<(envelope: { payload: unknown }) => void> = []
+const USER_ACTION_EVENT = 'starhub://desktop-user-action'
+
 let invokeCalls: Array<{ cmd: string; args: unknown }> = []
 
+/** 安装宿主桥 invoke 替身 + 假事件流:记录调用,事件订阅走 SSE。 */
 function stubTauri() {
-  const w = window as unknown as {
-    __TAURI_INTERNALS__?: { invoke: unknown; transformCallback: unknown }
-  }
-  w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: unknown) => {
-      invokeCalls.push({ cmd, args })
-      return Promise.resolve(cmd === 'plugin:event|listen' ? 1 : null)
-    },
-    transformCallback: (cb: (envelope: { payload: unknown }) => void) => {
-      eventHandlers.push(cb)
-      return eventHandlers.length - 1
-    },
-  }
+  stubHostBridge((cmd, args) => {
+    invokeCalls.push({ cmd, args })
+    return Promise.resolve(null)
+  })
+  stubHostEvents()
 }
 
 function fireUserAction(payload: unknown) {
-  for (const handler of eventHandlers) handler({ payload })
+  emitHostEvent(USER_ACTION_EVENT, payload)
 }
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  eventHandlers = []
   invokeCalls = []
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
+  restoreHostEvents()
 })
 
 const EVENT = {
@@ -60,7 +55,7 @@ describe('SandboxUserActionBanner', () => {
   it('shows the banner on the event and replies 已完成', async () => {
     stubTauri()
     render(<SandboxUserActionBanner />)
-    await waitFor(() => expect(eventHandlers.length).toBe(1))
+    await waitFor(() => expect(hostEventListeners(USER_ACTION_EVENT)).toBe(1))
     act(() => { fireUserAction(EVENT) })
     expect(screen.getByRole('alertdialog').textContent).toContain('请扫码登录微信')
     fireEvent.click(screen.getByRole('button', { name: '已完成' }))
@@ -73,7 +68,7 @@ describe('SandboxUserActionBanner', () => {
   it('replies 无法完成 on the cancel button', async () => {
     stubTauri()
     render(<SandboxUserActionBanner />)
-    await waitFor(() => expect(eventHandlers.length).toBe(1))
+    await waitFor(() => expect(hostEventListeners(USER_ACTION_EVENT)).toBe(1))
     act(() => { fireUserAction(EVENT) })
     fireEvent.click(screen.getByRole('button', { name: '无法完成' }))
     await waitFor(() => {
@@ -84,7 +79,7 @@ describe('SandboxUserActionBanner', () => {
   it('opens the takeover live window via 打开直播画面', async () => {
     stubTauri()
     render(<SandboxUserActionBanner />)
-    await waitFor(() => expect(eventHandlers.length).toBe(1))
+    await waitFor(() => expect(hostEventListeners(USER_ACTION_EVENT)).toBe(1))
     act(() => { fireUserAction(EVENT) })
     fireEvent.click(screen.getByRole('button', { name: '打开直播画面' }))
     await waitFor(() => {

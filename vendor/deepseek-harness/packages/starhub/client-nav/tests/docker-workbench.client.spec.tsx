@@ -35,6 +35,7 @@ vi.mock('@xterm/addon-fit', () => ({
 }))
 
 import { DockerWorkbench, formatAge } from '../src/client/docker/DockerWorkbench.tsx'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 class ResizeObserverMock {
   observe() {}
@@ -56,7 +57,7 @@ const stats = {
 }
 const logLine = { timestamp: '2026-01-01', stream: 'stdout', message: 'hello' }
 
-/** 安装 Tauri 调用分发 stub;`opts` 可覆盖各命令返回。 */
+/** 安装宿主桥调用分发替身;`opts` 可覆盖各命令返回。 */
 function installTauri(opts?: {
   connectError?: Error
   listContainersError?: Error
@@ -96,11 +97,11 @@ function installTauri(opts?: {
       default: return Promise.resolve(null)
     }
   })
-  ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+  stubHostBridge(invoke)
   return invoke
 }
 
-/** 非 Error 拒绝:Tauri invoke 可能以任意值拒绝,工作台走 String(e) 兜底。 */
+/** 非 Error 拒绝:宿主桥可能以任意 error 消息拒绝,工作台走 String(e) 兜底。 */
 function rejectWith(reason: string): Promise<never> {
   return Promise.resolve().then(() => {
     throw reason
@@ -110,7 +111,7 @@ function rejectWith(reason: string): Promise<never> {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
   delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver
   xterm.dispose.mockReset()
   xterm.input = undefined
@@ -199,7 +200,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_list_images') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     // all=false 时无运行中容器 → 空态给「没有运行中的容器」+ 显示全部入口
     // (不能断言「暂无容器」:停止容器不在 all=false 的响应里,无从判断真的没有容器)
@@ -241,7 +242,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_list_images') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText(/没有运行中的容器/)).toBeTruthy() })
     // 空态里的「显示全部」按钮必须真正切开关并按 all=true 重拉(此前只刷新,停止容器永远出不来)
@@ -316,7 +317,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_container_stats') return Promise.resolve(stats)
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText('web')).toBeTruthy() })
     fireEvent.click(screen.getByLabelText('日志'))
@@ -411,7 +412,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_list_images') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     // 非 Error 拒绝 → 走 String(e) 兜底
     await waitFor(() =>{  expect(screen.getByText(/加载失败:plain boom/)).toBeTruthy() })
@@ -423,7 +424,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_connect') return Promise.resolve({ connId: undefined })
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText(/Docker 连接未返回 connId/)).toBeTruthy() })
   })
@@ -437,7 +438,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_container_logs') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText('web')).toBeTruthy() })
     fireEvent.click(screen.getByLabelText('日志'))
@@ -453,7 +454,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_container_logs') return Promise.resolve([{ timestamp: 't', stream: 'stderr', message: 'err!' }, { timestamp: 't2', stream: 'stdout', message: 'ok' }])
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText('web')).toBeTruthy() })
     fireEvent.click(screen.getByLabelText('日志'))
@@ -470,7 +471,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_container_stats') return Promise.resolve(null)
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText('web')).toBeTruthy() })
     fireEvent.click(screen.getByLabelText('统计'))
@@ -485,7 +486,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_list_images') return Promise.resolve([{ id: 'sha256:abcdef123456', tags: [], size: 100, created: 0 }])
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     fireEvent.click(screen.getByRole('tab', { name: '镜像' }))
     await waitFor(() =>{  expect(screen.getAllByText('sha256:abcde').length).toBeGreaterThan(0) })
@@ -500,7 +501,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_list_images') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText(/没有运行中的容器/)).toBeTruthy() })
     fireEvent.click(screen.getByRole('checkbox'))
@@ -521,7 +522,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_start_container') return Promise.resolve(null)
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText(/没有运行中的容器/)).toBeTruthy() })
     fireEvent.click(screen.getByRole('checkbox'))
@@ -540,7 +541,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_stop_container') return Promise.reject(new Error('stop-fail'))
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText('web')).toBeTruthy() })
     fireEvent.click(screen.getByLabelText('停止'))
@@ -567,7 +568,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_container_stats') return rejectWith('plain stats')
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText('web')).toBeTruthy() })
     fireEvent.click(screen.getByLabelText('日志'))
@@ -584,7 +585,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_list_images') return rejectWith('plain imgs')
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText('web')).toBeTruthy() })
     fireEvent.click(screen.getByRole('tab', { name: '镜像' }))
@@ -665,7 +666,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_list_images') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText('web')).toBeTruthy() })
     fireEvent.click(screen.getByRole('tab', { name: '镜像' }))
@@ -689,7 +690,7 @@ describe('DockerWorkbench', () => {
       if (cmd === 'docker_prune_images') return rejectWith('plain prune')
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText('web')).toBeTruthy() })
     fireEvent.click(screen.getByRole('tab', { name: '镜像' }))
@@ -714,7 +715,7 @@ describe('DockerWorkbench', () => {
     const invoke = installTauri({
       pullError: new Error('pull-fail'), removeImageError: new Error('rm-fail'), pruneError: new Error('prune-fail'),
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     renderWorkbench()
     await waitFor(() =>{  expect(screen.getByText('web')).toBeTruthy() })
     fireEvent.click(screen.getByRole('tab', { name: '镜像' }))

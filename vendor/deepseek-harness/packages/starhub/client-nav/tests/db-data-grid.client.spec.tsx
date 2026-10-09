@@ -12,6 +12,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DbDataGrid, cellText, downloadTextFile, rowsToCsv, rowToInsert, sqlLiteral, whereSuggestions } from '../src/client/DbDataGrid.tsx'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 const RESULT = {
   columns: [{ name: 'id', type: 'BIGINT' }, { name: 'name', type: 'VARCHAR' }, { name: 'note', type: 'TEXT', nullable: true }],
@@ -20,7 +21,7 @@ const RESULT = {
   isSelect: true,
 }
 
-/** stub window.__TAURI_INTERNALS__.invoke:get_table_data / list_columns / update_rows。 */
+/** 装宿主桥 invoke 替身:get_table_data / list_columns / update_rows。 */
 function stubInvoke(opts: {
   failLoad?: boolean
   failUpdate?: boolean
@@ -48,14 +49,14 @@ function stubInvoke(opts: {
     }
     return Promise.reject(new Error(`unexpected ${cmdOrName}`))
   })
-  ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+  stubHostBridge(invoke)
   return { invoke, calls }
 }
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
   // 清理下载创建的 DOM 节点。
   document.body.innerHTML = ''
 })
@@ -145,7 +146,7 @@ describe('DbDataGrid', () => {
       if (cmd === 'db_mysql_list_columns') return Promise.resolve([{ name: 'meta', key: '' }])
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText(JSON.stringify({ a: 1 }))).toBeTruthy() })
   })
@@ -179,7 +180,7 @@ describe('DbDataGrid', () => {
       if (cmd === 'db_mysql_list_columns') return Promise.resolve([])
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('导出 CSV').hasAttribute('disabled')).toBe(true) })
   })
@@ -446,7 +447,7 @@ describe('DbDataGrid', () => {
       if (cmd === 'db_mysql_list_columns') return Promise.resolve([])
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('x')).toBeTruthy() })
     expect(screen.getByText('raw')).toBeTruthy()
@@ -466,7 +467,7 @@ describe('DbDataGrid', () => {
       if (cmd === 'db_mysql_list_columns') return Promise.resolve([{ name: 'id', key: 'PRI' }])
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('12 ms')).toBeTruthy() })
     const viewport = document.querySelector('[role="rowgroup"]') as HTMLElement
@@ -491,7 +492,7 @@ describe('DbDataGrid', () => {
       if (cmd === 'db_mysql_list_columns') return Promise.resolve([{ name: 'id', key: 'PRI' }])
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('0')).toBeTruthy() })
     const next = screen.getByText<HTMLButtonElement>('下一页')
@@ -515,7 +516,7 @@ describe('DbDataGrid', () => {
       if (cmd === 'db_mysql_list_columns') return Promise.resolve([{ name: 'id', key: 'PRI' }])
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText(/1 \/ 5/)).toBeTruthy() })
     fireEvent.change(screen.getByLabelText('每页行数'), { target: { value: '500' } })
@@ -541,7 +542,7 @@ describe('DbDataGrid', () => {
       if (cmd === 'db_mysql_list_columns') return Promise.resolve([])
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('syntax error near x')).toBeTruthy() })
   })
@@ -555,7 +556,7 @@ describe('DbDataGrid', () => {
       if (cmd === 'db_mysql_list_columns') return Promise.resolve([])
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('boom-string')).toBeTruthy() })
   })
@@ -568,7 +569,7 @@ describe('DbDataGrid', () => {
       if (cmd === 'db_mysql_list_columns') return Promise.reject(new Error('no perms'))
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('7')).toBeTruthy() })
     // 主键获取失败不应阻塞浏览(无错误条)。
@@ -675,7 +676,7 @@ describe('DbDataGrid', () => {
       }
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
     fireEvent.doubleClick(screen.getByText('alice'))
@@ -725,7 +726,7 @@ describe('DbDataGrid', () => {
       }
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
     fireEvent.doubleClick(screen.getByText('alice'))
@@ -746,7 +747,7 @@ describe('DbDataGrid', () => {
       if (cmd === 'db_mysql_list_columns') return Promise.resolve([{ name: 'uid', key: 'PRI' }])
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('alice')).toBeTruthy() })
     fireEvent.doubleClick(screen.getByText('alice'))
@@ -766,7 +767,7 @@ describe('DbDataGrid', () => {
       if (cmd === 'db_mysql_list_columns') return Promise.resolve(null)
       return Promise.reject(new Error(`unexpected ${cmd}`))
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DbDataGrid connId="c1" table="users" />)
     await waitFor(() =>{  expect(screen.getByText('9')).toBeTruthy() })
   })

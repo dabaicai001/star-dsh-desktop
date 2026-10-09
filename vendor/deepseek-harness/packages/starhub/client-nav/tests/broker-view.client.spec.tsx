@@ -13,27 +13,19 @@ import {
 } from '../src/client/broker/DashboardCard.tsx'
 import { loadBrokerOverview, testBroker, type BrokerOverview } from '../src/client/broker/service.ts'
 import type { RustAsset } from '../src/client/store.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   vi.useRealTimers()
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
-/** jsdom 全局下的 Tauri IPC stub 挂载/卸载。 */
+/** 安装宿主桥 invoke 替身;返回还原回调。 */
 function stubTauriInternals(invoke: (cmd: string, args?: unknown) => Promise<unknown>): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = { invoke }
-  return () => {
-    if (prev === undefined) {
-      delete w.__TAURI_INTERNALS__
-    } else {
-      w.__TAURI_INTERNALS__ = prev
-    }
-  }
+  stubHostBridge(invoke)
+  return () => { restoreHostBridge() }
 }
 
 /** 模拟未类型化的 IPC 拒绝(真实 Tauri 载荷可能是纯字符串而非 Error)。 */
@@ -75,7 +67,8 @@ describe('broker service', () => {
       return Promise.resolve(kafkaOverview)
     })
     try {
-      await expect(loadBrokerOverview('kafka', { host: 'h', port: 9092 })).resolves.toBe(kafkaOverview)
+      // 结果经宿主桥 JSON 往返,结构相等即可(引用不再同一)。
+      await expect(loadBrokerOverview('kafka', { host: 'h', port: 9092 })).resolves.toEqual(kafkaOverview)
     } finally {
       restore()
     }
@@ -158,9 +151,10 @@ describe('BrokerView', () => {
     }
   })
 
-  it('shows the browser-preview rejection message when Tauri internals are absent', async () => {
+  it('shows the host-bridge rejection message when the bridge is unreachable', async () => {
+    stubHostBridge(() => Promise.reject(new Error('host bridge unavailable (browser preview)')))
     render(<BrokerView asset={brokerAsset()} />)
-    expect(await screen.findByText(/Tauri IPC unavailable/)).toBeTruthy()
+    expect(await screen.findByText(/host bridge unavailable/)).toBeTruthy()
   })
 
   it('does not invoke when the asset has no host', () => {

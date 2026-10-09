@@ -1,7 +1,7 @@
 /**
  * 沙箱桌面前端服务:desktop_ui_* / desktop_set_takeover / desktop_user_action_reply
- * 的 Tauri 命令封装 + 「请求人工介入」事件监听。全部经 client-nav 的
- * tauriInvoke/tauriListen 桥(浏览器预览时调用方自行降级)。
+ * 的宿主桥命令封装 + 「请求人工介入」事件监听。全部经 client-nav 的
+ * tauriInvoke/tauriListen 桥(无宿主桥时调用方自行降级)。
  */
 import { tauriInvoke, tauriListen, type TauriUnlisten } from '../tauri.ts'
 
@@ -120,14 +120,13 @@ export function listDockerAssets(): Promise<DockerAssetOption[]> {
 }
 
 /**
- * 本地文件路径 → webview 可加载 URL(回放截图)。Tauri 2 的
- * convertFileSrc 挂在 __TAURI_INTERNALS__ 上;无注入(浏览器预览)返回空串。
+ * 本地文件路径 → 可访问 URL(回放截图)。Tauri 壳已退役:convertFileSrc 与
+ * asset:// 协议都不复存在,回放帧的可访问 URL 由 bridge 的 ui.* 命令面
+ * (desktop_ui_replay_frames 的 shotPath 已是同源可达路径)承担,这里只做
+ * 同源绝对化;空路径(无截图)归空串。
  */
 export function fileSrc(path: string): string {
-  const internals = (window as unknown as {
-    __TAURI_INTERNALS__?: { convertFileSrc?: (p: string) => string }
-  }).__TAURI_INTERNALS__
-  return internals?.convertFileSrc !== undefined ? internals.convertFileSrc(path) : ''
+  return path === '' ? '' : new URL(path, window.location.origin).toString()
 }
 
 /** noVNC 直播 URL 由 Rust desktop_ui_open_live_window 构造(独立窗口全页加载),前端不再内嵌。 */

@@ -2,28 +2,35 @@
 /**
  * NewConnectionDialog(壳内连接小对话框):新建(create_asset 契约)/编辑
  * (预填 + 留空密码不提交)/删除两步确认/错误与 busy 态/浏览器预览禁用。
- * IPC 走 window.__TAURI_INTERNALS__ stub,断言与 src/services/asset.ts
+ * IPC 走宿主桥 invoke 替身,断言与 src/services/asset.ts
  * 相同的 create_asset/update_asset/delete_asset 入参形态。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { NewConnectionDialog } from '../src/client/NewConnectionDialog.tsx'
 import type { RustAsset } from '../src/client/store.ts'
+import {
+  emitHostEvent, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
+} from './host-bridge.ts'
 
-/** jsdom 全局下的 Tauri IPC stub:按命令路由到 handlers。 */
+/** 安装宿主桥 invoke 替身:按命令路由到 handlers;返回还原回调。 */
 function stubTauriInternals(handlers: Record<string, (args?: unknown) => unknown>): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: unknown) => {
-      const handler = handlers[cmd]
-      if (handler === undefined) return Promise.reject(new Error(`unexpected command: ${cmd}`))
-      return Promise.resolve(handler(args))
-    },
-  }
-  return () => {
-    if (prev === undefined) delete w.__TAURI_INTERNALS__
-    else w.__TAURI_INTERNALS__ = prev
+  stubHostBridge((cmd, args) => {
+    const handler = handlers[cmd]
+    if (handler === undefined) return Promise.reject(new Error(`unexpected command: ${cmd}`))
+    return Promise.resolve(handler(args))
+  })
+  return () => { restoreHostBridge() }
+}
+
+/** 模拟无宿主桥:移除 fetch 使 isTauriRuntime() 为 false(替代旧「无 Tauri internals」预览态)。 */
+function withoutHostBridge<T>(run: () => T): T {
+  const original = globalThis.fetch
+  Reflect.deleteProperty(globalThis, 'fetch')
+  try {
+    return run()
+  } finally {
+    globalThis.fetch = original
   }
 }
 
@@ -39,8 +46,8 @@ function makeAsset(over: Partial<RustAsset> & { config: Record<string, unknown> 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
+  restoreHostEvents()
 })
 
 describe('NewConnectionDialog create', () => {
@@ -338,12 +345,14 @@ describe('NewConnectionDialog edit / delete', () => {
 })
 
 describe('NewConnectionDialog preview / misc', () => {
-  it('disables inputs and shows the preview hint without Tauri internals', () => {
-    render(<NewConnectionDialog asset={null} onClose={() => {}} onSaved={() => {}} />)
-    expect(screen.getByText(/浏览器预览模式/)).toBeTruthy()
-    expect((screen.getByLabelText<HTMLInputElement>('名称 *')).disabled).toBe(true)
-    expect(screen.getByText('创建').hasAttribute('disabled')).toBe(true)
-    expect(screen.getByText('测试连接').hasAttribute('disabled')).toBe(true)
+  it('disables inputs and shows the preview hint without a host bridge', () => {
+    withoutHostBridge(() => {
+      render(<NewConnectionDialog asset={null} onClose={() => {}} onSaved={() => {}} />)
+      expect(screen.getByText(/浏览器预览模式/)).toBeTruthy()
+      expect((screen.getByLabelText<HTMLInputElement>('名称 *')).disabled).toBe(true)
+      expect(screen.getByText('创建').hasAttribute('disabled')).toBe(true)
+      expect(screen.getByText('测试连接').hasAttribute('disabled')).toBe(true)
+    })
   })
 
   it('closes via the header close button, the backdrop and the cancel button', () => {
@@ -517,34 +526,37 @@ describe('NewConnectionDialog ssh mfa', () => {
 })
 
 describe('NewConnectionDialog test connection', () => {
-  /** 完整 internals stub:invoke 路由 + transformCallback 收集事件回调(按注册序)。 */
+  /**
+   * 完整宿主桥替身:invoke 路由 + 假事件流。事件订阅走共享 SSE 连接,
+   * 按 `ssh:kb-interactive:<testSessionId>` / `ssh:hostkey-confirm:<testSessionId>`
+   * 事件名派发(替代旧 transformCallback 序号线)。
+   */
   function stubFullInternals(handlers: Record<string, (args?: Record<string, unknown>) => unknown>) {
-    const w = window as unknown as {
-      __TAURI_INTERNALS__?: { invoke: unknown; transformCallback: (cb: unknown, once?: boolean) => number }
-    }
-    const prev = w.__TAURI_INTERNALS__
-    const callbacks: Array<(envelope: { event: string; id: number; payload: unknown }) => void> = []
-    w.__TAURI_INTERNALS__ = {
-      invoke: (cmd: string, args?: Record<string, unknown>) => {
-        if (cmd === 'plugin:event|listen') return Promise.resolve(callbacks.length)
-        if (cmd === 'plugin:event|unlisten') return Promise.resolve(null)
-        const handler = handlers[cmd]
-        if (handler === undefined) return Promise.reject(new Error(`unexpected command: ${cmd}`))
-        return Promise.resolve(handler(args))
-      },
-      transformCallback: (cb: unknown) => {
-        callbacks.push(cb as (typeof callbacks)[number])
-        return callbacks.length - 1
-      },
-    }
+    stubHostBridge((cmd, args) => {
+      const handler = handlers[cmd]
+      if (handler === undefined) return Promise.reject(new Error(`unexpected command: ${cmd}`))
+      return Promise.resolve(handler(args))
+    })
+    stubHostEvents()
     return {
       restore: () => {
-        if (prev === undefined) delete w.__TAURI_INTERNALS__
-        else w.__TAURI_INTERNALS__ = prev
+        restoreHostBridge()
+        restoreHostEvents()
       },
-      /** 触发第 index 个注册回调(kb=0,hostkey=1)。 */
-      emit: (index: number, payload: unknown) => {
-        callbacks[index]?.({ event: 'e', id: index, payload })
+      /** 等两个 ssh 测试事件订阅就绪(kb + hostkey)。 */
+      awaitSubscriptions: async (testSessionId: string) => {
+        await vi.waitFor(() => {
+          expect(hostEventListeners(`ssh:kb-interactive:${testSessionId}`)).toBe(1)
+          expect(hostEventListeners(`ssh:hostkey-confirm:${testSessionId}`)).toBe(1)
+        })
+      },
+      /** 触发 kb-interactive 事件(payload 即 KbInteractiveEvent)。 */
+      emitKb: (testSessionId: string, payload: unknown) => {
+        act(() => { emitHostEvent(`ssh:kb-interactive:${testSessionId}`, payload) })
+      },
+      /** 触发 hostkey-confirm 事件(组件自动接受)。 */
+      emitHostkey: (testSessionId: string, payload: unknown) => {
+        act(() => { emitHostEvent(`ssh:hostkey-confirm:${testSessionId}`, payload) })
       },
     }
   }
@@ -735,22 +747,22 @@ describe('NewConnectionDialog test connection', () => {
       fireEvent.change(screen.getByLabelText('用户名 *'), { target: { value: 'u' } })
       fireEvent.change(screen.getByLabelText(/MFA 主密码/), { target: { value: 'mpw' } })
       fireEvent.click(screen.getByText('测试连接'))
-      // 等待两次事件订阅完成(kb + hostkey)并发出测试请求
+      // 等待测试请求发出(此时 kb + hostkey 两个事件订阅已就绪)
       await vi.waitFor(() =>{  expect(calls.some(c => c.cmd === 'test_ssh_connection')).toBe(true) })
+      const testSessionId = calls[0]!.args!.testSessionId as string
+      await stub.awaitSubscriptions(testSessionId)
       // 测试中瞬态:按钮与状态行都显示进行中
       expect(screen.getAllByText('测试中…').length).toBeGreaterThan(0)
       // hostkey 确认 → 自动接受(不持久化)
-      act(() => { stub.emit(1, { hostname: 'h', port: 22 }) })
+      stub.emitHostkey(testSessionId, { hostname: 'h', port: 22 })
       await vi.waitFor(() =>{  expect(calls.some(c => c.cmd === 'ssh_hostkey_response')).toBe(true) })
       expect(calls.find(c => c.cmd === 'ssh_hostkey_response')?.args)
-        .toEqual({ id: calls[0]!.args!.testSessionId, allowed: true, persist: false })
+        .toEqual({ id: testSessionId, allowed: true, persist: false })
       // kb 事件:空 instructions 不渲染说明行,空 prompt 回退「验证码」
-      act(() => {
-        stub.emit(0, {
-          instructions: '',
-          prompts: [{ prompt: '', echo: false }, { prompt: 'Token:', echo: true }],
-          autoFill: [null, '123'],
-        })
+      stub.emitKb(testSessionId, {
+        instructions: '',
+        prompts: [{ prompt: '', echo: false }, { prompt: 'Token:', echo: true }],
+        autoFill: [null, '123'],
       })
       const fallback = await screen.findByLabelText<HTMLInputElement>('验证码')
       expect(fallback.type).toBe('password')
@@ -758,19 +770,17 @@ describe('NewConnectionDialog test connection', () => {
       expect(screen.queryByText('提交验证码')).toBeTruthy()
       fireEvent.change(fallback, { target: { value: '456' } })
       // 再推一条带 instructions 且 autoFill 短于 prompts 的事件,覆盖说明行渲染与答案回退
-      act(() => {
-        stub.emit(0, {
-          instructions: '请输入验证码',
-          prompts: [{ prompt: 'OTP:', echo: false }],
-          autoFill: [],
-        })
+      stub.emitKb(testSessionId, {
+        instructions: '请输入验证码',
+        prompts: [{ prompt: 'OTP:', echo: false }],
+        autoFill: [],
       })
       expect(await screen.findByText('请输入验证码')).toBeTruthy()
       fireEvent.change(screen.getByLabelText('OTP:'), { target: { value: '789' } })
       fireEvent.click(screen.getByText('提交验证码'))
       await vi.waitFor(() =>{  expect(calls.some(c => c.cmd === 'ssh_kb_response')).toBe(true) })
       expect(calls.find(c => c.cmd === 'ssh_kb_response')?.args)
-        .toEqual({ id: calls[0]!.args!.testSessionId, responses: ['789'] })
+        .toEqual({ id: testSessionId, responses: ['789'] })
       // 测试连接 config 含 kb_interactive 契约
       expect((calls[0]!.args!.config as Record<string, unknown>).kb_interactive)
         .toEqual({ enabled: true, password: 'mpw' })

@@ -11,7 +11,7 @@
  * 落地 Tab 由桥状态 initialTab 决定(胶囊点击落「分支」);页面重新可见时
  * 自动刷新当前 Tab(终端等外部改动回流);diff 视图紧随选中项所在分段渲染。
  * 数据层全部经 git-service 的固定形状 git 命令(local_shell_exec),本组件
- * 只做展示与交互编排,便于 vitest 以 __TAURI_INTERNALS__ stub 全覆盖。
+ * 只做展示与交互编排,便于 vitest 以宿主桥 invoke 替身全覆盖。
  */
 import { useCallback, useEffect, useState } from 'react'
 import clsx from 'clsx'

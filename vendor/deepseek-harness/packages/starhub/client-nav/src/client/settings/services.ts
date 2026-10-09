@@ -1,21 +1,15 @@
 /**
- * Settings 各 tab 的 Tauri IPC 封装(React 壳内版)。
+ * Settings 各 tab 的宿主桥 IPC 封装(React 壳内版)。
  *
  * 逐文件复制自 `src/services/`(铁律 5:业务逻辑零重写,仅换调用方):
  * audit.ts / alert.ts / aiDshPlugins.ts / updater.ts。`@tauri-apps/*` 依赖
- * 一律改走共享顶层帧 Tauri 桥(tauriInvoke);updater 的 check/
- * download_and_install 直接调 `plugin:updater|*` 命令(Channel 用
- * `__CHANNEL__:id` 串行化桥接)。
+ * 一律改走共享顶层帧宿主桥(tauriInvoke);自更新归 Electron 壳负责,
+ * StarHub 侧无动作(去 Tauri 化 M2,见 tauri.ts)。
  */
 
-import { tauriInvoke } from '../tauri.ts'
+import { isTauriRuntime, tauriInvoke } from '../tauri.ts'
 
-/** 浏览器预览判定(与 src/services 各文件的 isTauriRuntime 同语义)。
- * @returns 是否运行在 Tauri 桌面环境。
- */
-export function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-}
+export { isTauriRuntime }
 
 // ===== 审计(settings 审计 tab) =====
 
@@ -179,40 +173,17 @@ export interface UpdateInfo {
   body?: string
 }
 
-/** updater Channel 的最小桥(与 @tauri-apps/api/core 的 Channel 同串行化契约,仅用于进度回调占位)。 */
-function updaterChannel(): { toJSON: () => string } {
-  const internals = (window as unknown as {
-    __TAURI_INTERNALS__?: { transformCallback?: (callback: unknown, once?: boolean) => number }
-  }).__TAURI_INTERNALS__
-  const transform = internals?.transformCallback
-  // v8 ignore next 2 -- 回调由 Rust updater 在下载进度事件时调用,浏览器侧仅注册占位
-  const id = typeof transform === 'function' ? transform(() => {}, false) : 0
-  return { toJSON: () => `__CHANNEL__:${id}` }
-}
-
-/** 检查是否有可用更新;纯浏览器预览降级返回无更新。
- * @returns 更新信息(无可用更新时 available=false)。
+/**
+ * 检查是否有可用更新。自更新归 Electron 壳负责(去 Tauri 化 M2 后
+ * `plugin:updater|*` 面不存在),StarHub 侧恒报告无可用更新。
+ * @returns 更新信息(恒 available=false)。
  */
 export async function checkForUpdates(): Promise<UpdateInfo> {
-  if (!isTauriRuntime()) return { available: false }
-  const metadata = await tauriInvoke<{ version?: string; date?: string; body?: string } | null>('plugin:updater|check')
-  if (metadata === null) return { available: false }
-  const info: UpdateInfo = { available: true }
-  // exactOptionalPropertyTypes:可选字段缺省时整体不设
-  if (metadata.version !== undefined) info.version = metadata.version
-  if (metadata.date !== undefined) info.date = metadata.date
-  if (metadata.body !== undefined) info.body = metadata.body
-  return info
+  return { available: false }
 }
 
-/** 下载并安装更新,安装完成后自动重启;纯浏览器预览直接返回。 */
+/**
+ * 下载并安装更新。自更新归 Electron 壳负责,StarHub 侧无动作。
+ */
 export async function downloadAndInstall(): Promise<void> {
-  if (!isTauriRuntime()) return
-  const metadata = await tauriInvoke<{ rid: number } | null>('plugin:updater|check')
-  if (metadata === null) return
-  await tauriInvoke('plugin:updater|download_and_install', {
-    onEvent: updaterChannel(),
-    rid: metadata.rid,
-  })
-  await tauriInvoke('plugin:process|restart')
 }

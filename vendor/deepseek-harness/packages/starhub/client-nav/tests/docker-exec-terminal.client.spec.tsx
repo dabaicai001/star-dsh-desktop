@@ -36,6 +36,7 @@ vi.mock('@xterm/addon-fit', () => ({
 }))
 
 import { DockerExecTerminal } from '../src/client/docker/DockerExecTerminal.tsx'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 class ResizeObserverMock {
   private callback: ResizeObserverCallback | null = null
@@ -58,7 +59,7 @@ function installObserver() {
   return ResizeObserverMock.singleton
 }
 
-/** 安装 exec 会话 stub;`reads` 为依次返回的 read 结果队列。 */
+/** 安装 exec 会话替身;`reads` 为依次返回的 read 结果队列。 */
 function installTauri(reads: Array<{ data: string; running: boolean }>) {
   let readIndex = 0
   const invoke = vi.fn((cmd: string) => {
@@ -76,14 +77,14 @@ function installTauri(reads: Array<{ data: string; running: boolean }>) {
       default: return Promise.resolve(null)
     }
   })
-  ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+  stubHostBridge(invoke)
   return invoke
 }
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
   delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver
   ResizeObserverMock.singleton = null
   xterm.dispose.mockReset()
@@ -156,7 +157,7 @@ describe('DockerExecTerminal', () => {
       if (cmd === 'docker_exec_session_read') return Promise.resolve({ data: '', running: true })
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DockerExecTerminal connId="c" container={container} onClose={vi.fn()} />)
     // 启动失败不再静默:错误文案 + 重试入口
     await waitFor(() =>{  expect(screen.getByText(/进入容器失败/)).toBeTruthy() })
@@ -184,7 +185,7 @@ describe('DockerExecTerminal', () => {
       if (cmd === 'docker_exec_session_read') return Promise.reject(new Error('session gone'))
       return Promise.resolve(null)
     })
-    ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+    stubHostBridge(invoke)
     render(<DockerExecTerminal connId="c" container={container} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(screen.getByText(/读取终端输出失败/)).toBeTruthy() })
     expect(screen.getByRole('button', { name: '重试' })).toBeTruthy()

@@ -3,32 +3,34 @@
  * Settings 各 tab 组件行为:审计加载/清空、告警 CRUD 弹窗、关于更新状态机。
  * (v0.123.1 起「插件市场」「AI 助手」tab 移除。)
  * 各 tab 以独立 settings.section 注册(dsh 设置侧栏 StarHub 可展开分组
- * 直渲,无面板内部嵌套列);IPC 走 window.__TAURI_INTERNALS__ stub;
- * 浏览器预览分支(无 Tauri)一并覆盖。
+ * 直渲,无面板内部嵌套列);IPC 走宿主桥 invoke 替身;
+ * 无宿主桥(预览)分支一并覆盖。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { AuditTab, formatAuditDetail, formatAuditTime } from '../src/client/settings/audit.tsx'
 import { AlertTab } from '../src/client/settings/alert.tsx'
 import { AboutTab } from '../src/client/settings/about.tsx'
+import { hostBridgeCalls, restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
-/** jsdom 全局下的 Tauri IPC stub:按命令返回 map 里的值。 */
+/** 安装宿主桥 invoke 替身:按命令返回 map 里的值;返回还原回调。 */
 function stubTauriInternals(handlers: Record<string, (args?: unknown) => unknown>): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: unknown) => {
-      const handler = handlers[cmd]
-      if (handler === undefined) return Promise.reject(new Error(`unexpected command: ${cmd}`))
-      return Promise.resolve(handler(args))
-    },
-  }
-  return () => {
-    if (prev === undefined) {
-      delete w.__TAURI_INTERNALS__
-    } else {
-      w.__TAURI_INTERNALS__ = prev
-    }
+  stubHostBridge((cmd, args) => {
+    const handler = handlers[cmd]
+    if (handler === undefined) return Promise.reject(new Error(`unexpected command: ${cmd}`))
+    return Promise.resolve(handler(args))
+  })
+  return () => { restoreHostBridge() }
+}
+
+/** 模拟无宿主桥:移除 fetch 使 isTauriRuntime() 为 false(替代旧「无 Tauri internals」预览态)。 */
+async function withoutHostBridge<T>(run: () => Promise<T>): Promise<T> {
+  const original = globalThis.fetch
+  Reflect.deleteProperty(globalThis, 'fetch')
+  try {
+    return await run()
+  } finally {
+    globalThis.fetch = original
   }
 }
 
@@ -42,15 +44,16 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.useRealTimers()
   localStorage.clear()
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('AuditTab', () => {
-  it('shows the empty table in browser preview', () => {
-    render(<AuditTab />)
-    expect(screen.getByText('暂无审计日志')).toBeTruthy()
-    expect(screen.queryByText('统计')).toBeNull()
+  it('shows the empty table in browser preview', async () => {
+    await withoutHostBridge(async () => {
+      render(<AuditTab />)
+      expect(screen.getByText('暂无审计日志')).toBeTruthy()
+      expect(screen.queryByText('统计')).toBeNull()
+    })
   })
 
   it('renders logs and stats, reloads on filter change and clears all', async () => {
@@ -116,14 +119,16 @@ describe('AuditTab', () => {
 
 describe('AlertTab', () => {
   it('shows the empty state in preview and creates a rule via the dialog', async () => {
-    render(<AlertTab />)
-    expect(await screen.findByText(/暂无告警规则/)).toBeTruthy()
-    fireEvent.click(screen.getByText('新建规则'))
-    const dialog = screen.getByRole('dialog', { name: '新建告警规则' })
-    fireEvent.change(within(dialog).getByPlaceholderText(/例如/), { target: { value: 'SSH 错误' } })
-    fireEvent.click(within(dialog).getByText('保存'))
-    await act(async () => { await Promise.resolve() })
-    expect(screen.queryByRole('dialog')).toBeNull()
+    await withoutHostBridge(async () => {
+      render(<AlertTab />)
+      expect(await screen.findByText(/暂无告警规则/)).toBeTruthy()
+      fireEvent.click(screen.getByText('新建规则'))
+      const dialog = screen.getByRole('dialog', { name: '新建告警规则' })
+      fireEvent.change(within(dialog).getByPlaceholderText(/例如/), { target: { value: 'SSH 错误' } })
+      fireEvent.click(within(dialog).getByText('保存'))
+      await act(async () => { await Promise.resolve() })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
   })
 
   it('renders rules, edits, deletes and tests webhooks in desktop mode', async () => {
@@ -175,57 +180,28 @@ describe('AlertTab', () => {
 
 describe('AboutTab', () => {
   it('shows the version placeholder and no-update state in preview', async () => {
-    render(<AboutTab />)
-    expect(screen.getByText(/v--/)).toBeTruthy()
-    fireEvent.click(screen.getByText('检查更新'))
-    expect(await screen.findByText('已是最新版本')).toBeTruthy()
+    await withoutHostBridge(async () => {
+      render(<AboutTab />)
+      expect(screen.getByText(/v--/)).toBeTruthy()
+      fireEvent.click(screen.getByText('检查更新'))
+      expect(await screen.findByText('已是最新版本')).toBeTruthy()
+    })
   })
 
-  it('loads the app version and drives the update state machine in desktop mode', async () => {
-    const install = vi.fn((..._args: unknown[]) => null)
-    const restart = vi.fn((..._args: unknown[]) => null)
+  it('loads the app version and reports no update even when the bridge would expose updater data', async () => {
+    // 自更新归 Electron 壳:StarHub 侧不再调 plugin:updater|*,恒报已是最新版本。
     const restore = stubTauriInternals({
       'plugin:app|version': () => '9.9.9',
       'plugin:updater|check': () => ({ rid: 1, version: '10.0.0' }),
-      'plugin:updater|download_and_install': args => install(args),
-      'plugin:process|restart': () => restart(),
     })
     try {
       render(<AboutTab />)
       expect(await screen.findByText(/v9\.9\.9/)).toBeTruthy()
       fireEvent.click(screen.getByText('检查更新'))
-      expect(await screen.findByText(/有新版本: v10\.0\.0/)).toBeTruthy()
-      fireEvent.click(screen.getByText('下载并安装'))
-      await vi.waitFor(() =>{  expect(install).toHaveBeenCalledWith(expect.objectContaining({ rid: 1 })) })
-      await vi.waitFor(() =>{  expect(restart).toHaveBeenCalledTimes(1) })
-    } finally {
-      restore()
-    }
-  })
-
-  it('shows the download failure error', async () => {
-    const restore = stubTauriInternals({
-      'plugin:updater|check': () => ({ rid: 1, version: '10.0.0' }),
-      'plugin:updater|download_and_install': () => { throw new Error('install failed') },
-    })
-    try {
-      render(<AboutTab />)
-      fireEvent.click(screen.getByText('检查更新'))
-      fireEvent.click(await screen.findByText('下载并安装'))
-      expect(await screen.findByText('install failed')).toBeTruthy()
-    } finally {
-      restore()
-    }
-  })
-
-  it('shows the update error state', async () => {
-    const restore = stubTauriInternals({
-      'plugin:updater|check': () => { throw new Error('no network') },
-    })
-    try {
-      render(<AboutTab />)
-      fireEvent.click(screen.getByText('检查更新'))
-      expect(await screen.findByText('no network')).toBeTruthy()
+      expect(await screen.findByText('已是最新版本')).toBeTruthy()
+      expect(screen.queryByText('下载并安装')).toBeNull()
+      // 只有版本读取过桥,updater 命令一次都没发。
+      expect(hostBridgeCalls()).toEqual([{ cmd: 'plugin:app|version', args: {} }])
     } finally {
       restore()
     }

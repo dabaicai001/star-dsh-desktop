@@ -14,25 +14,16 @@ import { AboutTab } from '../src/client/settings/about.tsx'
 import {
   checkForUpdates,
 } from '../src/client/settings/services.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
-/** jsdom 全局下的 Tauri IPC stub:按命令返回 map 里的值。 */
+/** 安装宿主桥 invoke 替身:按命令返回 map 里的值;返回还原回调。 */
 function stubTauriInternals(handlers: Record<string, (args?: unknown) => unknown>): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: unknown) => {
-      const handler = handlers[cmd]
-      if (handler === undefined) return Promise.reject(new Error(`unexpected command: ${cmd}`))
-      return Promise.resolve(handler(args))
-    },
-  }
-  return () => {
-    if (prev === undefined) {
-      delete w.__TAURI_INTERNALS__
-    } else {
-      w.__TAURI_INTERNALS__ = prev
-    }
-  }
+  stubHostBridge((cmd, args) => {
+    const handler = handlers[cmd]
+    if (handler === undefined) return Promise.reject(new Error(`unexpected command: ${cmd}`))
+    return Promise.resolve(handler(args))
+  })
+  return () => { restoreHostBridge() }
 }
 
 afterEach(() => {
@@ -40,63 +31,33 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.useRealTimers()
   localStorage.clear()
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('services extra branches', () => {
-  it('checkForUpdates maps partial metadata and null metadata', async () => {
+  it('checkForUpdates always reports no update — self-update moved to the Electron shell', async () => {
     const restore = stubTauriInternals({
-      'plugin:updater|check': () => null,
+      'plugin:updater|check': () => ({ rid: 1, version: '9.0.0' }),
     })
     try {
       await expect(checkForUpdates()).resolves.toEqual({ available: false })
     } finally {
       restore()
     }
-    const restore2 = stubTauriInternals({
-      'plugin:updater|check': () => ({ rid: 1, version: '9.0.0' }),
-    })
-    try {
-      await expect(checkForUpdates()).resolves.toEqual({ available: true, version: '9.0.0' })
-    } finally {
-      restore2()
-    }
-    const restore3 = stubTauriInternals({
-      'plugin:updater|check': () => ({ rid: 1 }),
-    })
-    try {
-      await expect(checkForUpdates()).resolves.toEqual({ available: true })
-    } finally {
-      restore3()
-    }
   })
 })
 
 describe('about extra branches', () => {
-  it('stringifies non-Error check failures', async () => {
+  it('keeps the no-update state even when the bridge would expose updater data', async () => {
     const restore = stubTauriInternals({
-      'plugin:updater|check': () => { throw 'raw check failure' },
+      'plugin:app|version': () => '9.9.9',
+      'plugin:updater|check': () => ({ rid: 1, version: '10.0.0' }),
     })
     try {
       render(<AboutTab />)
       fireEvent.click(screen.getByText('检查更新'))
-      expect(await screen.findByText('raw check failure')).toBeTruthy()
-    } finally {
-      restore()
-    }
-  })
-
-  it('stringifies non-Error download failures', async () => {
-    const restore = stubTauriInternals({
-      'plugin:updater|check': () => ({ rid: 1, version: '9.9.9' }),
-      'plugin:updater|download_and_install': () => { throw 'raw install failure' },
-    })
-    try {
-      render(<AboutTab />)
-      fireEvent.click(screen.getByText('检查更新'))
-      fireEvent.click(await screen.findByText('下载并安装'))
-      expect(await screen.findByText('raw install failure')).toBeTruthy()
+      expect(await screen.findByText('已是最新版本')).toBeTruthy()
+      expect(screen.queryByText('下载并安装')).toBeNull()
     } finally {
       restore()
     }

@@ -8,18 +8,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { SandboxPanel } from '../src/client/sandbox/SandboxPanel.tsx'
 import type { SandboxOverview } from '../src/client/sandbox/services.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 let invokeCalls: Array<{ cmd: string; args: unknown }> = []
 let invokeResult: (cmd: string) => unknown = () => null
 
+/** 安装宿主桥 invoke 替身:记录调用并按 invokeResult 返回。 */
 function stubTauri() {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: unknown) => {
-      invokeCalls.push({ cmd, args })
-      return Promise.resolve(invokeResult(cmd))
-    },
-  }
+  stubHostBridge((cmd, args) => {
+    invokeCalls.push({ cmd, args })
+    return Promise.resolve(invokeResult(cmd))
+  })
 }
 
 const INSTANCE = {
@@ -49,8 +48,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   invokeCalls = []
   invokeResult = () => null
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 async function renderPanel(result: unknown = overviewResult()) {
@@ -65,7 +63,7 @@ describe('SandboxPanel', () => {
     await renderPanel()
     expect(screen.getByText('配置数据库')).toBeTruthy()
     expect(screen.getByText('ubuntu-desktop')).toBeTruthy()
-    expect(invokeCalls[0]).toEqual({ cmd: 'desktop_ui_overview', args: undefined })
+    expect(invokeCalls[0]).toEqual({ cmd: 'desktop_ui_overview', args: {} })
   })
 
   it('shows the error state with retry when overview fails', async () => {

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
  * `starhub://open-asset` 监听(host-events.ts 的 open-asset 半):一律按
- * focusWindowByKey 聚焦已有 webview 窗口(ssh 资产也是独立窗口,不再是壳内
+ * focusWindowByKey 聚焦已有窗口(ssh 资产也是独立窗口,不再是壳内
  * overlay),找不到才 openAssetPage;未知资产触发刷新并丢弃请求。另覆盖
- * subscribeHostEvents 的注册/卸载与 dispose 竞态。
+ * subscribeHostEvents 的注册/卸载与 dispose 竞态(事件走共享 SSE 连接)。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createStarHubAssets, type RustAsset } from '../src/client/store.ts'
@@ -11,6 +11,9 @@ import type { StarHubAsset } from '../src/client/sections.ts'
 import {
   createOpenAssetHandler, subscribeHostEvents, type OpenAssetPayload,
 } from '../src/client/host-events.ts'
+import {
+  emitHostEvent, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
+} from './host-bridge.ts'
 
 /** 构造一个最小资产。 */
 function rustAsset(id: string, type: string, config: Record<string, unknown> = {}): RustAsset {
@@ -20,38 +23,10 @@ function rustAsset(id: string, type: string, config: Record<string, unknown> = {
   }
 }
 
-/** 带 transformCallback 的完整 internals stub:按事件名注册回调并手动触发。 */
-function stubFullInternals(invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>) {
-  const w = window as unknown as {
-    __TAURI_INTERNALS__?: { invoke: unknown; transformCallback: (cb: unknown, once?: boolean) => number }
-  }
-  const prev = w.__TAURI_INTERNALS__
-  let nextId = 1
-  const registered = new Map<number, (envelope: { event: string; id: number; payload: unknown }) => void>()
-  w.__TAURI_INTERNALS__ = {
-    invoke,
-    transformCallback: (cb: unknown) => {
-      const id = nextId
-      nextId += 1
-      registered.set(id, cb as typeof registered extends Map<number, infer V> ? V : never)
-      return id
-    },
-  }
-  return {
-    restore: () => {
-      if (prev === undefined) delete w.__TAURI_INTERNALS__
-      else w.__TAURI_INTERNALS__ = prev
-    },
-    emit: (event: string, payload: unknown) => {
-      for (const cb of registered.values()) cb({ event, id: 0, payload })
-    },
-  }
-}
-
 afterEach(() => {
   vi.restoreAllMocks()
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
+  restoreHostEvents()
 })
 
 describe('createOpenAssetHandler', () => {
@@ -110,61 +85,52 @@ describe('subscribeHostEvents', () => {
   const OPEN_EVENT = 'starhub://open-asset'
   const ASK_EVENT = 'starhub://ask-ai'
 
-  function stubInvoke(eventIds: Record<string, number>) {
-    return vi.fn((cmd: string, args?: Record<string, unknown>) => {
-      if (cmd === 'plugin:event|listen') {
-        return Promise.resolve(eventIds[String(args?.event)] ?? -1)
-      }
-      if (cmd === 'plugin:event|unlisten') return Promise.resolve(null)
-      return Promise.reject(new Error(`unexpected command: ${cmd}`))
-    })
+  /** 事件订阅已不走 invoke(共享 SSE 连接);任何 invoke 调用都是意外。 */
+  function stubInvoke() {
+    return vi.fn((cmd: string) => Promise.reject(new Error(`unexpected command: ${cmd}`)))
   }
 
-  it('registers both listeners, delivers payloads and unlistens on dispose', async () => {
-    const invoke = stubInvoke({ [OPEN_EVENT]: 41, [ASK_EVENT]: 42 })
-    const stub = stubFullInternals(invoke)
-    try {
-      const onOpenAsset = vi.fn()
-      const onAskAi = vi.fn()
-      const dispose = subscribeHostEvents({ onOpenAsset, onAskAi })
-      await vi.waitFor(() => {
-        expect(invoke.mock.calls.filter(c => c[0] === 'plugin:event|listen')).toHaveLength(2)
-      })
-      const openPayload: OpenAssetPayload = { assetId: 'a1', tool: 'auto', action: 'open' }
-      stub.emit(OPEN_EVENT, openPayload)
-      stub.emit(ASK_EVENT, { text: '看看日志' })
-      expect(onOpenAsset).toHaveBeenCalledWith(openPayload)
-      expect(onAskAi).toHaveBeenCalledWith({ text: '看看日志' })
-      // 让两个 listen promise 的 then 全部落定(offs 已推入),dispose 的
-      // 循环体才会真正执行 unlisten。
-      await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
-      dispose()
-      // unlisten 经微任务落定(dispose 后监听 promise 的 then 才推入 offs)
-      await vi.waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', { event: OPEN_EVENT, eventId: 41 })
-        expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', { event: ASK_EVENT, eventId: 42 })
-      })
-    } finally {
-      stub.restore()
-    }
+  it('registers both listeners, delivers payloads and stops delivering after dispose', async () => {
+    const invoke = stubInvoke()
+    stubHostBridge(invoke)
+    stubHostEvents()
+    const onOpenAsset = vi.fn()
+    const onAskAi = vi.fn()
+    const dispose = subscribeHostEvents({ onOpenAsset, onAskAi })
+    // 两个事件名各订阅一次(共享 SSE 连接按事件名 addEventListener)。
+    await vi.waitFor(() => {
+      expect(hostEventListeners(OPEN_EVENT)).toBe(1)
+      expect(hostEventListeners(ASK_EVENT)).toBe(1)
+    })
+    const openPayload: OpenAssetPayload = { assetId: 'a1', tool: 'auto', action: 'open' }
+    emitHostEvent(OPEN_EVENT, openPayload)
+    emitHostEvent(ASK_EVENT, { text: '看看日志' })
+    expect(onOpenAsset).toHaveBeenCalledWith(openPayload)
+    expect(onAskAi).toHaveBeenCalledWith({ text: '看看日志' })
+    // 让两个 listen promise 的 then 全部落定(offs 已推入),dispose 的
+    // 循环体才会真正执行退订。
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    dispose()
+    // dispose 后 handler 从扇出表移除:再派发不再送达(替代旧 unlisten 断言)。
+    emitHostEvent(OPEN_EVENT, openPayload)
+    emitHostEvent(ASK_EVENT, { text: '再来' })
+    expect(onOpenAsset).toHaveBeenCalledTimes(1)
+    expect(onAskAi).toHaveBeenCalledTimes(1)
   })
 
   it('disposes an in-flight listen without leaking the subscription', async () => {
-    const invoke = stubInvoke({ [OPEN_EVENT]: 1, [ASK_EVENT]: 2 })
-    const stub = stubFullInternals(invoke)
-    try {
-      const dispose = subscribeHostEvents({ onOpenAsset: vi.fn(), onAskAi: vi.fn() })
-      // 立即卸载:监听 promise 落定后直接 unlisten,不保留订阅
-      dispose()
-      await vi.waitFor(() => {
-        const unlistens = invoke.mock.calls.filter(c => c[0] === 'plugin:event|unlisten')
-        expect(unlistens.length).toBeGreaterThanOrEqual(2)
-      })
-      const unlistens = invoke.mock.calls.filter(c => c[0] === 'plugin:event|unlisten')
-      expect(unlistens.some(c => (c[1] as { event: string }).event === OPEN_EVENT)).toBe(true)
-      expect(unlistens.some(c => (c[1] as { event: string }).event === ASK_EVENT)).toBe(true)
-    } finally {
-      stub.restore()
-    }
+    const invoke = stubInvoke()
+    stubHostBridge(invoke)
+    stubHostEvents()
+    const onOpenAsset = vi.fn()
+    const onAskAi = vi.fn()
+    const dispose = subscribeHostEvents({ onOpenAsset, onAskAi })
+    // 立即卸载:监听 promise 落定后直接退订,不保留订阅
+    dispose()
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    emitHostEvent(OPEN_EVENT, { assetId: 'a1', action: 'open' })
+    emitHostEvent(ASK_EVENT, { text: 'x' })
+    expect(onOpenAsset).not.toHaveBeenCalled()
+    expect(onAskAi).not.toHaveBeenCalled()
   })
 })

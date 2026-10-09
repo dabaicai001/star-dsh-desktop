@@ -68,18 +68,27 @@ Electron 壳。工作台侧改为「调 bridge 的 `ui.*` 占位 → 由 dsh GUI
 ## 四、M2 施工顺序
 
 1. ✅ **形态确认 + 清单**(本文档):113 命令枚举、两面命名、四组归口。
-2. 🔶 **A 组(资产 CRUD)已落地;传输 seam 已实现待接**(本批):
+2. ✅ **A 组 + 传输 seam(已完成)**:
    - sidecar `ui.get_assets` / `ui.create_asset` / `ui.update_asset` /
      `ui.delete_asset` 落地(`AssetStore` 补 `upsert` / `remove`,元数据字段
      group/tags/favorite/时间戳随行读写;文件格式仍 camelCase,UI 线形状
      snake_case 与工作台 `RustAsset` 逐字对齐);方法面 89 → **93**。
    - bridge 的 invoke 端点把 `cmd` 加成 `ui.<cmd>` 前缀(两面不撞名)。
-   - **传输 seam 已实现但未合入**:`client-nav/src/client/tauri.ts` 改为
-     `fetch('/starhub/api/invoke')` + `EventSource('/starhub/api/events')`
-     (函数名/签名不变,113 个调用点零改动),但 client-nav 有 **25 个 spec**
-     以 `window.__TAURI_INTERNALS__.invoke` 存根驱动,需整体改成 fetch 存根
-     (可抽一个共享 `stubHostBridge()` 测试助手)——这是 seam 合入前的唯一
-     剩余工作,做完即全绿。
+   - **传输 seam 合入**:`client-nav/src/client/tauri.ts` 重写为宿主桥——
+     `tauriInvoke` 走 `POST /starhub/api/invoke`(`{ok:false,error}` → reject),
+     `tauriListen` 走共享 `EventSource('/starhub/api/events')`(按事件名扇出,
+     dispose 移除 handler);导出名/签名不变,**113 个调用点零改动**。
+     5 处调用点的 `__TAURI_INTERNALS__` 判定换成 `isTauriRuntime()`(store /
+     NewConnectionDialog / AndroidPanel)+ `fileSrc` 改为同源 URL + 自更新交
+     Electron 壳(checkForUpdates 恒无更新)。
+   - 测试替身 `tests/host-bridge.ts`(`stubHostBridge` / `stubHostEvents` /
+     `emitHostEvent` / `hostBridgeCalls` / `hostEventListeners`),**38 个 spec**
+     从 `__TAURI_INTERNALS__` 存根整体迁到 fetch/SSE 替身;`tauri.client.spec.ts`
+     整文件重写(14 例)。验收:tsc 零错误,**54 spec / 907 例全绿**
+     (较迁移前 912 少 5 例:自更新命令序断言随「更新归 Electron 壳」设计移除)。
+   - 迁移中修掉一个真 bug:jsdom 下 `window === globalThis`,助手「先写
+     globalThis.fetch 再从 window.fetch 取原值」会把替身存成还原值,导致
+     restore 不卸载、后续用例拿到 404——改为先取原值再写入。
 3. ⬜ **B 组交互会话**:sidecar 加 `ui.ssh_*` / `ui.sftp_*`(会话实体已在
    sidecar;补 connId ↔ 会话映射 + 写通道 + `ssh:data` 事件出口)。
 4. ⬜ **C 组数据面连接**:`ui.db_*` / `ui.docker_*` / `ui.broker_*` 经 Go sidecar。

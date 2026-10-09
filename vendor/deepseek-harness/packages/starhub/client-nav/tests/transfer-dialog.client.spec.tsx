@@ -10,6 +10,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { TransferDialog } from '../src/client/terminal/TransferDialog.tsx'
 import type { TransferTasksApi } from '../src/client/terminal/use-transfer-tasks.ts'
 import type { TransferTask } from '../src/client/terminal/sftp-service.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 function task(partial: Partial<TransferTask> & { id: string }): TransferTask {
   return {
@@ -18,10 +19,10 @@ function task(partial: Partial<TransferTask> & { id: string }): TransferTask {
   }
 }
 
-/** Tauri invoke stub:记录调用,动作类命令一律成功。 */
+/** 宿主桥 invoke 替身:记录调用,动作类命令一律成功。 */
 function installTauri() {
   const invoke = vi.fn((_command: string, _args?: Record<string, unknown>) => Promise.resolve(null))
-  ;(window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } }).__TAURI_INTERNALS__ = { invoke }
+  stubHostBridge(invoke)
   return { invoke }
 }
 
@@ -40,7 +41,7 @@ function apiFor(tasks: TransferTask[], extra: Partial<TransferTasksApi> = {}): T
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('TransferDialog', () => {

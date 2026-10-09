@@ -1,55 +1,91 @@
 /**
- * Top-frame Tauri IPC bridge for the StarHub client plugin.
+ * StarHub client-nav 的宿主桥 IPC seam(去 Tauri 化 M2)。
  *
- * The desktop shell injects `window.__TAURI_INTERNALS__.invoke` into the top
- * frame (same-origin, P0 spike verified). The client bundle cannot import
- * `@tauri-apps/api`, so every StarHub tool service goes through this thin
- * adapter — the same pattern the browser preview relies on: without Tauri
- * internals the call rejects, and views render their preview/error state.
+ * 桌面端不再是 Tauri 壳:React 工作台由 `starhub-bridge` 插件经同源 HTTP
+ * 服务暴露同一套命令面——
+ * - `POST /starhub/api/invoke`,body `{cmd, args}`,返回
+ *   `{ok:true,result}` / `{ok:false,error}`(bridge 把 cmd 加成 `ui.<cmd>`
+ *   前缀打给 sidecar);
+ * - `GET /starhub/api/events` 是 SSE 流,每条通知以原始事件名作 SSE
+ *   `event:` 字段,`data:` 是 JSON。
+ *
+ * 本文件是这一切换点,导出名与签名一个都没改,所以工作台全部 113 个调用点
+ * 零改动:浏览器预览(无宿主可达)时 invoke reject、listen 退化为 no-op,
+ * 与旧 Tauri internals 缺失时的降级语义一致。
  */
 
-/** Tauri IPC surface injected into the top frame by the desktop shell. */
-interface TauriInternals {
-  invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>
-  /** Callback registry used by the event plugin (present in the real runtime). */
-  transformCallback?: (callback: unknown, once?: boolean) => number
-}
+/** `POST /starhub/api/invoke` 的响应信封(bridge 插件契约)。 */
+type InvokeResponse =
+  | { ok: true; result: unknown }
+  | { ok: false; error: string }
+
+/** invoke 端点(同源,由 starhub-bridge 插件挂载)。 */
+const INVOKE_URL = '/starhub/api/invoke'
+
+/** SSE 事件流端点(同源;每条通知的 SSE event 字段即原始事件名)。 */
+const EVENTS_URL = '/starhub/api/events'
 
 /**
- * Call a Tauri command through the injected IPC bridge.
- * @param cmd - Rust command name (e.g. `broker_overview`).
- * @param args - command arguments (camelCase keys; Tauri serializes to snake_case).
- * @returns the command result.
- * @throws when running in a plain browser preview (no Tauri internals).
+ * 调一条宿主桥命令(旧 Tauri IPC 的替换,签名不变)。
+ * @param cmd - 命令名(bridge 会加 `ui.` 前缀打给 sidecar)。
+ * @param args - 命令参数(camelCase 键);缺省时请求体不带 args 键。
+ * @returns 命令结果。
+ * @throws 响应为 `{ok:false,error}` 时以 error 消息 reject;非 2xx 响应
+ *   (宿主桥未挂载/路由不存在)reject `host bridge unavailable (status)`。
  */
-export function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const internals = (window as unknown as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__
-  if (internals === undefined) {
-    return Promise.reject(new Error('Tauri IPC unavailable (browser preview)'))
+export async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const response = await fetch(INVOKE_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cmd, args }),
+  })
+  if (!response.ok) {
+    throw new Error(`host bridge unavailable (${response.status})`)
   }
-  return internals.invoke(cmd, args) as Promise<T>
+  const body = await response.json() as InvokeResponse
+  if (!body.ok) throw new Error(body.error)
+  return body.result as T
 }
 
-/** Event payload envelope delivered by the Tauri event plugin to listen callbacks. */
-interface TauriEventEnvelope<T> {
-  event: string
-  id: number
-  payload: T
+/** 事件名 → 该事件名的全部 handler(共享一条 SSE 连接的扇出表)。 */
+const hostEventHandlers = new Map<string, Set<(payload: unknown) => void>>()
+
+/** 已在该共享连接上 addEventListener 的事件名(重建连接时清空重绑)。 */
+const hostEventBound = new Set<string>()
+
+/** 共享 SSE 连接(首个订阅时惰性建立;连接关闭后由下次订阅重建)。 */
+let hostEventSource: EventSource | null = null
+
+/** 取得共享 SSE 连接;无 EventSource(裸浏览器预览)返回 null。 */
+function ensureHostEventSource(): EventSource | null {
+  if (typeof EventSource === 'undefined') return null
+  if (hostEventSource !== null && hostEventSource.readyState !== EventSource.CLOSED) return hostEventSource
+  hostEventSource = new EventSource(EVENTS_URL, { withCredentials: true })
+  hostEventBound.clear()
+  return hostEventSource
 }
 
-/** Async disposer returned by a Tauri event subscription. */
+/** 把一条 SSE 通知的 JSON data 解析后扇出给该事件名的全部 handler。 */
+function dispatchHostEvent(event: string, raw: MessageEvent<string>): void {
+  let payload: unknown
+  try {
+    payload = JSON.parse(raw.data)
+  } catch {
+    return // 非 JSON 数据帧(心跳/注释帧)忽略
+  }
+  for (const handler of hostEventHandlers.get(event) ?? []) handler(payload)
+}
+
+/** Async disposer returned by an event subscription. */
 export type TauriUnlisten = () => Promise<void>
 
 /**
- * Subscribe to a Tauri event through the event plugin (`plugin:event|listen`),
- * mirroring `@tauri-apps/api/event.listen` over the injected IPC bridge (the
- * client bundle cannot import the api package). The callback registration
- * requires `transformCallback`, which exists in the real desktop runtime;
- * without it (browser preview or stubbed internals) the subscription is a
- * no-op and the returned disposer resolves immediately.
- * @param event - event name (e.g. `ssh:hostkey-confirm:<id>`).
- * @param handler - receives each event payload until disposed.
- * @returns disposer that unlistens from the event plugin.
+ * 订阅一条宿主事件(旧 Tauri event 插件 listen 的替换,签名不变):经共享
+ * SSE 连接按事件名监听,解析 data 的 JSON 后扇出给该事件名的全部 handler。
+ * @param event - 事件名(SSE `event:` 字段,如 `starhub://open-asset`)。
+ * @param handler - 每条通知的 payload 回调,直到 dispose。
+ * @returns disposer:把 handler 从扇出表移除(连接建立前调用同样生效);
+ *   无 EventSource(裸浏览器预览)时为 no-op。
  */
 // T is the subscription payload type, used exactly once in the handler
 // signature — inherent to a listen API, so the single-use heuristic of
@@ -59,26 +95,34 @@ export async function tauriListen<T>(
   event: string,
   handler: (payload: T) => void,
 ): Promise<TauriUnlisten> {
-  const internals = (window as unknown as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__
-  const transform = internals?.transformCallback
-  if (internals === undefined || typeof transform !== 'function') {
-    return () => Promise.resolve()
+  const source = ensureHostEventSource()
+  if (source === null) return () => Promise.resolve()
+  let handlers = hostEventHandlers.get(event)
+  if (handlers === undefined) {
+    handlers = new Set()
+    hostEventHandlers.set(event, handlers)
   }
-  const callbackId = transform((envelope: TauriEventEnvelope<T>) => { handler(envelope.payload) }, false)
-  const eventId = await internals.invoke('plugin:event|listen', {
-    event,
-    target: { kind: 'Any' },
-    handler: callbackId,
-  }) as number
+  const wrapped = (payload: unknown): void => { handler(payload as T) }
+  handlers.add(wrapped)
+  const listener = (raw: MessageEvent): void => { dispatchHostEvent(event, raw as MessageEvent<string>) }
+  if (!hostEventBound.has(event)) {
+    hostEventBound.add(event)
+    source.addEventListener(event, listener)
+  }
   return async () => {
-    await internals.invoke('plugin:event|unlisten', { event, eventId })
+    handlers.delete(wrapped)
+    // 该事件名最后一个 handler 退订:同步摘掉共享连接上的监听,订阅计数归零。
+    if (handlers.size === 0 && hostEventBound.delete(event)) {
+      source.removeEventListener(event, listener)
+    }
   }
 }
 
 /**
  * Window-label prefix for one keyed StarHub page (`starhub-page-<key>-`).
- * The key (asset id for asset pages) lets `starhub://open-asset` focus an
- * already-opened window by scanning `plugin:webview|get_all_webviews`.
+ * The key (asset id for asset pages) lets a focus request identify an
+ * already-opened page; kept for call-site compatibility after the Tauri
+ * webview windows retired.
  * @param key - stable page identity (e.g. the asset id).
  * @returns the label prefix; the full label appends a timestamp.
  */
@@ -88,60 +132,54 @@ export function starhubPageLabelPrefix(key: string): string {
 
 /**
  * Open a StarHub page in a NEW window instead of overlaying the dsh shell.
- * Desktop: a real Tauri webview window (label must match the capability
- * glob `starhub-*` so the React workbench inside keeps its IPC grants).
- * Browser preview: a new tab. The page URL is a same-origin path (for example
- * `/starhub-react/index.html?asset=...`); the Tauri command needs an absolute
- * URL, so it is resolved against the current origin.
+ * The page URL is a same-origin path (for example
+ * `/starhub-react/index.html?asset=...`), resolved against the current
+ * origin and opened as a new browser tab/window by the host shell.
  * @param path - same-origin page path (absolute path, not full URL).
- * @param title - new window title (asset name).
- * @param key - optional stable identity embedded in the window label so a
- *   later `starhub://open-asset` focus can find this window; omit for pages
- *   with no focus semantics (e.g. subcategory section pages).
+ * @param _title - new window title; kept for call-site compatibility (the
+ *   host shell titles the tab from the page itself).
+ * @param _key - optional stable identity; kept for call-site compatibility
+ *   (focus semantics moved to the `starhub-focus` broadcast channel).
  * @returns after the window/tab has been requested.
- * @throws when the desktop window creation IPC fails (no silent fallback —
- *   a failed open must surface, not quietly do nothing).
+ * @throws when window.open is intercepted (popup blocked) and returns null
+ *   — a failed open must surface, not quietly do nothing.
  */
-export async function openNewPage(path: string, title: string, key?: string): Promise<void> {
-  const internals = (window as unknown as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__
-  if (internals === undefined) {
-    window.open(path, '_blank', 'noopener')
-    return
+export async function openNewPage(path: string, _title: string, _key?: string): Promise<void> {
+  const opened = window.open(new URL(path, window.location.origin), '_blank', 'noopener')
+  if (opened === null) {
+    throw new Error('window.open intercepted (popup blocked)')
   }
-  await internals.invoke('plugin:webview|create_webview_window', {
-    options: {
-      label: key === undefined ? `starhub-page-${Date.now()}` : `${starhubPageLabelPrefix(key)}${Date.now()}`,
-      url: new URL(path, window.location.origin).toString(),
-      title,
-      width: 1280,
-      height: 800,
-      center: true,
-    },
-  })
 }
 
 /**
- * Focus an already-opened keyed StarHub window, best-effort. Scans the live
- * webview registry for a label matching `starhub-page-<key>-` and raises its
- * window (`plugin:window|set_focus`); any IPC failure or a missing window
+ * Focus an already-opened keyed StarHub page, best-effort: broadcasts the
+ * page key on the same-origin `starhub-focus` channel, where the opened
+ * page raises itself. Any failure (no BroadcastChannel, broadcast error)
  * reports false so the caller falls back to opening the page.
  * @param key - the page identity embedded at open time (asset id).
- * @returns true when a matching window was focused; false in preview, when
- *   no window matches, or when the focus IPC fails.
+ * @returns true when the focus broadcast was posted; false in preview, or
+ *   when the broadcast fails.
  */
 export async function focusWindowByKey(key: string): Promise<boolean> {
-  const internals = (window as unknown as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__
-  if (internals === undefined) return false
+  if (typeof BroadcastChannel === 'undefined') return false
   try {
-    const webviews = await internals.invoke('plugin:webview|get_all_webviews')
-    const match = (webviews as ReadonlyArray<{ label: string; windowLabel: string }>)
-      .find(w => w.label.startsWith(starhubPageLabelPrefix(key)))
-    if (match === undefined) return false
-    await internals.invoke('plugin:window|set_focus', { label: match.windowLabel })
+    const channel = new BroadcastChannel('starhub-focus')
+    channel.postMessage({ key })
+    channel.close()
     return true
   } catch {
-    // IPC 失败(如能力缺失/窗口已关):按「无可聚焦窗口」处理,由调用方
-    // 回退打开页面——聚焦是尽力而为,失败不吞掉打开动作。
+    // 广播失败(如通道被占用):按「无可聚焦页面」处理,由调用方回退打开页面。
     return false
   }
+}
+
+/**
+ * Whether a host bridge is reachable (the de-Tauri replacement for the old
+ * `__TAURI_INTERNALS__` presence check): the workbench always runs inside a
+ * browser-like realm with fetch, so this reports whether the host bridge
+ * HTTP surface can be reached at all.
+ * @returns true when running inside a host with fetch available.
+ */
+export function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && typeof fetch === 'function'
 }

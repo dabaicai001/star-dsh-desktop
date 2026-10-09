@@ -1,158 +1,161 @@
 // @vitest-environment jsdom
 /**
- * 共享 Tauri IPC 桥(tauri.ts):顶层帧 `__TAURI_INTERNALS__.invoke` 直调;
- * 浏览器预览(无 Tauri)reject。Broker 服务与资产 holder 都依赖这一层。
+ * 共享宿主桥 seam(tauri.ts,去 Tauri 化 M2):`POST /starhub/api/invoke`
+ * 路由({ok:true,result} 解包 / {ok:false,error} reject / 非 2xx reject)、
+ * args 缺省不带 args 键、共享 SSE 连接的事件扇出与 dispose、openNewPage
+ * 成功与被拦截、focusWindowByKey 有无 BroadcastChannel。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  focusWindowByKey, openNewPage, starhubPageLabelPrefix, tauriInvoke, tauriListen,
+  focusWindowByKey, isTauriRuntime, openNewPage, starhubPageLabelPrefix, tauriInvoke, tauriListen,
 } from '../src/client/tauri.ts'
-
-/** jsdom 全局下的 Tauri IPC stub 挂载/卸载。 */
-function stubTauriInternals(invoke: unknown): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = { invoke }
-  return () => {
-    if (prev === undefined) {
-      delete w.__TAURI_INTERNALS__
-    } else {
-      w.__TAURI_INTERNALS__ = prev
-    }
-  }
-}
+import {
+  emitHostEvent, hostBridgeCalls, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
+} from './host-bridge.ts'
 
 afterEach(() => {
+  restoreHostBridge()
+  restoreHostEvents()
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
 })
 
 describe('tauriInvoke', () => {
-  it('forwards the command and args to the injected invoke and resolves its result', async () => {
-    const invoke = vi.fn((..._args: unknown[]) => Promise.resolve({ ok: true }))
-    const restore = stubTauriInternals(invoke)
+  it('posts {cmd, args} to the invoke endpoint and unwraps {ok:true,result}', async () => {
+    stubHostBridge((cmd, args) => {
+      expect(cmd).toBe('broker_overview')
+      expect(args).toEqual({ kind: 'kafka', params: { host: 'h' } })
+      return { ok: true }
+    })
+    await expect(tauriInvoke('broker_overview', { kind: 'kafka', params: { host: 'h' } }))
+      .resolves.toEqual({ ok: true })
+    expect(hostBridgeCalls()).toEqual([
+      { cmd: 'broker_overview', args: { kind: 'kafka', params: { host: 'h' } } },
+    ])
+  })
+
+  it('omits the args key when no args are given', async () => {
+    const original = globalThis.fetch
+    let requestUrl = ''
+    let requestMethod = ''
+    let sent: Record<string, unknown> = {}
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      requestUrl = String(input)
+      requestMethod = init?.method ?? ''
+      sent = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return new Response(JSON.stringify({ ok: true, result: null }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof globalThis.fetch
     try {
-      await expect(tauriInvoke('broker_overview', { kind: 'kafka', params: { host: 'h' } }))
-        .resolves.toEqual({ ok: true })
-      expect(invoke).toHaveBeenCalledWith('broker_overview', { kind: 'kafka', params: { host: 'h' } })
+      await expect(tauriInvoke('audit_stats')).resolves.toBeNull()
+      expect(requestUrl).toBe('/starhub/api/invoke')
+      expect(requestMethod).toBe('POST')
+      expect(sent).toEqual({ cmd: 'audit_stats' })
+      expect('args' in sent).toBe(false)
     } finally {
-      restore()
+      globalThis.fetch = original
     }
   })
 
-  it('forwards invoke rejections as-is', async () => {
-    const restore = stubTauriInternals(() => Promise.reject(new Error('boom')))
-    try {
-      await expect(tauriInvoke('broker_overview')).rejects.toThrow('boom')
-    } finally {
-      restore()
-    }
+  it('rejects with the bridge error message on {ok:false,error}', async () => {
+    stubHostBridge(() => Promise.reject(new Error('boom')))
+    await expect(tauriInvoke('broker_overview')).rejects.toThrow('boom')
   })
 
-  it('rejects in a plain browser preview without Tauri internals', async () => {
-    await expect(tauriInvoke('broker_overview')).rejects.toThrow('Tauri IPC unavailable (browser preview)')
+  it('rejects when the host bridge responds non-2xx', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => new Response('', { status: 503 })) as typeof globalThis.fetch
+    try {
+      await expect(tauriInvoke('broker_overview')).rejects.toThrow('host bridge unavailable (503)')
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+})
+
+describe('tauriListen', () => {
+  it('subscribes on the shared SSE connection under the event name', async () => {
+    stubHostEvents()
+    expect(hostEventListeners('ssh:kb-interactive:t1')).toBe(0)
+    const off = await tauriListen<string>('ssh:kb-interactive:t1', () => {})
+    expect(hostEventListeners('ssh:kb-interactive:t1')).toBe(1)
+    await off()
+    expect(hostEventListeners('ssh:kb-interactive:t1')).toBe(0)
+  })
+
+  it('fans one shared SSE connection out to every handler of the event name', async () => {
+    stubHostEvents()
+    const seenA: string[] = []
+    const seenB: string[] = []
+    const offA = await tauriListen<string>('ssh:kb-interactive:t1', payload => { seenA.push(payload) })
+    const offB = await tauriListen<string>('ssh:kb-interactive:t1', payload => { seenB.push(payload) })
+    expect(hostEventListeners('ssh:kb-interactive:t1')).toBe(1)
+    emitHostEvent('ssh:kb-interactive:t1', 'code?')
+    expect(seenA).toEqual(['code?'])
+    expect(seenB).toEqual(['code?'])
+    await offA()
+    emitHostEvent('ssh:kb-interactive:t1', 'again')
+    expect(seenA).toEqual(['code?'])
+    expect(seenB).toEqual(['code?', 'again'])
+    await offB()
+  })
+
+  it('stops delivering after dispose even before the connection is established', async () => {
+    stubHostEvents()
+    const seen: string[] = []
+    const off = await tauriListen<string>('e', payload => { seen.push(payload) })
+    await off()
+    emitHostEvent('e', 'x')
+    expect(seen).toEqual([])
+  })
+
+  it('ignores frames whose data is not JSON', async () => {
+    stubHostEvents()
+    const seen: unknown[] = []
+    await tauriListen('e', payload => { seen.push(payload) })
+    // JSON.stringify(undefined) 不产出字符串,data 非 JSON(心跳/注释帧形态)
+    emitHostEvent('e', undefined)
+    expect(seen).toEqual([])
   })
 })
 
 describe('openNewPage', () => {
-  it('creates a Tauri webview window with an absolute URL and a starhub-* label', async () => {
-    const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(null))
-    const restore = stubTauriInternals(invoke)
-    try {
-      await openNewPage('/starhub-react/index.html?asset=a1&workbench=ssh', 'web-1')
-      expect(invoke).toHaveBeenCalledTimes(1)
-      const [cmd, args] = invoke.mock.calls[0] as [string, { options: Record<string, unknown> }]
-      expect(cmd).toBe('plugin:webview|create_webview_window')
-      expect(args.options.label).toMatch(/^starhub-page-\d+$/)
-      expect(args.options.url).toBe(
-        `${window.location.origin}/starhub-react/index.html?asset=a1&workbench=ssh`,
-      )
-      expect(args.options.title).toBe('web-1')
-    } finally {
-      restore()
-    }
+  it('opens the same-origin absolute URL in a new window', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => ({}) as Window)
+    await openNewPage('/starhub-react/index.html?asset=a1&workbench=ssh', 'web-1', 'a1')
+    const [opened, target, features] = openSpy.mock.calls[0] as [URL, string, string]
+    expect(opened).toBeInstanceOf(URL)
+    expect(String(opened)).toBe(
+      `${window.location.origin}/starhub-react/index.html?asset=a1&workbench=ssh`,
+    )
+    expect(target).toBe('_blank')
+    expect(features).toBe('noopener')
   })
 
-  it('propagates window-creation IPC failures (no silent fallback)', async () => {
-    const restore = stubTauriInternals(() => Promise.reject(new Error('not allowed')))
-    try {
-      await expect(openNewPage('/starhub-react/index.html?asset=a1&workbench=ssh', 'x')).rejects.toThrow('not allowed')
-    } finally {
-      restore()
-    }
-  })
-
-  it('opens a new browser tab in preview (no Tauri internals)', async () => {
-    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
-    await openNewPage('/starhub-react/index.html?asset=a1&workbench=ssh', 'x')
-    expect(openSpy).toHaveBeenCalledWith('/starhub-react/index.html?asset=a1&workbench=ssh', '_blank', 'noopener')
-  })
-
-  it('embeds the page key into the window label for later focus', async () => {
-    const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(null))
-    const restore = stubTauriInternals(invoke)
-    try {
-      await openNewPage('/starhub-react/index.html?asset=a1&workbench=ssh', 'web-1', 'a1')
-      const [, args] = invoke.mock.calls[0] as [string, { options: Record<string, unknown> }]
-      expect(args.options.label).toMatch(/^starhub-page-a1-\d+$/)
-    } finally {
-      restore()
-    }
+  it('throws when window.open is intercepted (popup blocked)', async () => {
+    vi.spyOn(window, 'open').mockImplementation(() => null)
+    await expect(openNewPage('/starhub-react/index.html?asset=a1', 'web-1')).rejects.toThrow('window.open intercepted')
   })
 })
 
 describe('focusWindowByKey', () => {
-  it('raises the window whose webview label matches the key prefix', async () => {
-    const invoke = vi.fn((cmd: string) => {
-      if (cmd === 'plugin:webview|get_all_webviews') {
-        return Promise.resolve([
-          { label: 'main', windowLabel: 'main' },
-          { label: 'starhub-page-a1-1700000000', windowLabel: 'starhub-page-a1-1700000000' },
-          { label: 'starhub-page-a2-1700000001', windowLabel: 'starhub-page-a2-1700000001' },
-        ])
-      }
-      if (cmd === 'plugin:window|set_focus') return Promise.resolve(null)
-      return Promise.reject(new Error(`unexpected command: ${cmd}`))
-    })
-    const restore = stubTauriInternals(invoke)
-    try {
-      await expect(focusWindowByKey('a1')).resolves.toBe(true)
-      expect(invoke).toHaveBeenCalledWith('plugin:window|set_focus', {
-        label: 'starhub-page-a1-1700000000',
-      })
-    } finally {
-      restore()
+  it('broadcasts the key on the starhub-focus channel', async () => {
+    const posted: unknown[] = []
+    const closed: string[] = []
+    class FakeBroadcastChannel {
+      constructor(readonly name: string) {}
+      postMessage(message: unknown): void { posted.push(message) }
+      close(): void { closed.push(this.name) }
     }
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
+    await expect(focusWindowByKey('a1')).resolves.toBe(true)
+    expect(posted).toEqual([{ key: 'a1' }])
+    expect(closed).toEqual(['starhub-focus'])
   })
 
-  it('returns false when no webview matches the key', async () => {
-    const invoke = vi.fn(() => Promise.resolve([{ label: 'main', windowLabel: 'main' }]))
-    const restore = stubTauriInternals(invoke)
-    try {
-      await expect(focusWindowByKey('nope')).resolves.toBe(false)
-      expect(invoke).not.toHaveBeenCalledWith('plugin:window|set_focus', expect.anything())
-    } finally {
-      restore()
-    }
-  })
-
-  it('returns false when the focus IPC fails (caller falls back to opening)', async () => {
-    const invoke = vi.fn((cmd: string) => {
-      if (cmd === 'plugin:webview|get_all_webviews') {
-        return Promise.resolve([{ label: 'starhub-page-a1-1', windowLabel: 'starhub-page-a1-1' }])
-      }
-      return Promise.reject(new Error('focus denied'))
-    })
-    const restore = stubTauriInternals(invoke)
-    try {
-      await expect(focusWindowByKey('a1')).resolves.toBe(false)
-    } finally {
-      restore()
-    }
-  })
-
-  it('returns false in a plain browser preview without Tauri internals', async () => {
+  it('returns false without BroadcastChannel', async () => {
+    vi.stubGlobal('BroadcastChannel', undefined)
     await expect(focusWindowByKey('a1')).resolves.toBe(false)
   })
 })
@@ -163,66 +166,15 @@ describe('starhubPageLabelPrefix', () => {
   })
 })
 
-describe('tauriListen', () => {
-  /** 带 transformCallback 的完整 internals stub,返回注册的回调便于手动触发。 */
-  function stubFullInternals(invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>) {
-    const w = window as unknown as {
-      __TAURI_INTERNALS__?: { invoke: unknown; transformCallback: (cb: unknown, once?: boolean) => number }
-    }
-    const prev = w.__TAURI_INTERNALS__
-    let registered: ((envelope: { event: string; id: number; payload: unknown }) => void) | null = null
-    w.__TAURI_INTERNALS__ = {
-      invoke,
-      transformCallback: (cb: unknown) => {
-        registered = cb as typeof registered
-        return 7
-      },
-    }
-    return {
-      restore: () => {
-        if (prev === undefined) delete w.__TAURI_INTERNALS__
-        else w.__TAURI_INTERNALS__ = prev
-      },
-      emit: (payload: unknown) => registered?.({ event: 'e', id: 1, payload }),
-    }
-  }
-
-  it('registers through transformCallback, delivers payloads and unlistens on dispose', async () => {
-    const invoke = vi.fn((cmd: string, _args?: Record<string, unknown>) =>
-      Promise.resolve(cmd === 'plugin:event|listen' ? 42 : null))
-    const stub = stubFullInternals(invoke)
+describe('isTauriRuntime', () => {
+  it('reports whether a host with fetch is reachable', () => {
+    expect(isTauriRuntime()).toBe(true)
+    const original = globalThis.fetch
+    Reflect.deleteProperty(globalThis, 'fetch')
     try {
-      const seen: string[] = []
-      const unlisten = await tauriListen<string>('ssh:kb-interactive:test-1', (payload) => { seen.push(payload) })
-      expect(invoke).toHaveBeenCalledWith('plugin:event|listen', {
-        event: 'ssh:kb-interactive:test-1',
-        target: { kind: 'Any' },
-        handler: 7,
-      })
-      stub.emit('code?')
-      expect(seen).toEqual(['code?'])
-      await unlisten()
-      expect(invoke).toHaveBeenCalledWith('plugin:event|unlisten', {
-        event: 'ssh:kb-interactive:test-1',
-        eventId: 42,
-      })
+      expect(isTauriRuntime()).toBe(false)
     } finally {
-      stub.restore()
+      globalThis.fetch = original
     }
-  })
-
-  it('is a no-op without transformCallback (stubbed internals)', async () => {
-    const restore = stubTauriInternals(vi.fn(() => Promise.resolve(null)))
-    try {
-      const unlisten = await tauriListen('e', () => {})
-      await expect(unlisten()).resolves.toBeUndefined()
-    } finally {
-      restore()
-    }
-  })
-
-  it('is a no-op in a plain browser preview (no internals)', async () => {
-    const unlisten = await tauriListen('e', () => {})
-    await expect(unlisten()).resolves.toBeUndefined()
   })
 })

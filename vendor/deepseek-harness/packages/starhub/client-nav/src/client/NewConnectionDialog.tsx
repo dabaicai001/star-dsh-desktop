@@ -1,10 +1,10 @@
 /**
  * 新建/编辑连接对话框(壳内 React 小对话框,替代原整幅连接管理 iframe
  * overlay):类型下拉 + 公共字段(名称/主机/端口/用户名/密码)+ 各类型
- * 专有字段,提交走顶层帧 Tauri IPC(create_asset / update_asset /
+ * 专有字段,提交走顶层帧宿主桥(create_asset / update_asset /
  * delete_asset,与 src/services/asset.ts 同契约)。编辑模式从资产行预填,
  * 留空的密码/私钥字段不随更新提交(后端 merge 语义下保持原值),并多一个
- * 两步确认的删除入口。浏览器预览(无 Tauri IPC)只展示提示、禁用提交。
+ * 两步确认的删除入口。浏览器预览(无宿主桥)只展示提示、禁用提交。
  *
  * SSH 认证三档与 Vue 版 SshConnectionForm.vue 对齐:password / key / mfa。
  * mfa 档写 `authMode:'mfa'` + `mfaEnabled:true` + `mfaPassword`(MFA 主密码,
@@ -18,7 +18,7 @@
  */
 import { useRef, useState } from 'react'
 import { IconCloseOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
-import { tauriInvoke, tauriListen } from './tauri.ts'
+import { isTauriRuntime, tauriInvoke, tauriListen } from './tauri.ts'
 import type { RustAsset } from './store.ts'
 import s from './settings/settings.module.css'
 
@@ -107,8 +107,8 @@ export interface NewConnectionDialogProps {
  */
 export function NewConnectionDialog({ asset, onClose, onSaved }: NewConnectionDialogProps) {
   const editing = asset !== null
-  const preview = typeof window === 'undefined'
-    || (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === undefined
+  // 无宿主桥(裸浏览器预览)只展示提示、禁用提交。
+  const preview = typeof window === 'undefined' || !isTauriRuntime()
   const [kind, setKind] = useState<ConnKind>(() => (asset === null ? 'ssh' : kindOfAsset(asset)))
   const [name, setName] = useState(() => asset?.name ?? '')
   const [host, setHost] = useState(() => (asset === null ? '' : str(asset.config, 'host')))

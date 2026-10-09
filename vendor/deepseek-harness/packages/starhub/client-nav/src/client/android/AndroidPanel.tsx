@@ -6,11 +6,12 @@
  * 就绪(state=device)设备提供「打开直播」(独立窗口围观,窗口内可切接管);
  * unauthorized/offline 给一行处理提示。刷新按钮重新执行 adb devices -l。
  *
- * 浏览器预览(无 Tauri IPC)时展示预览提示而不是红错,与资产列表同语义。
+ * 无宿主桥(裸浏览器预览)时展示预览提示而不是红错,与资产列表同语义。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { IconRefreshOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { listAndroidDevices, openAndroidLiveWindow, type AndroidDevice } from './services.ts'
+import { isTauriRuntime } from '../tauri.ts'
 import css from '../sandbox/SandboxPanel.module.css'
 
 /** 状态 → 中文徽标 + 处理提示(与 AI 工具 android_list_devices 的话术对齐)。 */
@@ -37,6 +38,14 @@ export function AndroidPanel() {
 
   const refresh = useCallback(async () => {
     setLoading(true)
+    // 无宿主桥(裸浏览器预览)= 预览态,不当红错(与资产列表同语义)。
+    if (!isTauriRuntime()) {
+      setDevices(null)
+      setError(null)
+      setPreview(true)
+      setLoading(false)
+      return
+    }
     try {
       setDevices(await listAndroidDevices())
       setError(null)
@@ -44,13 +53,8 @@ export function AndroidPanel() {
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
       setDevices(null)
-      // 与资产列表同语义:无 Tauri IPC = 浏览器预览态,不当红错
-      if (message.includes('Tauri IPC unavailable')) {
-        setPreview(true)
-        setError(null)
-      } else {
-        setError(message)
-      }
+      setPreview(false)
+      setError(message)
     } finally {
       setLoading(false)
     }
@@ -86,7 +90,7 @@ export function AndroidPanel() {
         {loading && <div className={css.status}>加载设备…</div>}
         {!loading && preview && (
           <div className={css.status}>
-            当前页面跑在纯浏览器里,没有 StarHub 桌面端后端(Tauri IPC),设备列表不可用。
+            当前页面跑在纯浏览器里,没有 StarHub 桌面端后端(宿主桥),设备列表不可用。
           </div>
         )}
         {!loading && error !== null && (

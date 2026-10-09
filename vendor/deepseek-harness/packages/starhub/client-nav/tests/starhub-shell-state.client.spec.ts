@@ -4,7 +4,7 @@
  * not inherit the database subcategory's /db/mysql prefix), the broker
  * subcategory归属(方案 2.1:终端含 Broker),the bridge's
  * generate-instanceId-once / clear-on-close semantics, and the asset holder's
- * refresh round-trip against a stubbed Tauri IPC surface.
+ * refresh round-trip against the stubbed host bridge.
  */
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,6 +16,7 @@ import {
 import {
   createConnectionManagerOverlay, createStarHubAssets, createToolSelectionBridge,
 } from '../src/client/store.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
 /** 构造一个最小资产(只带匹配所需的字段)。 */
 function asset(type: string, dbType?: string): StarHubAsset {
@@ -26,6 +27,23 @@ function asset(type: string, dbType?: string): StarHubAsset {
 function rawRejection(reason: string): Promise<never> {
   const reject = Promise.reject.bind(Promise)
   return reject(reason)
+}
+
+/** 安装宿主桥 invoke 替身;返回还原回调。 */
+function stubTauriInternals(invoke: (cmd: string) => Promise<unknown>): () => void {
+  stubHostBridge(invoke)
+  return () => { restoreHostBridge() }
+}
+
+/** 模拟无宿主桥:移除 fetch 使 isTauriRuntime() 为 false(替代旧「无 Tauri internals」预览态)。 */
+function withoutHostBridge<T>(run: () => T): T {
+  const original = globalThis.fetch
+  Reflect.deleteProperty(globalThis, 'fetch')
+  try {
+    return run()
+  } finally {
+    globalThis.fetch = original
+  }
 }
 
 describe('routePrefixForAsset', () => {
@@ -125,20 +143,6 @@ describe('createToolSelectionBridge', () => {
   })
 })
 
-/** jsdom 全局下的 Tauri IPC stub 挂载/卸载。 */
-function stubTauriInternals(invoke: (cmd: string) => Promise<unknown>): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = { invoke }
-  return () => {
-    if (prev === undefined) {
-      delete w.__TAURI_INTERNALS__
-    } else {
-      w.__TAURI_INTERNALS__ = prev
-    }
-  }
-}
-
 describe('createStarHubAssets', () => {
   afterEach(() => vi.restoreAllMocks())
 
@@ -201,18 +205,20 @@ describe('createStarHubAssets', () => {
     }
   })
 
-  it('refresh without Tauri internals falls into the preview state (no request, no error)', async () => {
-    const holder = createStarHubAssets()
-    holder.refresh()
-    const snap = holder.source.getSnapshot()
-    expect(snap.loading).toBe(false)
-    expect(snap.error).toBeNull()
-    expect(snap.preview).toBe(true)
+  it('refresh without a host bridge falls into the preview state (no request, no error)', async () => {
+    await withoutHostBridge(async () => {
+      const holder = createStarHubAssets()
+      holder.refresh()
+      const snap = holder.source.getSnapshot()
+      expect(snap.loading).toBe(false)
+      expect(snap.error).toBeNull()
+      expect(snap.preview).toBe(true)
+    })
   })
 
   it('a successful refresh clears the preview flag', async () => {
     const holder = createStarHubAssets()
-    holder.refresh()
+    await withoutHostBridge(() => { holder.refresh() })
     expect(holder.source.getSnapshot().preview).toBe(true)
     const restore = stubTauriInternals(() => Promise.resolve([]))
     try {

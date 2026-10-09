@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * ES 服务层(es-service.ts):命令转发参数、预览模式拒绝,以及纯函数
+ * ES 服务层(es-service.ts):命令转发参数、宿主桥错误拒绝,以及纯函数
  * indexRowOf / healthColor / fieldTypeColor 的边界。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -8,16 +8,12 @@ import {
   esClusterHealth, esConnect, esCount, esCreateIndex, esDeleteIndex, esDisconnect,
   esGetSettings, esGetMapping, esListIndices, esSearch, fieldTypeColor, healthColor, indexRowOf,
 } from '../src/client/es/es-service.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
-/** Install a Tauri IPC stub; returns a restore callback. */
+/** 安装宿主桥 invoke 替身;返回还原回调。 */
 function stubInvoke(handler: (cmd: string, args?: Record<string, unknown>) => unknown): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = { invoke: handler }
-  return () => {
-    if (prev === undefined) delete w.__TAURI_INTERNALS__
-    else w.__TAURI_INTERNALS__ = prev
-  }
+  stubHostBridge(handler)
+  return () => { restoreHostBridge() }
 }
 
 /** Recording invoke helper with ES-shaped responses. */
@@ -44,7 +40,7 @@ function recordingInvoke() {
 
 afterEach(() => {
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('es service commands', () => {
@@ -96,8 +92,9 @@ describe('es service commands', () => {
     }
   })
 
-  it('rejects in browser preview when no Tauri internals are present', async () => {
-    await expect(esConnect({ host: 'h', port: 9200 })).rejects.toThrow('Tauri IPC unavailable')
+  it('rejects when the host bridge reports an error', async () => {
+    stubHostBridge(() => Promise.reject(new Error('host bridge unavailable')))
+    await expect(esConnect({ host: 'h', port: 9200 })).rejects.toThrow('host bridge unavailable')
   })
 })
 

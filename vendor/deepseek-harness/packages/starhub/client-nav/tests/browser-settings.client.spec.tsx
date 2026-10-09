@@ -8,41 +8,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { BrowserSettingsTab } from '../src/client/settings/browser.tsx'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
-/** jsdom 全局下的 Tauri IPC stub:按命令返回 map 里的值,记录全部调用。 */
+/** 安装宿主桥 invoke 替身:按命令返回 map 里的值,记录全部调用。 */
 function stubTauriInternals(handlers: Record<string, (args?: unknown) => unknown>): {
   calls: Array<{ cmd: string; args: unknown }>
   restore: () => void
 } {
   const calls: Array<{ cmd: string; args: unknown }> = []
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: unknown) => {
-      calls.push({ cmd, args })
-      const handler = handlers[cmd]
-      if (handler === undefined) return Promise.reject(new Error(`unexpected command: ${cmd}`))
-      // 包一层异步调用:handler 的同步 throw 转成 rejection(真实 IPC 也是拒绝)
-      return (async () => handler(args))()
-    },
-  }
-  return {
-    calls,
-    restore: () => {
-      if (prev === undefined) {
-        delete w.__TAURI_INTERNALS__
-      } else {
-        w.__TAURI_INTERNALS__ = prev
-      }
-    },
-  }
+  stubHostBridge((cmd, args) => {
+    calls.push({ cmd, args })
+    const handler = handlers[cmd]
+    if (handler === undefined) return Promise.reject(new Error(`unexpected command: ${cmd}`))
+    // 包一层异步调用:handler 的同步 throw 转成 rejection(真实 IPC 也是拒绝)
+    return (async () => handler(args))()
+  })
+  return { calls, restore: () => { restoreHostBridge() } }
 }
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown }
-  delete w.__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('BrowserSettingsTab', () => {
@@ -187,8 +174,9 @@ describe('BrowserSettingsTab', () => {
     }
   })
 
-  it('shows the load failure banner without a Tauri bridge', async () => {
+  it('shows the load failure banner when the host bridge is unreachable', async () => {
+    stubHostBridge(() => Promise.reject(new Error('host bridge unavailable (browser preview)')))
     render(<BrowserSettingsTab />)
-    expect(await screen.findByText(/Tauri IPC unavailable/)).toBeTruthy()
+    expect(await screen.findByText(/host bridge unavailable/)).toBeTruthy()
   })
 })

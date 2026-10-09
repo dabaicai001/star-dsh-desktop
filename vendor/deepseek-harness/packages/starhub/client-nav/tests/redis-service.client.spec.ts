@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Redis 服务层(redis-service.ts):命令转发参数、预览模式拒绝、redisQuote 纯函数
+ * Redis 服务层(redis-service.ts):命令转发参数、宿主桥错误拒绝、redisQuote 纯函数
  * 边界,以及 redisScanAccumulate 连续分页(游标归零/单批上限/续传去重/页数熔断)。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,16 +9,12 @@ import {
   redisGetValue, redisInfo, redisQuote, redisRename, redisScan, redisScanAccumulate,
   redisSelect, redisSet, type RedisScanResult,
 } from '../src/client/redis/redis-service.ts'
+import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
-/** 安装 Tauri IPC stub,记录 invoke 调用并返回预设结果;返回还原原状态的回调。 */
+/** 安装宿主桥 invoke 替身,记录 invoke 调用并返回预设结果;返回还原原状态的回调。 */
 function stubInvoke(handler: (cmd: string, args?: Record<string, unknown>) => unknown): () => void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: unknown } }
-  const prev = w.__TAURI_INTERNALS__
-  w.__TAURI_INTERNALS__ = { invoke: handler }
-  return () => {
-    if (prev === undefined) delete w.__TAURI_INTERNALS__
-    else w.__TAURI_INTERNALS__ = prev
-  }
+  stubHostBridge(handler)
+  return () => { restoreHostBridge() }
 }
 
 /** 记录命令与参数的 invoke helper。 */
@@ -47,7 +43,7 @@ function recordingInvoke() {
 
 afterEach(() => {
   vi.restoreAllMocks()
-  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  restoreHostBridge()
 })
 
 describe('redis service commands', () => {
@@ -124,8 +120,9 @@ describe('redis service commands', () => {
     }
   })
 
-  it('rejects in browser preview when no Tauri internals are present', async () => {
-    await expect(redisConnect({ host: 'h', port: 6379 })).rejects.toThrow('Tauri IPC unavailable')
+  it('rejects when the host bridge reports an error', async () => {
+    stubHostBridge(() => Promise.reject(new Error('host bridge unavailable')))
+    await expect(redisConnect({ host: 'h', port: 6379 })).rejects.toThrow('host bridge unavailable')
   })
 })
 
