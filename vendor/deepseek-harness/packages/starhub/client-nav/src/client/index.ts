@@ -11,11 +11,12 @@
  * 与 session-maybe 无会话分支不下发注册侧 store 这两条规定,把共享状态都
  * 推到了 hooks 舱位范式(同 ui-agent-preset controller)。
  *
- * 资产实例操作页不再用整幅 overlay 盖住 dsh 主壳:点击资产行经
- * openNewPage(tauri.ts)在桌面端开独立 webview 窗口(label 走
- * capability 的 starhub-* glob,embed 页在新窗口里保有 IPC 授权),
- * 浏览器预览退化为新标签页。选择桥仍记录当前资产(instanceId/
- * routePrefix),供工具上下文(AI 注入)同步使用。
+ * 资产实例操作页不再新开独立窗口:Tauri 壳退役后(去 Tauri 化 M2 第 6 步),
+ * 工作台是 dsh 主壳内的一个 keyed 主面板(`main` 槽 key=`starhub-workbench`,
+ * 见 StarHubToolWorkspace 同机制),每个资产实例一页(iframe 承载同源的
+ * `/starhub-react/` 独立程序);入口点击经 `openNewPage` → 页簿开/聚焦一页并
+ * `layout.selectPanel` 切到该面板,页簿空时让回工具面板。选择桥仍记录当前
+ * 资产(instanceId/routePrefix),供工具上下文(AI 注入)同步使用。
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { JSX } from 'react'
@@ -48,13 +49,15 @@ import { ExecDrawerButton } from './conn/ExecDrawerButton.tsx'
 import { createExecRecordsBridge, subscribeSshExecEvents } from './conn/exec-records.ts'
 import { assetSubtitle, assetWindowUrl, type StarHubAsset } from './sections.ts'
 import { bindAssetContext } from './tool-context.ts'
-import { focusWindowByKey, openNewPage, tauriInvoke } from './tauri.ts'
+import { focusWindowByKey, installWorkbenchPageHost, openNewPage, tauriInvoke } from './tauri.ts'
 import { ScreenshotButton } from './screenshot/ScreenshotButton.tsx'
 import { StarHubOverlay } from './StarHubOverlay.tsx'
 import { ToolsPanelIcon } from './ToolsPanelIcon.tsx'
 import { GitBranchPill } from './git/GitBranchPill.tsx'
 import { createGitWorkbenchBridge } from './git/git-workbench-state.ts'
 import { StarHubToolWorkspace, type StarHubToolWorkspaceInjected } from './StarHubToolWorkspace.tsx'
+import { StarHubWorkbenchPanel, type StarHubWorkbenchPanelInjected } from './StarHubWorkbenchPanel.tsx'
+import { createWorkbenchPanelStore, type WorkbenchPage } from './workbench-panel.ts'
 import { AboutTab } from './settings/about.tsx'
 import { AndroidSettingsTab } from './settings/android.tsx'
 import { BrowserSettingsTab } from './settings/browser.tsx'
@@ -81,6 +84,9 @@ export const inject = ['slots', 'connection', 'remote', 'remote.settings', 'layo
  * 否则 layout.selectPanel 抛错(与 ui-plugin-manager 的 PANEL_ID 同机制)。
  */
 const TOOLS_PANEL_ID = 'starhub-tools' as MainPanelId
+
+/** 工作台主面板 id(去 Tauri 化 M2 第 6 步:资产实例操作页的壳内座位)。 */
+const WORKBENCH_PANEL_ID = 'starhub-workbench' as MainPanelId
 
 /** layout 服务窄化面:切主面板(null = 回会话视图)。 */
 interface LayoutPanelSwitch {
@@ -138,15 +144,15 @@ export function apply(ctx: Context): void {
   // StarHub 工作台遵循 dsh 设计理念:不再注入自有主题 token(旧 --dsw-accent /
   // --dsw-font-mono / --dsw-shadow-popover 等历史令牌),统一消费 ui-theme 的
   // --dsw-alias-* 语义别名,深浅色由 dsh 主题所有者(ui-theme)处理。
-  /** 打开资产实例操作页:记录选择桥(供 AI 工具上下文)后一律开「React 独立
-   *  程序窗口」(openNewPage → /starhub-react/index.html?asset=…)。所有类型
-   *  (SSH / 数据库 / Docker / Redis)统一走独立 React 窗口,不再以壳内
-   *  overlay 弹框呈现,也不再回落 Vue embed。窗口 label 携带资产 id 供
-   *  starhub://open-asset 的 focus 复用。 */
+  /** 打开资产实例操作页:记录选择桥(供 AI 工具上下文)后一律开**壳内工作台
+   *  面板页**(openNewPage → 页簿开/聚焦一页 + 切主面板)。所有类型
+   *  (SSH / 数据库 / Docker / Redis)统一走同一块面板,不再新开独立窗口,
+   *   也不再回落 Vue embed。同 key(资产 id)重复打开 = 聚焦已有页——
+   *   与 sidecar 侧 `starhub/open.asset` 的 open→focus 预判同语义。 */
   const openAssetPage = (asset: StarHubAsset): void => {
     selection.openAsset(asset)
-    // 独立工作台窗口不跑 ui-theme 插件树:把主壳当前解析主题(dark)经 `dark` 参数
-    // 传入,窗口据此切换深浅色 token(跟随 DSH 主题,而非固定深色)。
+    // 独立工作台不跑 ui-theme 插件树:把主壳当前解析主题(dark)经 `dark` 参数
+    // 传入,页内据此切换深浅色 token(跟随 DSH 主题,而非固定深色)。
     const baseUrl = assetWindowUrl(asset)
     let url = baseUrl
     if (typeof document !== 'undefined') {
@@ -154,9 +160,34 @@ export function apply(ctx: Context): void {
       url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}dark=${dark ? '1' : '0'}`
     }
     openNewPage(url, asset.name, asset.id)
-      // 开窗失败(如 IPC 未授权)打日志,不阻断主壳交互
+      // 开页失败(如宿主桥未就绪)打日志,不阻断主壳交互
       .catch((e: unknown) => { console.error('打开资产页面失败:', e) })
   }
+  /** 壳内工作台页簿 + 面板切换:开/聚焦一页并把主面板切到工作台。 */
+  const workbench = createWorkbenchPanelStore()
+  const openWorkbenchPage = (page: WorkbenchPage): void => {
+    workbench.open(page)
+    layout.selectPanel(WORKBENCH_PANEL_ID)
+  }
+  // openNewPage 的壳内宿主:装了宿主就不再用 window.open 开新标签页。
+  // ctx.effect 保证 HMR 卸载时摘除(回到 window.open 的老行为)。
+  ctx.effect(() => {
+    installWorkbenchPageHost((path, title, key) => {
+      openWorkbenchPage({ key: key === '' ? path : key, title: title === '' ? path : title, url: path })
+    })
+    return () => { installWorkbenchPageHost(null) }
+  }, 'starhub: workbench page host')
+  // 页簿空 → 面板让回工具列表(用户在这儿的动线:工具面板 → 点资产 → 工作台
+  // 页 → 关页)。store 的 subscribe 不带快照参数(框架约定),「上一态有没有页」
+  // 由本地变量记住,只在「有页变无页」的沿上切,避免无谓的面板跳转。
+  ctx.effect(() => {
+    let hadPages = workbench.source.getSnapshot().pages.length > 0
+    return workbench.source.subscribe(() => {
+      const hasPages = workbench.source.getSnapshot().pages.length > 0
+      if (hadPages && !hasPages) layout.selectPanel(TOOLS_PANEL_ID)
+      hadPages = hasPages
+    })
+  }, 'starhub: workbench panel fallback')
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
     id: 'starhub-overlay',
@@ -267,6 +298,18 @@ export function apply(ctx: Context): void {
     key: TOOLS_PANEL_ID,
     inject: workspaceInject,
   }, StarHubToolWorkspace))
+  // 工作台主面板(M2 第 6 步):与工具面板同机制的第二個 keyed main 槽。
+  // 资产实例操作页在此承载(iframe + 标签条),页簿空时组件渲染 null。
+  const workbenchInject = (): StarHubWorkbenchPanelInjected => ({
+    activatePage: (key) => { workbench.activateIfOpen(key) },
+    closePage: (key) => { workbench.close(key) },
+    hooks: { workbench: workbench.source },
+  })
+  ctx.slots.inject('main', () => ctx.slots.register({
+    name: 'main',
+    key: WORKBENCH_PANEL_ID,
+    inject: workbenchInject,
+  }, StarHubWorkbenchPanel))
   // 右下角 BastionExecPanel 浮层席位已在 v0.100.0 移除:静默执行记录改由
   // 头部「执行」按钮 + 工具抽屉的执行记录视图承载(见 header.actions 的
   // starhub-exec-drawer 席位与 StarHubToolWorkspace 的 exec 分支)。
@@ -352,7 +395,15 @@ export function apply(ctx: Context): void {
     onOpenAsset: createOpenAssetHandler({
       assets,
       openAssetPage,
-      focusWindow: focusWindowByKey,
+      // focus 语义随面板重写(M2 第 6 步):壳内已有该资产的页 → 激活并切到
+      // 工作台面板;没有(或壳外窗口)才回退到 starhub-focus 广播,再不行才开新页。
+      focusWindow: async (key) => {
+        if (workbench.activateIfOpen(key)) {
+          layout.selectPanel(WORKBENCH_PANEL_ID)
+          return true
+        }
+        return focusWindowByKey(key)
+      },
     }),
     onAskAi: createAskAiHandler({
       writer: settingsWriter,

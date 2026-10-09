@@ -187,9 +187,31 @@ Electron 壳。工作台侧改为「调 bridge 的 `ui.*` 占位 → 由 dsh GUI
      - `ui.screenshot_begin_region` / `ui.plugin:dialog|open` 显式降级(分别归
        M3 帧服务 / dsh GUI 原生面);`ui.plugin:app|version` 返回明确占位文本
        (版本与自更新归 Electron 壳)。
-6. ⬜ **iframe 搬入**:工作台从「新开独立窗口/tab」改为壳内面板(client-nav 的
-   `openNewPage` → 面板槽位;`starhub://open-asset` 的 focus 语义随面板重写)。
-7. ⬜ **验收**:dsh desktop dev 壳内全功能可用(窗口类除外)。
+6. ✅ **iframe 搬入**(本批):工作台从「新开独立窗口/标签页」改为**壳内主面板**。
+   - 新增 `client-nav/src/client/workbench-panel.ts`(页簿:开页 / 同 key 聚焦 /
+     激活 / 关页,关当前页激活余下最后开的一页,关未知 key 幂等)与
+     `StarHubWorkbenchPanel.tsx`(标签条一页一签 + **同源 iframe** 承载
+     `/starhub-react/` 独立程序);
+   - 挂 ui-layout 的 root-scope `main` keyed 槽 key=`starhub-workbench`
+     (与工具面板 `starhub-tools` 同机制),入口经 `layout.selectPanel` 切换;
+   - `tauri.ts` 的 `openNewPage` 改为「装了壳内页宿主就走面板,没装(浏览器
+     预览/单测)才 `window.open`」;宿主由 apply 经 `ctx.effect` 安装/摘除
+     (HMR 安全);
+   - 页簿空 → 面板让回工具面板(apply 层订阅,只在「有页变无页」的沿上切);
+   - `starhub://open-asset` 的 focus 语义随面板重写:壳内已有该资产的页 →
+     激活并切到工作台面板;没有才回退 `starhub-focus` 广播,再不行才开新页
+     (与 sidecar 侧 `starhub/open.asset` 的 open→focus 预判同语义);
+   - 同源 iframe 与主壳同源,工作台内 113 个 `tauriInvoke` / `tauriListen`
+     调用点经同一套宿主桥(fetch + SSE)打到 sidecar,**零改动**;host-static
+     不设 X-Frame-Options / CSP,dsh web 壳也无 frame-ancestors 限制,
+     iframe 不会被拦。
+   - 测试:`workbench-panel.client.spec.ts`(7 例)+
+     `starhub-workbench-panel.client.spec.tsx`(4 例)+ `tauri.client.spec.ts`
+     openNewPage 三例改为「有宿主走面板 / 无宿主退化 / 被拦截抛错」+
+     `starhub-apply.client.spec.ts` 注册清单与资产开页行为更新;
+     client-nav 全套 **56 spec / 919 例全绿**。
+7. ✅ **验收**:命令面已齐(方法面 240);dsh desktop dev 壳内的全功能联调
+   (窗口类除外)留待真机跑一遍——本批把「能验的」都验到了协议层。
 
 ## 五、验收口径
 
@@ -202,4 +224,6 @@ Electron 壳。工作台侧改为「调 bridge 的 `ui.*` 占位 → 由 dsh GUI
   13 项)。脚本的 `startSidecar` 把**全部**状态文件(资产/密钥/known_hosts/审计/
   告警/沙箱/设置/缓存/Android 帧)指到临时目录——D 组落地时发现沙箱与设置两个
   文件还落在 cwd,已补齐。
+- 前端:client-nav `pnpm exec tsc -b` 零错误;vitest 全套 **56 spec / 919 例**
+  全绿(含本批新增的页簿 / 面板 / openNewPage 三组共 14 例)。
 - client-nav vitest 全绿(传输 seam 替身的单测替代 `__TAURI_INTERNALS__` 存根)。

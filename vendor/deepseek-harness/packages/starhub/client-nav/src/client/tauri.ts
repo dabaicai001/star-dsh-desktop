@@ -131,20 +131,43 @@ export function starhubPageLabelPrefix(key: string): string {
 }
 
 /**
- * Open a StarHub page in a NEW window instead of overlaying the dsh shell.
- * The page URL is a same-origin path (for example
- * `/starhub-react/index.html?asset=...`), resolved against the current
- * origin and opened as a new browser tab/window by the host shell.
- * @param path - same-origin page path (absolute path, not full URL).
- * @param _title - new window title; kept for call-site compatibility (the
- *   host shell titles the tab from the page itself).
- * @param _key - optional stable identity; kept for call-site compatibility
- *   (focus semantics moved to the `starhub-focus` broadcast channel).
- * @returns after the window/tab has been requested.
- * @throws when window.open is intercepted (popup blocked) and returns null
- *   — a failed open must surface, not quietly do nothing.
+ * 壳内工作台页宿主(去 Tauri 化 M2 第 6 步):装了宿主就把「开新窗口」改为
+ * 「开主壳内的面板页」(见 `workbench-panel.ts` / `StarHubWorkbenchPanel.tsx`);
+ * 没装(浏览器预览 / 单测)时保持 `window.open` 的老行为。
+ * 由 client-nav 的 apply 经 `installWorkbenchPageHost` 安装、`ctx.effect`
+ * 卸载时摘除(HMR 安全)。
  */
-export async function openNewPage(path: string, _title: string, _key?: string): Promise<void> {
+export type WorkbenchPageHost = (path: string, title: string, key: string) => void
+
+let workbenchPageHost: WorkbenchPageHost | null = null
+
+/**
+ * Install (or clear) the in-shell workbench page host.
+ * @param host - the host that opens a panel page; null restores the
+ *   `window.open` fallback (preview / tests).
+ */
+export function installWorkbenchPageHost(host: WorkbenchPageHost | null): void {
+  workbenchPageHost = host
+}
+
+/**
+ * Open a StarHub page: in the dsh desktop shell the standalone React
+ * workbench lives in an in-shell main panel (one tab per asset instance), so
+ * the installed host opens/activates a panel page instead of a new window.
+ * Without a host (browser preview) it falls back to a same-origin new tab.
+ * @param path - same-origin page path (absolute path, not full URL).
+ * @param title - page title (asset name; the panel tab label).
+ * @param key - stable page identity (asset id); an already-open key focuses
+ *   the existing page instead of opening a second one.
+ * @returns after the page has been opened (or focused).
+ * @throws when no host is installed and window.open is intercepted (popup
+ *   blocked) — a failed open must surface, not quietly do nothing.
+ */
+export async function openNewPage(path: string, title = '', key = ''): Promise<void> {
+  if (workbenchPageHost !== null) {
+    workbenchPageHost(path, title, key)
+    return
+  }
   const opened = window.open(new URL(path, window.location.origin), '_blank', 'noopener')
   if (opened === null) {
     throw new Error('window.open intercepted (popup blocked)')

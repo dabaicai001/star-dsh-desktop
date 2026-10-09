@@ -1,0 +1,105 @@
+/* StarHub workbench main panel (M2 step 6): tab strip + same-origin iframe that
+   carries the standalone React workbench (/starhub-react/). Fills the layout's
+   main area; tokens follow the dsw alias set. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+}
+
+/* 标签条:一页一签,当前页高亮;可横向滚动(多资产并发)。 */
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  flex: none;
+  overflow-x: auto;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+/* 一签 = 主按钮 + 关闭钮的外壳(两者同处一个标签视觉单元)。 */
+.tabSlot {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  border-radius: 6px 6px 0 0;
+}
+
+.tabSlot:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.tabSlot:has(.active) {
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 6px 8px 6px 10px;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.tab.active {
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.tabLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.tabClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* iframe 承载区:占满剩余高度;工作台自带队内滚动。 */
+.frame {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  width: 100%;
+  height: 100%;
+  background: var(--dsw-alias-bg-layer-1);
+}

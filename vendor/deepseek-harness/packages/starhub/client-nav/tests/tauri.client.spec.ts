@@ -3,11 +3,12 @@
  * 共享宿主桥 seam(tauri.ts,去 Tauri 化 M2):`POST /starhub/api/invoke`
  * 路由({ok:true,result} 解包 / {ok:false,error} reject / 非 2xx reject)、
  * args 缺省不带 args 键、共享 SSE 连接的事件扇出与 dispose、openNewPage
- * 成功与被拦截、focusWindowByKey 有无 BroadcastChannel。
+ * 装了壳内页宿主时走面板(不 window.open)、没装时退化为新窗口与被拦截、
+ * focusWindowByKey 有无 BroadcastChannel。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  focusWindowByKey, isTauriRuntime, openNewPage, starhubPageLabelPrefix, tauriInvoke, tauriListen,
+  focusWindowByKey, installWorkbenchPageHost, isTauriRuntime, openNewPage, starhubPageLabelPrefix, tauriInvoke, tauriListen,
 } from '../src/client/tauri.ts'
 import {
   emitHostEvent, hostBridgeCalls, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
@@ -121,13 +122,26 @@ describe('tauriListen', () => {
 })
 
 describe('openNewPage', () => {
-  it('opens the same-origin absolute URL in a new window', async () => {
+  it('routes to the in-shell page host when one is installed (no window.open)', async () => {
+    const opened: Array<[string, string, string]> = []
+    installWorkbenchPageHost((path, title, key) => { opened.push([path, title, key]) })
+    const openSpy = vi.spyOn(window, 'open')
+    try {
+      await openNewPage('/starhub-react/index.html?asset=a1&workbench=ssh', '验收机', 'a1')
+    } finally {
+      installWorkbenchPageHost(null)
+    }
+    expect(opened).toEqual([['/starhub-react/index.html?asset=a1&workbench=ssh', '验收机', 'a1']])
+    expect(openSpy).not.toHaveBeenCalled()
+  })
+
+  it('clearing the host restores the window.open fallback', async () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => ({}) as Window)
-    await openNewPage('/starhub-react/index.html?asset=a1&workbench=ssh', 'web-1', 'a1')
+    await openNewPage('/starhub-react/index.html?asset=a1', 'web-1', 'a1')
     const [opened, target, features] = openSpy.mock.calls[0] as [URL, string, string]
     expect(opened).toBeInstanceOf(URL)
     expect(String(opened)).toBe(
-      `${window.location.origin}/starhub-react/index.html?asset=a1&workbench=ssh`,
+      `${window.location.origin}/starhub-react/index.html?asset=a1`,
     )
     expect(target).toBe('_blank')
     expect(features).toBe('noopener')

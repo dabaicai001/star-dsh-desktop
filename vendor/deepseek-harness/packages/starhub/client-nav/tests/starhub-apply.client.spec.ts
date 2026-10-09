@@ -1,16 +1,17 @@
 // @vitest-environment jsdom
 /**
  * client-nav 插件装配(apply,rc.2 适配后):各槽位注册的槽名、组件与注入面
- * (工具面板桥 / 连接对话框桥 / git 分支胶囊 / 截图按钮附件)
+ * (工具面板桥 / 连接对话框桥 / git 分支胶囊 / 截图按钮附件 / 壳内工作台面板)
  * 与工具树子类选中语义(selectSubcategory 写选择桥,不再联动布局开关)。
  * rc.2 注册面(v0.100.0 起右下角 BastionExecPanel 浮层席位移除;
  * v0.105.0 起沙箱桌面横幅 + 沙箱平台设置 tab 入列;v0.121.8 起文件树/
  * 文件查看/@ 文件源随「文件功能」移除;v0.123.1 起「插件市场」「AI 助手」
  * tab 移除——前者由壳内首页「插件」面板接管,后者(长期记忆)整条栈退场;
  * v0.123.2 起「工具」入口从 sidebar.footer.action + shell.overlay 浮层迁到
- * sidebar.panellist 行 + main 主面板):
+ * sidebar.panellist 行 + main 主面板;去 Tauri 化 M2 第 6 步起资产实例操作页
+ * 从独立 webview 窗口改为壳内工作台主面板——第二个 keyed main 槽):
  * `shell.overlay`×3(overlay / AI 连接卡 / 沙箱横幅)+ `sidebar.panellist`
- * (工具行)+ `main`(工具面板)+ `conversation.session.
+ * (工具行)+ `main`×2(工具面板 / 工作台面板)+ `conversation.session.
  * header.actions`×2(git / 执行)+ `conversation.input.left`(截图)
  * + `settings.section`×7。
  */
@@ -21,6 +22,7 @@ import { apply as applyPlugin, inject as injectList } from '../src/client/index.
 import { ToolsPanelIcon } from '../src/client/ToolsPanelIcon.tsx'
 import { StarHubOverlay } from '../src/client/StarHubOverlay.tsx'
 import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
+import { StarHubWorkbenchPanel } from '../src/client/StarHubWorkbenchPanel.tsx'
 import { GitBranchPill } from '../src/client/git/GitBranchPill.tsx'
 import { ExecDrawerButton } from '../src/client/conn/ExecDrawerButton.tsx'
 import { StarHubConnCard } from '../src/client/conn/StarHubConnCard.tsx'
@@ -118,7 +120,7 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
       'shell.overlay', 'shell.overlay', 'shell.overlay',
-      'sidebar.panellist', 'main',
+      'sidebar.panellist', 'main', 'main',
       'conversation.session.header.actions', 'conversation.session.header.actions',
       'conversation.input.left',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
@@ -126,7 +128,7 @@ describe('client-nav apply (rc.2)', () => {
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
       StarHubOverlay, StarHubConnCard, SandboxUserActionBanner,
-      ToolsPanelIcon, StarHubToolWorkspace,
+      ToolsPanelIcon, StarHubToolWorkspace, StarHubWorkbenchPanel,
       GitBranchPill, ExecDrawerButton,
       ScreenshotButton,
       AuditTab, AlertTab, SandboxSettingsTab, AndroidSettingsTab, BrowserSettingsTab, SshSettingsTab, AboutTab,
@@ -217,8 +219,9 @@ describe('client-nav apply (rc.2)', () => {
     expect(injected.hooks.connectionManager.getSnapshot()).toEqual({ open: true, asset: null })
   })
 
-  it('opens every asset page in a React window (preview: new tab), no shell overlay hooks', () => {
-    const { ctx, register } = fakeContext()
+  it('opens every asset page in the in-shell workbench panel (no new window)', () => {
+    const selectPanel = vi.fn()
+    const { ctx, register } = fakeContext({ layout: { selectPanel } })
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => ({}) as Window)
     try {
       applyPlugin(ctx)
@@ -229,9 +232,27 @@ describe('client-nav apply (rc.2)', () => {
         key_id: null, tags: [], favorite: false, last_used_at: null, created_at: 0, updated_at: 0,
       }
       panel.openAsset(esAsset)
-      expect(openSpy).toHaveBeenCalledTimes(1)
-      // openNewPage 传 new URL(path, origin):断言其绝对化后的 URL 含资产路径。
-      expect(String(openSpy.mock.calls[0]![0])).toContain('starhub-react/index.html?asset=es1')
+      // M2 第 6 步:不再新开窗口/标签页,而是壳内工作台面板的一页。
+      expect(openSpy).not.toHaveBeenCalled()
+      expect(selectPanel).toHaveBeenCalledWith('starhub-workbench')
+      const workbenchConfig = register.mock.calls[5]![0] as RegisterOptions
+      const injected = workbenchConfig.inject() as {
+        hooks: {
+          workbench: {
+            getSnapshot: () => { pages: Array<{ key: string; title: string; url: string }>; activeKey: string | null }
+          }
+        }
+      }
+      const state = injected.hooks.workbench.getSnapshot()
+      expect(state.pages.map((page) => page.key)).toEqual(['es1'])
+      expect(state.activeKey).toBe('es1')
+      expect(state.pages[0].url).toContain('starhub-react/index.html?asset=es1')
+
+      // 关掉最后一页:面板让回工具列表(用户在「工具面板 → 点资产 → 关页」动线上)。
+      const closePage = injected as unknown as { closePage: (key: string) => void }
+      closePage.closePage('es1')
+      expect(injected.hooks.workbench.getSnapshot().pages).toEqual([])
+      expect(selectPanel).toHaveBeenCalledWith('starhub-tools')
     } finally {
       openSpy.mockRestore()
     }

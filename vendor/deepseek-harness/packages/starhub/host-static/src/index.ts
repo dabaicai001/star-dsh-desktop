@@ -2,8 +2,9 @@
  * @deepseek-ai/dsh-starhub-host-static — StarHub dist server over a webserver
  * prefix route (StarHub-local package, not upstream). It serves the standalone
  * React workbench window app at `/starhub-react` from the `starhub-window` Vite
- * build in repo `dist-starhub-react/`. Independent windows opened for Tools
- * instance clicks load this entry and reuse the client-nav React workbenches.
+ * build in repo `dist-starhub-react/`. Tools instance clicks load this entry in
+ * the dsh shell's StarHub workbench panel (an in-shell same-origin iframe since
+ * the de-Tauri M2 step 6; before that, an independent window/tab).
  *
  * A miss on a GET falls back to the prefix's index.html with 200; traversal
  * outside the dist root is 403; non-GET/HEAD is 405. The dist must use vite
@@ -168,9 +169,10 @@ export function staticHandler(
 }
 
 /**
- * Claim the React workbench prefix route. The standalone window is a production
- * entry point, so a missing build prevents plugin startup instead of silently
- * registering an unusable fallback.
+ * Claim the React workbench prefix route. The workbench entry is a production
+ * entry point (loaded by the shell's StarHub workbench panel iframe), so a
+ * missing build prevents plugin startup instead of silently registering an
+ * unusable fallback.
  * @param ctx - plugin context carrying the webServer service.
  */
 export function apply(ctx: Context): void {
