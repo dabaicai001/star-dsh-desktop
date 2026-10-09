@@ -17,7 +17,8 @@
  *
  * 另挂工作台 API(`/starhub/api/invoke` + `/starhub/api/events` SSE):React
  * 工作台在独立组合里没有 Tauri IPC,这两条路由是它的调用/事件面(见
- * `workbench.ts`)。
+ * `workbench.ts`)。M3 再挂直播/接管帧通道(`/starhub/live` upgrade,见
+ * `live.ts`):sidecar 的本地 WS 经本路由中继给壳内面板。
  *
  * @module @deepseek-ai/dsh-starhub-bridge
  */
@@ -40,6 +41,7 @@ import {
   errorMessage,
   spawnSidecar,
 } from './transport.ts'
+import { liveUpgradeHandler, LIVE_UPGRADE_ROUTE } from './live.ts'
 import { eventsHandler, invokeHandler } from './workbench.ts'
 
 export const name = 'starhub-bridge'
@@ -161,6 +163,28 @@ export async function apply(ctx: Context, config: BridgeConfig = {}): Promise<vo
       handler: eventsHandler(broadcast => notifications.subscribeAll(broadcast)),
     }),
     'starhub-bridge: /starhub/api/events SSE route',
+  )
+  // 直播/接管帧通道(M3):把 sidecar 的本地 WS 以带鉴权的 path 暴露给壳内面板。
+  // 端点每次连接现取(sidecar 可能在本插件之后才绑端口),令牌由面板经
+  // `ui.live_open` 领取、sidecar 在握手中一次性消费。
+  const liveLog = (message: string): void => {
+    ctx.logger('starhub-bridge').warn(message)
+  }
+  ctx.effect(
+    () =>
+      ctx.webServer.registerUpgrade({
+        path: LIVE_UPGRADE_ROUTE,
+        handler: liveUpgradeHandler(async () => {
+          try {
+            const endpoint = await sidecar.request('starhub/live.endpoint', {})
+            const url = (endpoint as { endpoint?: unknown } | null)?.endpoint
+            return typeof url === 'string' && url !== '' ? url : null
+          } catch {
+            return null
+          }
+        }, liveLog),
+      }),
+    'starhub-bridge: /starhub/live upgrade route',
   )
   ctx.effect(() => async () => {
     try {
