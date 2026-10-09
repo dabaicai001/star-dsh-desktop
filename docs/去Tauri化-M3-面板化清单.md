@@ -98,12 +98,50 @@ HTTP 拉取,这边是 WS 推送 + 「迟到者从最近可独立解码的帧重�
    增加 `BrowserEngine` seam)。
 3. ⬜ **沙箱桌面帧源**:容器内 scrot/xdotool 编排 → 帧枢纽(复用 desktop 域
    已有的 `exec::ui_lifecycle` 授权模型)。
-4. ⬜ **bridge 出口(TS 侧)**:`webServer.registerUpgrade` 把
+4. ✅ **bridge 出口(TS 侧)**:`webServer.registerUpgrade` 把
    `ws://127.0.0.1:<port>/live/<channel>` 以带鉴权的 path 暴露给 GUI,
    令牌经 `ui.live_token` 现取现用。
-5. ⬜ **`starhub-live` client 插件面板(TS 侧)**:canvas(WebCodecs 解码
-   H.264)/ img(PNG)双模 + 手势输入 + 接管开关 + 模式徽章。
+5. ✅ **直播面板(TS 侧)**:壳内 keyed 主面板 + canvas/img 双模 + 手势输入 +
+   接管开关 + 模式徽章。
 6. ⬜ **实测**:三类帧源的延迟/画质记录(交互延迟 ≤ 现窗口方案 1.5×,R2)。
+
+### 第 4 步落地细节(bridge 出口)
+
+- 路由 `ws://<host>/starhub/live?channel=<kind>:<target>&token=<one-time>`,
+  `ctx.webServer.registerUpgrade` 注册(零 vendor 改动,只动
+  `packages/starhub/bridge`);
+- 中继只负责**两次 WebSocket 握手**,之后是透明字节管道:掩码是方向性的
+  (客户端帧必须掩码、服务端帧不掩码),原样转发两端都合规——不解帧、不重新
+  编码,本包**不引入任何 WebSocket 依赖**;
+- 鉴权是 sidecar 的一次性令牌:`ui.live_open` 签发、sidecar 在握手中消费、
+  日志绝不记录;channel 走与 sidecar 同一套白名单,token 走 32-hex 形状,
+  畸形值在任何 socket 建立前就 400;
+- 失败路径明确:sidecar 没有帧 server → 503;sidecar 拒令牌(无效/已用/通道
+  已关)→ 502;两次握手的响应若与首帧同段到达,首帧照转不丢;
+- 端点每次连接现取(`starhub/live.endpoint`),sidecar 晚于 bridge 绑端口或
+  重启后仍然可达。
+
+### 第 5 步落地细节(直播面板)
+
+面板宿主选 **client-nav**(与工作台面板同一个包),没有为它新开
+`starhub-live` 插件包:一个面板要新开包,得同时动 profile 的
+`cordis.patch.yml` 挂载、`RUNTIME_HOSTED_PATCH_DEPS` junction、peer 依赖
+闭包与 README/JSDoc 全套,代价远大于收益;帧源变多再拆包不迟。
+
+- `src/client/live/live-frame.ts`:纯函数——帧头解析、SPS/PPS 提取、
+  avcC 描述集构造(scrcpy 送 annexb 裸 NAL,WebCodecs 要 MP4 的 avcC,
+  这层转码缺了 `configure` 直接抛 `NotSupportedError`)、contain 内容矩形与
+  指针→设备坐标映射;
+- `src/client/live/live-panel.ts`:通道簿(开 / 同通道聚焦换令牌 / 激活 / 关),
+  与工作台页簿同一套心智;`installLivePanelHost` + `openAndroidLive`
+  (与 `installWorkbenchPageHost` 同范式);
+- `src/client/live/StarHubLivePanel.tsx` + CSS:第三个 keyed `main` 槽
+  (key=`starhub-live`)+ 侧栏「直播」行(order 2)。帧**不进 store**(12fps 走
+  store 会引发无谓重渲染),由组件直接画 canvas;store 只承载通道清单、连接
+  状态与元数据;
+- `android/services.ts` 的 `openAndroidLiveWindow` 从「开独立窗口」改为
+  「开壳内直播面板通道」,AndroidPanel 的「打开直播」按钮因此直接把用户带进
+  直播面板。
 
 ## 四、三条不变量(与 Tauri 直播窗口逐字对齐)
 
@@ -125,6 +163,12 @@ HTTP 拉取,这边是 WS 推送 + 「迟到者从最近可独立解码的帧重�
    → 未接管拒输入 → 接管后受理 → 令牌复用即拒 → 断开后通道关闭;
 - `npm run verify:bridge-compat` 新增第 14 节:**93 → 105 项全绿**
   (Node 内置全局 `WebSocket` 走同一条链,不引第三方依赖);
+- bridge:`tests/live.spec.ts` 11 例(路由/白名单/查询解析 + **真 loopback
+  端到端**:双向握手、掩码方向性、字节原样转发、与 101 同段的首帧、head
+  字节),bridge 全套 46 例绿,`tsc -b` 零错误;
+- client-nav:`live-frame.client.spec.ts`(帧头/参数集/avcC/坐标映射)+
+  `live-panel.client.spec.ts`(通道簿 + 开通道降级)+ apply 注册清单更新,
+  全套 **58 spec / 944 例全绿**(较 M2 末 56 spec / 919 例);
 - `cargo test`(sidecar-rust 全 workspace):新 crate **18 例** + sidecar lib
   **128 例** + protocol 集成 **34 例** 全绿;`cargo clippy` 对新代码零警告
   (`jsonrpc.rs` / `registry.rs` 的既有 fmt 漂移按纪律还原,不混入本批);

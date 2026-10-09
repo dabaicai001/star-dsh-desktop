@@ -58,6 +58,12 @@ import { createGitWorkbenchBridge } from './git/git-workbench-state.ts'
 import { StarHubToolWorkspace, type StarHubToolWorkspaceInjected } from './StarHubToolWorkspace.tsx'
 import { StarHubWorkbenchPanel, type StarHubWorkbenchPanelInjected } from './StarHubWorkbenchPanel.tsx'
 import { createWorkbenchPanelStore, type WorkbenchPage } from './workbench-panel.ts'
+import {
+  createLivePanelStore,
+  installLivePanelHost,
+  type LiveChannel,
+} from './live/live-panel.ts'
+import { StarHubLivePanel, type StarHubLivePanelInjected } from './live/StarHubLivePanel.tsx'
 import { AboutTab } from './settings/about.tsx'
 import { AndroidSettingsTab } from './settings/android.tsx'
 import { BrowserSettingsTab } from './settings/browser.tsx'
@@ -87,6 +93,9 @@ const TOOLS_PANEL_ID = 'starhub-tools' as MainPanelId
 
 /** 工作台主面板 id(去 Tauri 化 M2 第 6 步:资产实例操作页的壳内座位)。 */
 const WORKBENCH_PANEL_ID = 'starhub-workbench' as MainPanelId
+
+/** 直播/接管主面板 id(去 Tauri 化 M3:Android 直播面板的壳内座位)。 */
+const LIVE_PANEL_ID = 'starhub-live' as MainPanelId
 
 /** layout 服务窄化面:切主面板(null = 回会话视图)。 */
 interface LayoutPanelSwitch {
@@ -293,6 +302,14 @@ export function apply(ctx: Context): void {
     order: 1,
     label: '工具',
   }, ToolsPanelIcon))
+  // 直播/接管线(M3):与「工具」同机制的第二个 panellist 行——直播/接管不再是
+  // 独立窗口,壳内要有可见入口。无通道时面板渲染 null(行仍在,点了是空态)。
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+    name: 'sidebar.panellist',
+    id: LIVE_PANEL_ID,
+    order: 2,
+    label: '直播',
+  }, ToolsPanelIcon))
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main',
     key: TOOLS_PANEL_ID,
@@ -310,6 +327,40 @@ export function apply(ctx: Context): void {
     key: WORKBENCH_PANEL_ID,
     inject: workbenchInject,
   }, StarHubWorkbenchPanel))
+  // 直播/接管主面板(M3):与工作台面板同机制的第三个 keyed main 槽。帧与输入
+  // 走宿主 upgrade 路由 `/starhub/live`(bridge 中继到 sidecar 的本地 WS),
+  // 通道簿空时组件渲染 null。入口是「打开直播」按钮(Android 子类)与模型面
+  // `android_open_live` 的 UI 意图;簿空 → 面板让回工具列表。
+  const live = createLivePanelStore()
+  const openLiveChannel = (channel: LiveChannel): void => {
+    live.open(channel)
+    layout.selectPanel(LIVE_PANEL_ID)
+  }
+  ctx.effect(() => {
+    installLivePanelHost(openLiveChannel)
+    return () => { installLivePanelHost(null) }
+  }, 'starhub: live panel host')
+  ctx.effect(() => {
+    let hadChannels = live.source.getSnapshot().channels.length > 0
+    return live.source.subscribe(() => {
+      const hasChannels = live.source.getSnapshot().channels.length > 0
+      if (hadChannels && !hasChannels) layout.selectPanel(TOOLS_PANEL_ID)
+      hadChannels = hasChannels
+    })
+  }, 'starhub: live panel fallback')
+  const liveInject = (): StarHubLivePanelInjected => ({
+    activateChannel: (channel) => { live.activate(channel) },
+    closeChannel: (channel) => { live.close(channel) },
+    setStatus: live.setStatus,
+    setMeta: live.setMeta,
+    setTakeover: live.setTakeover,
+    hooks: { live: live.source },
+  })
+  ctx.slots.inject('main', () => ctx.slots.register({
+    name: 'main',
+    key: LIVE_PANEL_ID,
+    inject: liveInject,
+  }, StarHubLivePanel))
   // 右下角 BastionExecPanel 浮层席位已在 v0.100.0 移除:静默执行记录改由
   // 头部「执行」按钮 + 工具抽屉的执行记录视图承载(见 header.actions 的
   // starhub-exec-drawer 席位与 StarHubToolWorkspace 的 exec 分支)。

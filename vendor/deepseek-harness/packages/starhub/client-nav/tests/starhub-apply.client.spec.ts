@@ -9,11 +9,12 @@
  * tab 移除——前者由壳内首页「插件」面板接管,后者(长期记忆)整条栈退场;
  * v0.123.2 起「工具」入口从 sidebar.footer.action + shell.overlay 浮层迁到
  * sidebar.panellist 行 + main 主面板;去 Tauri 化 M2 第 6 步起资产实例操作页
- * 从独立 webview 窗口改为壳内工作台主面板——第二个 keyed main 槽):
+ * 从独立 webview 窗口改为壳内工作台主面板——第二个 keyed main 槽;去 Tauri 化
+ * M3 起直播/接管线从独立直播窗口改为壳内直播主面板——第三个 keyed main 槽:
  * `shell.overlay`×3(overlay / AI 连接卡 / 沙箱横幅)+ `sidebar.panellist`
- * (工具行)+ `main`×2(工具面板 / 工作台面板)+ `conversation.session.
- * header.actions`×2(git / 执行)+ `conversation.input.left`(截图)
- * + `settings.section`×7。
+ * (工具行 / 直播行)+ `main`×3(工具面板 / 工作台面板 / 直播面板)+
+ * `conversation.session.header.actions`×2(git / 执行)+
+ * `conversation.input.left`(截图)+ `settings.section`×7。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
@@ -23,6 +24,7 @@ import { ToolsPanelIcon } from '../src/client/ToolsPanelIcon.tsx'
 import { StarHubOverlay } from '../src/client/StarHubOverlay.tsx'
 import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
 import { StarHubWorkbenchPanel } from '../src/client/StarHubWorkbenchPanel.tsx'
+import { StarHubLivePanel } from '../src/client/live/StarHubLivePanel.tsx'
 import { GitBranchPill } from '../src/client/git/GitBranchPill.tsx'
 import { ExecDrawerButton } from '../src/client/conn/ExecDrawerButton.tsx'
 import { StarHubConnCard } from '../src/client/conn/StarHubConnCard.tsx'
@@ -110,6 +112,15 @@ function fakeContext(overrides: { sessions?: unknown; conversation?: unknown; re
   return { ctx, register, inject, get, registerSource, effects, provide, provided }
 }
 
+/** 按 main keyed 槽的 key 找注册配置(索引会随新槽插入而漂移,不写死下标)。 */
+function mainByKey(register: ReturnType<typeof fakeContext>['register'], key: string): RegisterOptions {
+  const call = register.mock.calls.find(
+    (entry) => (entry[0] as RegisterOptions).name === 'main' && (entry[0] as RegisterOptions).key === key,
+  )
+  if (call === undefined) throw new Error(`no main slot registered for ${key}`)
+  return call[0] as RegisterOptions
+}
+
 describe('client-nav apply (rc.2)', () => {
   it('node half apply is a no-op', () => {
     expect(() =>{  applyHost() }).not.toThrow()
@@ -120,7 +131,7 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
       'shell.overlay', 'shell.overlay', 'shell.overlay',
-      'sidebar.panellist', 'main', 'main',
+      'sidebar.panellist', 'sidebar.panellist', 'main', 'main', 'main',
       'conversation.session.header.actions', 'conversation.session.header.actions',
       'conversation.input.left',
       'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
@@ -128,11 +139,48 @@ describe('client-nav apply (rc.2)', () => {
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
       StarHubOverlay, StarHubConnCard, SandboxUserActionBanner,
-      ToolsPanelIcon, StarHubToolWorkspace, StarHubWorkbenchPanel,
+      ToolsPanelIcon, ToolsPanelIcon, StarHubToolWorkspace, StarHubWorkbenchPanel, StarHubLivePanel,
       GitBranchPill, ExecDrawerButton,
       ScreenshotButton,
       AuditTab, AlertTab, SandboxSettingsTab, AndroidSettingsTab, BrowserSettingsTab, SshSettingsTab, AboutTab,
     ])
+  })
+
+  it('live entry rides its own panellist row above the live main panel', () => {
+    const { ctx, register } = fakeContext()
+    applyPlugin(ctx)
+    // 直播行(M3):紧随「工具」(order 1)之下;侧栏拥有按钮/标签/选中态。
+    // 下标 4 = 第二个 sidebar.panellist 注册(直播行);main 槽一律按 key 找。
+    const rowConfig = register.mock.calls[4]![0] as RegisterOptions
+    expect(rowConfig.name).toBe('sidebar.panellist')
+    expect(rowConfig.id).toBe('starhub-live')
+    expect(rowConfig.order).toBe(2)
+    expect(rowConfig.label).toBe('直播')
+    // main keyed 槽:契约要求同 id 注册,否则 layout.selectPanel 抛错。
+    const mainConfig = mainByKey(register, 'starhub-live')
+    expect(mainConfig.name).toBe('main')
+    expect(mainConfig.key).toBe('starhub-live')
+  })
+
+  it('live panel inject exposes the channel writes the component drives', () => {
+    const { ctx, register } = fakeContext()
+    applyPlugin(ctx)
+    const liveConfig = mainByKey(register, 'starhub-live')
+    const injected = liveConfig.inject() as unknown as {
+      activateChannel: (channel: string) => void
+      closeChannel: (channel: string) => void
+      setStatus: (status: string) => void
+      setMeta: (meta: Record<string, unknown>) => void
+      setTakeover: (takeover: boolean) => void
+      hooks: { live: { getSnapshot: () => { channels: unknown[]; activeChannel: string | null } } }
+    }
+    expect(injected.hooks.live.getSnapshot().channels).toEqual([])
+    injected.setStatus('connecting')
+    expect(injected.hooks.live.getSnapshot()).toMatchObject({ status: 'connecting' })
+    injected.setMeta({ mode: 'scrcpy', width: 1080, height: 2400 })
+    expect(injected.hooks.live.getSnapshot()).toMatchObject({ mode: 'scrcpy', width: 1080 })
+    injected.setTakeover(true)
+    expect(injected.hooks.live.getSnapshot()).toMatchObject({ takeover: true })
   })
 
   it('tools entry rides the panellist row above the main panel it selects', () => {
@@ -145,7 +193,7 @@ describe('client-nav apply (rc.2)', () => {
     expect(rowConfig.order).toBe(1)
     expect(rowConfig.label).toBe('工具')
     // main keyed 槽:契约要求同 id 注册,否则 layout.selectPanel 抛错。
-    const mainConfig = register.mock.calls[4]![0] as RegisterOptions
+    const mainConfig = mainByKey(register, 'starhub-tools') as RegisterOptions
     expect(mainConfig.name).toBe('main')
     expect(mainConfig.key).toBe('starhub-tools')
   })
@@ -154,7 +202,7 @@ describe('client-nav apply (rc.2)', () => {
     const selectPanel = vi.fn()
     const { ctx, register } = fakeContext({ layout: { selectPanel } })
     applyPlugin(ctx)
-    const mainConfig = register.mock.calls[4]![0]
+    const mainConfig = mainByKey(register, 'starhub-tools')
     const mainInjected = mainConfig.inject() as { closeTools: () => void }
     // 工具面板 × = 回会话视图(null = 默认 conversation 面板)。
     mainInjected.closeTools()
@@ -191,7 +239,7 @@ describe('client-nav apply (rc.2)', () => {
   it('tools panel inject selects a subcategory through the selection bridge', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    const panelConfig = register.mock.calls[4]![0]
+    const panelConfig = mainByKey(register, 'starhub-tools')
     const injected = panelConfig.inject() as {
       selectSubcategory: (key: string) => void
       hooks: { selection: { getSnapshot: () => { subcategory: string | null } } }
@@ -225,7 +273,7 @@ describe('client-nav apply (rc.2)', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => ({}) as Window)
     try {
       applyPlugin(ctx)
-      const panel = register.mock.calls[4]![0].inject() as { openAsset: (asset: unknown) => void }
+      const panel = mainByKey(register, 'starhub-tools').inject() as { openAsset: (asset: unknown) => void }
       const esAsset = {
         id: 'es1', type: 'db', name: 'es-1', group_id: null,
         config: { dbType: 'elasticsearch', host: 'h' },
@@ -235,7 +283,7 @@ describe('client-nav apply (rc.2)', () => {
       // M2 第 6 步:不再新开窗口/标签页,而是壳内工作台面板的一页。
       expect(openSpy).not.toHaveBeenCalled()
       expect(selectPanel).toHaveBeenCalledWith('starhub-workbench')
-      const workbenchConfig = register.mock.calls[5]![0] as RegisterOptions
+      const workbenchConfig = mainByKey(register, 'starhub-workbench') as RegisterOptions
       const injected = workbenchConfig.inject() as {
         hooks: {
           workbench: {
@@ -311,7 +359,7 @@ describe('client-nav apply (rc.2)', () => {
     const setDraft = vi.fn()
     const { ctx, register, settingsUpdate } = referenceContext({ insertReference, setDraft })
     applyPlugin(ctx)
-    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    const panel = mainByKey(register, 'starhub-tools').inject() as { insertAssetReference: (asset: unknown) => void }
     panel.insertAssetReference(refAsset)
     // 轻绑定:starhub-tool-context settings patch 带会话 id 与资产(与 @ pick 同通道)
     expect(settingsUpdate).toHaveBeenCalledWith(
@@ -332,7 +380,7 @@ describe('client-nav apply (rc.2)', () => {
     const setDraft = vi.fn()
     const { ctx, register } = referenceContext({ insertReference, setDraft })
     applyPlugin(ctx)
-    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    const panel = mainByKey(register, 'starhub-tools').inject() as { insertAssetReference: (asset: unknown) => void }
     // Docker 资产:纯文本回退同样带 [Docker] 删除保护标注
     panel.insertAssetReference({ ...refAsset, id: 'd1', type: 'docker', name: 'local-docker', config: {} })
     expect(setDraft).toHaveBeenCalledWith('查一下 @local-docker [Docker] ')
@@ -346,7 +394,7 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     // apply 启动期的记忆开关初始同步也会写一次 settings,先清掉再断言本路径不写
     settingsUpdate.mockClear()
-    const panel = register.mock.calls[4]![0].inject() as { insertAssetReference: (asset: unknown) => void }
+    const panel = mainByKey(register, 'starhub-tools').inject() as { insertAssetReference: (asset: unknown) => void }
     panel.insertAssetReference(refAsset)
     expect(settingsUpdate).not.toHaveBeenCalled()
   })

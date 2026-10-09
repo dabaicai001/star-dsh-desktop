@@ -1,0 +1,138 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--dsw-alias-background, #141414);
+  color: var(--dsw-alias-text, #ddd);
+  font: 13px/1.5 system-ui, sans-serif;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  flex: none;
+  border-bottom: 1px solid var(--dsw-alias-border, #333);
+  overflow-x: auto;
+}
+
+.tabSlot {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px 0 0 6px;
+  color: inherit;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.tab:hover {
+  background: var(--dsw-alias-background-hover, #262626);
+}
+
+.active {
+  background: var(--dsw-alias-background-active, #2d2d2d);
+  border-color: var(--dsw-alias-border, #444);
+}
+
+.tabLabel {
+  white-space: nowrap;
+}
+
+.tabClose {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0 6px 6px 0;
+  color: inherit;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.tabClose:hover {
+  background: var(--dsw-alias-background-hover, #3a3a3a);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  flex: none;
+  border-bottom: 1px solid var(--dsw-alias-border, #333);
+  flex-wrap: wrap;
+}
+
+.badge {
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+.badgeLive {
+  background: #2d4a2d;
+  color: #8f8;
+}
+
+.badgeSlow {
+  background: #4a3a2d;
+  color: #fc8;
+}
+
+.dim {
+  color: var(--dsw-alias-text-secondary, #888);
+  font-size: 12px;
+}
+
+.takeover {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: #f0a020;
+}
+
+.status {
+  margin-left: auto;
+  color: var(--dsw-alias-text-secondary, #888);
+  font-size: 12px;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #111;
+}
+
+.surface {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  cursor: crosshair;
+}
+
+.hint {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 3px 8px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  font-size: 12px;
+  color: #fc8;
+  pointer-events: none;
+}

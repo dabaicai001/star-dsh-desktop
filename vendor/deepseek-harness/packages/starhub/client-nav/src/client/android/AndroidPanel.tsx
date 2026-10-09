@@ -3,7 +3,8 @@
  *
  * 设备不是「资产」(不经连接管理器落库),由 adb 现场发现,因此与 SandboxPanel
  * 同姿势:展开子类即渲染本面板,自己拉数据。每张卡片显示型号/serial/状态,
- * 就绪(state=device)设备提供「打开直播」(独立窗口围观,窗口内可切接管);
+ * 就绪(state=device)设备提供「打开直播」——去 Tauri 化 M3 起不再是独立窗口,
+ * 而是开壳内直播面板通道(帧经宿主 upgrade 路由到 sidecar 的本地 WS);
  * unauthorized/offline 给一行处理提示。刷新按钮重新执行 adb devices -l。
  *
  * 无宿主桥(裸浏览器预览)时展示预览提示而不是红错,与资产列表同语义。
@@ -65,7 +66,8 @@ export function AndroidPanel() {
   const onOpenLive = async (device: AndroidDevice) => {
     setBusy(device.serial)
     try {
-      await openAndroidLiveWindow(device.serial)
+      // M3:不再开独立窗口——开壳内直播面板通道(帧走宿主 upgrade 路由)
+      await openAndroidLiveWindow(device.serial, device.model !== '' ? device.model : device.serial)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
