@@ -29,6 +29,7 @@ pub mod browser;
 pub mod db;
 pub mod desktop;
 pub mod ssh;
+pub mod ui;
 
 /// Liveness probe.
 pub fn ping(_params: &Value) -> Result<Value, RpcError> {
@@ -161,6 +162,28 @@ pub fn registry_with_domains(
                     .asset_type;
                 ssh.bind_session(&session_id, &asset_type, &asset_id);
                 Ok(json!({ "ok": true, "action": "bound" }))
+            });
+        }
+
+        // UI 面(M2):工作台命令 `ui.<tauriCommand>`。A 组资产 CRUD——
+        // 存储就是上面的 AssetStore,只是换成工作台的 snake_case 线形状。
+        {
+            let assets = Arc::clone(ssh.assets());
+            registry.register("ui.get_assets", {
+                let assets = Arc::clone(&assets);
+                move |params| crate::methods::ui::get_assets(&assets, params)
+            });
+            registry.register("ui.create_asset", {
+                let assets = Arc::clone(&assets);
+                move |params| crate::methods::ui::upsert_asset(&assets, params)
+            });
+            registry.register("ui.update_asset", {
+                let assets = Arc::clone(&assets);
+                move |params| crate::methods::ui::upsert_asset(&assets, params)
+            });
+            registry.register("ui.delete_asset", {
+                let assets = Arc::clone(&assets);
+                move |params| crate::methods::ui::delete_asset(&assets, params)
             });
         }
 

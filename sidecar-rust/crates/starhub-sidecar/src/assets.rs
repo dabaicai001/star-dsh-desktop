@@ -164,7 +164,33 @@ impl SecretStore for FileSecretStore {
     }
 }
 
+/// 从 JSON 值里取字符串数组(非数组/非字符串元素忽略)。
+fn string_array(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// 秒级 unix 时间戳(写入侧时间戳用)。
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 /// assets.json 的一行(字段名与 Tauri `assets` 表对齐)。
+///
+/// M2 起补上 UI 面(`ui.get_assets` 等)需要的元数据:分组、标签、收藏、时间戳。
+/// 读取时全部可选(缺省即零值),因此 M1 种下的 `{id,type,name,config}` 精简格式
+/// 与带元数据的完整格式共存于同一份文件。
 #[derive(Debug, Clone)]
 pub struct AssetRecord {
     pub id: String,
@@ -174,6 +200,55 @@ pub struct AssetRecord {
     pub config: Value,
     /// 密钥存储引用;`None` = 无敏感字段。
     pub key_id: Option<String>,
+    /// 所属分组 id(Tauri `asset_groups.id`)。
+    pub group_id: Option<i64>,
+    /// 标签清单。
+    pub tags: Vec<String>,
+    /// 是否收藏。
+    pub favorite: bool,
+    /// 最近使用时间(秒级 unix;从未使用为 `None`)。
+    pub last_used_at: Option<i64>,
+    /// 创建时间(秒级 unix;缺省 0)。
+    pub created_at: i64,
+    /// 更新时间(秒级 unix;缺省 0)。
+    pub updated_at: i64,
+}
+
+impl AssetRecord {
+    /// 序列化为 assets.json 的一行(camelCase,与 M1 的文件格式一致)。
+    pub fn to_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "type": self.asset_type,
+            "name": self.name,
+            "config": self.config,
+            "keyId": self.key_id,
+            "groupId": self.group_id,
+            "tags": self.tags,
+            "favorite": self.favorite,
+            "lastUsedAt": self.last_used_at,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+        })
+    }
+
+    /// 序列化为 UI 面(`ui.get_assets`)的一行(snake_case,与工作台
+    /// `RustAsset` 接口逐字对齐——工作台调用点因此零改动)。
+    pub fn to_ui_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "type": self.asset_type,
+            "name": self.name,
+            "group_id": self.group_id,
+            "config": self.config,
+            "key_id": self.key_id,
+            "tags": self.tags,
+            "favorite": self.favorite,
+            "last_used_at": self.last_used_at,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        })
+    }
 }
 
 /// 资产存储:assets.json + 密钥 seam。
@@ -258,9 +333,101 @@ impl AssetStore {
                     .and_then(Value::as_str)
                     .filter(|value| !value.is_empty())
                     .map(str::to_string),
+                group_id: item.get("groupId").and_then(Value::as_i64),
+                tags: string_array(item.get("tags")),
+                favorite: item
+                    .get("favorite")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                last_used_at: item.get("lastUsedAt").and_then(Value::as_i64),
+                created_at: item.get("createdAt").and_then(Value::as_i64).unwrap_or(0),
+                updated_at: item.get("updatedAt").and_then(Value::as_i64).unwrap_or(0),
             });
         }
         Ok(records)
+    }
+
+    /// 全量写回(先写临时文件再 rename,避免半截文件;目录不存在时创建)。
+    fn write_records(&self, records: &[AssetRecord]) -> Result<(), String> {
+        if let Some(parent) = self.path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("资产目录创建失败({}): {e}", parent.display()))?;
+            }
+        }
+        let document =
+            json!({ "assets": records.iter().map(AssetRecord::to_json).collect::<Vec<_>>() });
+        let text = serde_json::to_string_pretty(&document)
+            .map_err(|e| format!("资产文件序列化失败: {e}"))?;
+        let temporary = self.path.with_extension("json.tmp");
+        std::fs::write(&temporary, format!("{text}\n"))
+            .map_err(|e| format!("资产文件写入失败({}): {e}", temporary.display()))?;
+        std::fs::rename(&temporary, &self.path)
+            .map_err(|e| format!("资产文件替换失败({}): {e}", self.path.display()))
+    }
+
+    /// 新建或更新一个资产(敏感字段拆到密钥存储;`key_id` 缺省时按 `asset:<id>` 生成)。
+    ///
+    /// 与 `keyring::split_config` / `store` 同语义:空值/空串的敏感字段不落密钥。
+    pub fn upsert(
+        &self,
+        id: &str,
+        asset_type: &str,
+        name: &str,
+        config: Value,
+        group_id: Option<i64>,
+        tags: Vec<String>,
+        favorite: bool,
+    ) -> Result<AssetRecord, String> {
+        let id = id.trim();
+        if id.is_empty() {
+            return Err("资产 id 不能为空".to_string());
+        }
+        let mut records = self.read_records()?;
+        let existing = records.iter().find(|record| record.id == id).cloned();
+        let (config, secrets) = split_config(config);
+        let has_secrets = secrets.as_object().is_some_and(|values| !values.is_empty());
+        let key_id = if has_secrets {
+            let key_id = format!("asset:{id}");
+            self.secrets.store(&key_id, &secrets)?;
+            Some(key_id)
+        } else {
+            existing.as_ref().and_then(|record| record.key_id.clone())
+        };
+        let now = unix_now();
+        let record = AssetRecord {
+            id: id.to_string(),
+            asset_type: asset_type.to_string(),
+            name: name.to_string(),
+            config,
+            key_id,
+            group_id,
+            tags,
+            favorite,
+            last_used_at: existing.as_ref().and_then(|record| record.last_used_at),
+            created_at: existing.as_ref().map_or(now, |record| record.created_at),
+            updated_at: now,
+        };
+        match records.iter_mut().find(|record| record.id == id) {
+            Some(slot) => *slot = record.clone(),
+            None => records.push(record.clone()),
+        }
+        self.write_records(&records)?;
+        Ok(record)
+    }
+
+    /// 删除资产及其密钥(不存在时报错,与 `get` 的错误文案一致)。
+    pub fn remove(&self, asset_id: &str) -> Result<(), String> {
+        let mut records = self.read_records()?;
+        let position = records
+            .iter()
+            .position(|record| record.id == asset_id)
+            .ok_or_else(|| format!("资产不存在: {asset_id}"))?;
+        let removed = records.remove(position);
+        if let Some(key_id) = &removed.key_id {
+            self.secrets.delete(key_id)?;
+        }
+        self.write_records(&records)
     }
 
     /// 全量资产(文件顺序即返回顺序;排序由写入方负责)。

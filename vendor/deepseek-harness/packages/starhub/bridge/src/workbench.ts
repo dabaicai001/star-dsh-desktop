@@ -36,6 +36,20 @@ export const INVOKE_ROUTE = `${WORKBENCH_API_PREFIX}/invoke`
 /** Exact route for the Server-Sent Events stream. */
 export const EVENTS_ROUTE = `${WORKBENCH_API_PREFIX}/events`
 
+/**
+ * Method prefix for the sidecar's UI plane (M2).
+ *
+ * The workbench speaks the retired Tauri command names; the sidecar registers
+ * them under `ui.<command>` so the UI plane can never collide with the model
+ * tool surface (same resource, different parameters — e.g. `sftp_list`).
+ */
+export const UI_METHOD_PREFIX = 'ui.'
+
+/** Map one workbench command name to its sidecar method. */
+export function uiMethod(cmd: string): string {
+  return `${UI_METHOD_PREFIX}${cmd}`
+}
+
 /** Maximum accepted request body for one invocation (bytes). */
 const MAX_INVOKE_BODY_BYTES = 1024 * 1024
 
@@ -92,7 +106,7 @@ export function invokeHandler(
     }
     const args = (typeof body.args === 'object' && body.args !== null ? body.args : {}) as object
     try {
-      const result = await sidecar.request(cmd, args)
+      const result = await sidecar.request(uiMethod(cmd), args)
       sendJson(res, 200, { ok: true, result })
     } catch (error) {
       // 未实现的命令 / sidecar 报错:软错误给工作台(与 Tauri IPC 缺失同款降级)。

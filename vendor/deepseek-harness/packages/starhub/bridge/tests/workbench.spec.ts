@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
-import { eventsHandler, EVENTS_ROUTE, invokeHandler, INVOKE_ROUTE, WORKBENCH_API_PREFIX } from '../src/workbench.ts'
+import { eventsHandler, EVENTS_ROUTE, invokeHandler, INVOKE_ROUTE, uiMethod, WORKBENCH_API_PREFIX } from '../src/workbench.ts'
 
 /** Minimal IncomingMessage: a readable stream carrying the request body. */
 function fakeRequest(method: string, body = ''): IncomingMessage {
@@ -81,16 +81,21 @@ describe('route constants', () => {
     expect(INVOKE_ROUTE).toBe('/starhub/api/invoke')
     expect(EVENTS_ROUTE).toBe('/starhub/api/events')
   })
+
+  it('maps a workbench command onto the sidecar ui.* plane', () => {
+    expect(uiMethod('get_assets')).toBe('ui.get_assets')
+    expect(uiMethod('sftp_list')).toBe('ui.sftp_list')
+  })
 })
 
 describe('POST /starhub/api/invoke', () => {
-  it('maps cmd to a sidecar method and answers {ok:true,result}', async () => {
-    const sidecar = fakeSidecar({ starhub_list_assets: { text: '[]' } })
+  it('maps cmd onto the ui.* method and answers {ok:true,result}', async () => {
+    const sidecar = fakeSidecar({ 'ui.get_assets': [{ id: 'a1' }] })
     const { res, body } = fakeResponse()
-    await invokeRoute(sidecar)(fakeRequest('POST', JSON.stringify({ cmd: 'starhub_list_assets', args: {} })), res)
+    await invokeRoute(sidecar)(fakeRequest('POST', JSON.stringify({ cmd: 'get_assets', args: {} })), res)
     expect(res.status).toBe(200)
-    expect(JSON.parse(body())).toEqual({ ok: true, result: { text: '[]' } })
-    expect(sidecar.requests).toEqual([{ method: 'starhub_list_assets', params: {} }])
+    expect(JSON.parse(body())).toEqual({ ok: true, result: [{ id: 'a1' }] })
+    expect(sidecar.requests).toEqual([{ method: 'ui.get_assets', params: {} }])
   })
 
   it('passes the args object through and defaults it to {}', async () => {
@@ -108,7 +113,7 @@ describe('POST /starhub/api/invoke', () => {
     const { res, body } = fakeResponse()
     await invokeRoute(sidecar)(fakeRequest('POST', JSON.stringify({ cmd: 'audit_list', args: {} })), res)
     expect(res.status).toBe(200)
-    expect(JSON.parse(body())).toEqual({ ok: false, error: 'method not found: audit_list' })
+    expect(JSON.parse(body())).toEqual({ ok: false, error: 'method not found: ui.audit_list' })
   })
 
   it('rejects a missing cmd with 400', async () => {

@@ -762,6 +762,11 @@ fn capabilities_lists_the_android_method_surface() {
         "starhub/open.asset",
         "starhub/focus.tool",
         "starhub/live.snapshot",
+        // UI 面(M2):工作台命令 `ui.<tauriCommand>`,经 bridge 的 invoke 端点
+        "ui.get_assets",
+        "ui.create_asset",
+        "ui.update_asset",
+        "ui.delete_asset",
     ] {
         assert!(
             methods.contains(&expected),
@@ -769,8 +774,8 @@ fn capabilities_lists_the_android_method_surface() {
         );
     }
     // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)+ 16(browser)
-    // + 4 桥命令(capabilities / open.asset / focus.tool / live.snapshot)= 89
-    assert_eq!(methods.len(), 89, "方法面总数: {methods:?}");
+    // + 4 桥命令 + 4 UI 面(资产 CRUD)= 93
+    assert_eq!(methods.len(), 93, "方法面总数: {methods:?}");
 }
 
 /// Android 方法面 roundtrip(不触设备的分支):未授权写操作硬错误;
@@ -1002,4 +1007,78 @@ fn a_domain_tool_success_emits_the_ai_origin_event_first() {
     drop(child.stdin.take());
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------- UI 面(M2):工作台命令 ui.<tauriCommand> ----------
+
+/// UI 面资产 CRUD 的真二进制 roundtrip:建 → 列 → 改 → 删,并断言 snake_case
+/// 线形状(工作台 `RustAsset`)与敏感字段不回流。
+#[test]
+fn ui_asset_crud_roundtrips_through_the_real_binary() {
+    let mut sidecar = Sidecar::spawn();
+    let created = sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"u-1","method":"ui.create_asset","params":{"id":"a1","type":"ssh","name":"验收机","config":{"host":"10.0.0.1","port":22,"username":"root","password":"s3cret"},"groupId":2,"tags":["prod"],"favorite":true}}"#);
+    let value: serde_json::Value = serde_json::from_str(&created).expect("response parses");
+    assert!(value["error"].is_null(), "{created}");
+    assert_eq!(value["result"]["id"], "a1");
+    assert_eq!(value["result"]["group_id"], 2);
+    assert_eq!(value["result"]["key_id"], "asset:a1");
+    assert_eq!(value["result"]["favorite"], true);
+    assert!(
+        value["result"]["config"].get("password").is_none(),
+        "敏感字段不应回流"
+    );
+    assert!(value["result"]["created_at"].as_i64().expect("ts") > 0);
+
+    let listed = sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"u-2","method":"ui.get_assets"}"#);
+    let value: serde_json::Value = serde_json::from_str(&listed).expect("response parses");
+    let items = value["result"].as_array().expect("array");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["name"], "验收机");
+    assert!(!listed.contains("s3cret"), "清单不得带密钥");
+
+    let updated = sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"u-3","method":"ui.update_asset","params":{"id":"a1","type":"ssh","name":"新名","config":{"host":"10.0.0.2"}}}"#);
+    let value: serde_json::Value = serde_json::from_str(&updated).expect("response parses");
+    assert_eq!(value["result"]["name"], "新名");
+    assert_eq!(value["result"]["favorite"], false, "未传的 favorite 归缺省");
+
+    let deleted = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"u-4","method":"ui.delete_asset","params":{"id":"a1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&deleted).expect("response parses");
+    assert_eq!(value["result"]["ok"], true);
+    let listed = sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"u-5","method":"ui.get_assets"}"#);
+    let value: serde_json::Value = serde_json::from_str(&listed).expect("response parses");
+    assert_eq!(value["result"].as_array().map(Vec::len), Some(0));
+
+    // 删除后域工具按「资产不存在」报错(存储确实空了)
+    let response = sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"u-6","method":"ssh_exec","params":{"assetId":"a1","command":"ls"}}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("资产不存在"),
+        "{response}"
+    );
+}
+
+/// UI 面参数校验:Excel 类型已删、缺 id,都是 -32602。
+#[test]
+fn ui_asset_methods_validate_parameters() {
+    let mut sidecar = Sidecar::spawn();
+    let response = sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"u-7","method":"ui.create_asset","params":{"id":"a1","type":"excel","name":"x"}}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32602);
+    assert!(value["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("不支持的资产类型"));
+    let response =
+        sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"u-8","method":"ui.delete_asset","params":{}}"#);
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32602);
+    assert!(value["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("缺少 id"));
 }
