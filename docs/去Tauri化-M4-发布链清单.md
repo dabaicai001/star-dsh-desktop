@@ -26,12 +26,43 @@ junction 本地包、spawn 便携 node。壳换成上游 Electron 之后没有 R
 2. ✅ **打包冒烟**(本批,就在开发机上跑):`scripts/smoke-dsh-desktop.mjs`
    —— provisioning 一个一次性 `$DSH_HOME` → 用**打包进去的便携 node**
    (`src-tauri/binaries/dsh-runtime/node.exe`) boot 宿主进程 → 断言五条。
-3. ⬜ **CI 切换**:`release.yml` 的 `tauri:build` 链换成「上游 installer +
-   StarHub provisioning」链;`linux-compat.yml` 同步。
+3. ✅ **CI 切换**(本批):`linux-compat.yml` → `.github/workflows/ci.yml`
+   (PR 门),`release.yml` 的 windows job 换链。
 4. ⬜ **退役 `src-tauri/`**:删目录 + 清引用(根 `package.json` 脚本、
    `scripts/dev-dsh-shell.mjs`、`scripts/package-dsh-runtime.ts` 的
    `STARHUB_BINARIES_DIR`、CI)。**放在打包 smoke 通过之后**——smoke 需要
    Rust 侧的对照实现做 diff。
+
+### 第 3 步落地细节(CI 切换)
+
+**PR 门(`ci.yml`,取代 `linux-compat.yml`)** 跑三类能离线验的东西:
+
+| 门 | 命令 |
+|---|---|
+| 前端纯逻辑 | `npm run test:utils` |
+| Go sidecar | `cd sidecar && go test ./...` |
+| **Rust 域单测** | `cargo test --manifest-path sidecar-rust/Cargo.toml` |
+| provisioning 合并逻辑 | `npm run test:provision` |
+| **provisioning + 宿主冒烟** | `npm run smoke:dsh-desktop` |
+
+Rust 门从 src-tauri 的全量 `cargo test` 换成 sidecar-rust 的:前者内存峰值
+27GB(本地机都 OOM),而且 src-tauri 随第 4 步退役。冒烟前置要构建两个
+sidecar + 工作台 dist + `package:dsh-runtime`(冒烟用打包进去的便携 node 启动
+宿主进程)。
+
+**发布链(`release.yml` windows job)**:
+
+- `npx tauri build --bundles nsis` → 上游 `package:win:x64:unsigned`
+  (electron-builder 原样用;签名/公证是上游的品牌与更新栈);
+- 新增两步:「Smoke: provisioning + host boot」与「Provision StarHub into the
+  packaged shell」——CI 里先验一遍装的顺序与内容;
+- 产物路径换成 `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts`。
+
+**Linux 发布路径没了——这是上游能力的边界,不是漏做。** 上游桌面壳的
+`SUPPORTED_TARGETS` 只有 `mac-arm64` / `mac-x64` / `win-x64`,没有 Linux
+target;原来 Tauri 链产出的 deb/rpm 没有对应物。`linux` 与 `linux-legacy`
+两个 job 原样保留但 `if: false` 禁用、并不进 `publish` 的 `needs`(否则发布
+永远起不来)。待决策:要么上游出 Linux target,要么单独立一条 Linux 打包路径。
 
 ### 第 2 步落地细节(打包冒烟)
 
@@ -125,10 +156,12 @@ spawn 的两个 sidecar。
 
 - **Electron 壳本身的冒烟**:本批 boot 的是宿主进程(上游 smoke-runtime.ts 同款
   路径),Electron 窗口层要等一次真安装包。
+- **Linux 发布路径待决策**:上游 Electron 壳没有 Linux target,deb/rpm 没有
+  对应物。两个 job 已禁用但保留,决策后再接回或删除。
 - **真机联调(M3-6)**:Android 设备接上后跑 scrcpy H.264 + 接管互斥 + 延迟实测。
 - **`npm run cargo:test`(src-tauri 全量)**:机器内存在链接阶段跑不完;
-  `cargo check` / `check --tests` 均通过。
+  `cargo check` / `check --tests` 均通过。第 4 步删掉 src-tauri 之后这道门
+  由 sidecar-rust 独担。
 - **`ui.alert_test_webhook` 降级**:要不要单独开一个「给 sidecar 加 reqwest」
   的小提交。
 - **16 个 `browser_*` 模型面工具**:是否整体删除(连同能力文本契约)单独评审。
-- **CI 未切**:`release.yml` 仍是 `tauri:build` 链。

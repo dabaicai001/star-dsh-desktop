@@ -12,6 +12,17 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# 去 Tauri 化 M4 第 3 步:发布链从「StarHub 自己的 Tauri 壳」换成
+# 「上游 Electron installer 原样分发 + StarHub provisioning」。
+#
+# 上游桌面壳只支持 mac-arm64 / mac-x64 / win-x64 三个 target
+# (vendor/deepseek-harness/apps/desktop/scripts/desktop-build-paths.mjs 的
+# SUPPORTED_TARGETS)——**没有 Linux target**。原来 Tauri 链产出的 deb/rpm 因此
+# 没有对应物,这不是漏做,是上游能力的边界。Linux 用户要么等上游出 target,
+# 要么保留一条独立的 Linux 打包路径(需要单独决策,见 M4 清单「仍挂着的事」)。
+# 在决策之前,linux / linux-legacy 两个 job 原样保留但**默认不参与发布**
+# (needs 里不列它们),避免发布被一个已知发不出去的 target 卡住。
+
 jobs:
   windows:
     name: Windows / x86_64
@@ -90,42 +101,63 @@ jobs:
           Pop-Location
           exit $testExit
 
-      - name: Build release sidecar
-        run: npm run sidecar:build:release
+      - name: Build release sidecars
+        # provisioning 要装的就是这两个二进制;release 构建。
+        run: |
+          npm run sidecar:build:release
+          npm run sidecar-rust:build:release
 
       - name: Package dsh runtime
+        # 上游 desktop 的 prepare:primary-runtime 与我们的 provisioning 共用这份
+        # 运行时树(provisioning 的 --runtime 指向它)。
         run: npm run package:dsh-runtime
 
       - name: Build StarHub React window resources
-        # `dist-starhub-react` is a Tauri bundle resource (tauri.conf.json
-        # bundle.resources). It is only staged by build:window, which otherwise
-        # runs only inside `tauri build`'s beforeBuildCommand — too late for the
-        # build-script resource check behind `cargo test` below. Stage it here so
-        # tauri_build can validate the resource path on a clean checkout.
+        # provisioning 装进 <home>/starhub/resources/starhub-react,host-static 的
+        # windowDist 指过去。
         run: npm run build:window
 
-      - name: Build Obscura engine
-        # obscura 是 externalBin 资源;同样需在 cargo test 前构建,否则 tauri_build
-        # 的 build script 校验 `..\sidecar\bin\obscura-<triple>.exe` 资源路径失败
-        # (beforeBuildCommand 只在 `tauri build` 时触发,cargo test 不走它)。
-        run: npm run obscura:build
+      - name: Smoke: provisioning + host boot
+        # 发布前的最后一道可离线验的门:provisioning 一个一次性 DSH_HOME 并用打包
+        # 进去的便携 node boot 宿主进程,断言五条(工作台 index / invoke 打通 /
+        # 未知命令错误通路 / SSE 流 / Go sidecar 活着)。
+        # 注意:冒烟用的是 debug 侧 sidecar;release 侧由上面的构建步骤单独验证存在性。
+        run: |
+          npm run sidecar-rust:build
+          npm run smoke:dsh-desktop
 
-      - name: Test Tauri backend
-        working-directory: 'S:\src-tauri'
-        run: cargo test --locked
+      - name: Package upstream Electron shell (unsigned)
+        # 上游 electron-builder 链原样用;`--unsigned` 因为没有代码签名证书。
+        # 产物落在 apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts。
+        # 签名/公证是上游的品牌与更新栈,见 M4 清单 §五。
+        run: pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
-      - name: Build Windows installer
-        run: npx tauri build --bundles nsis
+      - name: Provision StarHub into the packaged shell
+        # 上游壳不会知道 StarHub 的存在:把 10 个包 + 两个 sidecar + 工作台 dist
+        # 装进壳将要使用的 DSH_HOME。部署形态下由安装后置脚本做同一件事,
+        # 这里在 CI 里先验一遍「装的顺序与内容是对的」。
+        run: |
+          node scripts/provision-dsh.mjs `
+            --home $env:RUNNER_TEMP\starhub-dsh-home `
+            --profile desktop `
+            --sidecar-rust sidecar-rust\target\release\starhub-sidecar-rust.exe `
+            --sidecar-go sidecar\bin\starhub-sidecar.exe `
+            --window-dist dist-starhub-react
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
           name: starhub-windows-x86_64-${{ github.ref_name }}
-          path: S:\src-tauri\target\release\bundle\nsis\*.exe
+          path: vendor/deepseek-harness/apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe
           if-no-files-found: error
 
+  # ── Linux:上游 Electron 壳没有 Linux target,发布路径待决策 ──
+  # 这两个 job 原样保留(Tauri 链仍在 src-tauri 里,退役是 M4 第 4 步),但不进
+  # publish 的 needs——发布不会被一个已知发不出去的 target 卡住。决策完成后再
+  # 要么接回、要么整体删除。
+
   linux:
-    name: Linux / ${{ matrix.name }}
+    name: Linux / ${{ matrix.name }} (blocked: upstream has no Linux desktop target)
     strategy:
       fail-fast: false
       matrix:
@@ -138,6 +170,7 @@ jobs:
             deb_arch: arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    if: ${{ false }}
 
     steps:
       - name: Check out source
@@ -147,39 +180,19 @@ jobs:
 
       - name: Install Tauri Linux dependencies
         run: |
-          # ARM64 runners fetch from ports.ubuntu.com which is prone to
-          # transient timeouts; configure apt retries and loop the install.
           echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries
           sudo apt-get update
           for i in 1 2 3; do
             sudo apt-get install --no-install-recommends -y \
-              build-essential \
-              cpio \
-              file \
-              libayatana-appindicator3-dev \
-              libdbus-1-dev \
-              libegl-dev \
-              libfuse2 \
-              libgbm-dev \
-              libgtk-3-dev \
-              libpipewire-0.3-dev \
-              libspa-0.2-dev \
-              librsvg2-dev \
-              libsqlite3-dev \
-              libssl-dev \
-              libwayland-dev \
-              libwebkit2gtk-4.1-dev \
-              libxcb1-dev \
-              libxdo-dev \
-              libxrandr-dev \
-              patchelf \
-              pkg-config \
-              rpm && break
+              build-essential cpio file libayatana-appindicator3-dev libdbus-1-dev \
+              libegl-dev libfuse2 libgbm-dev libgtk-3-dev libpipewire-0.3-dev \
+              libspa-0.2-dev librsvg2-dev libsqlite3-dev libssl-dev libwayland-dev \
+              libwebkit2gtk-4.1-dev libxcb1-dev libxdo-dev libxrandr-dev \
+              patchelf pkg-config rpm && break
             echo "apt-get install attempt $i failed, retrying in 10s..."
             sleep 10
             sudo apt-get update
           done
-          # Verify the critical package installed; fail loudly if not.
           dpkg -s libwebkit2gtk-4.1-dev >/dev/null 2>&1 || { echo "ERROR: libwebkit2gtk-4.1-dev not installed"; exit 1; }
 
       - name: Set up Node.js
@@ -222,21 +235,13 @@ jobs:
         run: npm run package:dsh-runtime
 
       - name: Build StarHub React window resources
-        # `dist-starhub-react` is a Tauri bundle resource (tauri.conf.json
-        # bundle.resources). It is only staged by build:window, which otherwise
-        # runs only inside `tauri build`'s beforeBuildCommand — too late for the
-        # build-script resource check behind `cargo test` below. Stage it here so
-        # tauri_build can validate the resource path on a clean checkout.
         run: npm run build:window
 
       - name: Build Obscura engine
-        # obscura 是 externalBin 资源,需在 cargo test 前构建供 tauri_build 校验。
         run: npm run obscura:build
 
       - name: Test Tauri backend
         working-directory: src-tauri
-        # ARM64 runner 仅 16GB 内存;debug 测试构建峰值内存极高(Cargo.toml
-        # [profile.test] debug=0 + 这里限制并行编译单元)避免 LLVM OOM → 101。
         env:
           CARGO_BUILD_JOBS: ${{ matrix.name == 'ARM64' && '2' || '4' }}
         run: cargo test --locked
@@ -256,14 +261,11 @@ jobs:
             src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error
 
-  # Ubuntu 22.04 / glibc 2.35 兼容版(无截图):截图栈 xcap → pipewire/libspa 0.10.1
-  # 需系统 PipeWire/spa 头 ≥ 1.0(仅 24.04+ 满足),22.04 无法编译该链。这里在
-  # ubuntu-22.04 runner 上以 `--no-default-features`(关闭 screenshot 特性)构建,
-  # 不引入 xcap/pipewire,glibc 下限回到 2.35,文件名加 `-ubuntu2204` 后缀与主力包区分。
   linux-legacy:
-    name: Linux legacy / Ubuntu 22.04 (no screenshot)
+    name: Linux legacy / Ubuntu 22.04 (blocked: upstream has no Linux desktop target)
     runs-on: ubuntu-22.04
     timeout-minutes: 90
+    if: ${{ false }}
 
     steps:
       - name: Check out source
@@ -275,28 +277,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
-            build-essential \
-            cpio \
-            file \
-            libayatana-appindicator3-dev \
-            libdbus-1-dev \
-            libegl-dev \
-            libfuse2 \
-            libgbm-dev \
-            libgtk-3-dev \
-            libpipewire-0.3-dev \
-            libspa-0.2-dev \
-            librsvg2-dev \
-            libsqlite3-dev \
-            libssl-dev \
-            libwayland-dev \
-            libwebkit2gtk-4.1-dev \
-            libxcb1-dev \
-            libxdo-dev \
-            libxrandr-dev \
-            patchelf \
-            pkg-config \
-            rpm
+            build-essential cpio file libayatana-appindicator3-dev libdbus-1-dev \
+            libegl-dev libfuse2 libgbm-dev libgtk-3-dev libpipewire-0.3-dev \
+            libspa-0.2-dev librsvg2-dev libsqlite3-dev libssl-dev libwayland-dev \
+            libwebkit2gtk-4.1-dev libxcb1-dev libxdo-dev libxrandr-dev \
+            patchelf pkg-config rpm
           dpkg -s libwebkit2gtk-4.1-dev >/dev/null 2>&1 || { echo "ERROR: libwebkit2gtk-4.1-dev not installed"; exit 1; }
 
       - name: Set up Node.js
@@ -337,18 +322,12 @@ jobs:
         run: npm run build:window
 
       - name: Build Linux desktop bundles (no screenshot, glibc 2.35 baseline)
-        # `--no-default-features` 关闭截图特性:不引入 xcap/pipewire,编译在
-        # Ubuntu 22.04 的旧头文件上即可通过,产物 glibc 下限回到 2.35。
-        # 注意:`--no-default-features` 是 cargo 参数,须经 `--` 透传给 runner;
-        # `--bundles deb,rpm` 是 tauri 自身参数,放在 `--` 之前。
         run: npx tauri build --bundles deb,rpm -- --no-default-features
 
       - name: Audit packages, sidecar and shared libraries
         run: bash scripts/verify-linux-bundles.sh src-tauri/target/release/bundle amd64
 
       - name: Rename legacy bundles (distinct from the glibc 2.39 build)
-        # 同 Release 里 linux job 也产出 StarHub-<version>-1.<arch>.deb/.rpm,
-        # publish 用 merge-multiple 合并后会同名冲突/覆盖。加 `-ubuntu2204` 后缀区分。
         run: |
           cd src-tauri/target/release/bundle
           for f in deb/*.deb rpm/*.rpm; do
@@ -374,7 +353,9 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [windows, linux, linux-legacy]
+    # 只等 windows:linux 两个 job 已禁用(上游无 Linux desktop target),
+    # 把它们列进 needs 会让发布永远起不来。
+    needs: [windows]
     runs-on: ubuntu-22.04
 
     steps:
