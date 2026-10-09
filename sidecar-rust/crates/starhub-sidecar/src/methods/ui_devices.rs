@@ -13,8 +13,8 @@
 //! 1. `FileInstanceStore` 的 UI 投影方法(全量实例 / 模板 upsert / 删除 / 全量帧);
 //! 2. `FileSettingsStore` 的 `set` / `remove`(域工具只需要读,UI 面才需要写)。
 //!
-//! 两个窗口类动作(`android_ui_open_live` / `desktop_ui_open_live_window`)
-//! 显式降级:直播/接管面板随 M3 面板化落地。
+//! `android_ui_open_live` 在 M3 已真开通道(帧出口);`desktop_ui_open_live_window`
+//! 则是终态降级——沙箱直播/接管线去掉,上游 dsh 原生 computer-use 承接。
 
 use serde_json::{json, Value};
 use starhub_domain_android::adb::Adb;
@@ -280,7 +280,12 @@ pub async fn desktop_lifecycle(
     Ok(json!(text))
 }
 
-/// `ui.desktop_ui_open_live_window`:窗口类动作,M3 面板化前显式降级。
+/// `ui.desktop_ui_open_live_window`:沙箱直播/接管——**不再由 StarHub 提供**。
+///
+/// 去 Tauri 化 M3 定稿:browser 与沙箱桌面的直播/接管线去掉,上游 dsh 原生提供
+/// browser-use / computer-use 及其可见面(沙箱桌面本身就是「computer use」的
+/// 载体),StarHub 重复造一份只会双轨维护。参数仍然校验(调用方拿到的错误信息
+/// 因此稳定),但不承诺任何落地时间。
 pub fn desktop_open_live_window(
     _desktop: &DesktopRuntime,
     params: &Value,
@@ -288,7 +293,7 @@ pub fn desktop_open_live_window(
     let _sandbox_id = required_str(params, "sandboxId")?;
     let _container_id = required_str(params, "containerId")?;
     Err(RpcError::internal(
-        "沙箱直播/接管面板随 M3 面板化落地(去 Tauri 化 M2 窗口类动作暂不提供)",
+        "沙箱直播/接管已不由 StarHub 提供:上游 dsh 原生提供 computer-use 及其可见面(去 Tauri 化 M3 定稿)",
     ))
 }
 
@@ -481,8 +486,12 @@ mod tests {
             &desktop,
             &json!({ "sandboxId": "box-1", "containerId": "c1", "novncPort": 15900, "takeover": true }),
         )
-        .expect_err("窗口类动作 M2 显式降级");
-        assert!(error.message.contains("M3"), "{}", error.message);
+        .expect_err("沙箱直播/接管线已去掉(M3 定稿)");
+        assert!(
+            error.message.contains("已不由 StarHub 提供") && error.message.contains("computer-use"),
+            "{}",
+            error.message
+        );
         let error = desktop_open_live_window(&desktop, &json!({ "sandboxId": "box-1" }))
             .expect_err("缺 containerId");
         assert!(

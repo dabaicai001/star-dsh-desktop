@@ -6,9 +6,10 @@
 //!   (参数错误是软错误文本,模型可纠正重试——这是契约,不许漂移);
 //! - [`script`]:页面注入脚本与 URL 归一化(纯字符串构建)。
 //!
-//! 引擎层(webview 窗口 / obscura CDP 无头引擎 / 截图 / Jev 决策 / auto 循环)
-//! 仍是**窗口面与宿主面**:M3 直播/操作面板化时随帧出口一起搬,届时本 crate
-//! 增加 `BrowserEngine` seam(与 desktop/android 同姿势)。
+//! **引擎层不搬**(去 Tauri 化 M3 定稿):browser 的直播/操作面板去掉,上游 dsh
+//! 原生提供 browser-use 及其可见面。本 crate 因此停留在契约层——方法名与参数
+//! 校验是模型面契约的一部分(见 `starhub_list_capabilities`),执行体由 sidecar
+//! 的 `methods::browser` 答「归上游」提示。
 //!
 //! M2 追加 [`jev`]:Jev 决策的**非密配置**(结构体 / 缺省 / 校验 / settings 键)——
 //! 设置页的读写是 UI 面,不依赖引擎层,先搬过来避免两侧各存一份键名。

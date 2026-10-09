@@ -159,10 +159,10 @@ pub async fn local_shell_exec(params: &Value) -> Result<Value, RpcError> {
 
 /// `ui.screenshot_begin_region`:区域截图(宿主持有能力)。
 ///
-/// 显式降级:屏幕/窗口捕获归 Electron 壳与 M3 帧服务,sidecar 不做屏幕采集。
+/// 显式降级:屏幕/窗口捕获归 Electron 壳,sidecar 不做屏幕采集。
 pub fn screenshot_begin_region(_params: &Value) -> Result<Value, RpcError> {
     Err(RpcError::internal(
-        "区域截图暂不可用:屏幕/窗口捕获归 Electron 壳与 M3 帧服务(去 Tauri 化 M2)",
+        "区域截图暂不可用:屏幕/窗口捕获归 Electron 壳(去 Tauri 化 M2)",
     ))
 }
 
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn host_capabilities_degrade_with_a_clear_reason() {
         let error = screenshot_begin_region(&json!({})).expect_err("区域截图降级");
-        assert!(error.message.contains("M3"), "{}", error.message);
+        assert!(error.message.contains("Electron 壳"), "{}", error.message);
         let error = plugin_dialog_open(&json!({})).expect_err("文件对话框降级");
         assert!(error.message.contains("dsh GUI"), "{}", error.message);
         // 版本号:明确占位,不是伪造的语义化版本

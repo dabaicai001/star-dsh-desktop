@@ -4,8 +4,13 @@
 > `docs/去Tauri化-M2-命令映射清单.md`(M2 已完成:工作台命令面 240 个 `ui.*`
 > 方法 + iframe 搬入壳内主面板)。
 >
-> M3 目标:**直播/接管从「Tauri 独立窗口」变成「dsh 壳内面板 + 本地 WS 帧通道」**,
-> 三个帧源(browser / Android / 沙箱桌面)逐个落地,延迟/画质实测过门槛。
+> M3 目标:**直播/接管从「Tauri 独立窗口」变成「dsh 壳内面板 + 本地 WS 帧通道」**。
+>
+> **范围定稿(2026-10-09):只有一个帧源——Android 真机。**
+> browser 与沙箱桌面的直播/接管线**去掉**,理由是**上游 dsh 本身就有**
+> (browser-use / computer-use 及其可见面):StarHub 再造一份只会双轨维护,
+> 而与上游能力重复的部分迟早要对齐上游的行为差异。本清单原计划的
+> 「browser 帧源」「沙箱桌面帧源」两步因此取消,接口不为它们预留。
 
 ## 一、形态确认(先钉死,别再问)
 
@@ -14,13 +19,13 @@ Tauri 时代直播/接管是**窗口面**:`WebviewWindow` + custom protocol
 整体消亡,能力由三件套承接(**零 vendor 改动**):
 
 ```
-源(browser / Android / 沙箱)──push_frame──▶ 帧枢纽 FrameHub
-                                             │ broadcast + 环形重放
-                                             ▼
-                             本地 WS server(127.0.0.1 + 一次性 token)
-                                             │ bridge 的 registerUpgrade 代理
-                                             ▼
-                                  dsh 壳内面板(canvas / img + 手势)
+源(Android 真机)──push_frame──▶ 帧枢纽 FrameHub
+                                  │ broadcast + 环形重放
+                                  ▼
+                      本地 WS server(127.0.0.1 + 一次性 token)
+                                  │ bridge 的 registerUpgrade 代理
+                                  ▼
+                        dsh 壳内面板(canvas / img + 手势)
 ```
 
 | Tauri 直播窗口面 | sidecar 帧出口 |
@@ -93,17 +98,21 @@ HTTP 拉取,这边是 WS 推送 + 「迟到者从最近可独立解码的帧重�
      审批表达,与 Tauri 版 `ui_open_live` 同口径);
    - 环境变量:`STARHUB_LIVE_PORT`(0 = 内核分配)、`STARHUB_LIVE_DISABLED`、
      `STARHUB_SCRCPY_SERVER`(M4 provisioning 落盘后由 bridge 注入)。
-2. ⬜ **browser 帧源**:CDP `Page.startScreencast` / 截图流 → 帧枢纽
-   (引擎层随本批从 `src-tauri/src/browser` 平移,`starhub-domain-browser`
-   增加 `BrowserEngine` seam)。
-3. ⬜ **沙箱桌面帧源**:容器内 scrot/xdotool 编排 → 帧枢纽(复用 desktop 域
-   已有的 `exec::ui_lifecycle` 授权模型)。
+2. ~~**browser 帧源**~~ — **已取消**:上游 dsh 原生提供 browser-use 及其可见面,
+   StarHub 不重复造。连带 `starhub-domain-browser` 的 `BrowserEngine` seam 不
+   增加,`methods::browser` 的 16 个工具保留方法面与参数契约,执行体答
+   「归上游」提示(方法名在模型面能力文本契约里,删它要连带改契约与快照,
+   单独一个提交做)。
+3. ~~**沙箱桌面帧源**~~ — **已取消**:上游 dsh 原生提供 computer-use,沙箱桌面
+   本身就是它的载体。`ui.desktop_ui_open_live_window` 从「M3 落地」的悬空承诺
+   改成明确终态(不由 StarHub 提供)。
 4. ✅ **bridge 出口(TS 侧)**:`webServer.registerUpgrade` 把
    `ws://127.0.0.1:<port>/live/<channel>` 以带鉴权的 path 暴露给 GUI,
    令牌经 `ui.live_token` 现取现用。
 5. ✅ **直播面板(TS 侧)**:壳内 keyed 主面板 + canvas/img 双模 + 手势输入 +
    接管开关 + 模式徽章。
-6. ⬜ **实测**:三类帧源的延迟/画质记录(交互延迟 ≤ 现窗口方案 1.5×,R2)。
+6. ⬜ **实测**:Android 帧源的延迟/画质记录(交互延迟 ≤ 现窗口方案 1.5×,R2)。
+   **真机联调未跑**——协议层已全验,差一台接好了 USB 调试的 Android 设备。
 
 ### 第 4 步落地细节(bridge 出口)
 
@@ -180,13 +189,23 @@ HTTP 拉取,这边是 WS 推送 + 「迟到者从最近可独立解码的帧重�
 |---|---|---|
 | 模型面 `android_open_live` 结果文本 | 「直播**窗口**已打开」→「直播**面板**已打开」;「**窗口内**勾选接管」→「**面板内**勾选接管」 | 承载物从窗口变成壳内面板;其余逐字不变 |
 | `ui.android_ui_open_live` 返回 | 从「硬错误(指明 M3)」变为 `{endpoint, token, channel}` | M3 本批真开通道 |
+| `ui.live_open` 的 `kind` | 只接受 `android`;`browser` / `desktop` 是明确参数错误(文案说明归 dsh 原生) | 两个帧源已去掉;不接受的 kind 早失败,不静默降级 |
+| `ui.desktop_ui_open_live_window` 错误文案 | 从「随 M3 面板化落地」改为「已不由 StarHub 提供:上游 dsh 原生提供 computer-use」 | 原文案承诺了一个不会到来的落地 |
+| 16 个 `browser_*` 模型面工具的执行应答 | 从「引擎正在面板化迁移中(M3)」改为「已不由 StarHub 提供:上游 dsh 原生提供 browser-use」 | 同上;方法名与参数契约不动(在能力文本契约里) |
 | `starhub/android.takeover` 桥命令 | 仍受理(写帧枢纽),但主路径变成 WS `{"t":"takeover"}` | 少一次进程间往返;兼容旧 bridge |
 
 ## 七、仍挂着的事
 
+- **真机联调(M3-6)**:协议层已全验,差一台接好 USB 调试的 Android 设备跑
+  scrcpy H.264 通道 + 接管互斥 + 延迟/画质实测(门槛:交互延迟 ≤ 现窗口方案
+  1.5×)。缺 scrcpy-server 二进制时直播自动降级截图轮询(原因写进通道元数据)。
 - **`ui.alert_test_webhook` 降级**:要不要单独开一个「给 sidecar 加 reqwest」
   的小提交(`reqwest 0.12.28` 已在本地 registry 缓存里,离线可装)。
 - **`npm run cargo:test`(src-tauri 全量)**:机器内存耗尽在链接阶段,
   `cargo check` / `check --tests` 均通过;建议内存宽裕时补跑。
+- **src-tauri 侧对应旧实现**(`browser/obscura/live.rs` 查看器、
+  `commands/desktop.rs::desktop_ui_open_live_window` 的窗口面)随 M4 删除
+  `src-tauri` 一起退役,不在 M3 动——现在删会让在售壳直接少功能。
+- **16 个 `browser_*` 方法面**:是否整体删除(连同能力文本契约)单独开提交评审。
 - **凭据迁移(§六/R7)**:Tauri SQLite + Keyring → sidecar JSON + dsh credentials,
   native keyring 有意延后。

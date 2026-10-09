@@ -7,8 +7,9 @@
 //! **参数形状、返回形状、错误文案与 `src-tauri/src/commands/{ssh,sftp}.rs`
 //! 逐字一致**(用户可读文本是契约,不许漂移)。
 //!
-//! 窗口类动作(`ui.ssh_open_web_window`)在本批显式降级:网页访问面板随 M3
-//! 面板化落地,这里返回明确的中文指引,而不是 -32601 的晦涩错误。
+//! 窗口类动作(`ui.ssh_open_web_window`)是终态降级:网页访问窗口不搬,上游 dsh
+//! 原生提供 browser-use 及其可见面(去 Tauri 化 M3 定稿)。这里返回明确的中文
+//! 指引,而不是 -32601 的晦涩错误。
 
 use std::sync::Arc;
 
@@ -341,14 +342,15 @@ pub async fn test_ssh_connection(ssh: &SshRuntime, params: &Value) -> Result<Val
     }))
 }
 
-/// `ui.ssh_open_web_window`:窗口类动作,M3 面板化前显式降级。
+/// `ui.ssh_open_web_window`:网页访问窗口——**不由 StarHub 提供**。
 ///
-/// 无状态(不查会话):面板落地前任何调用都拿同一句指引。
+/// 去 Tauri 化 M3 定稿:browser 的直播/操作面板去掉,上游 dsh 原生提供
+/// browser-use 及其可见面。参数仍校验(调用方拿到的错误信息因此稳定)。
 pub fn ssh_open_web_window(params: &Value) -> Result<Value, RpcError> {
     let _ = required_str(params, "sessionId")?;
     let _ = required_str(params, "assetName")?;
     Err(RpcError::internal(
-        "网页访问面板随 M3 面板化落地(去 Tauri 化 M2 窗口类动作暂不提供)",
+        "网页访问已不由 StarHub 提供:上游 dsh 原生提供 browser-use 及其可见面(去 Tauri 化 M3 定稿)",
     ))
 }
 
@@ -829,10 +831,14 @@ mod tests {
     }
 
     #[test]
-    fn web_window_is_degraded_until_the_panel_lands() {
+    fn web_window_is_not_provided_anymore() {
         let error = ssh_open_web_window(&json!({ "sessionId": "s1", "assetName": "x" }))
-            .expect_err("窗口类动作 M2 显式降级");
-        assert!(error.message.contains("M3"), "{}", error.message);
+            .expect_err("网页访问窗口已去掉(M3 定稿)");
+        assert!(
+            error.message.contains("已不由 StarHub 提供") && error.message.contains("browser-use"),
+            "{}",
+            error.message
+        );
         let error = ssh_open_web_window(&json!({ "sessionId": "s1" }))
             .expect_err("缺 assetName 先报参数错误");
         assert!(

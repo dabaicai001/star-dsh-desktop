@@ -21,15 +21,15 @@ DeepSeek Harness desktop(上游 Electron 壳,零改动)
 └── dsh Host(Node 进程,$DSH_HOME/profiles/desktop)
     ├── starhub-bridge(新,TS 外部插件)
     │     ├── spawn + JSON-RPC: starhub-sidecar-go    ← 现 Go sidecar,零改动
-    │     │     (db/redis/clickhouse/mssql/es/excel/kafka/backup)
+    │     │     (db/redis/clickhouse/mssql/es/kafka/backup)
     │     ├── spawn + JSON-RPC: starhub-sidecar-rust  ← 新,src-tauri 域逻辑抽取
-    │     │     (browser/ssh/sftp/android/desktop)
+    │     │     (ssh/sftp/android/desktop;browser 引擎不搬,dsh 原生承接)
     │     ├── 工具注册:defineTool → 模型可用的 starhub_* 工具族
     │     ├── 路由注册:webServer.register + registerUpgrade(直播/接管帧通道)
     │     └── UI 动作桥:open.asset / focus.tool / bind.asset → 插件事件 + slots
     ├── 9 个 starhub 插件(8 个近原样,client-nav 的 Tauri 桥改指 bridge)
     ├── 工作台面板(client-nav 现有 shell.overlay/main 槽,iframe 先行)
-    └── 直播/接管面板(client 插件,canvas/video,帧源见 §3.4)
+    └── 直播/接管面板(client-nav 的 keyed main 槽;帧源只有 Android 真机)
 
 消亡:src-tauri 的 harness/(7320 行,Electron Host 取代)、246 个 tauri::command
      层(平移为 sidecar JSON-RPC 方法面)、Tauri 打包/ACL/窗口/更新栈。
@@ -60,11 +60,11 @@ DeepSeek Harness desktop(上游 Electron 壳,零改动)
 
   | 模块 | 行数 | 引 tauri 文件 | 处置 |
   |---|---:|---|---|
-  | browser/ | 4915 | 13/17 | 域逻辑(auto/decide/cdp/引擎)平移;窗口/直播耦合部分重写为「帧服务 + 工具」 |
+  | browser/ | 4915 | 13/17 | **不搬引擎**(M3 定稿:dsh 原生提供 browser-use);只搬契约层(action/script/jev 已搬) |
   | ssh/ | 5178 | 2/7 | 会话/prompt/cwd/后台任务平移 |
   | sftp/ | 1694 | 1/4 | 传输平移 |
   | android/ | 2521 | 1/1 | adb 操作平移;scrcpy 通道改「帧出口」(见 §3.4) |
-  | desktop/ | 1812 | 1/2 | 容器编排平移 |
+  | desktop/ | 1812 | 1/2 | 容器编排平移;直播/接管帧源**不做**(dsh 原生 computer-use 承接) |
   | commands/ | 6105 | 18/19 | **不平移文件,平移名录**:246 个命令 → JSON-RPC 方法面(args/结果 schema 沿用现有 serde 定义) |
   | harness/ | 7320 | 4/7 | **退役**(Electron Host 取代;有价值测试登记后退役) |
   | keyring/ db/ main.rs registry.rs mcp.rs | ~2400 | — | keyring→dsh credentials;db(资产注册)→ 见 §六数据迁移;mcp→ 上游原生 mcp-client(StarHub 0.121.9 已切换过一次) |
@@ -111,6 +111,11 @@ DeepSeek Harness desktop(上游 Electron 壳,零改动)
 - 「接管」语义保留:任务级授权期间,人工操作直接进 sidecar 输入通道,与模型
   操作互斥的语义从 Tauri 窗口层平移到面板层(单连接 token)。
 
+> **2026-10-09 定稿修正**:帧源只有 **Android** 一个。browser 与沙箱桌面两个
+> 帧源**不做**——上游 dsh 原生提供 browser-use / computer-use 及其可见面。
+> 面板宿主也落在 client-nav(不为一个面板新开插件包,代价大于收益);
+> `browser_*` 工具面保留方法名与参数契约,执行体答「归上游」。
+
 ### 3.5 工作台
 
 - **M2 形态**:client-nav 现有 iframe 模式原样搬(host-static 服务
@@ -152,7 +157,7 @@ DeepSeek Harness desktop(上游 Electron 壳,零改动)
 
 | # | 风险 | 缓解 |
 |---|---|---|
-| R1 | browser 13/17 文件 Tauri 耦合,抽取最重 | 抽域逻辑(引擎/decide/cdp),窗口面重写为帧服务;先 tools 后面板 |
+| R1 | browser 13/17 文件 Tauri 耦合,抽取最重 | **已消解**:引擎不搬(M3 定稿,dsh 原生 browser-use 承接),只搬契约层 |
 | R2 | scrcpy H.264 → 浏览器播放的延迟/画质损耗 | fMP4 over WS 优先;MJPEG 兜底;实测门槛(交互延迟 ≤ 现窗口方案 1.5×) |
 | R3 | 桌面端 file:// 页面取 Host 路由的凭据受限(cookie 不随 file://) | 首选 connection 二进制 RPC 载帧;或 upgrade 路由带一次性 token(query 参数,握手后即弃) |
 | R4 | 246 命令 → JSON-RPC 方法面的 schema/错误码平移遗漏 | 一对一映射清单 + 契约测试(每个命令一个 roundtrip 用例) |
@@ -162,13 +167,15 @@ DeepSeek Harness desktop(上游 Electron 壳,零改动)
 
 ## 八、里程碑(每阶段独立验收、可回退)
 
-- **M1 工具面**:sidecar-rust 抽取(browser/ssh/sftp/android/desktop)+
+- **M1 工具面**:sidecar-rust 抽取(ssh/sftp/android/desktop;browser 只搬契约层)+
   bridge 插件 + starhub-tools 改桥 → **dsh web 上 starhub_* 工具全绿**
   (不等 Electron;契约测试 + 221→N 域单测平移)。
 - **M2 壳切换前夜**:9 插件适配 + 工作台 iframe 搬入 → **dsh desktop dev
   壳内全功能可用**(窗口类除外)。
-- **M3 面板化**:starhub-live 直播/接管面板(browser/Android/沙箱三帧源) →
-  延迟/画质实测过门槛。
+- **M3 面板化**:starhub-live 直播/接管面板(Android 一个帧源)→
+  延迟/画质实测过门槛。**browser 与沙箱桌面两个帧源不做**——上游 dsh 原生
+  提供 browser-use / computer-use 及其可见面,StarHub 重复造一份只会双轨维护
+  (2026-10-09 定稿)。
 - **M4 发布链**:provisioning + electron-builder 打包 smoke + 退役
   src-tauri + CI 切换。
 
@@ -176,7 +183,7 @@ DeepSeek Harness desktop(上游 Electron 壳,零改动)
 
 1. 工具面:dsh web + dsh desktop 双壳,`starhub_*` 工具逐个契约测试通过;
 2. 插件:9 插件 vitest(现 69 spec/1088 例平移)+ bridge 协议单测全绿;
-3. Rust:sidecar crate 域单测(原 Tauri 无关部分)browser/ssh/sftp/android/
-   desktop 全绿,零 tauri 依赖(cargo tree 无 tauri crate);
-4. 面板:直播三类帧源延迟/画质实测记录;
+3. Rust:sidecar crate 域单测(原 Tauri 无关部分)ssh/sftp/android/desktop
+   全绿,零 tauri 依赖(cargo tree 无 tauri crate);
+4. 面板:Android 帧源延迟/画质实测记录;
 5. 退役:src-tauri 删除后 CI 全绿(发布链已切)。

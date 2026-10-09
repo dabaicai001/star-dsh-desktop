@@ -323,8 +323,8 @@ mod tests {
             Some(("android:emulator-5554".to_string(), "abc123".to_string()))
         );
         assert_eq!(
-            parse_live_path("/live/desktop:inst-1/?token=t&x=1"),
-            Some(("desktop:inst-1".to_string(), "t".to_string()))
+            parse_live_path("/live/android:emulator-5554/?token=t&x=1"),
+            Some(("android:emulator-5554".to_string(), "t".to_string()))
         );
         assert_eq!(parse_live_path("/live/android:a"), None, "缺 token");
         assert_eq!(parse_live_path("/live/?token=t"), None, "缺通道");

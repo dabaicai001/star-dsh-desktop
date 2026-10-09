@@ -49,8 +49,14 @@ export const LIVE_PATH_PREFIX = '/live/'
 /** WebSocket handshake magic GUID (RFC 6455 §1.3). */
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
-/** Channel kinds the sidecar registers (must match `starhub-live`). */
-const CHANNEL_KINDS = ['android', 'browser', 'desktop'] as const
+/**
+ * Channel kinds the sidecar registers (must match `starhub-live`).
+ *
+ * M3 定稿只有 `android` 一个帧源:browser 与沙箱桌面的直播/接管线不做——上游
+ * dsh 原生提供 browser-use / computer-use 及其可见面,StarHub 重复造一份只会
+ * 双轨维护。
+ */
+const CHANNEL_KINDS = ['android'] as const
 
 /**
  * One-time token shape: `uuid` simple form (32 lowercase hex).

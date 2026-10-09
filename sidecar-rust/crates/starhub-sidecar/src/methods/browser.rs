@@ -1,12 +1,13 @@
 //! `browser_*` 方法面(M1 第 6 步第三域):16 个工具的方法名登记与**参数契约校验**。
 //!
-//! 引擎层(webview 窗口 / obscura CDP 无头引擎 / 截图 / Jev 决策 / auto 循环)
-//! 是窗口面与宿主面,**M3 直播/操作面板化**时随帧出口一起落地(届时本模块
-//! 增加 `BrowserEngine` seam,与 desktop/android 同姿势)。
+//! **引擎不落地**(去 Tauri 化 M3 定稿):browser 的直播/操作面板去掉,上游 dsh
+//! 原生提供 browser-use 及其可见面,StarHub 的 `browser_*` 工具面与之重复。因此
+//! 本模块只保留方法名与参数契约(软错误文案由 crate 的 `parse_action` 产出,与
+//! Tauri 版逐字一致),执行体答一条确定性的「请用 dsh 原生 browser 能力」提示——
+//! 模型看到稳定的三段式(方法存在 / 参数已校验 / 引擎归上游),而不是 `-32601`。
 //!
-//! M1 先落地方法面本身:参数校验(软错误文案由 crate 的 `parse_action` 产出,
-//! 与 Tauri 版逐字一致)+ 引擎未就绪的确定性提示。模型因此看到稳定的
-//! 「方法存在、参数已校验、引擎待面板化」三段式,而不是 `-32601`。
+//! 方法面暂不删除:它写在模型面的能力文本契约里(`starhub_list_capabilities`),
+//! 删方法名是一次面向模型的破坏性变更,要连带改契约文本与快照,单独一个提交做。
 
 use serde_json::{json, Value};
 
@@ -14,11 +15,10 @@ use starhub_domain_browser::parse_action;
 
 use crate::jsonrpc::RpcError;
 
-/// 引擎未就绪的提示(M3 落地前 AI 浏览器工具的统一应答)。
-const ENGINE_PENDING: &str = "AI 浏览器引擎正在面板化迁移中(M3):方法面与参数校验已就绪,\
-      引擎(无头 CDP / 截图 / 直播帧)将在直播与操作面板化 milestone 落地。\
-      当前可用的等效能力:desktop_* 沙箱桌面(容器内浏览器)、android_* 真机浏览器。";
-
+/// 引擎归上游的提示(M3 定稿后 AI 浏览器工具的统一应答)。
+const ENGINE_PENDING: &str = "AI 浏览器已不由 StarHub 提供:上游 dsh 原生提供 browser-use 
+       及其可见面(去 Tauri 化 M3 定稿),请改用 dsh 的浏览器能力。
+       当前可用的等效能力:desktop_* 沙箱桌面(容器内浏览器)、android_* 真机浏览器。";
 /// 16 个工具的公共入口:先过参数契约(软错误原样回给模型),再答引擎提示。
 async fn browser_tool(name: &str, params: &Value) -> Result<Value, RpcError> {
     let args = params

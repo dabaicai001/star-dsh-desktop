@@ -53,8 +53,10 @@ fn channel_info_json(info: &ChannelInfo) -> Value {
 
 /// `ui.live_open`:打开一台设备的直播通道。
 ///
-/// `kind` 目前只有 `android`(browser / desktop 两个帧源随 M3 后续批次落地,
-/// 接口已钉死)。返回端点 + 首个一次性令牌 + 通道元数据。
+/// M3 定稿只有 Android 一个帧源:browser 与沙箱桌面的直播/接管线**不做**——
+/// 上游 dsh 原生提供 browser-use / computer-use 及其可见面,StarHub 重复造一份
+/// 只会双轨维护。因此这里只接受 `kind: "android"`(缺省亦然),其它 kind 是明确
+/// 的参数错误而不是静默降级。
 pub async fn live_open(live: &LiveRuntime, params: &Value) -> Result<Value, RpcError> {
     let kind = params
         .get("kind")
@@ -62,7 +64,7 @@ pub async fn live_open(live: &LiveRuntime, params: &Value) -> Result<Value, RpcE
         .unwrap_or(KIND_ANDROID);
     if kind != KIND_ANDROID {
         return Err(RpcError::invalid_params(format!(
-            "不支持的直播通道类型: {kind}(当前仅 android)"
+            "不支持的直播通道类型: {kind}(M3 定稿仅 android;browser 与沙箱桌面的直播/接管由 dsh 原生能力承接)"
         )));
     }
     let serial = required_str(params, "serial")?;
@@ -201,15 +203,19 @@ mod tests {
     #[tokio::test]
     async fn live_open_rejects_unknown_kinds() {
         let live = test_runtime();
-        let err = live_open(&live, &json!({"kind":"browser","serial":"x"}))
-            .await
-            .unwrap_err();
-        assert!(
-            err.message.contains("不支持的直播通道类型"),
-            "{}",
-            err.message
-        );
-        let err = live_open(&live, &json!({"kind":"android"}))
+        // browser / desktop 帧源已去掉(dsh 原生承接):明确参数错误,不静默降级
+        for kind in ["browser", "desktop"] {
+            let err = live_open(&live, &json!({ "kind": kind, "serial": "x" }))
+                .await
+                .unwrap_err();
+            assert!(
+                err.message.contains("M3 定稿仅 android")
+                    && err.message.contains("dsh 原生能力承接"),
+                "{kind}: {}",
+                err.message
+            );
+        }
+        let err = live_open(&live, &json!({ "kind": "android" }))
             .await
             .unwrap_err();
         assert_eq!(err.code, -32602, "android 需要 serial");

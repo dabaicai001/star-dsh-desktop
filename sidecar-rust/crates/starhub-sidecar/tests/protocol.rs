@@ -705,13 +705,16 @@ fn capabilities_lists_the_browser_method_surface() {
 fn browser_methods_roundtrip_through_the_real_binary() {
     let mut sidecar = Sidecar::spawn_with_fake_go_sidecar(DB_ASSETS);
 
-    // 合法参数 → 引擎未就绪提示(M3 落地前的确定性应答)
+    // 合法参数 → 引擎归上游提示(M3 定稿后的确定性应答)
     let response = sidecar.roundtrip(
         r#"{"jsonrpc":"2.0","id":"b-1","method":"browser_open","params":{"url":"example.com"}}"#,
     );
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     assert!(value["error"].is_null(), "{response}");
-    assert!(value["result"]["text"].as_str().unwrap().contains("M3"));
+    assert!(value["result"]["text"]
+        .as_str()
+        .unwrap()
+        .contains("browser-use"));
 
     // 非法参数 → 软错误(与 Tauri 版文案一致)
     let response = sidecar.roundtrip(
@@ -1311,7 +1314,7 @@ fn ui_ssh_methods_roundtrip_through_the_real_binary() {
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     assert_eq!(value["error"]["code"], -32603, "{response}");
 
-    // 窗口类动作显式降级(不是 -32601 的晦涩错误)
+    // 网页访问窗口:终态降级(不由 StarHub 提供,归 dsh 原生 browser-use)
     let response = sidecar.roundtrip(
         r#"{"jsonrpc":"2.0","id":"b-22","method":"ui.ssh_open_web_window","params":{"sessionId":"ghost","assetName":"x"}}"#,
     );
@@ -1320,7 +1323,7 @@ fn ui_ssh_methods_roundtrip_through_the_real_binary() {
     assert!(value["error"]["message"]
         .as_str()
         .expect("message")
-        .contains("M3"));
+        .contains("已不由 StarHub 提供"));
 
     // 参数校验:-32602,文案与 A 组一致
     for (id, request) in [
@@ -1818,7 +1821,7 @@ fn ui_devices_methods_roundtrip_through_the_real_binary() {
         "{response}"
     );
 
-    // 沙箱桌面窗口类动作仍显式降级(帧源随 M3 第三批落地)
+    // 沙箱桌面直播/接管:终态降级(M3 定稿去掉该帧源,归 dsh 原生 computer-use)
     let response = roundtrip(
         &mut child,
         r#"{"jsonrpc":"2.0","id":"e-14","method":"ui.desktop_ui_open_live_window","params":{"sandboxId":"box-1","containerId":"c1","novncPort":15900,"takeover":true}}"#,
@@ -1829,7 +1832,7 @@ fn ui_devices_methods_roundtrip_through_the_real_binary() {
         value["error"]["message"]
             .as_str()
             .expect("message")
-            .contains("M3"),
+            .contains("已不由 StarHub 提供"),
         "{response}"
     );
 
@@ -2011,7 +2014,7 @@ fn ui_host_methods_roundtrip_through_the_real_binary() {
     assert!(
         value["error"]["message"]
             .as_str()
-            .is_some_and(|m| m.contains("M3")),
+            .is_some_and(|m| m.contains("Electron 壳")),
         "{response}"
     );
     let response = roundtrip(

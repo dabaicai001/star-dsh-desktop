@@ -535,7 +535,10 @@ async function main() {
       ['desktop_ui_open_live_window', { sandboxId: 'box-1', containerId: 'c1', novncPort: 15900, takeover: true }],
     ]) {
       const error = await dv.request(method, params).catch((caught) => caught.message)
-      check(`${method} 窗口类降级(指明 M3)`, String(error).includes('M3'), String(error))
+      // M3 定稿:沙箱直播/接管线去掉(上游 dsh 原生 computer-use 承接)
+      check(`${method} 不再由 StarHub 提供(归 dsh 原生)`,
+        String(error).includes('已不由 StarHub 提供') && String(error).includes('computer-use'),
+        String(error))
     }
 
     const deviceSurface = await devices.transport.request('starhub/capabilities', {})
@@ -610,7 +613,7 @@ async function main() {
     check('空命令文案逐字保持', String(emptyCmd) === 'command must not be empty', String(emptyCmd))
 
     const shot = await ho.request('screenshot_begin_region', {}).catch((error) => error.message)
-    check('区域截图降级(归 M3 帧服务)', String(shot).includes('M3'), String(shot))
+    check('区域截图降级(归 Electron 壳)', String(shot).includes('Electron'), String(shot))
     const dialog = await ho.request('plugin:dialog|open', {}).catch((error) => error.message)
     check('文件对话框降级(归 dsh GUI)', String(dialog).includes('dsh GUI'), String(dialog))
     check('版本号返回明确占位', (await ho.request('plugin:app|version', {})) === '版本归 Electron 壳(M2 占位)')
@@ -701,8 +704,13 @@ async function main() {
     check('非法通道 id 的 token 请求被拒', String(badToken).includes('非法'), String(badToken))
     const badKind = await lv.request('live_open', { kind: 'browser', serial: 'x' })
       .catch((error) => error.message)
-    check('browser 帧源未落地 → 明确参数错误',
-      String(badKind).includes('不支持的直播通道类型'), String(badKind))
+    check('browser/desktop 帧源已去掉(dsh 原生承接)→ 明确参数错误',
+      String(badKind).includes('M3 定稿仅 android') && String(badKind).includes('dsh 原生能力承接'),
+      String(badKind))
+    const badDesktop = await lv.request('live_open', { kind: 'desktop', serial: 'x' })
+      .catch((error) => error.message)
+    check('沙箱桌面帧源同样去掉',
+      String(badDesktop).includes('M3 定稿仅 android'), String(badDesktop))
 
     const liveSurface = await live.transport.request('starhub/capabilities', {})
     check('方法面覆盖 M3 直播面(总数 246)',

@@ -108,9 +108,10 @@ macro_rules! register_async_all {
 ///
 /// `runtime` drives the async domain handlers; `ssh` owns the SSH/SFTP session
 /// state, `db` the Go sidecar client, `desktop` the sandbox-desktop state and
-/// `android` the device state. `browser` is a unit placeholder: its engine
-/// lands with M3, so the handlers take no runtime state. Keeping them behind
-/// `Arc` lets the registered closures stay `'static + Send + Sync`.
+/// `android` the device state. `browser` is a unit placeholder: its engine is
+/// not ported (M3 dropped the browser live/action panel — upstream dsh provides
+/// browser-use natively), so the handlers take no runtime state. Keeping them
+/// behind `Arc` lets the registered closures stay `'static + Send + Sync`.
 ///
 /// `sink` and `bridge_state` complete the non-tool bridge surface
 /// (`starhub/open.asset`, `starhub/focus.tool`, `starhub/live.snapshot`), so
@@ -244,7 +245,7 @@ pub fn registry_with_domains(
             "ui.sftp_list_transfers" => crate::methods::ui_ssh::sftp_list_transfers,
             "ui.sftp_reveal_local" => crate::methods::ui_ssh::sftp_reveal_local,
         );
-        // 窗口类动作:网页访问面板随 M3 面板化落地,本批显式降级(无状态,同步即可)。
+        // 窗口类动作:网页访问窗口不搬(dsh 原生 browser-use 承接),显式降级。
         registry.register("ui.ssh_open_web_window", |params| {
             crate::methods::ui_ssh::ssh_open_web_window(params)
         });
@@ -297,7 +298,8 @@ pub fn registry_with_domains(
         }
 
         // UI 面 D 组第二批(Android 设备设置 + 沙箱桌面 UI):存储/管理器多已在
-        // sidecar,这里只补 ui.* 包装;两个窗口类动作显式降级(M3 面板)。
+        // sidecar,这里只补 ui.* 包装。`android_ui_open_live` 在 M3 真开通道;
+        // `desktop_ui_open_live_window` 是终态降级(帧源去掉,归 dsh 原生)。
         // 每条注册一个块:块作用域即闭包捕获的边界,变量名可重复。
         {
             let android = Arc::clone(&android);
@@ -385,7 +387,7 @@ pub fn registry_with_domains(
         }
 
         // UI 面 D 组第三批:AI 浏览器设置 + AI 模型密钥(设置存储 / 密钥存储),
-        // 以及归 Electron 壳 / M3 的宿主持有能力(本机 shell 实做,其余降级)。
+        // 以及归 Electron 壳的宿主持有能力(本机 shell 实做,其余降级)。
         // 每条注册一个块:块作用域即闭包捕获的边界,变量名可重复。
         {
             let ui = Arc::clone(&ui_state);
@@ -446,8 +448,9 @@ pub fn registry_with_domains(
         });
 
         // UI 面 M3:直播/接管面板的通道管理。帧与输入走 WS(见 starhub-live),
-        // 这里只开关通道与发令牌;两个窗口类降级动作(`android_ui_open_live` /
-        // `desktop_ui_open_live_window`)随本批真正落地(Android)或保持降级。
+        // 这里只开关通道与发令牌。M3 定稿只有一个帧源(Android 真机):
+        // `android_ui_open_live` 真开通道,`desktop_ui_open_live_window` 是终态
+        // 降级(上游 dsh 原生 computer-use 承接)。
         {
             let live = Arc::clone(&live_state);
             let runtime = Arc::clone(&runtime);
@@ -943,8 +946,9 @@ pub fn registry_with_domains(
             crate::methods::android::exec_method
         );
 
-        // Browser 域:16 个方法。引擎层(无头 CDP / 截图 / 直播帧)随 M3 面板化
-        // 落地;M1 先固定方法面与参数契约(软错误由 crate 的 parse_action 产出)。
+        // Browser 域:16 个方法。**引擎不落地**(M3 定稿:browser 直播/操作面板
+        // 去掉,上游 dsh 原生提供 browser-use);这里只固定方法面与参数契约,
+        // 执行体答「归上游」提示(软错误由 crate 的 parse_action 产出)。
         let browser_unit = Arc::new(());
         register_async!(
             &mut registry,

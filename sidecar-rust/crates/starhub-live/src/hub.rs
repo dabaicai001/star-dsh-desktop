@@ -1,14 +1,18 @@
 //! 帧枢纽:通道注册 / 一次性令牌 / 帧广播与重放 / 接管互斥。
 //!
 //! 对应 Tauri 直播窗口的三个注册表(live / scrcpy / 窗口栈)合一:
-//! - **通道**(`Channel`)一源一通道,id 形如 `android:<serial>` /
-//!   `browser:<session>` / `desktop:<instance>`;
-//! - **源**(browser/Android/沙箱的帧生产者)经 `push_frame` 推帧,帧枢纽负责
-//!   广播给当前订阅者 + 进环形缓冲供迟到者重放;
+//! - **通道**(`Channel`)一源一通道,id 形如 `android:<serial>`;
+//! - **源**(帧生产者)经 `push_frame` 推帧,帧枢纽负责广播给当前订阅者 + 进环形
+//!   缓冲供迟到者重放;
 //! - **输入**(接管时的人工操作)经通道的 mpsc 交给源顺序执行——与 Tauri 的
 //!   `LiveAction` → pump 同姿势;
 //! - **接管**标志是帧枢纽级(不是源级):域工具的执行点经 `TakeoverState`
 //!   seam 读它,AI 写操作一律拒绝(不撤销授权)。
+//!
+//! **只有一个帧源:Android**(去 Tauri 化 M3 定稿)。browser 与沙箱桌面的直播/
+//! 接管**不做**——上游 dsh 原生提供 browser-use / computer-use 及其可见面,
+//! StarHub 重复造一份只会带来双轨维护。因此这里只登记 `android` 一种通道类型,
+//! 不为不存在的源预留位置(预留即漂移)。
 //!
 //! 通道生命周期:源启动(`open`)→ 订阅者接入 → **最后一个订阅者离开即关闭**
 //! (等价于 Tauri「关窗口即停泵 + 回收 scrcpy」),或源自行退出(adb 缺失 /
@@ -23,10 +27,8 @@ use tokio::sync::{broadcast, mpsc, watch};
 
 use crate::frames::{PacketRing, MSG_PNG};
 
-/// 通道类型(决定源与面板语义)。
+/// 通道类型(决定源与面板语义)。M3 定稿:仅 Android 一个帧源。
 pub const KIND_ANDROID: &str = "android";
-pub const KIND_BROWSER: &str = "browser";
-pub const KIND_DESKTOP: &str = "desktop";
 
 /// 人工输入动作(面板 → 源)。`SetTakeover` 由帧枢纽自行处理,不转发给源。
 #[derive(Debug, Clone)]
@@ -377,13 +379,16 @@ impl Channel {
     }
 }
 
-/// 通道 id 白名单:`<kind>:<target>`,target 过 serial/实例名白名单形态
+/// 通道 id 白名单:`android:<serial>`,serial 过白名单形态
 /// (防路径/查询注入:通道 id 会进 WS URL)。
+///
+/// M3 定稿只有 Android 一个帧源,因此 kind 只接受 `android`——不接受的 kind 在
+/// 这里就拒掉,比留到 `ui.live_open` 再报「不支持」更早失败。
 pub fn valid_channel_id(id: &str) -> bool {
     let Some((kind, target)) = id.split_once(':') else {
         return false;
     };
-    if !matches!(kind, KIND_ANDROID | KIND_BROWSER | KIND_DESKTOP) {
+    if kind != KIND_ANDROID {
         return false;
     }
     !target.is_empty()
@@ -489,13 +494,17 @@ mod tests {
     fn channel_id_whitelist() {
         assert!(valid_channel_id("android:emulator-5554"));
         assert!(valid_channel_id("android:192.168.1.5:43217"));
-        assert!(valid_channel_id("desktop:inst-1"));
-        assert!(valid_channel_id("browser:s1"));
+        // M3 定稿:只有 Android 一个帧源(browser / 沙箱桌面由 dsh 原生承接)
+        assert!(!valid_channel_id("browser:page-1"), "browser 帧源已去掉");
+        assert!(!valid_channel_id("desktop:inst-1"), "沙箱桌面帧源已去掉");
         assert!(!valid_channel_id("android"));
+        assert!(!valid_channel_id("android:"));
+        assert!(!valid_channel_id(":x"));
         assert!(!valid_channel_id("evil:x"));
         assert!(!valid_channel_id("android:a b"));
         assert!(!valid_channel_id("android:$(reboot)"));
         assert!(!valid_channel_id("android:/etc/passwd"));
+        assert!(!valid_channel_id(&format!("android:{}", "a".repeat(97))));
     }
 
     #[test]
