@@ -798,6 +798,23 @@ fn capabilities_lists_the_android_method_surface() {
         "ui.sftp_clear_transfers",
         "ui.sftp_list_transfers",
         "ui.sftp_reveal_local",
+        // C 组数据面连接(connId 面,经 Go sidecar 转发)
+        "ui.db_mysql_connect",
+        "ui.db_mysql_execute",
+        "ui.db_mysql_update_rows",
+        "ui.db_clickhouse_execute",
+        "ui.db_postgres_connect",
+        "ui.db_sqlite_test",
+        "ui.db_mssql_disconnect",
+        "ui.db_redis_scan",
+        "ui.db_redis_set",
+        "ui.db_es_search",
+        "ui.db_es_create_index",
+        "ui.docker_connect",
+        "ui.docker_exec_session_write",
+        "ui.docker_prune_images",
+        "ui.broker_test",
+        "ui.broker_overview",
     ] {
         assert!(
             methods.contains(&expected),
@@ -805,8 +822,9 @@ fn capabilities_lists_the_android_method_surface() {
         );
     }
     // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)+ 16(browser)
-    // + 4 桥命令 + 4 UI 面(资产 CRUD)+ 30 UI 面 B 组(交互会话)= 123
-    assert_eq!(methods.len(), 123, "方法面总数: {methods:?}");
+    // + 4 桥命令 + 4 UI 面(资产 CRUD)+ 30 UI 面 B 组(交互会话)
+    // + 86 UI 面 C 组(数据面连接)= 209
+    assert_eq!(methods.len(), 209, "方法面总数: {methods:?}");
 }
 
 /// Android 方法面 roundtrip(不触设备的分支):未授权写操作硬错误;
@@ -1283,6 +1301,96 @@ fn ui_ssh_methods_roundtrip_through_the_real_binary() {
             .as_str()
             .expect("message")
             .contains("data 必须是字节数组"),
+        "{response}"
+    );
+}
+
+/// UI 面 C 组(数据面连接)真二进制 roundtrip:接假 Go sidecar,验两种参数形态
+/// (Wrapped 拆封 / Flat 平铺)、参数白名单与 broker kind 白名单文案。
+#[test]
+fn ui_db_methods_roundtrip_through_the_real_binary() {
+    let mut sidecar = Sidecar::spawn_with_fake_go_sidecar(DB_ASSETS);
+
+    // Wrapped:connect 把配置包在 params 里,必须拆封后转发
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"c-1","method":"ui.db_mysql_connect","params":{"params":{"host":"db.internal","port":3306,"username":"root"}}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert!(
+        value["result"]["connId"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("mysql-conn-")),
+        "{response}"
+    );
+
+    // Flat:连接面命令平铺转发(假 sidecar 的 *.disconnect 回 {ok:true})
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"c-2","method":"ui.db_mysql_disconnect","params":{"connId":"mysql-conn-1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(value["result"]["ok"], true);
+
+    // docker.listContainers 的罐头答案(证明平铺参数原样到达 Go sidecar)
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"c-3","method":"ui.docker_list_containers","params":{"connId":"docker-conn-1","all":false}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    let items = value["result"].as_array().expect("array");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["name"], "web");
+
+    // 参数白名单:缺 connId / 缺 sql / 缺 params 信封都是 -32602
+    for (id, request) in [
+        (
+            "c-4",
+            r#"{"jsonrpc":"2.0","id":"c-4","method":"ui.db_mysql_disconnect","params":{}}"#,
+        ),
+        (
+            "c-5",
+            r#"{"jsonrpc":"2.0","id":"c-5","method":"ui.db_mysql_execute","params":{"connId":"c1"}}"#,
+        ),
+        (
+            "c-6",
+            r#"{"jsonrpc":"2.0","id":"c-6","method":"ui.db_redis_connect","params":{}}"#,
+        ),
+        (
+            "c-7",
+            r#"{"jsonrpc":"2.0","id":"c-7","method":"ui.docker_exec_session_write","params":{"connId":"c1","sessionId":"s1"}}"#,
+        ),
+    ] {
+        let response = sidecar.roundtrip(request);
+        let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+        assert_eq!(value["error"]["code"], -32602, "{id}: {response}");
+        assert!(
+            value["error"]["message"]
+                .as_str()
+                .expect("message")
+                .starts_with("缺少"),
+            "{id}: {response}"
+        );
+    }
+
+    // broker kind 白名单:文案与 Tauri 版逐字一致
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"c-8","method":"ui.broker_test","params":{"kind":"rabbit","params":{}}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32603, "{response}");
+    assert_eq!(value["error"]["message"], "unsupported broker: rabbit");
+
+    // 白名单内的 kind 走到 Go sidecar(假 sidecar 不实现 broker.*,错误里带 RPC 名)
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"c-9","method":"ui.broker_overview","params":{"kind":"kafka","params":{"host":"b"}}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("broker.kafka.overview"),
         "{response}"
     );
 }

@@ -17,6 +17,8 @@
  *     敏感字段不回流、删除后域工具报「资产不存在」、Excel 类型已删)
  *  9. UI 面 B 组(M2):`ui.ssh_*` / `ui.sftp_*` 交互会话(会话不存在 / 无写通道 /
  *     无待应答 / 传输任务表 / 窗口类降级 / 参数校验)
+ * 10. UI 面 C 组(M2):`ui.db_*` / `ui.docker_*` / `ui.broker_*` 数据面连接(接假
+ *     Go sidecar:Wrapped 拆封 / Flat 平铺 / 参数白名单 / broker kind 白名单)
  *
  * 与 `verify_sidecar_ssh.py`(真 SSH e2e)分工:那条验 Rust 侧域逻辑,这条验
  * 「插件协议 → 兼容层 → sidecar」的最后一公里。
@@ -35,6 +37,7 @@ import { createBridgePeer, NotificationDispatcher } from '../vendor/deepseek-har
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const binary = join(repoRoot, 'sidecar-rust', 'target', 'debug', 'starhub-sidecar-rust.exe')
+const fakeGoFixture = join(repoRoot, 'sidecar-rust', 'crates', 'starhub-domain-db', 'tests', 'fixtures', 'fake-go-sidecar.py')
 
 let passed = 0
 let failed = 0
@@ -50,7 +53,7 @@ function check(label, condition, detail) {
 }
 
 /** 起一个带种子资产的真 sidecar,返回 { child, transport, notifications }。 */
-function startSidecar(assets) {
+function startSidecar(assets, { fakeGo = false } = {}) {
   if (!existsSync(binary)) {
     console.error(`找不到 sidecar 二进制: ${binary}\n先跑 npm run sidecar-rust:build`)
     process.exit(2)
@@ -67,6 +70,7 @@ function startSidecar(assets) {
       STARHUB_SECRETS_FILE: '',
       STARHUB_KNOWN_HOSTS_FILE: join(dir, 'known-hosts.json'),
       STARHUB_ANDROID_FRAMES_FILE: join(dir, 'android-frames.json'),
+      ...(fakeGo ? { STARHUB_GO_SIDECAR: writeGoWrapper(dir) } : {}),
     },
   })
   const transport = new JsonRpcLineTransport(child.stdout, child.stdin)
@@ -74,6 +78,28 @@ function startSidecar(assets) {
   const notifications = new NotificationDispatcher()
   notifications.attach(transport)
   return { child, transport, notifications, dir }
+}
+
+/** 把「python fixture」包成单个可执行路径(STARHUB_GO_SIDECAR 只吃单程序)。 */
+function writeGoWrapper(dir) {
+  const python = ['python', 'python3'].find((cmd) => {
+    try {
+      const probe = spawn(cmd, ['--version'], { stdio: 'ignore' })
+      return probe.exitCode === 0 || probe.pid > 0
+    } catch {
+      return false
+    }
+  }) ?? (process.platform === 'win32'
+    ? join(repoRoot, 'test-sftp', '.venv', 'Scripts', 'python.exe')
+    : join(repoRoot, 'test-sftp', '.venv', 'bin', 'python'))
+  const path = join(dir, process.platform === 'win32' ? 'fake-go-sidecar.cmd' : 'fake-go-sidecar.sh')
+  writeFileSync(path, process.platform === 'win32'
+    ? `@echo off\r\n"${python}" "${fakeGoFixture}" %*\r\n`
+    : `#!/bin/sh\nexec "${python}" "${fakeGoFixture}" "$@"\n`)
+  if (process.platform !== 'win32') {
+    spawn('chmod', ['+x', path])
+  }
+  return path
 }
 
 /** 等一条指定事件名的通知(超时返回 undefined)。 */
@@ -245,8 +271,8 @@ async function main() {
     // ── 9. UI 面 B 组(交互会话):ui.ssh_* / ui.sftp_*(connId 面) ──
     console.log('\n[9] UI 面 B 组交互会话(ui.ssh_* / ui.sftp_*)')
     const methodSurface = await transport.request('starhub/capabilities', {})
-    check('方法面覆盖 B 组(总数 123)',
-      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 123
+    check('方法面覆盖 B 组(总数 209)',
+      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 209
       && methodSurface.methods.includes('ui.ssh_connect') && methodSurface.methods.includes('ui.sftp_start_upload'),
       `${String(methodSurface?.methods?.length)} 个方法`)
 
@@ -308,6 +334,63 @@ async function main() {
       setTimeout(() => { child.kill('SIGKILL'); resolve() }, 2000).unref()
     })
     rmSync(dir, { recursive: true, force: true })
+  }
+
+  // ── 10. UI 面 C 组(数据面连接):接假 Go sidecar,验两种参数形态 ──
+  console.log('\n[10] UI 面 C 组数据面连接(ui.db_* / ui.docker_* / ui.broker_*)')
+  const go = startSidecar(seedAssets, { fakeGo: true })
+  const goUi = {
+    request: (method, params) => go.transport.request(`ui.${method}`, params ?? {}),
+  }
+  try {
+    const connected = await goUi.request('db_mysql_connect', {
+      params: { host: 'db.internal', port: 3306, username: 'root', password: 'pw' },
+    })
+    check('Wrapped:connect 拆封 params 信封后转发',
+      typeof connected?.connId === 'string' && connected.connId.startsWith('mysql-conn-'),
+      JSON.stringify(connected))
+
+    const disconnected = await goUi.request('db_mysql_disconnect', { connId: 'mysql-conn-1' })
+    check('Flat:连接面命令平铺转发', disconnected?.ok === true, JSON.stringify(disconnected))
+
+    const containers = await goUi.request('docker_list_containers', { connId: 'docker-conn-1', all: false })
+    check('docker.listContainers 原样到达 Go sidecar',
+      Array.isArray(containers) && containers.length === 1 && containers[0].name === 'web',
+      JSON.stringify(containers).slice(0, 60))
+
+    for (const [method, params, missing] of [
+      ['db_mysql_disconnect', {}, 'connId'],
+      ['db_mysql_execute', { connId: 'c1' }, 'sql'],
+      ['db_redis_connect', {}, 'params'],
+      ['docker_exec_session_write', { connId: 'c1', sessionId: 's1' }, 'data'],
+      ['broker_test', { params: {} }, 'kind'],
+    ]) {
+      const error = await goUi.request(method, params).catch((caught) => caught.message)
+      check(`${method} 缺 ${missing} → 参数错误`, String(error).includes(`缺少 ${missing}`), String(error))
+    }
+
+    const badKind = await goUi.request('broker_test', { kind: 'rabbit', params: {} })
+      .catch((error) => error.message)
+    check('broker kind 白名单文案逐字保持',
+      String(badKind) === 'unsupported broker: rabbit', String(badKind))
+    const kafka = await goUi.request('broker_overview', { kind: 'kafka', params: { host: 'b' } })
+      .catch((error) => error.message)
+    check('白名单内 kind 走 broker.{kind}.{verb}', String(kafka).includes('broker.kafka.overview'), String(kafka))
+
+    const methodSurface = await go.transport.request('starhub/capabilities', {})
+    check('方法面覆盖 C 组(总数 209)',
+      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 209
+      && methodSurface.methods.includes('ui.db_mysql_connect')
+      && methodSurface.methods.includes('ui.docker_exec_session_read'),
+      `${String(methodSurface?.methods?.length)} 个方法`)
+  } finally {
+    go.child.stdin.end()
+    await new Promise((resolve) => {
+      if (go.child.exitCode !== null) { resolve(); return }
+      go.child.once('exit', () => resolve())
+      setTimeout(() => { go.child.kill('SIGKILL'); resolve() }, 2000).unref()
+    })
+    rmSync(go.dir, { recursive: true, force: true })
   }
 
   console.log(`\n验收结果: ${passed} passed, ${failed} failed`)

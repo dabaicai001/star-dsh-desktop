@@ -30,6 +30,7 @@ pub mod db;
 pub mod desktop;
 pub mod ssh;
 pub mod ui;
+pub mod ui_db;
 pub mod ui_ssh;
 
 /// Liveness probe.
@@ -237,6 +238,16 @@ pub fn registry_with_domains(
         registry.register("ui.ssh_open_web_window", |params| {
             crate::methods::ui_ssh::ssh_open_web_window(params)
         });
+
+        // UI 面 C 组(数据面连接):Tauri 版本就是 `sidecar.call(rpc, params)` 的薄
+        // 封装,搬进 sidecar 后少一次进程间往返;命令表即映射契约(零逐命令漂移)。
+        for spec in crate::methods::ui_db::COMMANDS {
+            let runtime = Arc::clone(&runtime);
+            let db = Arc::clone(&db);
+            registry.register(spec.command, move |params| {
+                runtime.block_on(crate::methods::ui_db::forward(&db, spec, params))
+            });
+        }
 
         // SSH / SFTP 域:8 个方法,方法名 = 工具名
         register_async!(
