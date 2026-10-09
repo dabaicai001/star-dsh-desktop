@@ -112,12 +112,16 @@ pub async fn android_list_devices(android: &AndroidRuntime) -> Result<Value, Rpc
         .collect::<Vec<_>>()))
 }
 
-/// `ui.android_ui_open_live`:窗口类动作,M3 面板化前显式降级。
-pub fn android_open_live(_android: &AndroidRuntime, params: &Value) -> Result<Value, RpcError> {
-    let _serial = required_str(params, "serial")?;
-    Err(RpcError::internal(
-        "设备直播面板随 M3 面板化落地(去 Tauri 化 M2 窗口类动作暂不提供)",
-    ))
+/// `ui.android_ui_open_live`:打开设备直播通道(M3 面板化的帧出口)。
+///
+/// 用户点「直播」按钮 = 审批表达(与 Tauri 版 `ui_open_live` 同口径,不需要
+/// 设备授权)。返回端点 + 首个一次性令牌:bridge 拿它代理 WS 给壳内面板。
+pub async fn android_open_live(
+    live: &crate::live_runtime::LiveRuntime,
+    params: &Value,
+) -> Result<Value, RpcError> {
+    let serial = required_str(params, "serial")?;
+    crate::methods::ui_live::live_open(live, &json!({ "kind": "android", "serial": serial })).await
 }
 
 // ── 沙箱桌面(前端沙箱 tab / 设置页 / 模板管理) ────────────────
@@ -536,12 +540,33 @@ mod tests {
             .expect("clear");
         let config = android_get_config(&android).await.expect("config");
         assert_eq!(config["adbPath"], Value::Null);
-        // 直播窗口降级
-        let error =
-            android_open_live(&android, &json!({ "serial": "s1" })).expect_err("窗口类动作降级");
-        assert!(error.message.contains("M3"), "{}", error.message);
-        let error = android_open_live(&android, &json!({})).expect_err("缺 serial");
+        // 直播通道(M3):WS server 未启动时给出明确原因,而不是 -32601
+        let live = crate::live_runtime::LiveRuntime::without_server(
+            Arc::new(crate::desktop_runtime::FileSettingsStore::new(
+                dir.join("live-settings.json"),
+            )),
+            Arc::new(starhub_domain_android::AndroidManager::new()),
+        );
+        let error = live_open_via_ui(&live, &json!({ "serial": "s1" }))
+            .await
+            .expect_err("WS 未启动");
+        assert!(
+            error.message.contains("直播帧通道未启动"),
+            "{}",
+            error.message
+        );
+        let error = live_open_via_ui(&live, &json!({}))
+            .await
+            .expect_err("缺 serial");
         assert!(error.message.contains("缺少 serial"), "{}", error.message);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 测试替身:与 `android_open_live` 同路径(它只是 live_open 的 android 包装)。
+    async fn live_open_via_ui(
+        live: &crate::live_runtime::LiveRuntime,
+        params: &Value,
+    ) -> Result<Value, RpcError> {
+        crate::methods::ui_live::live_open(live, params).await
     }
 }

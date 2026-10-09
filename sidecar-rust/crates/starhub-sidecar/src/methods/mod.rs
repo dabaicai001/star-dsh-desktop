@@ -34,6 +34,7 @@ pub mod ui_browser;
 pub mod ui_db;
 pub mod ui_devices;
 pub mod ui_host;
+pub mod ui_live;
 pub mod ui_settings;
 pub mod ui_ssh;
 
@@ -115,6 +116,8 @@ macro_rules! register_async_all {
 /// (`starhub/open.asset`, `starhub/focus.tool`, `starhub/live.snapshot`), so
 /// the method inventory covers the whole protocol. `ui_state` carries the
 /// UI-plane settings stores (audit log, alert rules) behind the `ui.*` methods.
+/// `live_state` is the M3 live/takeover frame export (frame hub + WS server)
+/// behind the `ui.live_*` methods and `starhub/live.endpoint`.
 #[allow(clippy::too_many_arguments)]
 pub fn registry_with_domains(
     runtime: Arc<Runtime>,
@@ -126,6 +129,7 @@ pub fn registry_with_domains(
     sink: Arc<dyn starhub_domain_ssh::events::EventSink>,
     bridge_state: Arc<crate::bridge::BridgeState>,
     ui_state: Arc<crate::ui_runtime::UiRuntime>,
+    live_state: Arc<crate::live_runtime::LiveRuntime>,
 ) -> Arc<MethodRegistry> {
     Arc::new_cyclic(|weak| {
         let mut registry = MethodRegistry::new();
@@ -319,9 +323,10 @@ pub fn registry_with_domains(
             });
         }
         {
-            let android = Arc::clone(&android);
+            let live = Arc::clone(&live_state);
+            let runtime = Arc::clone(&runtime);
             registry.register("ui.android_ui_open_live", move |params| {
-                crate::methods::ui_devices::android_open_live(&android, params)
+                runtime.block_on(crate::methods::ui_devices::android_open_live(&live, params))
             });
         }
         {
@@ -439,6 +444,41 @@ pub fn registry_with_domains(
         registry.register("ui.plugin:app|version", |params| {
             crate::methods::ui_host::plugin_app_version(params)
         });
+
+        // UI 面 M3:直播/接管面板的通道管理。帧与输入走 WS(见 starhub-live),
+        // 这里只开关通道与发令牌;两个窗口类降级动作(`android_ui_open_live` /
+        // `desktop_ui_open_live_window`)随本批真正落地(Android)或保持降级。
+        {
+            let live = Arc::clone(&live_state);
+            let runtime = Arc::clone(&runtime);
+            registry.register("ui.live_open", move |params| {
+                runtime.block_on(crate::methods::ui_live::live_open(&live, params))
+            });
+        }
+        {
+            let live = Arc::clone(&live_state);
+            registry.register("ui.live_token", move |params| {
+                crate::methods::ui_live::live_token(&live, params)
+            });
+        }
+        {
+            let live = Arc::clone(&live_state);
+            registry.register("ui.live_status", move |params| {
+                crate::methods::ui_live::live_status(&live, params)
+            });
+        }
+        {
+            let live = Arc::clone(&live_state);
+            registry.register("ui.live_close", move |params| {
+                crate::methods::ui_live::live_close(&live, params)
+            });
+        }
+        {
+            let live = Arc::clone(&live_state);
+            registry.register("ui.live_list", move |_params| {
+                crate::methods::ui_live::live_list(&live, _params)
+            });
+        }
 
         // SSH / SFTP 域:8 个方法,方法名 = 工具名
         register_async!(
@@ -1043,6 +1083,12 @@ pub fn registry_with_domains(
                     &bridge_state,
                     ssh.transfers(),
                 )))
+            });
+        }
+        {
+            let live = Arc::clone(&live_state);
+            registry.register(crate::bridge::LIVE_ENDPOINT_METHOD, move |_params| {
+                crate::methods::ui_live::live_endpoint(&live, _params)
             });
         }
 

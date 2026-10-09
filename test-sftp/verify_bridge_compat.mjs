@@ -290,8 +290,8 @@ async function main() {
     // ── 9. UI 面 B 组(交互会话):ui.ssh_* / ui.sftp_*(connId 面) ──
     console.log('\n[9] UI 面 B 组交互会话(ui.ssh_* / ui.sftp_*)')
     const methodSurface = await transport.request('starhub/capabilities', {})
-    check('方法面覆盖 B 组(总数 240)',
-      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 240
+    check('方法面覆盖 B 组(总数 246)',
+      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 246
       && methodSurface.methods.includes('ui.ssh_connect') && methodSurface.methods.includes('ui.sftp_start_upload'),
       `${String(methodSurface?.methods?.length)} 个方法`)
 
@@ -397,8 +397,8 @@ async function main() {
     check('白名单内 kind 走 broker.{kind}.{verb}', String(kafka).includes('broker.kafka.overview'), String(kafka))
 
     const methodSurface = await go.transport.request('starhub/capabilities', {})
-    check('方法面覆盖 C 组(总数 240)',
-      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 240
+    check('方法面覆盖 C 组(总数 246)',
+      Array.isArray(methodSurface?.methods) && methodSurface.methods.length === 246
       && methodSurface.methods.includes('ui.db_mysql_connect')
       && methodSurface.methods.includes('ui.docker_exec_session_read'),
       `${String(methodSurface?.methods?.length)} 个方法`)
@@ -532,7 +532,6 @@ async function main() {
       String(badAdb).startsWith('adb 路径不存在或不是文件'), String(badAdb))
 
     for (const [method, params] of [
-      ['android_ui_open_live', { serial: 's1' }],
       ['desktop_ui_open_live_window', { sandboxId: 'box-1', containerId: 'c1', novncPort: 15900, takeover: true }],
     ]) {
       const error = await dv.request(method, params).catch((caught) => caught.message)
@@ -540,8 +539,8 @@ async function main() {
     }
 
     const deviceSurface = await devices.transport.request('starhub/capabilities', {})
-    check('方法面覆盖 D 组设备面(总数 240)',
-      Array.isArray(deviceSurface?.methods) && deviceSurface.methods.length === 240
+    check('方法面覆盖 D 组设备面(总数 246)',
+      Array.isArray(deviceSurface?.methods) && deviceSurface.methods.length === 246
       && deviceSurface.methods.includes('ui.desktop_ui_overview')
       && deviceSurface.methods.includes('ui.android_ui_list_devices'),
       `${String(deviceSurface?.methods?.length)} 个方法`)
@@ -617,8 +616,8 @@ async function main() {
     check('版本号返回明确占位', (await ho.request('plugin:app|version', {})) === '版本归 Electron 壳(M2 占位)')
 
     const hostSurface = await host.transport.request('starhub/capabilities', {})
-    check('方法面覆盖 D 组浏览器/密钥/宿主(总数 240)',
-      Array.isArray(hostSurface?.methods) && hostSurface.methods.length === 240
+    check('方法面覆盖 D 组浏览器/密钥/宿主(总数 246)',
+      Array.isArray(hostSurface?.methods) && hostSurface.methods.length === 246
       && hostSurface.methods.includes('ui.local_shell_exec')
       && hostSurface.methods.includes('ui.plugin:app|version'),
       `${String(hostSurface?.methods?.length)} 个方法`)
@@ -632,8 +631,131 @@ async function main() {
     rmSync(host.dir, { recursive: true, force: true })
   }
 
+  // ── 14. M3 直播/接管帧出口(ui.live_* + starhub/live.endpoint) ──
+  console.log('\n[14] M3 直播帧出口(帧枢纽 + 本地 WS + 一次性令牌)')
+  const live = startSidecar(seedAssets)
+  const lv = {
+    request: (method, params) => live.transport.request(`ui.${method}`, params ?? {}),
+  }
+  let liveSocket = null
+  try {
+    const endpoint = await live.transport.request('starhub/live.endpoint', {})
+    check('帧出口端点带路径前缀与真实端口',
+      endpoint?.pathPrefix === '/live/' && Number(endpoint?.port) > 0
+      && String(endpoint?.endpoint).startsWith('ws://127.0.0.1:'),
+      JSON.stringify(endpoint))
+
+    const opened = await lv.request('live_open', { kind: 'android', serial: 's1' })
+    check('开通道返回端点 + 首个一次性令牌 + 通道元数据',
+      String(opened?.endpoint).startsWith('ws://127.0.0.1:')
+      && String(opened?.token).length === 32
+      && opened?.channel?.channel === 'android:s1'
+      && opened?.channel?.kind === 'android'
+      && opened?.channel?.mode === 'frames',
+      JSON.stringify(opened).slice(0, 120))
+    check('缺 scrcpy-server 时明确降级(不静默)',
+      String(opened?.channel?.error).includes('scrcpy-server 资源缺失'),
+      String(opened?.channel?.error))
+
+    // 真 WS 客户端走完整条链:握手 → meta → 未接管拒输入 → 接管后受理
+    liveSocket = await openLiveSocket(opened.endpoint, 'android:s1', opened.token)
+    const meta = await liveSocket.nextJson()
+    check('握手后首帧是 meta(mode/width/height/takeover 齐全)',
+      meta?.t === 'meta' && meta?.mode === 'frames'
+      && 'width' in meta && 'height' in meta && meta?.takeover === false,
+      JSON.stringify(meta).slice(0, 120))
+    const rejected = await liveSocket.sendJson({ t: 'input', action: { type: 'tap', x: 1, y: 2 } })
+    check('未接管时输入被拒(423 语义文案逐字保持)',
+      rejected?.error === 'not in takeover', JSON.stringify(rejected))
+    const takeoverAck = await liveSocket.sendJson({ t: 'takeover', active: true })
+    check('接管开关有应答', takeoverAck?.t === 'ack' && takeoverAck?.takeover === true, JSON.stringify(takeoverAck))
+    const accepted = await liveSocket.sendJson({ t: 'input', action: { type: 'key', key: 'back' } })
+    check('接管后输入被受理', accepted?.input === true, JSON.stringify(accepted))
+
+    // 令牌一次性:复用同一令牌的第二次握手被拒
+    const reused = await openLiveSocket(opened.endpoint, 'android:s1', opened.token)
+      .then((socket) => socket.nextJson())
+      .catch((error) => ({ error: String(error.message ?? error) }))
+    check('一次性令牌复用即拒',
+      reused?.error === 'invalid or used token', JSON.stringify(reused))
+
+    // 断开 → 最后一个订阅者离开 → 通道关闭
+    liveSocket.close()
+    liveSocket = null
+    const deadline = Date.now() + 3000
+    let channels = []
+    for (;;) {
+      channels = (await lv.request('live_list')).channels
+      if (Array.isArray(channels) && channels.length === 0) break
+      if (Date.now() > deadline) break
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    check('最后一个订阅者离开即关通道', Array.isArray(channels) && channels.length === 0, JSON.stringify(channels))
+
+    const status = await lv.request('live_status', { channel: 'android:gone' })
+      .catch((error) => error.message)
+    check('未知通道的 status 文案逐字保持',
+      String(status).includes('直播通道未打开'), String(status))
+    const badToken = await lv.request('live_token', { channel: 'evil' })
+      .catch((error) => error.message)
+    check('非法通道 id 的 token 请求被拒', String(badToken).includes('非法'), String(badToken))
+    const badKind = await lv.request('live_open', { kind: 'browser', serial: 'x' })
+      .catch((error) => error.message)
+    check('browser 帧源未落地 → 明确参数错误',
+      String(badKind).includes('不支持的直播通道类型'), String(badKind))
+
+    const liveSurface = await live.transport.request('starhub/capabilities', {})
+    check('方法面覆盖 M3 直播面(总数 246)',
+      Array.isArray(liveSurface?.methods) && liveSurface.methods.length === 246
+      && liveSurface.methods.includes('ui.live_open')
+      && liveSurface.methods.includes('starhub/live.endpoint'),
+      `${String(liveSurface?.methods?.length)} 个方法`)
+  } finally {
+    liveSocket?.close()
+    live.child.stdin.end()
+    await new Promise((resolve) => {
+      if (live.child.exitCode !== null) { resolve(); return }
+      live.child.once('exit', () => resolve())
+      setTimeout(() => { live.child.kill('SIGKILL'); resolve() }, 2000).unref()
+    })
+    rmSync(live.dir, { recursive: true, force: true })
+  }
+
   console.log(`\n验收结果: ${passed} passed, ${failed} failed`)
   process.exit(failed === 0 ? 0 : 1)
+}
+
+/// 开一条到 sidecar 本地 WS 的最小客户端(只够验收用:握手 + 收/发 JSON)。
+///
+/// 用 Node 内置的全局 `WebSocket`(undici 实现:事件走 addEventListener,
+/// 没有 `.on()`),因此不引第三方依赖。
+async function openLiveSocket(endpoint, channel, token) {
+  const ws = new WebSocket(`${endpoint}/live/${channel}?token=${token}`)
+  const queue = []
+  const waiters = []
+  ws.addEventListener('message', (event) => {
+    const text = String(event.data)
+    let parsed
+    try { parsed = JSON.parse(text) } catch { parsed = { raw: text } }
+    if (waiters.length > 0) { waiters.shift()(parsed); return }
+    queue.push(parsed)
+  })
+  await new Promise((resolve, reject) => {
+    ws.addEventListener('open', resolve, { once: true })
+    ws.addEventListener('error', () => reject(new Error('WS 握手失败')), { once: true })
+    setTimeout(() => reject(new Error('WS 握手超时')), 5000).unref()
+  })
+  const next = () => (queue.length > 0
+    ? Promise.resolve(queue.shift())
+    : new Promise((resolve) => waiters.push(resolve)))
+  return {
+    nextJson: next,
+    sendJson: async (value) => {
+      ws.send(JSON.stringify(value))
+      return next()
+    },
+    close: () => { try { ws.close() } catch { /* 已关 */ } },
+  }
 }
 
 main().catch((error) => {

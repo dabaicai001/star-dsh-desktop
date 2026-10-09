@@ -855,17 +855,28 @@ fn capabilities_lists_the_android_method_surface() {
         "ui.screenshot_begin_region",
         "ui.plugin:dialog|open",
         "ui.plugin:app|version",
+        // M3:直播/接管面板的通道管理 + 帧出口端点
+        "ui.live_open",
+        "ui.live_token",
+        "ui.live_status",
+        "ui.live_close",
+        "ui.live_list",
     ] {
         assert!(
             methods.contains(&expected),
             "missing {expected}: {methods:?}"
         );
     }
+    assert!(
+        methods.contains(&"starhub/live.endpoint"),
+        "missing starhub/live.endpoint: {methods:?}"
+    );
     // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)+ 16(browser)
-    // + 4 桥命令 + 4 UI 面(资产 CRUD)+ 30 UI 面 B 组(交互会话)
+    // + 5 桥命令 + 4 UI 面(资产 CRUD)+ 30 UI 面 B 组(交互会话)
     // + 86 UI 面 C 组(数据面连接)+ 8 UI 面 D 组(审计/告警)
-    // + 12 UI 面 D 组(Android/沙箱)+ 11 UI 面 D 组(浏览器/密钥/宿主)= 240
-    assert_eq!(methods.len(), 240, "方法面总数: {methods:?}");
+    // + 12 UI 面 D 组(Android/沙箱)+ 11 UI 面 D 组(浏览器/密钥/宿主)
+    // + 5 UI 面 M3(直播通道)+ 1 桥命令(live.endpoint)= 246
+    assert_eq!(methods.len(), 246, "方法面总数: {methods:?}");
 }
 
 /// Android 方法面 roundtrip(不触设备的分支):未授权写操作硬错误;
@@ -1754,28 +1765,86 @@ fn ui_devices_methods_roundtrip_through_the_real_binary() {
         "{response}"
     );
 
-    // 两个窗口类动作显式降级(不是 -32601)
-    for (id, request) in [
-        (
-            "e-13",
-            r#"{"jsonrpc":"2.0","id":"e-13","method":"ui.android_ui_open_live","params":{"serial":"s1"}}"#,
-        ),
-        (
-            "e-14",
-            r#"{"jsonrpc":"2.0","id":"e-14","method":"ui.desktop_ui_open_live_window","params":{"sandboxId":"box-1","containerId":"c1","novncPort":15900,"takeover":true}}"#,
-        ),
-    ] {
-        let response = roundtrip(&mut child, request);
-        let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-        assert_eq!(value["error"]["code"], -32603, "{id}: {response}");
-        assert!(
-            value["error"]["message"]
-                .as_str()
-                .expect("message")
-                .contains("M3"),
-            "{id}: {response}"
-        );
-    }
+    // M3:Android 直播通道真的开起来了(端点 + 首个一次性令牌 + 通道元数据)。
+    // scrcpy-server 不在 sidecar 的资源目录里 → 通道带明确降级原因,直播走轮询。
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-13","method":"ui.android_ui_open_live","params":{"serial":"s1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert!(
+        value["result"]["endpoint"]
+            .as_str()
+            .is_some_and(|endpoint| endpoint.starts_with("ws://127.0.0.1:")),
+        "{response}"
+    );
+    assert_eq!(
+        value["result"]["token"].as_str().map(str::len),
+        Some(32),
+        "一次性令牌(uuid simple): {response}"
+    );
+    assert_eq!(value["result"]["channel"]["channel"], "android:s1");
+    assert_eq!(value["result"]["channel"]["kind"], "android");
+    assert_eq!(value["result"]["channel"]["mode"], "frames");
+    assert!(
+        value["result"]["channel"]["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("scrcpy-server 资源缺失")),
+        "缺 server 二进制时明确降级: {response}"
+    );
+
+    // 令牌一次性:同一个令牌兑换第二次必须失败(ui.live_token 只补发新的)
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-13b","method":"ui.live_token","params":{"channel":"android:s1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    let second = value["result"]["token"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert_ne!(second, "", "{response}");
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-13c","method":"ui.live_status","params":{"channel":"android:ghost"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("直播通道未打开")),
+        "{response}"
+    );
+
+    // 沙箱桌面窗口类动作仍显式降级(帧源随 M3 第三批落地)
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-14","method":"ui.desktop_ui_open_live_window","params":{"sandboxId":"box-1","containerId":"c1","novncPort":15900,"takeover":true}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32603, "{response}");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("M3"),
+        "{response}"
+    );
+
+    // 帧出口端点:桥命令给 bridge 的 registerUpgrade 用
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"e-15","method":"starhub/live.endpoint"}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    assert_eq!(value["result"]["pathPrefix"], "/live/");
+    assert!(
+        value["result"]["port"].as_u64().unwrap_or(0) > 0,
+        "WS server 应已绑定: {response}"
+    );
 
     drop(child.stdin.take());
     let _ = child.wait();
@@ -1963,6 +2032,170 @@ fn ui_host_methods_roundtrip_through_the_real_binary() {
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
     assert!(value["error"].is_null(), "{response}");
     assert_eq!(value["result"], "版本归 Electron 壳(M2 占位)");
+
+    drop(child.stdin.take());
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// M3 直播帧出口的端到端验收:真二进制 + 真 WS 客户端。
+///
+/// 走完整条链:`ui.android_ui_open_live` 开通道 → sidecar 的 WS server 发令牌 →
+/// 客户端带令牌握手 → 收到 meta → 未接管时输入被拒 → 接管后输入下发 → 断开后
+/// 通道关闭(最后一个订阅者离开即关)。
+///
+/// adb 指向一个存在但不可执行的文件:路径解析因此成功(泵不会因「找不到 adb」
+/// 立刻关通道),而每次 screencap 自然失败——帧通道的协议行为不依赖真设备。
+#[tokio::test]
+async fn live_frame_channel_roundtrips_through_the_real_binary() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+
+    let unique = format!(
+        "starhub-sidecar-live-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+    let dir = std::env::temp_dir().join(unique);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let assets = dir.join("assets.json");
+    std::fs::write(&assets, br#"{"assets":[]}"#).expect("seed assets file");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_starhub-sidecar-rust"));
+    command
+        .env("STARHUB_ASSETS_FILE", &assets)
+        .env("STARHUB_SECRETS_FILE", "")
+        .env("STARHUB_KNOWN_HOSTS_FILE", dir.join("known-hosts.json"))
+        .env("STARHUB_AUDIT_FILE", dir.join("audit.json"))
+        .env("STARHUB_ALERTS_FILE", dir.join("alerts.json"))
+        // 让 adb 路径解析成功(存在即可),泵因此不会立刻关通道
+        .env("STARHUB_ADB_PATH", &assets)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().expect("sidecar binary spawns");
+
+    fn roundtrip(child: &mut Child, request: &str) -> String {
+        let stdin = child.stdin.as_mut().expect("stdin piped");
+        stdin.write_all(request.as_bytes()).expect("write request");
+        stdin.write_all(b"\n").expect("write newline");
+        stdin.flush().expect("flush request");
+        read_response(child)
+    }
+
+    // 1. 开通道:拿端点 + 首个一次性令牌
+    let response = roundtrip(
+        &mut child,
+        r#"{"jsonrpc":"2.0","id":"l-1","method":"ui.android_ui_open_live","params":{"serial":"s1"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert!(value["error"].is_null(), "{response}");
+    let endpoint = value["result"]["endpoint"]
+        .as_str()
+        .expect("endpoint")
+        .to_string();
+    let token = value["result"]["token"]
+        .as_str()
+        .expect("token")
+        .to_string();
+    assert!(endpoint.starts_with("ws://127.0.0.1:"), "{response}");
+
+    // 2. 带令牌握手
+    let url = format!("{endpoint}/live/android:s1?token={token}");
+    let (mut socket, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("WS handshake with a live token");
+
+    // 3. 首条消息是 meta(降级原因来自缺 scrcpy-server)
+    let first = socket.next().await.expect("meta frame").expect("meta ok");
+    let Message::Text(meta) = first else {
+        panic!("expected a text meta frame");
+    };
+    let meta: serde_json::Value = serde_json::from_str(meta.as_str()).expect("meta parses");
+    assert_eq!(meta["t"], "meta");
+    assert_eq!(meta["mode"], "frames");
+    assert!(
+        meta["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("scrcpy-server")),
+        "{meta}"
+    );
+
+    // 4. 未接管:输入被拒(423 语义的文本逐字保持)
+    socket
+        .send(Message::text(
+            r#"{"t":"input","action":{"type":"tap","x":1,"y":2}}"#,
+        ))
+        .await
+        .expect("send input");
+    let reply = socket.next().await.expect("reply").expect("reply ok");
+    let Message::Text(reply) = reply else {
+        panic!("expected a text reply");
+    };
+    let reply: serde_json::Value = serde_json::from_str(reply.as_str()).expect("reply parses");
+    assert_eq!(reply["error"], "not in takeover", "{reply}");
+
+    // 5. 接管后:输入被受理
+    socket
+        .send(Message::text(r#"{"t":"takeover","active":true}"#))
+        .await
+        .expect("send takeover");
+    let ack = socket.next().await.expect("ack").expect("ack ok");
+    assert!(matches!(ack, Message::Text(_)), "{ack:?}");
+    socket
+        .send(Message::text(
+            r#"{"t":"input","action":{"type":"key","key":"back"}}"#,
+        ))
+        .await
+        .expect("send key");
+    let ack = socket.next().await.expect("ack").expect("ack ok");
+    let Message::Text(ack) = ack else {
+        panic!("expected a text ack");
+    };
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(ack.as_str()).expect("ack parses")["input"],
+        true,
+        "{ack}"
+    );
+
+    // 6. 令牌一次性:复用同一令牌的第二次握手必须被拒
+    let (mut again, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("handshake completes at the WS layer");
+    let rejected = again
+        .next()
+        .await
+        .expect("rejection")
+        .expect("rejection ok");
+    let Message::Text(rejected) = rejected else {
+        panic!("expected a text rejection");
+    };
+    assert!(
+        rejected.as_str().contains("invalid or used token"),
+        "{rejected}"
+    );
+    let _ = again.close(None).await;
+
+    // 7. 断开 → 最后一个订阅者离开 → 通道关闭
+    let _ = socket.close(None).await;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        let response = roundtrip(
+            &mut child,
+            r#"{"jsonrpc":"2.0","id":"l-2","method":"ui.live_list"}"#,
+        );
+        let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+        if value["result"]["channels"]
+            .as_array()
+            .is_some_and(|c| c.is_empty())
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "通道未在断开后关闭: {response}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 
     drop(child.stdin.take());
     let _ = child.wait();

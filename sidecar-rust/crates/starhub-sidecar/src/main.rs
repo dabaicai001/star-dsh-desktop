@@ -239,12 +239,33 @@ fn main() {
         FileKnownHostsStore::from_env(),
         Arc::clone(&sink),
     ));
-    // Android 域:adb 直连本机(与 sidecar 同机),直播/接管是窗口面(M3),
-    // 这里只经通知出口表达意图。
-    let android = Arc::new(AndroidRuntime::new(
+    // 直播/接管帧出口(M3):帧枢纽先建,Android 域与它共享同一处授权/接管/通道。
+    // 直播不再是窗口面——scrcpy H.264 / 截图轮询经本地 WS 推给壳内面板。
+    let live_hub = Arc::new(starhub_live::FrameHub::new());
+    // adb 路径解析与 Android 域共用同一份文件设置 + 同一个管理器(缓存不分裂)
+    let android_settings: Arc<dyn starhub_domain_android::SettingsStore> =
+        Arc::new(starhub_sidecar::desktop_runtime::FileSettingsStore::from_env());
+    let android_manager = Arc::new(starhub_domain_android::AndroidManager::new());
+    let live = Arc::new(
+        match starhub_sidecar::live_runtime::LiveRuntime::with_hub(
+            Arc::clone(&live_hub),
+            Arc::clone(&android_settings),
+            Arc::clone(&android_manager),
+            &runtime,
+        ) {
+            Ok(live) => live,
+            Err(error) => {
+                eprintln!("starhub-sidecar-rust: 直播帧通道启动失败: {error}");
+                std::process::exit(1);
+            }
+        },
+    );
+    let android = Arc::new(AndroidRuntime::with_live(
         Arc::clone(&ssh.assets()),
         Arc::clone(&bindings),
         Arc::clone(&sink),
+        Arc::clone(&live_hub),
+        live.android().clone(),
     ));
     let bridge_state = Arc::new(BridgeState::default());
     let ui_state = Arc::new(starhub_sidecar::ui_runtime::UiRuntime::from_env());
@@ -258,6 +279,7 @@ fn main() {
         Arc::clone(&sink),
         Arc::clone(&bridge_state),
         Arc::clone(&ui_state),
+        Arc::clone(&live),
     );
 
     let stdin = std::io::stdin();

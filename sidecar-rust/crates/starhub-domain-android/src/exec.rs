@@ -674,7 +674,7 @@ pub async fn execute(android: &Android<'_>, name: &str, args: &Value) -> Result<
             let serial = ctx.serial.clone();
             android.live.open(&serial, ctx.resolution).await?;
             Ok(format!(
-                "直播窗口已打开(设备 {serial})。scrcpy 通道就绪后自动切换 H.264 实时画面,否则截图轮询兜底;窗口内勾选「接管」后用户可亲手操作,期间你的写操作会被拒绝。"
+                "直播面板已打开(设备 {serial})。scrcpy 通道就绪后自动切换 H.264 实时画面,否则截图轮询兜底;面板内勾选「接管」后用户可亲手操作,期间你的写操作会被拒绝。"
             ))
         }
         "android_pull" => {

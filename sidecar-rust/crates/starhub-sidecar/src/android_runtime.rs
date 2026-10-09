@@ -8,20 +8,24 @@
 //! | `SettingsStore` | `FileSettingsStore`(与 desktop 域共用 settings.json) |
 //! | `CacheDir` | `STARHUB_CACHE_DIR` / `<cwd>/starhub-cache` |
 //! | `FrameStore` | [`FileFrameStore`](crate::methods::android::FileFrameStore) |
-//! | `LiveLauncher` | 事件通知出口(M3 的面板消费) |
-//! | `TakeoverState` | 内存集合(桥命令 `starhub/android.takeover` 维护) |
+//! | `LiveLauncher` | [`HubLiveLauncher`](crate::methods::android::HubLiveLauncher)(M3:帧通道) |
+//! | `TakeoverState` | [`HubTakeoverState`](starhub_live::HubTakeoverState)(M3:帧枢纽) |
 //!
-//! 直播(scrcpy H.264 / 轮询帧 / custom protocol)是窗口面,M1 留在 Tauri 侧。
+//! M3 起直播/接管不再是窗口面:`LiveLauncher` 直接开 [`starhub_live`] 的帧通道
+//! (scrcpy H.264 / 截图轮询 + 接管输入),接管标志由帧枢纽统一持有——域名工具
+//! 的执行点与面板读同一处,AI 写操作在接管期间一律拒绝(不撤销授权)。
 
 use std::sync::Arc;
 
 use starhub_domain_android::adb::LocalAdb;
 use starhub_domain_android::AndroidManager;
+use starhub_live::android::AndroidLiveSource;
+use starhub_live::{FrameHub, HubTakeoverState};
 
 use crate::assets::AssetStore;
 use crate::bindings::SessionBindings;
 use crate::desktop_runtime::FileSettingsStore;
-use crate::methods::android::{EnvCacheDir, FileFrameStore, MemoryTakeover, NotifyLiveLauncher};
+use crate::methods::android::{EnvCacheDir, FileFrameStore, HubLiveLauncher};
 
 /// Android 域运行时(20 个 `android_*` 方法共享)。
 pub struct AndroidRuntime {
@@ -30,8 +34,8 @@ pub struct AndroidRuntime {
     settings: FileSettingsStore,
     cache: EnvCacheDir,
     frames: FileFrameStore,
-    live: NotifyLiveLauncher,
-    takeover: MemoryTakeover,
+    live: HubLiveLauncher,
+    takeover: Arc<HubTakeoverState>,
     /// 资产存储(与其它域共用;Android 工具目前不直接用它,预留)。
     #[allow(dead_code)]
     assets: Arc<AssetStore>,
@@ -41,11 +45,13 @@ pub struct AndroidRuntime {
 }
 
 impl AndroidRuntime {
-    /// 装配运行时。
-    pub fn new(
+    /// 装配运行时(直播/接管线接帧枢纽)。
+    pub fn with_live(
         assets: Arc<AssetStore>,
         bindings: Arc<SessionBindings>,
         sink: Arc<dyn starhub_domain_ssh::events::EventSink>,
+        hub: Arc<FrameHub>,
+        live_source: AndroidLiveSource,
     ) -> Self {
         Self {
             manager: AndroidManager::new(),
@@ -53,14 +59,16 @@ impl AndroidRuntime {
             settings: FileSettingsStore::from_env(),
             cache: EnvCacheDir,
             frames: FileFrameStore::from_env(),
-            live: NotifyLiveLauncher::new(sink),
-            takeover: MemoryTakeover::default(),
+            live: HubLiveLauncher::new(live_source, sink),
+            takeover: Arc::new(HubTakeoverState::new(hub)),
             assets,
             bindings,
         }
     }
 
     /// 用显式设置/帧存储路径装配(测试 / 装配点用)。
+    ///
+    /// 自建一个独立帧枢纽:测试不关心与真实 WS server 共享状态,只要 seam 齐全。
     pub fn with_paths(
         assets: Arc<AssetStore>,
         bindings: Arc<SessionBindings>,
@@ -69,14 +77,21 @@ impl AndroidRuntime {
         cache: EnvCacheDir,
         frames: FileFrameStore,
     ) -> Self {
+        let hub = Arc::new(FrameHub::new());
+        let source = AndroidLiveSource::new(
+            Arc::clone(&hub),
+            Arc::new(LocalAdb::new()),
+            Arc::new(NullSettings),
+            Arc::new(AndroidManager::new()),
+        );
         Self {
             manager: AndroidManager::new(),
             adb: LocalAdb::new(),
             settings,
             cache,
             frames,
-            live: NotifyLiveLauncher::new(sink),
-            takeover: MemoryTakeover::default(),
+            live: HubLiveLauncher::new(source, sink),
+            takeover: Arc::new(HubTakeoverState::new(hub)),
             assets,
             bindings,
         }
@@ -97,7 +112,7 @@ impl AndroidRuntime {
         &self.settings
     }
 
-    /// 接管开关(桥命令 `starhub/android.takeover`)。
+    /// 接管开关(面板的 WS `{"t":"takeover"}` 写帧枢纽;这里保留给桥命令兼容)。
     pub fn set_takeover(&self, serial: &str, active: bool) {
         self.takeover.set(serial, active);
     }
@@ -111,8 +126,20 @@ impl AndroidRuntime {
             cache: &self.cache,
             frames: &self.frames,
             live: &self.live,
-            takeover: &self.takeover,
+            takeover: self.takeover.as_ref(),
             session_id,
         }
+    }
+}
+
+/// 空设置存储(`with_paths` 的测试装配用;真实装配走 `FileSettingsStore`)。
+struct NullSettings;
+
+impl starhub_domain_android::SettingsStore for NullSettings {
+    fn get<'a>(
+        &'a self,
+        _key: &'a str,
+    ) -> starhub_domain_android::BoxFuture<'a, Result<Option<String>, String>> {
+        Box::pin(async move { Ok(None) })
     }
 }

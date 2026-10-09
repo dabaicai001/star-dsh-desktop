@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 use starhub_domain_android::store::{FrameStore, ReplayFrame};
-use starhub_domain_android::{BoxFuture, CacheDir, LiveLauncher, TakeoverState};
+use starhub_domain_android::{BoxFuture, CacheDir, LiveLauncher};
 
 use crate::android_runtime::AndroidRuntime;
 use crate::desktop_runtime::FileSettingsStore;
@@ -45,53 +45,49 @@ impl CacheDir for EnvCacheDir {
     }
 }
 
-/// 直播启动:注册一次会话并通知 bridge(M3 的面板消费该通知)。
-pub struct NotifyLiveLauncher {
+/// 直播启动(M3):注册帧通道 + 起轮询泵 + 后台尝试 scrcpy,并通知 bridge
+/// (面板据此切到直播 tab)。
+///
+/// 与 Tauri 版「开窗口」同语义:用户点按钮 / 模型调 `android_open_live` 都是
+/// 打开直播的意图表达;差别只在承载物从窗口变成壳内面板 + WS 帧通道。
+pub struct HubLiveLauncher {
+    source: starhub_live::android::AndroidLiveSource,
     sink: Arc<dyn starhub_domain_ssh::events::EventSink>,
 }
 
-impl NotifyLiveLauncher {
-    pub fn new(sink: Arc<dyn starhub_domain_ssh::events::EventSink>) -> Self {
-        Self { sink }
+impl HubLiveLauncher {
+    pub fn new(
+        source: starhub_live::android::AndroidLiveSource,
+        sink: Arc<dyn starhub_domain_ssh::events::EventSink>,
+    ) -> Self {
+        Self { source, sink }
     }
 }
 
-impl LiveLauncher for NotifyLiveLauncher {
+impl LiveLauncher for HubLiveLauncher {
     fn open<'a>(
         &'a self,
         serial: &'a str,
         resolution: (i64, i64),
     ) -> BoxFuture<'a, Result<(), String>> {
-        self.sink.emit(
-            "starhub://android-live",
-            json!({ "serial": serial, "width": resolution.0, "height": resolution.1 }),
-        );
-        Box::pin(async move { Ok(()) })
+        let sink = Arc::clone(&self.sink);
+        let serial_owned = serial.to_string();
+        Box::pin(async move {
+            self.source.open(&serial_owned, resolution).await?;
+            sink.emit(
+                "starhub://android-live",
+                json!({ "serial": serial_owned, "width": resolution.0, "height": resolution.1 }),
+            );
+            Ok(())
+        })
     }
 }
 
-/// 接管状态:由桥命令 `starhub/android.takeover` 维护(内存集合)。
-#[derive(Default)]
-pub struct MemoryTakeover {
-    active: std::sync::Mutex<std::collections::HashSet<String>>,
-}
-
-impl MemoryTakeover {
-    pub fn set(&self, serial: &str, active: bool) {
-        let mut set = self.active.lock().unwrap();
-        if active {
-            set.insert(serial.to_string());
-        } else {
-            set.remove(serial);
-        }
-    }
-}
-
-impl TakeoverState for MemoryTakeover {
-    fn is_takeover(&self, serial: &str) -> bool {
-        self.active.lock().unwrap().contains(serial)
-    }
-}
+/// 接管状态:帧枢纽是唯一事实来源(面板的接管开关与 AI 写操作互斥读同一处)。
+///
+/// Tauri 版是 `MemoryTakeover` 内存集合 + 桥命令维护;M3 起由 WS 的
+/// `{"t":"takeover"}` 消息直接写帧枢纽,域名工具经 [`HubTakeoverState`] 读。
+pub type LiveTakeoverState = starhub_live::HubTakeoverState;
 
 /// JSON 文件版回放帧存储(与沙箱/资产同一套路:写穿透)。
 pub struct FileFrameStore {
@@ -337,13 +333,24 @@ mod tests {
     }
 
     #[test]
-    fn takeover_memory_toggles() {
-        let takeover = MemoryTakeover::default();
+    fn takeover_hub_toggles() {
+        use starhub_domain_android::TakeoverState;
+        // M3 起接管标志住在帧枢纽:没有通道时 is_takeover 恒 false,
+        // set 在通道不存在时返回 false(不凭空造状态)。
+        let hub = Arc::new(starhub_live::FrameHub::new());
+        let takeover = starhub_live::HubTakeoverState::new(Arc::clone(&hub));
         assert!(!takeover.is_takeover("serial-1"));
-        takeover.set("serial-1", true);
+        assert!(!takeover.set("serial-1", true), "通道未开,无处安放接管标志");
+        hub.open(
+            "android:serial-1",
+            starhub_live::hub::KIND_ANDROID,
+            starhub_live::hub::ChannelMeta::default(),
+        )
+        .unwrap();
+        assert!(takeover.set("serial-1", true));
         assert!(takeover.is_takeover("serial-1"));
         assert!(!takeover.is_takeover("serial-2"));
-        takeover.set("serial-1", false);
+        assert!(takeover.set("serial-1", false));
         assert!(!takeover.is_takeover("serial-1"));
     }
 }

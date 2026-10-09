@@ -166,6 +166,11 @@ pub const FOCUS_TOOL_METHOD: &str = "starhub/focus.tool";
 /// `starhub/live.snapshot` 请求方法(契约 §2.2)。
 pub const LIVE_SNAPSHOT_METHOD: &str = "starhub/live.snapshot";
 
+/// `starhub/live.endpoint` 请求方法(M3 帧出口):bridge 的
+/// `webServer.registerUpgrade` 用它拿本地 WS 端点(端口 + 路径前缀),
+/// 令牌由 `ui.live_token` 单独签发——端点可长期复用,令牌一次性。
+pub const LIVE_ENDPOINT_METHOD: &str = "starhub/live.endpoint";
+
 /// `starhub/live.snapshot`(契约 §2.2):注册表快照 + 传输任务 + recentExecs +
 /// 任务轨迹。快照时若剔除断线条目(注册表变更),顺带补发一次 registry.sync。
 pub async fn live_snapshot(

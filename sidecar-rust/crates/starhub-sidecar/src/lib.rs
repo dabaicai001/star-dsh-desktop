@@ -26,6 +26,7 @@
 //! | [`audit_store`] | audit log (JSON file) + AI tool-call audit records |
 //! | [`alert_store`] | alert rules (JSON file) |
 //! | [`ui_runtime`] | UI-plane settings state (audit + alerts) for the `ui.*` methods |
+//! | [`live_runtime`] | live/takeover frame export (M3): local WS server + frame hub |
 
 pub mod alert_store;
 pub mod android_runtime;
@@ -38,6 +39,7 @@ pub mod desktop_runtime;
 pub mod desktop_store;
 pub mod jsonrpc;
 pub mod known_hosts_store;
+pub mod live_runtime;
 pub mod methods;
 pub mod registry;
 pub mod runtime;
