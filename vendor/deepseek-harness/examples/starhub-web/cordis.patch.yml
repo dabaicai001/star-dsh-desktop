@@ -2,9 +2,11 @@
 # boot.mjs 把它拷到 $DSH_HOME/profiles/web/cordis.patch.yml;patch 会整段替换
 # 目标行的 config,所以 webserver 行在此完整重述自己的 host/port。
 
-# webserver 端口模板(避开默认 3080):Rust 物化 profile 时由
-# rewrite_patch_port 改写为实际端口——开发(debug)实例 3185 起、正式
-# (release)实例 3085,见 src-tauri/src/harness/web.rs 的 DEFAULT_PORT。
+# webserver 端口模板(避开默认 3080):这里写的是 web 组合的文档缺省值,
+# package:dsh-runtime 把本文件原样打进运行时包。desktop 组合的装机走
+# scripts/provision-dsh.mjs(用 examples/starhub-desktop 的模板,受管 webserver
+# 行整块替换);需要钉死端口(防火墙放行)的部署用 --port 传给 provisioning,
+# 或直接改下面这行的 port。
 - id: webserver
   config:
     host: 127.0.0.1

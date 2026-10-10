@@ -1,10 +1,9 @@
 // 打包前清理 StarHub 本地包的 lib 产物(防「源码改了但旧产物进包」)。
 //
-// 背景:tauri:build 的 beforeBuildCommand 依赖 package:dsh-runtime 内部的
-// build:lib 全量重编译;但本地增量开发时 lib/ 产物可能停留在旧版本,且若
-// tsc 编译失败未中断打包,旧产物会被静默拷贝进 dsh-runtime → exe(v0.99.0
-// 踩坑:前端 client-nav 改完未重建,exe 里还是旧 BastionSelectCard,「选机器
-// 浮层不关闭」修复没进包)。
+// 背景:package:dsh-runtime 内部的 build:lib 会全量重编译;但本地增量开发时
+// lib/ 产物可能停留在旧版本,且若 tsc 编译失败未中断打包,旧产物会被静默拷贝进
+// dsh-runtime → exe(v0.99.0 踩坑:前端 client-nav 改完未重建,exe 里还是旧
+// BastionSelectCard,「选机器浮层不关闭」修复没进包)。
 //
 // 本脚本删除 vendor/deepseek-harness/packages/starhub/*/lib(tsc 的 lib/types
 // 与 tsdown 的 lib/*.js 一并清掉),让打包流程里的 build:lib 必然全量重编译:

@@ -1,7 +1,7 @@
 # StarHub × dsh **desktop** 组合的 profile 用户层(去 Tauri 化 M4)。
 #
-# 与 `starhub-web/cordis.patch.yml`(Tauri 壳内嵌 web runtime 用的那一份)的差别
-# 只有两处,都是「壳换了」的必然:
+# 与 `starhub-web/cordis.patch.yml`(dsh web 组合用的那一份,仍由
+# package:dsh-runtime 入包)的差别只有两处,都是「壳换成上游 Electron」的必然:
 #
 # 1. **`starhub-bridge` 取代 `sdk-jsonrpc-server`**。两者提供同一对私有服务
 #    (`sdk-transport` / `sdk-notifications`),同时组合会在加载期 fail loud

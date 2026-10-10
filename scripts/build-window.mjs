@@ -1,13 +1,14 @@
 /**
  * Build the standalone StarHub React workbench window app and stage its dist
  * at the repo-root `dist-starhub-react/` where starhub-host-static serves the
- * `/starhub-react` prefix (and where packaged Tauri resources include it).
+ * `/starhub-react` prefix (and where provisioning copies it into
+ * `<dsh-home>/starhub/resources/`).
  *
  * The app lives in the vendored harness workspace
  * (`vendor/deepseek-harness/apps/starhub-window`, package `@deepseek-ai/starhub-window`);
  * its Vite build emits to `dist/` with the `/starhub-react/` base. We copy that
- * into the repo-root staging dir so the host-static fallback and the Tauri
- * bundle both resolve it without an env var.
+ * into the repo-root staging dir so the host-static fallback and the packaged
+ * shell both resolve it without an env var.
  */
 import { cp, mkdir } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
