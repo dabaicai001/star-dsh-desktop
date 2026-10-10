@@ -1,7 +1,7 @@
 /**
  * Browser StarHub navigation plugin(方案 P1,重构版):侧栏「工具」主面板行
  * (sidebar.panellist + main v0.123.2;此前为 footer.action + shell.overlay
- * 浮层)+ shell.overlay(连接对话框 / 连接卡 / 沙箱横幅)+ dsh 设置面板的
+ * 浮层)+ shell.overlay(连接对话框 / 连接卡)+ dsh 设置面板的
  * StarHub 分区。
  *
  * 状态拆分:nav store(root scope,仅大类展开态)挂在 sidebar.navigation
@@ -15,7 +15,7 @@
  * 工作台是 dsh 主壳内的一个 keyed 主面板(`main` 槽 key=`starhub-workbench`,
  * 见 StarHubToolWorkspace 同机制),每个资产实例一页(iframe 承载同源的
  * `/starhub-react/` 独立程序);入口点击经 `openNewPage` → 页簿开/聚焦一页并
- * `layout.selectPanel` 切到该面板,页簿空时让回工具面板。选择桥仍记录当前
+ * `layout.selectPanel` 切到该面板,页簿空时让回会话视图。选择桥仍记录当前
  * 资产(instanceId/routePrefix),供工具上下文(AI 注入)同步使用。
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -64,7 +64,6 @@ import {
 import { StarHubLivePanel, type StarHubLivePanelInjected } from './live/StarHubLivePanel.tsx'
 import { AndroidSettingsTab } from './settings/android.tsx'
 import { SshSettingsTab } from './settings/ssh.tsx'
-import { SandboxUserActionBanner } from './sandbox/SandboxUserActionBanner.tsx'
 
 /**
  * Required services: the slot registry, the connection wire, the input-trigger
@@ -176,14 +175,16 @@ export function apply(ctx: Context): void {
     })
     return () => { installWorkbenchPageHost(null) }
   }, 'starhub: workbench page host')
-  // 页簿空 → 面板让回工具列表(用户在这儿的动线:工具面板 → 点资产 → 工作台
-  // 页 → 关页)。store 的 subscribe 不带快照参数(框架约定),「上一态有没有页」
-  // 由本地变量记住,只在「有页变无页」的沿上切,避免无谓的面板跳转。
+  // 页簿空 → 面板让回**会话视图**(v0.132.0:不再回退工具列表——关页即离开
+  // 工具面板,与面板 × 同义;工作台/直播两个页面同一规则)。用户在这儿的动线:
+  // 工具面板 → 点资产 → 工作台页 → 关页 → 回会话。store 的 subscribe 不带快照
+  // 参数(框架约定),「上一态有没有页」由本地变量记住,只在「有页变无页」的沿上切,
+  // 避免无谓的面板跳转。
   ctx.effect(() => {
     let hadPages = workbench.source.getSnapshot().pages.length > 0
     return workbench.source.subscribe(() => {
       const hasPages = workbench.source.getSnapshot().pages.length > 0
-      if (hadPages && !hasPages) layout.selectPanel(TOOLS_PANEL_ID)
+      if (hadPages && !hasPages) layout.selectPanel(null)
       hadPages = hasPages
     })
   }, 'starhub: workbench panel fallback')
@@ -211,20 +212,11 @@ export function apply(ctx: Context): void {
     order: 115,
     label: 'StarHub ConnCard',
   }, StarHubConnCard))
-  // 沙箱桌面「请求人工介入」常驻横幅(desktop_request_user_action):无待答
-  // 请求时渲染 null;事件订阅在组件内部(HMR/卸载自动退订)。
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'starhub-sandbox-user-action',
-    order: 120,
-    label: 'StarHub Sandbox UserAction',
-  }, SandboxUserActionBanner))
+  // 沙箱桌面「请求人工介入」横幅随沙箱桌面域整体退役(v0.132.0)。
   const workspaceInject = (): StarHubToolWorkspaceInjected => ({
     openAsset: openAssetPage,
     refreshAssets: assets.refresh,
     openConnectionManager: connectionManager.open,
-    // 执行记录视图(v0.100.0):头部「执行」按钮的开关与清空(关闭回到资产列表)。
-    closeExecView: execRecords.closeView,
     clearExecRecords: execRecords.clear,
     // 行内「断开连接」(v0.100.1):先移除记录(UI 即时消失),再异步断开
     // 后端 SSH 连接;断开失败仅记日志——连接可能已自行断开,记录照样不显示。
@@ -295,13 +287,11 @@ export function apply(ctx: Context): void {
     inject: workspaceInject,
   }, StarHubToolWorkspace))
   // 工作台主面板(M2 第 6 步):与工具面板同机制的第二个 keyed main 槽。
-  // 资产实例操作页在此承载(iframe + 标签条),页簿空时组件渲染 null。
-  // v0.130.0:标签条左侧加「返回工具列表」按钮——工作台不占侧栏行,无该
-  // 入口时用户关掉最后一页才能回工具列表。
+  // 资产实例操作页在此承载(iframe + 标签条),页簿空时组件渲染 null 且
+  // 订阅把面板让回会话视图;回工具列表走侧栏常驻的「工具」行。
   const workbenchInject = (): StarHubWorkbenchPanelInjected => ({
     activatePage: (key) => { workbench.activateIfOpen(key) },
     closePage: (key) => { workbench.close(key) },
-    backToTools: () => { layout.selectPanel(TOOLS_PANEL_ID) },
     hooks: { workbench: workbench.source },
   })
   ctx.slots.inject('main', () => ctx.slots.register({
@@ -314,7 +304,7 @@ export function apply(ctx: Context): void {
   // 会话时自动切入,与工作台面板同先例)。帧与输入走宿主 upgrade 路由
   // `/starhub/live`(bridge 中继到 sidecar 的本地 WS),通道簿空时组件渲染
   // null。入口是 Android 子类的「直播」按钮与模型面 `android_ui_open_live`
-  // 的 UI 意图;簿空 → 面板让回工具列表(下方订阅)。
+  // 的 UI 意图;簿空 → 面板让回会话视图(下方订阅)。
   const live = createLivePanelStore()
   const openLiveChannel = (channel: LiveChannel): void => {
     live.open(channel)
@@ -328,7 +318,7 @@ export function apply(ctx: Context): void {
     let hadChannels = live.source.getSnapshot().channels.length > 0
     return live.source.subscribe(() => {
       const hasChannels = live.source.getSnapshot().channels.length > 0
-      if (hadChannels && !hasChannels) layout.selectPanel(TOOLS_PANEL_ID)
+      if (hadChannels && !hasChannels) layout.selectPanel(null)
       hadChannels = hasChannels
     })
   }, 'starhub: live panel fallback')
@@ -356,8 +346,9 @@ export function apply(ctx: Context): void {
   )
   // 会话头部「执行」按钮(v0.100.0):点击打开工具抽屉并切到
   // 「SSH 执行记录」视图(ai 静默执行的 ssh_exec 完成记录,行点击展开/收起,
-  // 多条纵向滚动);再次点击返回资产列表。数据由 apply 层的 execRecords 桥
-  // 常驻订阅 ssh:exec-done 累积,按钮只是开关。
+  // 多条纵向滚动);再次点击收起视图回到面板的资产列表(面板本身的出口是
+  // × = 回会话)。数据由 apply 层的 execRecords 桥常驻订阅 ssh:exec-done
+  // 累积,按钮只是开关。
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
     name: 'conversation.session.header.actions',
     id: 'starhub-exec-drawer',

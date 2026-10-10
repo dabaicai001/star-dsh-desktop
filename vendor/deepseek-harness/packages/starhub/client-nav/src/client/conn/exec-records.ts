@@ -84,7 +84,7 @@ export interface ExecRecordsBridge {
   readonly clear: () => void
   /** 切到执行记录视图(头部「执行」按钮;视图互斥复位在注入回调层组合)。 */
   readonly openView: () => void
-  /** 返回资产列表(关闭执行记录视图)。 */
+  /** 收起执行记录视图(回到面板的资产列表;面板 × 则整个面板回会话)。 */
   readonly closeView: () => void
 }
 

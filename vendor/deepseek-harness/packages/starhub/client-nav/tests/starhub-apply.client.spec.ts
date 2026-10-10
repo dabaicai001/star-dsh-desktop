@@ -12,8 +12,9 @@
  * keyed main 槽;去 Tauri 化 M3 起直播/接管线从独立直播窗口改为壳内直播主
  * 面板——第三个 keyed main 槽;v0.130.0 起直播行/git 分支胶囊/审计日志/
  * 告警规则/沙箱平台/关于 tab 移除——直播面板保留 keyed main 槽(不占侧栏行,
- * AI 触发直播时自动接管):
- * `shell.overlay`×3(overlay / AI 连接卡 / 沙箱横幅)+ `sidebar.panellist`
+ * AI 触发直播时自动接管);v0.132.0 起沙箱桌面域整体退役(工作面板 + 请求介入
+ * 横幅),且工作台/直播/执行记录三个页面关掉时一律回会话视图(不回工具列表):
+ * `shell.overlay`×2(overlay / AI 连接卡)+ `sidebar.panellist`
  * ×1(工具行)+ `main`×3(工具面板 / 工作台面板 / 直播面板)+
  * `conversation.session.header.actions`×1(执行)+
  * `conversation.input.left`(截图)+ `settings.section`×2(Android / SSH)。
@@ -30,7 +31,6 @@ import { StarHubLivePanel } from '../src/client/live/StarHubLivePanel.tsx'
 import { ExecDrawerButton } from '../src/client/conn/ExecDrawerButton.tsx'
 import { StarHubConnCard } from '../src/client/conn/StarHubConnCard.tsx'
 import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
-import { SandboxUserActionBanner } from '../src/client/sandbox/SandboxUserActionBanner.tsx'
 import { AndroidSettingsTab } from '../src/client/settings/android.tsx'
 import { SshSettingsTab } from '../src/client/settings/ssh.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
@@ -126,7 +126,7 @@ describe('client-nav apply (rc.2)', () => {
     const { ctx, inject, register } = fakeContext()
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
-      'shell.overlay', 'shell.overlay', 'shell.overlay',
+      'shell.overlay', 'shell.overlay',
       'sidebar.panellist', 'main', 'main', 'main',
       'conversation.session.header.actions',
       'conversation.input.left',
@@ -134,7 +134,7 @@ describe('client-nav apply (rc.2)', () => {
     ])
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
-      StarHubOverlay, StarHubConnCard, SandboxUserActionBanner,
+      StarHubOverlay, StarHubConnCard,
       ToolsPanelIcon, StarHubToolWorkspace, StarHubWorkbenchPanel, StarHubLivePanel,
       ExecDrawerButton,
       ScreenshotButton,
@@ -182,7 +182,9 @@ describe('client-nav apply (rc.2)', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
     // panellist 行:紧随「插件」(order 0)之下,侧栏拥有按钮/标签/选中态。
-    const rowConfig = register.mock.calls[3]![0] as RegisterOptions
+    // 按下标取会被前面的 overlay 席位增减带偏,按 id 找。
+    const rowConfig = register.mock.calls
+      .find(c => (c[0] as RegisterOptions).id === 'starhub-tools')![0] as RegisterOptions
     expect(rowConfig.name).toBe('sidebar.panellist')
     expect(rowConfig.id).toBe('starhub-tools')
     expect(rowConfig.order).toBe(1)
@@ -222,7 +224,7 @@ describe('client-nav apply (rc.2)', () => {
     expect(execInjected.hooks.execRecords.getSnapshot().viewOpen).toBe(false)
     execInjected.openExecView()
     expect(execInjected.hooks.execRecords.getSnapshot().viewOpen).toBe(true)
-    // 关闭执行视图回到资产列表
+    // 关闭执行视图(面板内的视图开关复位)
     execInjected.closeExecView()
     expect(execInjected.hooks.execRecords.getSnapshot().viewOpen).toBe(false)
   })
@@ -287,15 +289,11 @@ describe('client-nav apply (rc.2)', () => {
       expect(state.activeKey).toBe('es1')
       expect(state.pages[0]?.url).toContain('starhub-react/index.html?asset=es1')
 
-      // 关掉最后一页:面板让回工具列表(用户在「工具面板 → 点资产 → 关页」动线上)。
+      // 关掉最后一页:面板让回**会话视图**(v0.132.0:不再回退工具列表)。
       const closePage = injected as unknown as { closePage: (key: string) => void }
       closePage.closePage('es1')
       expect(injected.hooks.workbench.getSnapshot().pages).toEqual([])
-      expect(selectPanel).toHaveBeenCalledWith('starhub-tools')
-      // v0.130.0:标签条左侧「返回工具列表」出口——页面开着时也能回工具列表。
-      const backToTools = injected as unknown as { backToTools: () => void }
-      backToTools.backToTools()
-      expect(selectPanel).toHaveBeenLastCalledWith('starhub-tools')
+      expect(selectPanel).toHaveBeenLastCalledWith(null)
     } finally {
       openSpy.mockRestore()
     }

@@ -49,7 +49,6 @@ function workspaceProps() {
     execRecords,
     refreshAssets: vi.fn(),
     openConnectionManager: vi.fn(),
-    closeExecView: vi.fn(),
     clearExecRecords: vi.fn(),
     disconnectExecSession: vi.fn(),
     closeTools: vi.fn(),
@@ -137,16 +136,6 @@ describe('StarHubToolWorkspace', () => {
     render(<StarHubToolWorkspace {...props} />)
     expect(screen.getByText('浏览器预览模式')).toBeTruthy()
     expect(screen.queryByText(/资产加载失败/)).toBeNull()
-  })
-
-  it('renders the sandbox panel (no asset list) for the sandbox subcategory', async () => {
-    const props = workspaceProps()
-    props.bridge.selectSubcategory('sandbox')
-    render(<StarHubToolWorkspace {...props} />)
-    // 沙箱子类无资产概念:展开即 SandboxPanel;无宿主桥(测试环境)时
-    // 面板落到概览错误态而不是资产加载态。
-    await waitFor(() => expect(screen.getByText(/沙箱概览不可用/)).toBeTruthy())
-    expect(screen.queryByText(/暂无 沙箱桌面 连接/)).toBeNull()
   })
 
   it('renders the android panel (no asset list) for the android subcategory', async () => {
@@ -416,7 +405,7 @@ describe('StarHubToolWorkspace', () => {
     expect(props.disconnectExecSession).toHaveBeenCalledWith('dsh:a1:ssh')
   })
 
-  it('clears all records through the injected callback and closes via 返回资产列表', () => {
+  it('clears all records through the injected callback and closes the panel via 关闭并返回会话', () => {
     const props = workspaceProps()
     props.execRecords.update((d) => {
       d.viewOpen = true
@@ -425,8 +414,9 @@ describe('StarHubToolWorkspace', () => {
     render(<StarHubToolWorkspace {...props} />)
     fireEvent.click(screen.getByText('清空'))
     expect(props.clearExecRecords).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByLabelText('返回资产列表'))
-    expect(props.closeExecView).toHaveBeenCalledTimes(1)
+    // v0.132.0:执行记录视图的 × 与面板 × 同义 = 关闭面板回会话,不回工具列表。
+    fireEvent.click(screen.getByLabelText('关闭并返回会话'))
+    expect(props.closeTools).toHaveBeenCalledTimes(1)
   })
 
   it('renders the exec view empty state with 清空 disabled when no records exist', () => {

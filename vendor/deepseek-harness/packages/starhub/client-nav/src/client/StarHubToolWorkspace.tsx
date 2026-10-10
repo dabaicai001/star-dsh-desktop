@@ -3,7 +3,7 @@
  * (sidebar.panellist,order 1 紧随「插件」之下)经 layout.selectPanel 切换,
  * 本组件挂 ui-layout 的 root-scope `main` keyed 槽(契约:panellist 的 id
  * 必须在 main 有同名注册),显示当前子类(终端 / 数据库 / Docker)的资产
- * (连接)列表;无资产概念的子类(沙箱桌面 / Android)渲染各自的工作面板。
+ * (连接)列表;无资产概念的子类(Android)渲染各自的工作面板。
  * 子类行为手风琴:点行展开,再点一次收起(v0.130.0;null = 全部收起)。
  * 点资产行经注入的 openAsset 回调新开该实例的独立操作页窗口(桌面端 Tauri
  * webview 窗口,浏览器预览新标签页)。行尾 hover 出编辑钮,经
@@ -37,13 +37,12 @@ import type { RustAsset, StarHubAssetListState, ToolSelection } from './store.ts
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
 import { ExecRecordList } from './conn/ExecRecordList.tsx'
 import type { ExecRecordsState } from './conn/exec-records.ts'
-import { SandboxPanel } from './sandbox/SandboxPanel.tsx'
 import { AndroidPanel } from './android/AndroidPanel.tsx'
 import css from './StarHubToolWorkspace.module.css'
 
 /** 无资产概念的子类:展开后渲染各自工作面板,不走资产列表逻辑。 */
 function isAssetlessSubcategory(key: string): boolean {
-  return key === 'sandbox' || key === 'android'
+  return key === 'android'
 }
 
 /** Business face injected by the registration: the connection wire + bridge/asset writes. */
@@ -52,8 +51,6 @@ export interface StarHubToolWorkspaceInjected {
   refreshAssets: () => void
   /** 打开连接对话框:不传资产 = 新建;传资产 = 编辑(含删除入口)。 */
   openConnectionManager: (asset?: RustAsset) => void
-  /** 切回资产列表视图(执行记录视图头部「返回」;v0.100.0 执行记录入抽屉)。 */
-  closeExecView: () => void
   /** 清空当前会话的执行记录(执行记录视图头部「清空」,随会话隔离)。 */
   clearExecRecords: () => void
   /** 断开一条执行记录对应的 SSH 连接并移除其记录(v0.100.1 行尾关闭按钮)。 */
@@ -152,7 +149,7 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
 
 /**
  * Render the StarHub tools main panel: the subcategory tree (终端 / 数据库 /
- * Docker / 沙箱桌面 / Android), each expandable to its asset list or dedicated
+ * Docker / Android), each expandable to its asset list or dedicated
  * panel; clicking an asset opens its operation page. Also syncs
  * the current tool selection to host settings for AI context (Path B plan 4.3).
  *
@@ -163,12 +160,14 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
  * 「执行」按钮把 execRecords 桥置 viewOpen 并切到本面板后,内容切换为
  * ExecRecordList(仅本会话的静默执行记录,行点击展开/收起,行尾按钮断开连接并
  * 移除,容器纵向滚动);ssh:exec-done 由 apply 层订阅入桥,本组件只是读端。
+ * 该视图的 × 与面板 × 同义:关闭面板回会话视图(工作台/直播/执行记录三个
+ * 页面一律以会话为出口,不再回退到工具列表)。
  * @param props - composed slot props (main-panel runtime share + injected face).
  * @returns the panel content (rendered only while the sidebar row selects it).
  */
 export function StarHubToolWorkspace({
   openAsset, refreshAssets, openConnectionManager,
-  closeExecView, clearExecRecords, disconnectExecSession,
+  clearExecRecords, disconnectExecSession,
   closeTools, selectSubcategory, insertAssetReference,
   useSelection, useAssets, useExecRecords,
 }: StarHubToolWorkspaceProps) {
@@ -190,7 +189,7 @@ export function StarHubToolWorkspace({
       {execViewOpen ? (
         <ExecRecordList
           records={execRecords}
-          onClose={closeExecView}
+          onClose={closeTools}
           onClear={clearExecRecords}
           onDisconnect={disconnectExecSession}
         />
@@ -230,7 +229,7 @@ export function StarHubToolWorkspace({
           </header>
           <div className={css.tree}>
             {activeSubcategory === null && (
-              <div className={css.status}>点击展开一个子类(终端 / 数据库 / Docker / 沙箱桌面 / Android)查看内容。</div>
+              <div className={css.status}>点击展开一个子类(终端 / 数据库 / Docker / Android)查看内容。</div>
             )}
             {STARHUB_SUBCATEGORIES.map(subcategory => renderSubcategory(
               subcategory,
@@ -289,8 +288,7 @@ function renderSubcategory(
       </button>
       {expanded && (
         <div className={css.assetGroup}>
-          {/* 无资产概念的子类:沙箱桌面渲染实例/模板面板,Android 渲染 adb 设备面板 */}
-          {subcategory.key === 'sandbox' && <SandboxPanel />}
+          {/* 无资产概念的子类:Android 渲染 adb 设备面板 */}
           {subcategory.key === 'android' && <AndroidPanel />}
           {!isAssetlessSubcategory(subcategory.key) && loading && <div className={css.status}>加载资产…</div>}
           {!isAssetlessSubcategory(subcategory.key) && !loading && preview && (

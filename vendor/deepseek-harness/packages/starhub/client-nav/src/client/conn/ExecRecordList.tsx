@@ -30,7 +30,7 @@ function timeLabel(at: number): string {
 /**
  * 渲染 SSH 执行记录视图(工具抽屉内)。
  * @param props.records - 当前会话的记录(最新在上;空数组渲染空态)。
- * @param props.onClose - 返回资产列表(关闭执行记录视图)。
+ * @param props.onClose - 关闭工具面板并回会话视图(面板与视图同一出口)。
  * @param props.onClear - 清空当前会话的记录。
  * @param props.onDisconnect - 断开一条连接并移除其记录(入参为连接 id)。
  * @returns 视图内容(替换抽屉主体)。
@@ -70,8 +70,8 @@ export function ExecRecordList({ records, onClose, onClear, onDisconnect }: {
         <button
           type="button"
           className={css.closeButton}
-          title="返回资产列表"
-          aria-label="返回资产列表"
+          title="关闭并返回会话"
+          aria-label="关闭并返回会话"
           onClick={onClose}
         >
           <IconCloseOutlineMedium size={14} />

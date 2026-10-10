@@ -47,7 +47,7 @@ export function ExecDrawerButton({
     <button
       type="button"
       className={clsx(css.pill, viewOpen && css.pillOpen)}
-      title={viewOpen ? '返回资产列表' : '查看 SSH 命令执行记录'}
+      title={viewOpen ? '收起执行记录视图' : '查看 SSH 命令执行记录'}
       aria-expanded={viewOpen}
       onClick={() => { if (viewOpen) closeExecView(); else openExecView() }}
     >

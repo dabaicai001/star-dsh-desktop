@@ -1,8 +1,8 @@
 /**
  * Android 实体机面板(工具面板「Android」子类):adb 设备卡片列表。
  *
- * 设备不是「资产」(不经连接管理器落库),由 adb 现场发现,因此与 SandboxPanel
- * 同姿势:展开子类即渲染本面板,自己拉数据。每张卡片显示型号/serial/状态,
+ * 设备不是「资产」(不经连接管理器落库),由 adb 现场发现,因此展开子类即
+ * 渲染本面板,自己拉数据。每张卡片显示型号/serial/状态,
  * 就绪(state=device)设备提供「打开直播」——去 Tauri 化 M3 起不再是独立窗口,
  * 而是开壳内直播面板通道(帧经宿主 upgrade 路由到 sidecar 的本地 WS);
  * unauthorized/offline 给一行处理提示。刷新按钮重新执行 adb devices -l。
@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { IconRefreshOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { listAndroidDevices, openAndroidLiveWindow, type AndroidDevice } from './services.ts'
 import { isTauriRuntime } from '../tauri.ts'
-import css from '../sandbox/SandboxPanel.module.css'
+import css from './AndroidPanel.module.css'
 
 /** 状态 → 中文徽标 + 处理提示(与 AI 工具 android_list_devices 的话术对齐)。 */
 function stateNote(state: string): { label: string; hint: string } {

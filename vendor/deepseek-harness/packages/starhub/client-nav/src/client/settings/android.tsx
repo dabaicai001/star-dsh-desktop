@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react'
 import { tauriInvoke } from '../tauri.ts'
 import s from './settings.module.css'
-import css from '../sandbox/SandboxPanel.module.css'
+import css from '../android/AndroidPanel.module.css'
 
 /** android_ui_get_config 返回的聚合。 */
 interface AndroidConfig {

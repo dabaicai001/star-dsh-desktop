@@ -23,9 +23,9 @@ import { tauriInvoke } from '../tauri.ts'
 
 /** 一条直播通道(帧枢纽侧的身份 + 面板侧的一次性令牌)。 */
 export interface LiveChannel {
-  /** 稳定身份(`android:<serial>` / `browser:<key>` / `desktop:<id>`)。 */
+  /** 稳定身份(`android:<serial>`)。 */
   readonly channel: string
-  /** 通道类型(android / browser / desktop)。 */
+  /** 通道类型(android;沙箱桌面域已退役)。 */
   readonly kind: string
   /** 一次性令牌(sidecar 在 WS 握手中消费;面板刷新后经 `ui.live_token` 补发)。 */
   token: string

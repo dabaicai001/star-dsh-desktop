@@ -186,7 +186,7 @@ describe('ExecDrawerButton', () => {
     expect(props.closeExecView).not.toHaveBeenCalled()
   })
 
-  it('closes back to the asset list when already open', () => {
+  it('closes the panel back to the session when the EXEC pill is already open', () => {
     const props = buttonProps({ viewOpen: true, records: [] })
     render(<ExecDrawerButton {...props} />)
     const pill = screen.getByRole('button', { name: /执行/ })
@@ -221,7 +221,7 @@ describe('ExecRecordList', () => {
     expect(onDisconnect).toHaveBeenCalledWith('dsh:asset-9:ssh')
   })
 
-  it('clears current-conversation records and returns to the asset list via the injected callbacks', () => {
+  it('clears current-conversation records and closes the panel via the injected callbacks', () => {
     const onClose = vi.fn()
     const onClear = vi.fn()
     render(<ExecRecordList records={records} onClose={onClose} onClear={onClear} onDisconnect={vi.fn()} />)
@@ -229,7 +229,7 @@ describe('ExecRecordList', () => {
     expect(screen.getByText('1')).toBeTruthy() // 记录条数角标
     fireEvent.click(screen.getByText('清空'))
     expect(onClear).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByLabelText('返回资产列表'))
+    fireEvent.click(screen.getByLabelText('关闭并返回会话'))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
