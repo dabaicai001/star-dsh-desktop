@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.128.4-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.128.5-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,9 +47,9 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.128.4 (2026-10-10)
-- 🐛 **CI 第三次真跑抓到的两个缺陷**:① Windows 上 android 执行契约用例 6/10 挂——`resolve_adb` 只做 `Path::exists()` 校验,而 `Path::new("cmd").exists()` 在 Windows 上查的是**当前工作目录**、不是 PATH;本地一直绿是因为环境变量 `STARHUB_ADB_PATH` 指着真实 adb 把设置候选顶下去了。改成返回 `env!("CARGO_MANIFEST_DIR")`(任何平台都一定存在)。② `build:window` 在 CI 上解析不到 `@deepseek-ai/dsh-util-code-language`——`starhub-window` 的 vite 别名表是手工闭包,DSH 0.2.1 新增的包被 ui-primitives 再导出却没进表;补上别名并按 §51 的做法做净树模拟验收。
-- 🔧 **改正 v0.128.3 升版漏改 `package.json`**:那次升版 commit 只提了 AGENTS/CHANGELOG/README,导致 tag 指向的提交里版本号还是 0.128.2。本次一并修正。
+### v0.128.5 (2026-10-10)
+- 🐛 **修好 `pnpm run build:lib`——38 个类型错误全在 StarHub 自己的测试文件里,`package:dsh-runtime` 因此必失败**。`package:dsh-runtime` 第一步就是 `pnpm run build`(host + client 两面全量 tsc),而它从 DSH 0.2.1 升级起就是红的;本地早前能过是 tsc 增量缓存的假象。四类根因:① vitest 的 matcher 不再收第二个参数(消息挪到 `expect(x, 'msg')` 上);② `noUnusedParameters` 下 17 处未使用的 `command` 形参(改名 `_command`);③ `exactOptionalPropertyTypes` 下全局面还原写不回 `X | undefined`;④ **client bundle purity 门禁(0.2.1 新增)**——`createSnapshotStore` 从 `dsh-client-runtime/client` 取值导入,改从基线外部 `dsh-client-store` 导入。另修补 `tsconfig.client.json` 漏列 `host-bridge.ts`(TS6307)与工作台面板 spec 的 props 桩造型。
+- 🗑️ **撤掉 `v0.128.4` 这个 tag**:推出去之后 CI 才第一次真正跑到 `package:dsh-runtime`,然后红在上面那条,没产出任何 Release。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

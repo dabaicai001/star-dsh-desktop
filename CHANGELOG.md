@@ -7,6 +7,10 @@
 
 ## [未发布]
 
+---
+
+## [0.128.5] - 2026-10-10
+
 ### 修复
 - 🐛 **`pnpm run build:lib`(vendor 全量 TS 构建)从 DSH 0.2.1 升级起就是红的,38 个类型错误全在 StarHub 自己的测试文件里**——`package:dsh-runtime` 第一步 `pnpm run build` 因此必失败,而这一步只有 CI 会走(本地 `package:dsh-runtime` 早前能过是因为 tsc 增量缓存)。四类根因:
   1. **vitest 的 matcher 不再收第二个参数**(`expect(x).toBe(y, 'msg')`)。本版 vitest 支持 `expect(x, 'msg')`,把消息从 matcher 挪到 `expect` 上——文档不丢,类型也过。
@@ -16,8 +20,6 @@
   另有两处结构性修补:`tsconfig.client.json` 显式列出 `client-nav/tests/host-bridge.ts`(被 `*.client.spec` Glob 命中、自身却不带 `.client` 中缀,否则 TS6307);`starhub-workbench-panel.client.spec.tsx` 的 props 桩按「plain stubs for framework hooks」整体造型(`PropsRuntime<'main'>` 是 SlotMap 派生 share,不逐条复刻)。
   验证:`pnpm run build:lib`(host + client)exit 0;starhub 包 vitest **70 spec / 1074 例全绿**;`package:dsh-runtime` 与 `smoke:dsh-desktop` 五条断言全绿。
 - 🗑️ **撤掉 `v0.128.4` 这个 tag**:推出去之后 CI 才第一次真正跑到 `package:dsh-runtime`,然后红在上面那条,没产出任何 Release。修复以 v0.128.5 发出。
-
----
 
 ## [0.128.4] - 2026-10-10
 
