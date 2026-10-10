@@ -15,8 +15,12 @@ import {
 } from '../src/client/store.ts'
 import type { ExecRecordsState } from '../src/client/conn/exec-records.ts'
 import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
+import { hostBridgeCalls, restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  restoreHostBridge()
+})
 
 /** 模拟无宿主桥:移除 fetch 使 isTauriRuntime() 为 false(替代旧「无 Tauri internals」预览态)。 */
 async function withoutHostBridge<T>(run: () => Promise<T>): Promise<T> {
@@ -331,8 +335,10 @@ describe('StarHubToolWorkspace', () => {
     expect(props.openConnectionManager).toHaveBeenCalledWith(expect.objectContaining({ id: 'e1' }))
   })
 
-  it('opens the asset standalone page in the system browser from the row menu', () => {
+  it('opens the asset standalone page through the host sidecar (system browser)', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const invoke = vi.fn((cmd: string) => (cmd === 'open_external_url' ? { ok: true } : {}))
+    stubHostBridge(invoke)
     try {
       const props = workspaceProps()
       props.bridge.selectSubcategory('terminal')
@@ -340,15 +346,39 @@ describe('StarHubToolWorkspace', () => {
       render(<StarHubToolWorkspace {...props} />)
       fireEvent.contextMenu(screen.getByText('prod-server'))
       fireEvent.click(screen.getByText('在浏览器中打开'))
-      // 独立工作台 URL(与壳内面板同一个),绝对值交 window.open → 壳转系统浏览器
-      expect(open).toHaveBeenCalledTimes(1)
-      expect(open.mock.calls[0]?.[0]).toBe(
-        `${window.location.origin}/starhub-react/index.html?asset=a1&workbench=ssh`,
-      )
+      await vi.waitFor(() => { expect(invoke).toHaveBeenCalledTimes(1) })
+      // 主路径:交给 sidecar 唤起系统浏览器(与壳的弹窗策略无关),URL 是绝对值
+      expect(invoke.mock.calls[0]?.[0]).toBe('open_external_url')
+      expect(hostBridgeCalls()[0]?.args).toEqual({
+        url: `${window.location.origin}/starhub-react/index.html?asset=a1&workbench=ssh`,
+      })
+      expect(open).not.toHaveBeenCalled()
       // 不开壳内页、不进连接对话框
       expect(props.bridge.source.getSnapshot().assetId).toBeNull()
       expect(props.openConnectionManager).not.toHaveBeenCalled()
     } finally {
+      restoreHostBridge()
+      open.mockRestore()
+    }
+  })
+
+  it('falls back to window.open when the host has no open_external_url (旧宿主/预览)', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    // 旧 sidecar:方法不存在 → 宿主桥回 {ok:false} → tauriInvoke reject
+    stubHostBridge(() => { throw new Error('method not found: ui.open_external_url') })
+    try {
+      const props = workspaceProps()
+      props.bridge.selectSubcategory('terminal')
+      props.assets.update((d) => { d.assets = [{ ...sshAsset, config: {} }] })
+      render(<StarHubToolWorkspace {...props} />)
+      fireEvent.contextMenu(screen.getByText('prod-server'))
+      fireEvent.click(screen.getByText('在浏览器中打开'))
+      await vi.waitFor(() => { expect(open).toHaveBeenCalledTimes(1) })
+      expect(open.mock.calls[0]?.[0]).toBe(
+        `${window.location.origin}/starhub-react/index.html?asset=a1&workbench=ssh`,
+      )
+    } finally {
+      restoreHostBridge()
       open.mockRestore()
     }
   })

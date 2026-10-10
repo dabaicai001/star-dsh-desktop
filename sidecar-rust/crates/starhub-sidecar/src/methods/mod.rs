@@ -356,6 +356,11 @@ pub fn registry_with_domains(
         registry.register("ui.screenshot_begin_region", |params| {
             crate::methods::ui_host::screenshot_begin_region(params)
         });
+        // 外链唤起(桌面端「在浏览器中打开」):sidecar 直接叫起系统浏览器,
+        // 不受壳的 window.open / 内置浏览器宿主源策略影响。
+        registry.register("ui.open_external_url", |params| {
+            crate::methods::ui_host::open_external_url(params)
+        });
         registry.register("ui.plugin:dialog|open", |params| {
             crate::methods::ui_host::plugin_dialog_open(params)
         });

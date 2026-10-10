@@ -183,6 +183,81 @@ pub fn plugin_app_version(_params: &Value) -> Result<Value, RpcError> {
     Ok(json!("版本归 Electron 壳(M2 占位)"))
 }
 
+/** 外链长度上限(超过即参数错误;正常工作台 URL 只有百来字节)。 */
+const MAX_EXTERNAL_URL_LEN: usize = 2048;
+
+/**
+ * 打开外链用的系统命令(平台默认浏览器)。
+ *
+ * 参数向量直达进程,**不经 shell**:Windows 用 `rundll32 url.dll,FileProtocolHandler`
+ * (直接收参数,URL 里的 `&` 不会被解析成命令分隔符),macOS `open`,Linux `xdg-open`。
+ * @param url - 已校验的绝对 http/https URL。
+ * @returns 程序名与参数向量。
+ */
+#[cfg(target_os = "windows")]
+fn browser_command(url: &str) -> (&'static str, Vec<String>) {
+    (
+        "rundll32.exe",
+        vec!["url.dll,FileProtocolHandler".to_string(), url.to_string()],
+    )
+}
+
+/// macOS 分支(见 [`browser_command`])。
+#[cfg(target_os = "macos")]
+fn browser_command(url: &str) -> (&'static str, Vec<String>) {
+    ("open", vec![url.to_string()])
+}
+
+/// Linux/其它 unix 分支(见 [`browser_command`])。
+#[cfg(all(unix, not(target_os = "macos")))]
+fn browser_command(url: &str) -> (&'static str, Vec<String>) {
+    ("xdg-open", vec![url.to_string()])
+}
+
+/// 校验并取出 `url` 参数:只收绝对 http/https,拒空白/控制字符与超长。
+fn external_url(params: &Value) -> Result<String, RpcError> {
+    let url = params
+        .get("url")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| RpcError::invalid_params("缺少 url"))?;
+    if url.len() > MAX_EXTERNAL_URL_LEN {
+        return Err(RpcError::invalid_params("url 过长"));
+    }
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(RpcError::invalid_params("只允许 http/https URL"));
+    }
+    if url.chars().any(|ch| ch.is_control() || ch.is_whitespace()) {
+        return Err(RpcError::invalid_params("url 含空白或控制字符"));
+    }
+    Ok(url.to_string())
+}
+
+/// `ui.open_external_url`:用系统默认浏览器打开一个 http/https 链接。
+///
+/// 为什么不让前端自己 `window.open`:上游 Electron 壳的 `setWindowOpenHandler`
+/// 只把 http/https 交给 `shell.openExternal`,而壳内嵌浏览器(webview guest)又被
+/// 策略禁止请求宿主源;由 sidecar 直接唤起系统浏览器,与壳的弹窗/导航策略无关,
+/// 桌面端「在浏览器中打开资产页」因此有确定行为(前端仍保留 `window.open` 兜底)。
+pub fn open_external_url(params: &Value) -> Result<Value, RpcError> {
+    let url = external_url(params)?;
+    let (program, args) = browser_command(&url);
+    let child = std::process::Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| RpcError::internal(format!("唤起系统浏览器失败({program}): {error}")))?;
+    // 不等它退出(浏览器会一直开着);另起线程收尸,免得长期驻留的 sidecar 攒僵尸进程。
+    std::thread::spawn(move || {
+        let mut child = child;
+        let _ = child.wait();
+    });
+    Ok(json!({ "ok": true, "url": url }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,6 +325,45 @@ mod tests {
         assert_eq!(
             plugin_app_version(&json!({})).unwrap(),
             json!("版本归 Electron 壳(M2 占位)")
+        );
+    }
+
+    #[test]
+    fn external_url_accepts_only_absolute_http_urls() {
+        // 工作台资产页的真实形态:带查询串(含 `&`)也必须放行
+        assert_eq!(
+            external_url(&json!({ "url": " http://127.0.0.1:19387/starhub-react/index.html?asset=a1&workbench=ssh " }))
+                .unwrap(),
+            "http://127.0.0.1:19387/starhub-react/index.html?asset=a1&workbench=ssh"
+        );
+        assert!(external_url(&json!({ "url": "https://example.com/x" })).is_ok());
+        for bad in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "dsh-app://app/index.html",
+            "/starhub-react/index.html",
+            "",
+            "http://127.0.0.1:19387/a b",
+            "http://127.0.0.1:19387/a\nb",
+        ] {
+            assert!(
+                external_url(&json!({ "url": bad })).is_err(),
+                "{bad} 不该被受理"
+            );
+        }
+        assert!(external_url(&json!({})).is_err(), "缺 url");
+    }
+
+    #[test]
+    fn browser_command_hands_the_url_over_without_a_shell() {
+        // 参数向量直达进程(Windows 走 rundll32、macOS open、Linux xdg-open),
+        // 不经 shell —— URL 里的 `&` 不会被当成命令分隔符。
+        let url = "http://127.0.0.1:19387/starhub-react/index.html?asset=a1&workbench=ssh";
+        let (program, args) = browser_command(url);
+        assert!(!program.is_empty());
+        assert!(
+            args.iter().any(|arg| arg.contains(url)),
+            "{program} {args:?} 里应带完整 URL"
         );
     }
 }

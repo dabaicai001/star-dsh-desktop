@@ -35,9 +35,8 @@ import {
   IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconTrashOutlineMedium,
   writeClipboard, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import {
-  STARHUB_SUBCATEGORIES, assetRowBadge, assetSubtitle, assetWindowUrl, type StarHubAsset, type StarHubSubcategory,
-} from './sections.ts'
+import { STARHUB_SUBCATEGORIES, assetRowBadge, assetSubtitle, assetWindowUrl, type StarHubAsset, type StarHubSubcategory } from './sections.ts'
+import { tauriInvoke } from './tauri.ts'
 import type { RustAsset, StarHubAssetListState, ToolSelection } from './store.ts'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
 import { ExecRecordList } from './conn/ExecRecordList.tsx'
@@ -53,15 +52,21 @@ function isAssetlessSubcategory(key: string): boolean {
 /**
  * 在系统默认浏览器里打开该资产的独立工作台页(与壳内面板同一个 URL)。
  *
- * 走 `window.open` 而不是内置浏览器:上游 Electron 壳的 `setWindowOpenHandler`
- * 把 http/https 交给 `shell.openExternal`(系统浏览器),而壳内**内置浏览器**的
- * guest 会话被策略禁止请求宿主源——`isApplicationHost()` 把同端口 +
- * `127.0.0.1`/`localhost` 一律 cancel,所以拿内置浏览器开这个 URL 只会白页。
- * 浏览器预览(无壳)时这里退化为新标签页。
+ * 主路径是**宿主 sidecar**(`ui.open_external_url` → Windows
+ * `rundll32 url.dll,FileProtocolHandler` / macOS `open` / Linux `xdg-open`):
+ * 壳的 `window.open` 处理器虽会把 http/https 转 `shell.openExternal`,但那一环
+ * 变异就会静默失败;sidecar 唤起系统浏览器与壳的弹窗/导航策略无关。旧 sidecar
+ * 没有该方法、或浏览器预览(无宿主桥)时,回落到 `window.open`。
  * @param asset - 目标资产(取 id/type/config 组装 URL)。
  */
-function openAssetInBrowser(asset: StarHubAsset): void {
+async function openAssetInBrowser(asset: StarHubAsset): Promise<void> {
   const url = new URL(assetWindowUrl(asset), window.location.origin).href
+  try {
+    await tauriInvoke('open_external_url', { url })
+    return
+  } catch {
+    // 旧宿主 / 预览态:回落到 window.open(壳转 shell.openExternal,预览开新标签)。
+  }
   window.open(url, '_blank', 'noopener')
 }
 
@@ -153,7 +158,7 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
         items={items}
         onSelect={(id) => {
           if (id === 'open') onOpen()
-          else if (id === 'browser') openAssetInBrowser(asset)
+          else if (id === 'browser') void openAssetInBrowser(asset)
           else if (id === 'reference') onReference()
           else if (id === 'edit') onEdit()
           else if (id === 'copy') {
