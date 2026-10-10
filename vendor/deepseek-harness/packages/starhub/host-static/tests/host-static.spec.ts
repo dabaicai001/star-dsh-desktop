@@ -47,7 +47,7 @@ describe('resolveWindowDistRoot', () => {
     try {
       expect(resolveWindowDistRoot({ windowDist: fromConfig })).toBe(fromConfig)
       expect(resolveWindowDistRoot({})).toBe(fromEnv)
-      expect(resolveWindowDistRoot({ windowDist: '   ' })).toBe(fromEnv, '空白配置不当一档')
+      expect(resolveWindowDistRoot({ windowDist: '   ' })).toBe(fromEnv)
     } finally {
       if (previous === undefined) delete process.env.STARHUB_WINDOW_DIST
       else process.env.STARHUB_WINDOW_DIST = previous

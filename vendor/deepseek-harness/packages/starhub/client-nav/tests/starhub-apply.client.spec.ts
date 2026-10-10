@@ -293,7 +293,7 @@ describe('client-nav apply (rc.2)', () => {
       const state = injected.hooks.workbench.getSnapshot()
       expect(state.pages.map((page) => page.key)).toEqual(['es1'])
       expect(state.activeKey).toBe('es1')
-      expect(state.pages[0].url).toContain('starhub-react/index.html?asset=es1')
+      expect(state.pages[0]?.url).toContain('starhub-react/index.html?asset=es1')
 
       // 关掉最后一页:面板让回工具列表(用户在「工具面板 → 点资产 → 关页」动线上)。
       const closePage = injected as unknown as { closePage: (key: string) => void }

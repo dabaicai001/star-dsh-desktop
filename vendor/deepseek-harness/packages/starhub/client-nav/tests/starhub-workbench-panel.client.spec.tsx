@@ -23,21 +23,15 @@ function renderPanel() {
   const rerender = (): void => {
     view.rerender(<StarHubWorkbenchPanel {...props} />)
   }
-  const props: StarHubWorkbenchPanelProps = {
-    activatePage: (key) => { activated.push(key); store.activateIfOpen(key); rerender() },
-    closePage: (key) => { closed.push(key); store.close(key); rerender() },
-    useWorkbench: ((selector: (state: never) => unknown) =>
-      selector(store.source.getSnapshot() as never)) as StarHubWorkbenchPanelProps['useWorkbench'],
-    // slot 必填 share 的最小桩(本组件不消费)。
-    panelId: 'starhub-workbench' as StarHubWorkbenchPanelProps['panelId'],
-    scope: 'root' as StarHubWorkbenchPanelProps['scope'],
-    useStore: (() => undefined) as never,
-    renderSlot: (() => null) as never,
-    renderFactorySlot: (() => null) as never,
-    useSession: (() => undefined) as never,
-    useSessions: (() => undefined) as never,
-    useWorkspaces: (() => undefined) as never,
-  }
+  // 组件只消费 inject 面的三员(activatePage / closePage / useWorkbench);
+  // `PropsRuntime<'main'>` 是 SlotMap 派生share,测试按「plain stubs for
+  // framework hooks」的 sanctioned 路径整体造型,不逐条复刻派生成员。
+  const props = {
+    activatePage: (key: string) => { activated.push(key); store.activateIfOpen(key); rerender() },
+    closePage: (key: string) => { closed.push(key); store.close(key); rerender() },
+    useWorkbench: (selector: (state: never) => unknown) =>
+      selector(store.source.getSnapshot() as never),
+  } as unknown as StarHubWorkbenchPanelProps
   const view = render(<StarHubWorkbenchPanel {...props} />)
   return { store, activated, closed, rerender, container: view.container }
 }
@@ -66,7 +60,7 @@ describe('StarHubWorkbenchPanel', () => {
     store.open({ key: 'a2', title: 'MySQL', url: '/starhub-react/index.html?asset=a2' })
     rerender()
 
-    fireEvent.click(screen.getAllByRole('tab')[0])
+    fireEvent.click(screen.getAllByRole('tab')[0]!)
     expect(activated).toEqual(['a1'])
     expect((screen.getByTitle('验收机') as HTMLIFrameElement).getAttribute('src'))
       .toBe('/starhub-react/index.html?asset=a1')

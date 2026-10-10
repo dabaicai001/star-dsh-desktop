@@ -61,13 +61,14 @@ vi.mock('zmodem.js/src/zmodem_browser.js', () => ({
 import { SshTerminalOverlay } from '../src/client/terminal/SshTerminalOverlay.tsx'
 import {
   emitHostEvent, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
+  type HostBridgeHandler,
 } from './host-bridge.ts'
 class ResizeObserverMock {
   observe() {}
   disconnect() {}
 }
 /** 挂载宿主桥替身:invoke 记录调用,事件订阅走共享 SSE 连接(按事件名监听)。 */
-function stubInternals(invoke: ReturnType<typeof vi.fn>) {
+function stubInternals(invoke: HostBridgeHandler) {
   stubHostBridge(invoke)
   stubHostEvents()
 }
@@ -341,7 +342,7 @@ describe('SshTerminalOverlay', () => {
     unmount()
   })
   it('opens the web browser in a standalone window from the 网页 button', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -384,7 +385,7 @@ describe('SshTerminalOverlay', () => {
     unmount()
   })
   it('sends kb_interactive for MFA assets so the server prompt can be shown', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -417,7 +418,7 @@ describe('SshTerminalOverlay', () => {
     unmount()
   })
   it('shows the MFA prompt on kb-interactive and submits answers via ssh_kb_response', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -445,7 +446,7 @@ describe('SshTerminalOverlay', () => {
   })
 
   it('submits the MFA code when Enter is pressed in the input', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -471,7 +472,7 @@ describe('SshTerminalOverlay', () => {
   })
 
   it('prefills kb answers from autoFill and clears the prompt on submit', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -499,7 +500,7 @@ describe('SshTerminalOverlay', () => {
     unmount()
   })
   it('shows the host-key prompt on first connect, lets the user trust & persist, and replies via ssh_hostkey_response', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -526,7 +527,7 @@ describe('SshTerminalOverlay', () => {
 
   it('rejects an unknown host key by responding allowed=false, disconnecting, and keeping the reason visible', async () => {
     const onClose = vi.fn()
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -554,7 +555,7 @@ describe('SshTerminalOverlay', () => {
     unmount()
   })
   it('marks a remotely closed session as disconnected and reconnects on demand', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -580,7 +581,7 @@ describe('SshTerminalOverlay', () => {
     unmount()
   })
   it('runs a ZMODEM send session (remote rz), picks a file and streams it back', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -617,7 +618,7 @@ describe('SshTerminalOverlay', () => {
     unmount()
   })
   it('receives a remote sz file (offer → accept → save to disk) and cancels cleanly', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -665,7 +666,7 @@ describe('SshTerminalOverlay', () => {
       { config: { host: 'h', port: 22, username: 'u' }, expectAuth: { Password: '' } },
     ]
     for (const { config, expectAuth } of cases) {
-      const invoke = vi.fn((command: string, _args?: Record<string, unknown>) => {
+      const invoke = vi.fn((_command: string, _args?: Record<string, unknown>) => {
         return Promise.resolve(null)
       })
       stubInternals(invoke)
@@ -677,7 +678,7 @@ describe('SshTerminalOverlay', () => {
       unmount()
     }
     // kb_interactive: mfaPassword present → password field
-    const invoke = vi.fn((command: string, _args?: Record<string, unknown>) => {
+    const invoke = vi.fn((_command: string, _args?: Record<string, unknown>) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -690,7 +691,7 @@ describe('SshTerminalOverlay', () => {
     unmount()
   })
   it('covers zmodem send guard, multi-file, zero-byte, send failure and cancel', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -728,7 +729,7 @@ describe('SshTerminalOverlay', () => {
     unmount()
   })
   it('re-runs the terminal data path through the zmodem sentry for chunk edges', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -744,7 +745,7 @@ describe('SshTerminalOverlay', () => {
   })
 
   it('covers the follow-terminal toggle and a second receive offer (null size, stale timer)', async () => {
-    const invoke = vi.fn((command: string) => {
+    const invoke = vi.fn((_command: string) => {
       return Promise.resolve(null)
     })
     stubInternals(invoke)

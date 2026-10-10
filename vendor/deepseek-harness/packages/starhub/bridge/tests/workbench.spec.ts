@@ -6,7 +6,7 @@
  * assertions pin the wire contract (status codes, JSON bodies, SSE framing)
  * rather than a browser.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
@@ -27,6 +27,8 @@ function fakeResponse() {
   const res = {
     writableEnded: false,
     headersSent: false,
+    status: 0,
+    headers: undefined as Record<string, string> | undefined,
     writeHead(status: number, headers?: Record<string, string>) {
       this.status = status
       this.headers = headers

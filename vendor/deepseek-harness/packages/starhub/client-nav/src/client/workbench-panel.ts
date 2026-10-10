@@ -14,7 +14,9 @@
  * - `close`:关一页;关掉的是当前页时激活余下页里最后开的一页;
  * - 页簿空 → 主面板该让位(由 index.ts 的订阅把面板切回工具列表)。
  */
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+// createSnapshotStore 属于基线外部 `@deepseek-ai/dsh-client-store`(共享存储引擎的
+// 唯一静态属主);从 runtime/client 取值导入会撞 client bundle purity 门禁。
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
 /** 一个壳内工作台页(iframe 的来源与身份)。 */
 export interface WorkbenchPage {

@@ -17,6 +17,7 @@ import { ExecDrawerButton } from '../src/client/conn/ExecDrawerButton.tsx'
 import { ExecRecordList } from '../src/client/conn/ExecRecordList.tsx'
 import {
   emitHostEvent, hostEventListeners, restoreHostBridge, restoreHostEvents, stubHostBridge, stubHostEvents,
+  type HostBridgeHandler,
 } from './host-bridge.ts'
 
 afterEach(() => {
@@ -27,7 +28,7 @@ afterEach(() => {
 })
 
 /** 挂载宿主桥替身:invoke 记录调用,事件订阅走共享 SSE 连接。 */
-function stubInternals(invoke: ReturnType<typeof vi.fn>) {
+function stubInternals(invoke: HostBridgeHandler) {
   stubHostBridge(invoke)
   stubHostEvents()
 }

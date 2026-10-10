@@ -34,8 +34,13 @@ interface HostEventRaw {
 /** 假 EventSource 的监听签名。 */
 type HostEventListener = (raw: HostEventRaw) => void
 
-/** fetch 替身可替换的全局面。 */
-type FetchGlobal = { fetch?: typeof globalThis.fetch }
+/**
+ * fetch 替身可替换的全局面。
+ *
+ * `| undefined` 不能省:`exactOptionalPropertyTypes: true` 下 `fetch?: X` 表示
+ * 「可以不存在,但存在就必须是 X」,而还原路径要把 `X | undefined` 的存盘值写回去。
+ */
+type FetchGlobal = { fetch?: typeof globalThis.fetch | undefined }
 
 /** invoke 端点路径(生产代码 tauri.ts 的同源常量)。 */
 const INVOKE_PATH = '/starhub/api/invoke'
@@ -124,8 +129,8 @@ export function hostBridgeCalls(): HostBridgeCall[] {
   return calls.map(call => ({ cmd: call.cmd, args: call.args }))
 }
 
-/** EventSource 替身可替换的全局面。 */
-type EventSourceGlobal = { EventSource?: typeof globalThis.EventSource }
+/** EventSource 替身可替换的全局面(同 FetchGlobal 的 `| undefined` 理由)。 */
+type EventSourceGlobal = { EventSource?: typeof globalThis.EventSource | undefined }
 
 /** 假 SSE 连接:记录 addEventListener 的监听,close() 后 readyState 置 CLOSED。 */
 class FakeEventSource {

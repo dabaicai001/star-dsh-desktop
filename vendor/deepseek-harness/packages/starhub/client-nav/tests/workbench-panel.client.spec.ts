@@ -27,10 +27,10 @@ describe('workbench panel store', () => {
     store.open(page('a2'))
     store.open(page('a1', '新名'))
     const state = store.source.getSnapshot()
-    expect(state.pages.map((p) => p.key)).toEqual(['a1', 'a2'], '不开第二份')
-    expect(state.activeKey).toBe('a1', '重复 open = 聚焦')
+    expect(state.pages.map((p) => p.key), '不开第二份').toEqual(['a1', 'a2'])
+    expect(state.activeKey, '重复 open = 聚焦').toBe('a1')
     // 标题/URL 以最新一次为准(资产可能被改名)
-    expect(state.pages[0].title).toBe('新名')
+    expect(state.pages[0]?.title).toBe('新名')
   })
 
   it('activateIfOpen reports whether the key is open', () => {
@@ -40,7 +40,7 @@ describe('workbench panel store', () => {
     expect(store.activateIfOpen('a1')).toBe(true)
     expect(store.source.getSnapshot().activeKey).toBe('a1')
     expect(store.activateIfOpen('ghost')).toBe(false)
-    expect(store.source.getSnapshot().activeKey).toBe('a1', '未开的 key 不改当前页')
+    expect(store.source.getSnapshot().activeKey, '未开的 key 不改当前页').toBe('a1')
   })
 
   it('closing the active page activates the last remaining page', () => {
@@ -51,7 +51,7 @@ describe('workbench panel store', () => {
     store.close('a3')
     let state = store.source.getSnapshot()
     expect(state.pages.map((p) => p.key)).toEqual(['a1', 'a2'])
-    expect(state.activeKey).toBe('a2', '关当前页 → 余下最后开的一页')
+    expect(state.activeKey, '关当前页 → 余下最后开的一页').toBe('a2')
     // 关非当前页:当前页不动
     store.close('a1')
     state = store.source.getSnapshot()

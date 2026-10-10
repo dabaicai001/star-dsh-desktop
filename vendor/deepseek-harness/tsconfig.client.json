@@ -34,6 +34,9 @@
     "packages/*/*/tests/**/*.client.spec.tsx",
     "packages/*/*/tests/**/*.client.tsx",
     "packages/*/*/tests/**/*.client.ts",
+    // StarHub client-nav 的宿主桥测试替身:被上面的 *.client.spec Glob 命中,
+    // 自身却不带 `.client` 中缀,不显式列出就会 TS6307(项目必须列全文件)。
+    "packages/starhub/client-nav/tests/host-bridge.ts",
     // Client package outside packages/client with a local CSS module face.
     "packages/extensions/ui-cordis/src/css-modules.d.ts",
     "packages/client/tsdown.client.ts",

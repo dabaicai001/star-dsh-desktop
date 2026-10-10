@@ -46,9 +46,9 @@ describe('live panel store', () => {
     store.open(channel('s2', 'tok-2'))
     store.open(channel('s1', 'new-token'))
     const state = store.source.getSnapshot()
-    expect(state.channels.map((entry) => entry.channel)).toEqual(['android:s1', 'android:s2'], '不开第二份')
-    expect(state.activeChannel).toBe('android:s1', '重复 open = 聚焦')
-    expect(state.channels[0]?.token).toBe('new-token', '旧令牌已被上一次握手消费')
+    expect(state.channels.map((entry) => entry.channel), '不开第二份').toEqual(['android:s1', 'android:s2'])
+    expect(state.activeChannel, '重复 open = 聚焦').toBe('android:s1')
+    expect(state.channels[0]?.token, '旧令牌已被上一次握手消费').toBe('new-token')
   })
 
   it('activate only switches to an open channel', () => {
@@ -58,7 +58,7 @@ describe('live panel store', () => {
     store.activate('android:s1')
     expect(store.source.getSnapshot().activeChannel).toBe('android:s1')
     store.activate('android:ghost')
-    expect(store.source.getSnapshot().activeChannel).toBe('android:s1', '未开的通道不改当前通道')
+    expect(store.source.getSnapshot().activeChannel, '未开的通道不改当前通道').toBe('android:s1')
   })
 
   it('closing the active channel activates the last remaining one', () => {
@@ -69,10 +69,10 @@ describe('live panel store', () => {
     store.close('android:s3')
     let state = store.source.getSnapshot()
     expect(state.channels.map((entry) => entry.channel)).toEqual(['android:s1', 'android:s2'])
-    expect(state.activeChannel).toBe('android:s2', '关当前通道 → 余下最后开的一条')
+    expect(state.activeChannel, '关当前通道 → 余下最后开的一条').toBe('android:s2')
     store.close('android:s1')
     state = store.source.getSnapshot()
-    expect(state.activeChannel).toBe('android:s2', '关非当前通道:当前通道不动')
+    expect(state.activeChannel, '关非当前通道:当前通道不动').toBe('android:s2')
   })
 
   it('closing the last channel empties the book and resets the frame state', () => {
@@ -104,7 +104,7 @@ describe('live panel store', () => {
     store.setMeta({ mode: 'scrcpy', width: 1080, height: 2400 })
     store.setMeta({ error: 'scrcpy-server 资源缺失' })
     const state = store.source.getSnapshot()
-    expect(state.mode).toBe('scrcpy', '未带的成员保持原值')
+    expect(state.mode, '未带的成员保持原值').toBe('scrcpy')
     expect(state.width).toBe(1080)
     expect(state.error).toBe('scrcpy-server 资源缺失')
     store.setMeta({ error: null })

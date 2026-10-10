@@ -16,7 +16,9 @@
  * 重渲染,由组件直接画到 canvas/img。store 只承载通道清单、连接状态与元数据
  * (模式/分辨率/接管标志),这些才是要渲染的东西。
  */
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+// createSnapshotStore 属于基线外部 `@deepseek-ai/dsh-client-store`(共享存储引擎的
+// 唯一静态属主);从 runtime/client 取值导入会撞 client bundle purity 门禁。
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { tauriInvoke } from '../tauri.ts'
 
 /** 一条直播通道(帧枢纽侧的身份 + 面板侧的一次性令牌)。 */
