@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.128.3-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.128.4-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,10 +47,9 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.128.3 (2026-10-10)
-- 🐛 **CI 第二次真跑抓到的两个构建/测试缺陷**:① `npm run sidecar-rust:build` 指向 Windows 专用的 `.bat`,CI 的 ubuntu matrix 一执行就 `sh: 1: scriptscargo-sidecar.bat: not found`(exit 127)——新增 `scripts/cargo-sidecar.mjs` 跨平台包装(Windows 仍转 .bat 加载 MSVC,其它平台直调 cargo);② `ui.android_ui_open_live` 开通道后轮询泵解析不到 adb 会**关掉通道**再退出,紧随其后的 `issue_token` 于是报「直播通道未打开」——开发机上装着 adb 所以本地绿,CI runner 上哪都没有 → 红。
-- 🐛 **`build:window` 挂了——上一版把根 `package.json` 的依赖当死重清空,其中 `zmodem.js` 其实是承重墙**:`client-nav` 的 `SshTerminalOverlay.tsx` 深导入 `zmodem.js/src/zmodem_browser.js`,而 `client-nav` 的 dependencies **漏声明了它**,一直靠 Node 从 vendor 树向上漫游到仓库根 `node_modules` 才解析到。清空根依赖 = 抽掉承重墙。修法:把 `zmodem.js@0.1.10` 补进 `client-nav` 自己的 dependencies 并同步 vendor lockfile(+10 行),不再依赖仓库根的隐式供给。
-- 🗑️ **撤掉 `v0.128.2` 这个 tag**:推出去之后 CI 才第一次真正跑到构建步,然后红在上面第 ① 条,没产出任何 Release。修复以 v0.128.3 发出。
+### v0.128.4 (2026-10-10)
+- 🐛 **CI 第三次真跑抓到的两个缺陷**:① Windows 上 android 执行契约用例 6/10 挂——`resolve_adb` 只做 `Path::exists()` 校验,而 `Path::new("cmd").exists()` 在 Windows 上查的是**当前工作目录**、不是 PATH;本地一直绿是因为环境变量 `STARHUB_ADB_PATH` 指着真实 adb 把设置候选顶下去了。改成返回 `env!("CARGO_MANIFEST_DIR")`(任何平台都一定存在)。② `build:window` 在 CI 上解析不到 `@deepseek-ai/dsh-util-code-language`——`starhub-window` 的 vite 别名表是手工闭包,DSH 0.2.1 新增的包被 ui-primitives 再导出却没进表;补上别名并按 §51 的做法做净树模拟验收。
+- 🔧 **改正 v0.128.3 升版漏改 `package.json`**:那次升版 commit 只提了 AGENTS/CHANGELOG/README,导致 tag 指向的提交里版本号还是 0.128.2。本次一并修正。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

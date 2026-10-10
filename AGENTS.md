@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.128.3(修 CI 第二次真跑抓到的两个构建/测试缺陷:Linux 上 sidecar-rust:build 调 .bat、client-nav 漏声明 zmodem.js;撤掉没发布成功的 v0.128.2 tag) |
+| 当前版本 | v0.128.4(修 CI 第三次真跑抓到的两个缺陷:Windows 上 adb 候选写成 cmd、vite 别名表漏了 code-language;并改正 v0.128.3 升版漏改 package.json) |
 
 ## 架构一句话
 
@@ -138,4 +138,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-10 (v0.128.3)*
+*最后更新: 2026-10-10 (v0.128.4)*
