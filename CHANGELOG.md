@@ -9,6 +9,11 @@
 
 ---
 
+## [0.132.1] - 2026-10-10
+
+### 修复
+- 🐛 **plugin:bundle 静默装旧 sidecar 二进制**:前置校验原先只查 `client-nav/lib/client.js` 新旧,不管两个 sidecar——`sidecar-rust/target/release/` 里上一次构建的 exe 会被优先装进包,已删的能力面(方法/工具)在模型侧依然存在。现在 Rust(`sidecar-rust/crates/**/*.{rs,toml}`)与 Go(`sidecar/**/*.go`)源码比所选二进制新即 fail loud,提示先跑 `npm run sidecar-rust:build:release` / `npm run sidecar:build`。
+
 ## [0.132.0] - 2026-10-10
 
 ### 移除

@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.132.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.132.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,9 +45,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.132.0 (2026-10-10)
-- 🗑️ 🗑️ **沙箱桌面功能整体退役**:工具面板「沙箱桌面」子类与工作面板、AI 侧 22 个 `desktop_*` 工具、`desktop_request_user_action` 请求介入横幅、Rust `starhub-domain-desktop` 域 crate 与 sidecar 的 `desktop_*` / `ui.desktop_ui_*` 方法面、`approval-bridge` 的沙箱风险分级一并删除(android 复用的 `FileSettingsStore` 抽到 `settings_store.rs` 保留);AI 可直接操控的 GUI 目标只剩 Android 真机。
-- 🔧 🎨 **所有工具页面关闭一律回会话,不再回退工具列表**:工作台页簿清空、直播通道清空、SSH 执行记录视图「×」三处原先把主面板让回「工具」列表,现在统一让回会话视图(`selectPanel(null)`);工作台标签条的「返回工具列表」出口随之移除(回工具列表统一走侧栏常驻的「工具」行),执行记录视图的 × 与面板 × 语义一致。
+### v0.132.2 (2026-10-10)
+- 🐛 🐛 **plugin:bundle 静默装旧 sidecar 二进制**:前置校验原先只查 `client-nav/lib/client.js` 新旧,不管两个 sidecar——`sidecar-rust/target/release/` 里上一次构建的 exe 会被优先装进包,已删的能力面(方法/工具)在模型侧依然存在。现在 Rust(`sidecar-rust/crates/**/*.{rs,toml}`)与 Go(`sidecar/**/*.go`)源码比所选二进制新即 fail loud,提示先跑 `npm run sidecar-rust:build:release` / `npm run sidecar:build`。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

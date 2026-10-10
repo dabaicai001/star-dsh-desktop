@@ -29,7 +29,7 @@
 import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -383,6 +383,26 @@ async function assertBundle(outDir, manifest, patchText, packageName) {
   }
 }
 
+/**
+ * 源码树里是否有比产物更新的文件(按扩展名过滤)。
+ *
+ * 组装型打包脚本不重 build,gitignore 的产物新旧用 `git status` 看不见;
+ * 源码比产物新即说明产物是改动前的,装进包就是「改了但没生效」。
+ * @param root - 源码根目录(不存在时视为无源码,返回 false)。
+ * @param extensions - 参与的扩展名(含点,如 `.rs`)。
+ * @param artifact - 产物路径。
+ * @returns 有任一源码文件比产物新时为 true。
+ */
+async function sourcesNewerThan(root, extensions, artifact) {
+  if (!existsSync(root)) return false
+  const artifactMs = (await stat(artifact)).mtimeMs
+  for (const file of await listFilesRecursive(root)) {
+    if (!extensions.includes(extname(file))) continue
+    if ((await stat(file)).mtimeMs > artifactMs) return true
+  }
+  return false
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
   const version = options.version ?? JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8')).version
@@ -417,9 +437,17 @@ async function main() {
   }
   if (!existsSync(rustSidecar)) {
     problems.push(`Rust sidecar 缺失: ${rustSidecar}(先跑 npm run sidecar-rust:build)`)
+  } else if (await sourcesNewerThan(join(repoRoot, 'sidecar-rust', 'crates'), ['.rs', '.toml'], rustSidecar)) {
+    // 旧 sidecar 二进制比源码旧 = 模型看到的方法面与仓库不符(删了的能力还在)。
+    // release 目录里常有上一次构建的 exe,resolveRustSidecar 优先取它,必须拦。
+    problems.push(
+      `Rust sidecar 二进制比 sidecar-rust/crates 的源码旧(${rustSidecar}):先跑 npm run sidecar-rust:build:release`)
   }
   if (!existsSync(options.sidecarGo)) {
     problems.push(`Go sidecar 缺失: ${options.sidecarGo}(先跑 npm run sidecar:build)`)
+  } else if (await sourcesNewerThan(join(repoRoot, 'sidecar'), ['.go'], options.sidecarGo)) {
+    problems.push(
+      `Go sidecar 二进制比 sidecar/ 的源码旧(${options.sidecarGo}):先跑 npm run sidecar:build`)
   }
   if (problems.length > 0) {
     console.error('build-plugin-bundle: 前置校验失败:')

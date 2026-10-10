@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.132.0(🗑️ **沙箱桌面功能整体退役**:工具面板「沙箱桌面」子类与工作面板、AI 侧 22 个 `desktop_*` 工具、`desktop_request_user_action` 请求介入横幅、Rust `starhub-domain-desktop` 域 crate 与 sidecar 的 `desktop_*` / `ui.desktop_ui_*` 方法面、`approval-bridge` 的沙箱风险分级一并删除(android 复用的 `FileSettingsStore` 抽到 `settings_store.rs` 保留);AI 可直接操控的 GUI 目标只剩 Android 真机。) |
+| 当前版本 | v0.132.1(🐛 **plugin:bundle 静默装旧 sidecar 二进制**:前置校验原先只查 `client-nav/lib/client.js` 新旧,不管两个 sidecar——`sidecar-rust/target/release/` 里上一次构建的 exe 会被优先装进包,已删的能力面(方法/工具)在模型侧依然存在。现在 Rust(`sidecar-rust/crates/**/*.{rs,toml}`)与 Go(`sidecar/**/*.go`)源码比所选二进制新即 fail loud,提示先跑 `npm run sidecar-rust:build:release` / `npm run sidecar:build`。) |
 
 ## 架构一句话
 
@@ -144,4 +144,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-10 (v0.132.0)*
+*最后更新: 2026-10-10 (v0.132.1)*
