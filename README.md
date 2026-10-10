@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.129.7-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.131.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,8 +47,12 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.129.7 (2026-10-10)
-- 🐛 🐛 **插件装上桌面端但启用被回滚:"loaded without registering"**:`client.js` 由 tsdown 在构建期把**源包名**(`@deepseek-ai/dsh-starhub-client-nav`)烙进 `__ModuleLoader__.load({ id })`,而宿主给安装包下发的 boot 图行 id 是**安装包名**(`@starhub/dsh-plugin`)——加载器按行 id 等注册,脚本执行了却没注册同名 id,于是客户端半边同步失败、服务端启用状态整体回滚(host 端一切正常,所以只有点启用时才炸)。修复:`build-plugin-bundle.mjs` 组装时把产物 `client.js` 里的源包名整体改写成 bundle 包名(注册 id、样式 `data-plugin` 标签一并改,源码不动);`assertBundle` 新增「注册 id == 安装包名」自检,fail loud 提前到打包前;`tests/plugin-bundle.test.mjs` 补两条改写单测。
+### v0.131.0 (2026-10-10)
+- 🗑️ 🗑️ **设置页精简到只剩 Android 设备 + SSH**:审计日志、告警规则、沙箱平台、关于四个设置区块(`settings.section`)整体删除;沙箱平台固定本机(`docker.connect {}` 空参),原「选择既有 Docker 连接」入口随设置页退场。
+- 🗑️ 🗑️ **Git 相关功能整体退场**:会话头部 git 分支胶囊、Git 工作台(变更/暂存/diff/提交/历史/分支切换)、AI 提交信息草稿,连同 `starhub-commit-message` 宿主插件(`POST /starhub/git/commit-message` 端点)一并移除;内置插件从 10 个收敛为 9 个,`build-plugin-bundle.mjs` / `provision-dsh.mjs` / 两个 `cordis.patch.yml` / tsconfig 引用 / 锁文件同步收敛。
+- 🗑️ 🗑️ **侧栏「直播」入口移除**(白页根因):手动点进直播面板时通道簿为空,面板渲染 null 呈现白页。直播主面板本身保留——AI 操作 Android 设备/沙箱时自动出现并承载实时画面,Android 面板「直播」按钮不受影响;面板在通道簿变空时自动让回工具面板。
+- ✨ ✨ **工作台标签条「返回工具列表」按钮**:此前从资产操作页回工具面板必须把所有页签 × 完(页簿空才自动让回),现在标签条左侧一键直达。
+- 🔧 🎨 **工具面板交互与样式优化**:子类手风琴支持再点一次收起(`selectSubcategory(null)`);直播面板 CSS 从不存在的 token 名(恒走硬编码深色兜底)切换到 dsw alias token,跟随壳内明暗主题;工具面板样式表重复 `.list` 声明去重。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

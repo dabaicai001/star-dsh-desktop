@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.129.7(🐛 **插件装上桌面端但启用被回滚:"loaded without registering"**:`client.js` 由 tsdown 在构建期把**源包名**(`@deepseek-ai/dsh-starhub-client-nav`)烙进 `__ModuleLoader__.load({ id })`,而宿主给安装包下发的 boot 图行 id 是**安装包名**(`@starhub/dsh-plugin`)——加载器按行 id 等注册,脚本执行了却没注册同名 id,于是客户端半边同步失败、服务端启用状态整体回滚(host 端一切正常,所以只有点启用时才炸)。修复:`build-plugin-bundle.mjs` 组装时把产物 `client.js` 里的源包名整体改写成 bundle 包名(注册 id、样式 `data-plugin` 标签一并改,源码不动);`assertBundle` 新增「注册 id == 安装包名」自检,fail loud 提前到打包前;`tests/plugin-bundle.test.mjs` 补两条改写单测。) |
+| 当前版本 | v0.131.0(🗑️ **设置页精简到只剩 Android 设备 + SSH**:审计日志、告警规则、沙箱平台、关于四个设置区块(`settings.section`)整体删除;沙箱平台固定本机(`docker.connect {}` 空参),原「选择既有 Docker 连接」入口随设置页退场。) |
 
 ## 架构一句话
 
@@ -47,8 +47,8 @@ starhub/
 │   ├── examples/
 │   │   ├── starhub-web/      # web 组合的 profile 模板(旧 Tauri 壳用)
 │   │   └── starhub-desktop/  # desktop 组合的 profile 模板(provisioning 用)
-│   └── packages/starhub/     # 10 个内置插件:approval-bridge / bridge / client-nav /
-│                             # commit-message / domain-events / host-static / live-context /
+│   └── packages/starhub/     # 9 个内置插件:approval-bridge / bridge / client-nav /
+│                             # domain-events / host-static / live-context /
 │                             # session-registry / tool-context / tools
 │
 ├── scripts/
@@ -144,4 +144,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-10 (v0.129.7)*
+*最后更新: 2026-10-10 (v0.131.0)*
