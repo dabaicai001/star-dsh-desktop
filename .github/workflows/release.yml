@@ -123,6 +123,48 @@ jobs:
         # windowDist 指过去。
         run: npm run build:window
 
+      - name: Assemble the pure-plugin bundle tarball
+        # 纯插件形态的发布资产(libs / 工作台 dist / 两个 sidecar 与 installer 同源),
+        # 因此在这里产出而不是单开一条 workflow:同一个 tag 触发两条链会各自重建
+        # 一遍 release sidecar,实测各占 ~15 分钟。
+        #
+        # 直接 node 调用:`npm run plugin:bundle -- --pack` 在 Windows PowerShell 下
+        # 会被吞掉 `--pack`(踩坑记录 §61),CI 的 windows runner 默认就是 pwsh。
+        run: node scripts/build-plugin-bundle.mjs --pack
+
+      - name: Verify plugin tarball contents
+        # 包体是「装完能不能跑」的全部:两个 sidecar、工作台 dist、客户端半边必须
+        # 真的在 tarball 里,且不得夹带 sourcemap(踩坑记录 §59/§60 之外的体积坑)。
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $asset = (Get-ChildItem starhub-dsh-plugin-*.tgz | Select-Object -First 1).Name
+          if (-not $asset) { throw '没产出 starhub-dsh-plugin-*.tgz' }
+          $entries = tar -tzf $asset
+          $required = @(
+            'package/package.json',
+            'package/cordis.patch.yml',
+            'package/bridge/sidecar/starhub-sidecar-rust.exe',
+            'package/bridge/sidecar/starhub-sidecar.exe',
+            'package/host-static/dist/index.html',
+            'package/client-nav/lib/client.js'
+          )
+          foreach ($needle in $required) {
+            if (-not ($entries -match [regex]::Escape($needle))) { throw "tarball 缺少 $needle" }
+          }
+          if ($entries -match '\.map$') { throw 'tarball 不该带 sourcemap' }
+          Write-Host "tarball $asset 内容校验通过($($entries.Count) 项,含两个 sidecar 与工作台 dist)"
+
+      - name: 'Smoke: plugin tarball install + host boot'
+        # 复刻插件页的安装动作(pnpm add <tarball> + 选入 dsh.profile.bundles),
+        # 再起宿主验五条断言(包内 dist / 包内 sidecar / 错误通路 / SSE / 客户端半边)。
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $asset = (Get-ChildItem starhub-dsh-plugin-*.tgz | Select-Object -First 1).FullName
+          node scripts/smoke-plugin-bundle.mjs --spec "$asset" --timeout 180000
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: 'Smoke: provisioning + host boot'
         # 发布前的最后一道可离线验的门:provisioning 一个一次性 DSH_HOME 并用
         # dsh-runtime 里的便携 node boot 宿主进程,断言五条(工作台 index /
@@ -201,6 +243,13 @@ jobs:
             --sidecar-go sidecar\bin\starhub-sidecar.exe `
             --window-dist dist-starhub-react
 
+      - name: Upload plugin tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: starhub-plugin-bundle-${{ github.ref_name }}
+          path: starhub-dsh-plugin-*.tgz
+          if-no-files-found: error
+
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
@@ -273,3 +322,4 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             release-artifacts/**/*.exe
+            release-artifacts/**/*.tgz

@@ -9,6 +9,11 @@
 
 ---
 
+## [0.129.3] - 2026-10-10
+
+### 变更
+- 🔧 **一个 tag 只跑一条发布链**:上一版把插件 tarball 放进独立的 `plugin-bundle.yml` 并让它也监听 `v*.*.*`,于是推一个 tag 会同时起「Release desktop bundles」与「Publish StarHub plugin bundle」两条 job,各自重建一遍 release sidecar(实测各 ~15 分钟),看起来像「两个版本在打包」。现在插件 tarball 的组装/校验/冒烟搬进 `release.yml` 的 windows job——它本来就构建了 libs、工作台 dist 与两个 sidecar,顺手打包即可;tarball 作为独立 artifact 上传,并与 installer 一起挂到同一个 Release。`plugin-bundle.yml` 退化为 **workflow_dispatch 手动兜底**(装机链因签名/更新源 secrets 走不到 publish 时,单独产出插件 URL)。
+
 ## [0.129.2] - 2026-10-10
 
 ### 修复

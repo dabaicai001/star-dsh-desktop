@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.129.2(🐛 **插件 tarball 里混进了插件 lib 的 sourcemap**:工作台 dist 的 `.map` 已在组装时排除,但十个插件的 `lib/` 是整目录拷贝,而 tsdown 给客户端半边与部分 host lib 也产 `.map`(它们经 `files` 白名单进 tarball)——CI 的 tar 内容校验第一次真跑就抓到了(本地只查了工作台那一份,漏了这条)。修复:拷贝 `lib/` 同样过滤 `.map`,并在组装期 `assertBundle` 加一道「产物不得含任何 `.map`」的自检(fail loud 提前到打包前)。效果:`dist-plugin/` 67.2 → **54.0 MB**,tarball 21.5 → **18.6 MB**。) |
+| 当前版本 | v0.129.3(🔧 **一个 tag 只跑一条发布链**:上一版把插件 tarball 放进独立的 `plugin-bundle.yml` 并让它也监听 `v*.*.*`,于是推一个 tag 会同时起「Release desktop bundles」与「Publish StarHub plugin bundle」两条 job,各自重建一遍 release sidecar(实测各 ~15 分钟),看起来像「两个版本在打包」。现在插件 tarball 的组装/校验/冒烟搬进 `release.yml` 的 windows job——它本来就构建了 libs、工作台 dist 与两个 sidecar,顺手打包即可;tarball 作为独立 artifact 上传,并与 installer 一起挂到同一个 Release。`plugin-bundle.yml` 退化为 **workflow_dispatch 手动兜底**(装机链因签名/更新源 secrets 走不到 publish 时,单独产出插件 URL)。) |
 
 ## 架构一句话
 
@@ -144,4 +144,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-10 (v0.129.2)*
+*最后更新: 2026-10-10 (v0.129.3)*
