@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.132.3(🐛 **SSH 终端 / 数据库面板密码认证恒失败(`[AUTH_FAILED] Authentication rejected and no further methods available`)**:M2 起 `ui.get_assets` 返回的 `config` 已把敏感字段拆进密钥存储(「不含密钥」),而工作台的连接面正是从 `asset.config` 取密码建连(SSH 终端的 `buildSshAuth(asset.config)`、DB/Redis/ES/Docker/broker 面板)——等于每次都用空密码认证。现在 `ui.get_assets` 恢复 Tauri 版经 keyring hydrate 的语义:UI 面清单返回**合并密钥后**的配置(密钥缺失/存储损坏时退回未合并的配置,清单照常打得开);模型面 `starhub_list_assets` 的文本摘要仍只取非敏感字段。) |
+| 当前版本 | v0.133.0(✨ **工具面板资产行右键「在浏览器中打开」**:把该资产的独立工作台页(`/starhub-react/index.html?asset=…`)交给**系统默认浏览器**开成独立窗口,方便拖到第二块屏或与主壳并排(壳的 `window.open` 处理器把 http/https 转 `shell.openExternal`)。同一个 URL 在壳内仍是面板页,两者共用一套宿主桥。) |
 
 ## 架构一句话
 
@@ -144,4 +144,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-10 (v0.132.3)*
+*最后更新: 2026-10-10 (v0.133.0)*

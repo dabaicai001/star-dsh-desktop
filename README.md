@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.132.3-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.133.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,8 +45,10 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.132.3 (2026-10-10)
-- 🐛 🐛 **SSH 终端 / 数据库面板密码认证恒失败(`[AUTH_FAILED] Authentication rejected and no further methods available`)**:M2 起 `ui.get_assets` 返回的 `config` 已把敏感字段拆进密钥存储(「不含密钥」),而工作台的连接面正是从 `asset.config` 取密码建连(SSH 终端的 `buildSshAuth(asset.config)`、DB/Redis/ES/Docker/broker 面板)——等于每次都用空密码认证。现在 `ui.get_assets` 恢复 Tauri 版经 keyring hydrate 的语义:UI 面清单返回**合并密钥后**的配置(密钥缺失/存储损坏时退回未合并的配置,清单照常打得开);模型面 `starhub_list_assets` 的文本摘要仍只取非敏感字段。
+### v0.133.0 (2026-10-10)
+- ✨ ✨ **工具面板资产行右键「在浏览器中打开」**:把该资产的独立工作台页(`/starhub-react/index.html?asset=…`)交给**系统默认浏览器**开成独立窗口,方便拖到第二块屏或与主壳并排(壳的 `window.open` 处理器把 http/https 转 `shell.openExternal`)。同一个 URL 在壳内仍是面板页,两者共用一套宿主桥。
+- 🔧 🎨 **侧栏入口更名「StarHub 工具」并换品牌图标**:侧栏里「工具」与「插件」「自动化任务」并列时分不清是谁的工具;图标从通用数据库字形换成 StarHub 品牌标记(四角星 + 中心节点,与插件页 `icon.svg` 同源,线条规格与 dsh 图标一致)。
+- 📝 📝 **记录「dsh 内置浏览器打开 StarHub 页面白页」的原因**:壳的 webview guest 会话被策略禁止请求宿主源(同端口 + `127.0.0.1`/`localhost` 一律 cancel),所以 `http://127.0.0.1:19387/...` 在内置浏览器里必然白页——要用浏览器看就用系统浏览器打开。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
