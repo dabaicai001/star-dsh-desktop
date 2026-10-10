@@ -9,6 +9,11 @@
 
 ---
 
+## [0.132.3] - 2026-10-10
+
+### 修复
+- 🐛 **SSH 终端 / 数据库面板密码认证恒失败(`[AUTH_FAILED] Authentication rejected and no further methods available`)**:M2 起 `ui.get_assets` 返回的 `config` 已把敏感字段拆进密钥存储(「不含密钥」),而工作台的连接面正是从 `asset.config` 取密码建连(SSH 终端的 `buildSshAuth(asset.config)`、DB/Redis/ES/Docker/broker 面板)——等于每次都用空密码认证。现在 `ui.get_assets` 恢复 Tauri 版经 keyring hydrate 的语义:UI 面清单返回**合并密钥后**的配置(密钥缺失/存储损坏时退回未合并的配置,清单照常打得开);模型面 `starhub_list_assets` 的文本摘要仍只取非敏感字段。
+
 ## [0.132.2] - 2026-10-10
 
 ### 修复
