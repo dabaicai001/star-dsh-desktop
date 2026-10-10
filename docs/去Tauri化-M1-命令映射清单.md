@@ -149,9 +149,11 @@ M1 第 7 步随能力整体删除(工具定义、`dsh://tool-exec` 转发通道�
    - 异步域方法经 `register_async!`(`Runtime::block_on`)注册,registry
      同步 handler 面不变;`starhub_list_assets` / `bind_asset_context` 同批落地;
    - 域事件出口:NotificationSink 把 `ssh:data` / `ssh:exec-done` /
-     `sftp://transfer-*` 转成 `starhub/domain-event` 通知,排队后在对应
-     请求的响应之前刷盘(因果顺序);`starhub/exec.abort` 通知按 exec_id
-     中断在途命令(停止生成);
+     `sftp://transfer-*` 转成 `starhub/domain-event` 通知,**产生即写**
+     (2026-10-10 修正:原「排队后在本条请求的响应之前刷盘」让交互式提示
+     永远迟到——主机密钥/MFA/堡垒机提示要等请求跑完才发得出去,而对端正是
+     要拿这个提示去回答该请求,形成自锁;见 `docs/踩坑记录.md` §64);
+     `starhub/exec.abort` 通知按 exec_id 中断在途命令(停止生成);
    - **验证**:workspace 133 例全绿(71 域 + 48 库 + 14 集成);src-tauri 167 不变;
    - **端到端(真 SSH,非 mock)**:`test-sftp/exec_server.py`(password 认证
      + exec + SFTP 子系统,宿主机密钥复用)+ `test-sftp/verify_sidecar_ssh.py`
@@ -208,7 +210,9 @@ M1 第 7 步随能力整体删除(工具定义、`dsh://tool-exec` 转发通道�
       的静态文本分开);域工具成功后回写 AI 起源领域事件
       (`starhub/domain.event`)+ recentExecs(契约 §1/M4);
     - **事件因果顺序修正**:通知改在「本条请求处理完、响应写出之前」刷盘
-      (旧实现在下一条入站帧时才刷,对端看到的是「果在因前」);
+      (旧实现在下一条入站帧时才刷,对端看到的是「果在因前」);**2026-10-10
+      再修正**:per-frame 工作线程 + 事件产生即写(见上 §4 与 `docs/踩坑记录.md`
+      §64)——「请求跑完才刷盘」把交互式提示锁在请求后面,是死锁而不是顺序问题;
     - bridge 插件兼容层:`sdk-transport` / `sdk-notifications` 两个宿主私有
       服务改由 bridge provide(与 sdk-jsonrpc-server 在 Tauri 组合里同名,
       二选一,重复提供 fail loud),`starhub/tool.execute {sessionId,name,args}`

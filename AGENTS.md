@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.132.1(🐛 **plugin:bundle 静默装旧 sidecar 二进制**:前置校验原先只查 `client-nav/lib/client.js` 新旧,不管两个 sidecar——`sidecar-rust/target/release/` 里上一次构建的 exe 会被优先装进包,已删的能力面(方法/工具)在模型侧依然存在。现在 Rust(`sidecar-rust/crates/**/*.{rs,toml}`)与 Go(`sidecar/**/*.go`)源码比所选二进制新即 fail loud,提示先跑 `npm run sidecar-rust:build:release` / `npm run sidecar:build`。) |
+| 当前版本 | v0.132.2(🐛 **sidecar 串行 stdio 循环:交互式 SSH 提示永远迟到,首次连接必失败且整个工具面一起卡死**:Rust sidecar 原先逐帧串行处理请求(异步 handler 在循环线程上 `block_on`,SSH 连接最长等 370s),域事件又只在**请求跑完**后才刷盘——主机密钥确认 / MFA 验证码 / 堡垒机「选机器」这三类提示要等请求结束才发得出去,而前端正是拿这个提示去回答同一个请求,自锁成 `[HOSTKEY_TIMEOUT]`(实测 `ssh:hostkey-confirm` 迟到 60.4s,补答只得到「No pending hostkey prompt」);同一时间窗内「测试连接」转圈、创建/列表/保存全部排队(用户视角是界面死机)。现在每条入站帧各起一个工作线程,事件出口改为产生即写 stdout:同一帧序下提示 117ms 到手、应答 1ms 内被接收、请求 119ms 结算,连接在途期间 `ping` 15ms 返回;同一请求内「事件先于响应」的因果顺序仍成立。) |
 
 ## 架构一句话
 
@@ -144,4 +144,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-10 (v0.132.1)*
+*最后更新: 2026-10-10 (v0.132.2)*

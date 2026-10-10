@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.132.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.132.2-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -46,7 +46,11 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 ## 当前版本
 
 ### v0.132.2 (2026-10-10)
-- 🐛 🐛 **plugin:bundle 静默装旧 sidecar 二进制**:前置校验原先只查 `client-nav/lib/client.js` 新旧,不管两个 sidecar——`sidecar-rust/target/release/` 里上一次构建的 exe 会被优先装进包,已删的能力面(方法/工具)在模型侧依然存在。现在 Rust(`sidecar-rust/crates/**/*.{rs,toml}`)与 Go(`sidecar/**/*.go`)源码比所选二进制新即 fail loud,提示先跑 `npm run sidecar-rust:build:release` / `npm run sidecar:build`。
+- 🐛 🐛 **sidecar 串行 stdio 循环:交互式 SSH 提示永远迟到,首次连接必失败且整个工具面一起卡死**:Rust sidecar 原先逐帧串行处理请求(异步 handler 在循环线程上 `block_on`,SSH 连接最长等 370s),域事件又只在**请求跑完**后才刷盘——主机密钥确认 / MFA 验证码 / 堡垒机「选机器」这三类提示要等请求结束才发得出去,而前端正是拿这个提示去回答同一个请求,自锁成 `[HOSTKEY_TIMEOUT]`(实测 `ssh:hostkey-confirm` 迟到 60.4s,补答只得到「No pending hostkey prompt」);同一时间窗内「测试连接」转圈、创建/列表/保存全部排队(用户视角是界面死机)。现在每条入站帧各起一个工作线程,事件出口改为产生即写 stdout:同一帧序下提示 117ms 到手、应答 1ms 内被接收、请求 119ms 结算,连接在途期间 `ping` 15ms 返回;同一请求内「事件先于响应」的因果顺序仍成立。
+- 🐛 🐛 **「新建连接 → 创建/保存」只得到「缺少 id」**:前端按 Tauri 契约把配置包在 `params` 里下发(与其余 113 个调用点同形),sidecar 的 `ui.create_asset` 却读平铺字段并要求 `id` 必填。现在 `ui.create_asset` / `ui.update_asset` 受理两种形态,`id` 缺省由 sidecar 生成 uuid(与 Tauri 版同一约定),`groupId` / `group_id` 都认,未下发的字段沿用既有行(改名不再顺手清空标签/收藏/分组,也不再因缺 `type` 报错)。
+- 🐛 🐛 **设置里的「完全权限」被静默降级成「工作区内修改」**:`starhub-approval-bridge` 在 `session/created` 上抢在 dsh `permission-presets` 之前写 `approval/policy=ask`,把后者的「全新会话」判定(preset/sandbox/approval 三者全空)打脏,缺的沙箱改用**进程默认值**补,`defaultPreset` 因此被忽略(默认设「只读」时会反过来放大成 workspace-write)。现在组合里有 `permission-presets` 时本桥不写任何权限事实(仅无它的内嵌组合保留钉 ask),风险门改按会话生效策略判定:策略 `never`(完全权限)直接放行,不再制造注定被 `decide()` 驳回的 ask——原「删除/高危档任何预设都必须确认」的 hard 档与 never 语义不可兼得,随之下线,`classifyStarHubCall` 只保留 ask 分级。
+- 🔧 🔧 **sidecar 事件出口改「产生即写」**:通知不再经队列等请求结束,同一请求内仍保证先事件后响应;响应按 JSON-RPC `id` 配对,乱序返回对工作台无影响。
+- ✅ ✅ **回归覆盖**:`protocol.rs` 新增 `a_pending_request_does_not_block_the_next_one`(慢命令在途时 ping 必须先回,不依赖网络)与 `ui_create_asset_accepts_the_workbench_wrapped_payload`(工作台真实负载 + update 的 id 在顶层);新增 `approval-bridge/tests/permission-policy.spec.ts`(真 `Context` + 真 `ApprovalService` + 真 `SessionStore`)钉住「有 preset 服务时不写权限事实 / 无它时钉 ask / never 下风险门放行」。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
