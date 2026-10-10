@@ -316,6 +316,11 @@ async function assertBundle(outDir, manifest, patchText, packageName) {
     const abs = join(outDir, target)
     if (!existsSync(abs)) problems.push(`exports["${subpath}"] 目标缺失: ${target}`)
   }
+  // 分发包不带 sourcemap:体积占七成,且运行时要不到。漏一个就白打十几 MB,
+  // 所以在组装期就拦住(CI 的 tar 内容校验是第二道)。
+  for (const file of await listFilesRecursive(outDir)) {
+    if (file.endsWith('.map')) problems.push(`产物里不应有 sourcemap: ${file.slice(outDir.length + 1)}`)
+  }
   const yaml = loadYamlParser()
   if (yaml === null) {
     console.warn('[bundle] 未找到 js-yaml,patch 语法校验跳过')
@@ -403,7 +408,12 @@ async function main() {
 
   for (const plugin of PLUGINS) {
     const source = join(vendorRoot, 'packages', 'starhub', plugin.short)
-    await cp(join(source, 'lib'), join(options.out, plugin.short, 'lib'), { recursive: true })
+    // 同样不带 sourcemap:tsdown 给客户端半边与部分 host lib 产出 .map,
+    // 它们会经 `files` 白名单进 tarball(实测 CI 上被内容校验抓出),而运行时不需要。
+    await cp(join(source, 'lib'), join(options.out, plugin.short, 'lib'), {
+      recursive: true,
+      filter: entry => !entry.endsWith('.map'),
+    })
     const packageJson = {
       name: `${options.name}/${plugin.short}`,
       version,
@@ -549,6 +559,33 @@ async function readdirSafe(dir) {
     return await readdir(dir)
   } catch {
     return []
+  }
+}
+
+/**
+ * 递归列出目录下的文件绝对路径(组装期自检用;目录不存在当空)。
+ * @param dir - 起始目录。
+ * @returns 文件绝对路径列表。
+ */
+async function listFilesRecursive(dir) {
+  const files = []
+  for (const entry of await readdirSafe(dir)) {
+    const full = join(dir, entry)
+    const kind = await pathKindOf(full)
+    if (kind === 'dir') files.push(...await listFilesRecursive(full))
+    else if (kind === 'file') files.push(full)
+  }
+  return files
+}
+
+/** `'dir' | 'file' | 'missing'`。 */
+async function pathKindOf(path) {
+  try {
+    const { stat } = await import('node:fs/promises')
+    const info = await stat(path)
+    return info.isDirectory() ? 'dir' : 'file'
+  } catch {
+    return 'missing'
   }
 }
 

@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.129.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.129.2-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,12 +47,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.129.1 (2026-10-10)
-- ✨ ✨ **推 tag 自动把插件 tarball 挂到 GitHub Release**:新增 `.github/workflows/plugin-bundle.yml`——`v*.*.*` tag 或手动 dispatch 时,在 windows runner 上构建 lib/工作台/sidecar、用 `--pack` 组装 bundle、**校验 tarball 内容**(两个 sidecar、工作台 dist、客户端半边都在,且不带 sourcemap)、跑一遍真安装冒烟,最后把资产挂到该 tag 的 Release。它与 `release.yml`(上游 Electron installer,需要签名/更新源 secrets)**完全解耦**:插件那条路的 URL 不再取决于装机包能不能打出来。用户可以粘的 URL 形如
-- ✨ ✨ 新增 `npm run plugin:pack`(组装 + 打 tarball 一步到位)。
-- 🔧 🔧 **插件 tarball 的资产名带平台标记**:包内是两个平台相关的 sidecar 二进制,同名资产在同一个 Release 上会互相覆盖,而用户粘的 URL 必须唯一指到本平台那一份——现在叫 `starhub-dsh-plugin-<版本>-<win|linux|mac>-<x64|arm64>.tgz`,组装脚本同时把对应的 Release URL 打印出来(`git remote` 解得 owner/repo)。
-- 🔧 🔧 POSIX 上给包内两个 sidecar 加可执行位(`chmod 755`):Linux/macOS 解包后没有 `+x` 时桥 spawn 直接 `EACCES`,属于「装完工作台能开、工具全报错」的隐性故障。
-- 🐛 🐛 **Windows PowerShell 下 `npm run <script> -- --flag` 的 flag 被吞**(踩坑记录 §61):`npm run plugin:bundle -- --pack` 在 pwsh 里脚本收不到 `--pack`,静默走「只组装不打包」分支;CI 的 windows runner 默认 shell 就是 pwsh,同一条命令会让工作流产出不了 tarball。修复:单列 `plugin:pack` 脚本,工作流步骤直接 `node scripts/build-plugin-bundle.mjs --pack`。
+### v0.129.2 (2026-10-10)
+- 🐛 🐛 **插件 tarball 里混进了插件 lib 的 sourcemap**:工作台 dist 的 `.map` 已在组装时排除,但十个插件的 `lib/` 是整目录拷贝,而 tsdown 给客户端半边与部分 host lib 也产 `.map`(它们经 `files` 白名单进 tarball)——CI 的 tar 内容校验第一次真跑就抓到了(本地只查了工作台那一份,漏了这条)。修复:拷贝 `lib/` 同样过滤 `.map`,并在组装期 `assertBundle` 加一道「产物不得含任何 `.map`」的自检(fail loud 提前到打包前)。效果:`dist-plugin/` 67.2 → **54.0 MB**,tarball 21.5 → **18.6 MB**。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
