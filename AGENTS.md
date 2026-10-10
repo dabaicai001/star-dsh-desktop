@@ -17,7 +17,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 
 ## 架构一句话
 
-三层进程:**上游 Electron 壳(零改动)** 跑 dsh Host(Node)进程 → Host 里的 **starhub-bridge 插件** spawn 两个 sidecar:**Rust sidecar(`sidecar-rust/`,ssh/sftp/android/desktop/browser 契约层 + 直播帧枢纽)** 与 **Go Sidecar(`sidecar/`,数据库/中间件适配)**,均经 stdio 换行分帧 JSON-RPC 通话 → **前端**是 DSH 主壳 + StarHub React 工作台(`vendor/deepseek-harness/`,上游 `deepseek-ai/deepseek-harness` 的 vendored 副本,随仓库直接版本化)。
+三层进程:**上游 Electron 壳(零改动)** 跑 dsh Host(Node)进程 → Host 里的 **starhub-bridge 插件** spawn 两个 sidecar:**Rust sidecar(`sidecar-rust/`,ssh/sftp/android/browser 契约层 + 直播帧枢纽)** 与 **Go Sidecar(`sidecar/`,数据库/中间件适配)**,均经 stdio 换行分帧 JSON-RPC 通话 → **前端**是 DSH 主壳 + StarHub React 工作台(`vendor/deepseek-harness/`,上游 `deepseek-ai/deepseek-harness` 的 vendored 副本,随仓库直接版本化)。
 
 ## 目录结构
 
@@ -28,7 +28,7 @@ starhub/
 │       ├── starhub-sidecar      # 二进制 + stdio JSON-RPC 方法面(模型面 + ui.* 面)
 │       ├── starhub-live         # 直播/接管帧枢纽(M3):本地 WS + Android 帧源
 │       ├── starhub-contract     # 领域事件 schema + 模型可读能力文本
-│       └── starhub-domain-{ssh,db,desktop,android,browser}
+│       └── starhub-domain-{ssh,db,android,browser}
 │
 ├── sidecar/                 # Go 1.25 Sidecar — 数据库/中间件代理
 │   ├── main.go               # stdio JSON-RPC server 入口

@@ -34,6 +34,6 @@ The bridge itself contributes one model-visible tool, `starhub_sidecar_status` (
 
 ## Known Limitations and Deferred Work
 
-- Only the Android frame source exists (`starhub-live`'s `android` module); the browser (CDP screencast) and sandbox-desktop frame sources land with the next M3 batches, and the in-shell panel that consumes this route is the one after that.
+- Only the Android frame source exists (`starhub-live`'s `android` module); the browser and sandbox-desktop frame sources were dropped in the M3 decision, and the shell's live panel consumes the Android route.
 - Excel tools (`excel_*`, 24) were removed together with the capability: the React workbench has no workbook view, so the frontend executor they forwarded to no longer existed. See the CHANGELOG entry.
 - `sidecarCommand` names a single Rust binary; per-domain binaries remain an option if isolation demands it.

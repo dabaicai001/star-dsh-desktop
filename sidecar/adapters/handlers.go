@@ -1596,7 +1596,7 @@ func RegisterDockerHandlers(server ServerInterface, mgr *pool.Manager) {
 	server.Register("docker.execSessionResize", handleDockerExecSessionResize(mgr))
 	server.Register("docker.execSessionClose", handleDockerExecSessionClose(mgr))
 
-	// 沙箱桌面平台编排能力(docker_manage.go)
+	// Docker 编排能力(docker_manage.go)
 	server.Register("docker.createContainer", handleDockerCreateContainer(mgr))
 	server.Register("docker.pauseContainer", handleDockerPauseContainer(mgr))
 	server.Register("docker.unpauseContainer", handleDockerUnpauseContainer(mgr))
@@ -1923,7 +1923,7 @@ func handleDockerExec(mgr *pool.Manager) Handler {
 	}
 }
 
-// ─── 沙箱桌面平台编排(docker_manage.go)───
+// ─── Docker 编排(docker_manage.go)───
 
 func handleDockerCreateContainer(mgr *pool.Manager) Handler {
 	return func(params json.RawMessage) (interface{}, error) {

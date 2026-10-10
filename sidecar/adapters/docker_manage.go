@@ -17,9 +17,9 @@ import (
 	"github.com/docker/go-connections/nat"
 )
 
-// 本文件是沙箱桌面平台(见 docs/superpowers/specs/2026-08-28-desktop-automation-design.md)
-// 所需的 Docker 编排能力补齐:完整参数建容器 / 镜像构建 / 文件出入箱 / 暂停与检查点 /
-// 自定义网络。全部是通用 Docker 管理能力,不含沙箱业务语义(语义层在 Rust 侧)。
+// 本文件是完整 Docker 编排能力面:完整参数建容器 / 镜像构建 / 文件出入容器 / 暂停与
+// 检查点 / 自定义网络,供 Docker 面板与桥兼容层使用。全部是通用 Docker 管理能力,
+// 不含领域业务语义(沙箱桌面域已于 v0.132.0 退役)。
 
 // PortBindingSpec 一条端口发布规则;HostPort 为 0 时由 Docker 自动分配,
 // HostIP 默认 127.0.0.1(只对本机回环发布,不暴露到局域网)。
@@ -31,7 +31,7 @@ type PortBindingSpec struct {
 }
 
 // CreateContainerSpec 完整容器创建配置。NetworkMode 取值 "default"/"bridge"/"host"/"none"
-// 或自定义网络名(如沙箱 restricted 档的隔离网络)。
+// 或自定义网络名。
 type CreateContainerSpec struct {
 	Name           string            `json:"name,omitempty"`
 	Image          string            `json:"image"`
@@ -166,7 +166,7 @@ func (a *DockerAdapter) CreateContainer(spec *CreateContainerSpec) (*CreateConta
 	return result, nil
 }
 
-// PauseContainer 暂停容器(沙箱 pause,对应 E2B pause)。
+// PauseContainer 暂停容器。
 func (a *DockerAdapter) PauseContainer(containerID string) error {
 	ctx, cancel := dockerAPIContext()
 	defer cancel()
@@ -180,7 +180,7 @@ func (a *DockerAdapter) UnpauseContainer(containerID string) error {
 	return a.cli.ContainerUnpause(ctx, containerID)
 }
 
-// CommitContainer 把容器当前状态固化为镜像(沙箱检查点)。reference 形如 "repo:tag"。
+// CommitContainer 把容器当前状态固化为镜像(检查点/派生镜像)。reference 形如 "repo:tag"。
 func (a *DockerAdapter) CommitContainer(containerID, reference, comment string) (string, error) {
 	if strings.TrimSpace(reference) == "" {
 		return "", fmt.Errorf("reference is required")
@@ -377,7 +377,7 @@ func parseBuildStreamLine(line []byte) (string, string, error) {
 	return strings.TrimRight(entry.Stream, "\n"), "", nil
 }
 
-// BuildImage 从单份 Dockerfile 构建镜像(沙箱模板构建)。tag 必填。
+// BuildImage 从单份 Dockerfile 构建镜像。tag 必填。
 func (a *DockerAdapter) BuildImage(dockerfile, tag string, pullParent bool) (*BuildImageResult, error) {
 	if strings.TrimSpace(tag) == "" {
 		return nil, fmt.Errorf("tag is required")
@@ -421,7 +421,7 @@ func (a *DockerAdapter) BuildImage(dockerfile, tag string, pullParent bool) (*Bu
 	return result, nil
 }
 
-// CreateNetwork 创建自定义网络(沙箱 restricted 档的隔离网络)。internal=true 时无外网出口。
+// CreateNetwork 创建自定义网络。internal=true 时无外网出口。
 func (a *DockerAdapter) CreateNetwork(name string, internal bool, labels map[string]string) (string, error) {
 	if strings.TrimSpace(name) == "" {
 		return "", fmt.Errorf("name is required")
