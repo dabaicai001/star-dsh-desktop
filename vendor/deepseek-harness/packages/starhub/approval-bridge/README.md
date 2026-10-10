@@ -8,7 +8,7 @@ dsh 权限 preset(`settings.yaml` 的 `permission.defaultPreset`,dsh web GUI
 - **preset 消费**:`session/created` 时读取 `permission.defaultPreset`,把会话
   审批策略固定为 `ask`。v0.106.1 起任何 preset 都钉 `ask`、绝不钉 `never`:
   `dsh-user-approval` 的 `decide()` 在 `never` 下先于所有 answerer 直接拒,
-  hard 档删除确认会被静默驳回(全访问下 `desktop_exec` 必拒的事故,见
+  hard 档删除确认会被静默驳回(全访问下 `android_exec` 必拒的事故,见
   StarHub `docs/踩坑记录.md` §32)。「全访问放行软确认」改由风险门按 preset
   判定。只填空缺:permission-presets 已按 preset 整体钉入 sandbox + approval
   的会话不再覆写(无条件覆写会与钉入 preset 冲突,如 `workspace-write + never`

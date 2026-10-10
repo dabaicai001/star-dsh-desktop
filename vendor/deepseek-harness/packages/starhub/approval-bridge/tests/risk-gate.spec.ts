@@ -151,41 +151,15 @@ describe('redis_exec gate', () => {
   })
 })
 
-describe('desktop_* gate(沙箱桌面,任务级授权)', () => {
-  it('hard-flags desktop_exec (沙箱与外界逻辑的交换口,即使 never 策略)', () => {
-    const verdict = classifyStarHubCall('desktop_exec', { command: 'ls' })
-    expect(verdict?.ask).toBe(true)
-    expect(verdict?.hard).toBe(true)
-  })
-
-  it('soft-asks for lifecycle/management tools;create 的确认即任务级授权', () => {
-    const create = classifyStarHubCall('desktop_create_sandbox', { template: 'ubuntu-desktop' })
-    expect(create?.ask).toBe(true)
-    expect(create?.hard).toBeUndefined()
-    if (create?.reason !== undefined) expect(create.reason).toContain('任务级授权')
-    for (const tool of [
-      'desktop_build_template', 'desktop_pause_sandbox', 'desktop_resume_sandbox',
-      'desktop_destroy_sandbox', 'desktop_commit_sandbox',
-    ]) {
-      const verdict = classifyStarHubCall(tool, {})
-      expect(verdict?.ask, tool).toBe(true)
-      expect(verdict?.hard, tool).toBeUndefined()
-    }
-  })
-
-  it('allows in-sandbox perception/action tools (授权由宿主在执行点强制)', () => {
-    for (const tool of [
-      'desktop_list_templates', 'desktop_sandbox_status', 'desktop_sandbox_replay',
-      'desktop_screenshot', 'desktop_list_windows', 'desktop_get_foreground_window',
-      'desktop_focus_window', 'desktop_click', 'desktop_double_click',
-      'desktop_move_mouse', 'desktop_scroll', 'desktop_drag', 'desktop_type',
-      'desktop_press_key', 'desktop_request_user_action',
-    ]) {
-      expect(classifyStarHubCall(tool, {}), tool).toEqual({ ask: false })
-    }
+describe('desktop_* gate(沙箱桌面,已整体删除)', () => {
+  it('desktop_* 工具已整体删除,风险门一律返回 null(不再介入)', () => {
+    expect(classifyStarHubCall('desktop_exec', { command: 'ls' })).toBeNull()
+    expect(classifyStarHubCall('desktop_create_sandbox', { template: 'ubuntu-desktop' })).toBeNull()
     expect(classifyStarHubCall('desktop_nope', {})).toBeNull()
   })
+})
 
+describe('android_* gate(实体机,任务级授权)', () => {
   it('android: connect/open_live 软确认,exec 恒确认 hard,传输/无线恒确认软档,感知/操作放行', () => {
     // 任务级授权与开窗:ask 不置 hard
     for (const tool of ['android_connect', 'android_open_live']) {

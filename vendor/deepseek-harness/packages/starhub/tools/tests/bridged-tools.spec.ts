@@ -27,6 +27,13 @@ describe('BRIDGED_TOOLS registry', () => {
     expect(browserTools).toEqual([])
   })
 
+  it('carries no desktop_* tool (AI 沙箱桌面已整体删除)', () => {
+    const desktopTools = BRIDGED_TOOLS
+      .map(spec => spec.toolName)
+      .filter(name => name.startsWith('desktop_'))
+    expect(desktopTools).toEqual([])
+  })
+
   it('keeps every spec model-usable: non-empty description and parameters object', () => {
     for (const spec of BRIDGED_TOOLS) {
       expect(spec.description.length, spec.toolName).toBeGreaterThan(0)

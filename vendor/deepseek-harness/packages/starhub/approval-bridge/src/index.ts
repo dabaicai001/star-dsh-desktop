@@ -7,7 +7,7 @@
  *    命名空间(dsh web GUI「设置 → 通用 → 权限」写入的 defaultPreset),
  *    把会话审批策略固定为 ask——v0.106.1 起不再把 danger-full-access 映射为
  *    never:dsh-user-approval 的 decide() 在 never 下先于所有 answerer 直接
- *    拒,hard 档删除确认(desktop_exec / DELETE FROM 等)会被静默驳回,
+ *    拒,hard 档删除确认(android_exec / DELETE FROM 等)会被静默驳回,
  *    与「hard 死规定必须弹卡」的设计意图矛盾(v0.106.0 实测事故)。
  *    StarHub 侧不再有自己的命令白名单,审核策略统一由 dsh 权限体系供给。
  * 2. starhub_* 工具风险门(防误删核心):tools/pre-execute 上把「需要人工
@@ -217,8 +217,6 @@ const ALWAYS_ASK_TOOLS: ReadonlySet<string> = new Set([
   'es_index_document',
   'es_delete_document',
   'es_delete_index',
-  // 沙箱桌面:箱内任意命令是沙箱与「外界逻辑」的交换口,不在任务级授权内
-  'desktop_exec',
   // Android 实体机:真实设备上的任意 shell 命令(实体机不可销毁,比沙箱更严)
   'android_exec',
   // Android 实体机:文件传输与无线配对(对齐 sftp 恒确认软档)
@@ -231,7 +229,6 @@ const ALWAYS_ASK_TOOLS: ReadonlySet<string> = new Set([
 const ALWAYS_ASK_HARD_TOOLS: ReadonlySet<string> = new Set([
   'es_delete_document',
   'es_delete_index',
-  'desktop_exec',
   'android_exec',
 ])
 
@@ -295,17 +292,6 @@ export function classifyStarHubCall(toolName: string, args: unknown): GateVerdic
         ? { ask: true, reason: '删除 Redis 数据,必须人工确认', hard: true }
         : { ask: true, reason: '写 Redis 命令,需要确认' }
     }
-    // 沙箱桌面(设计 §5.1):create_sandbox 的确认 = 任务级授权,之后箱内
-    // 截图/键鼠由宿主按授权在执行点放行;管理类(构建/暂停/恢复/销毁/固化)
-    // 软确认;desktop_exec 在 ALWAYS_ASK + hard 档。
-    case 'desktop_create_sandbox':
-      return { ask: true, reason: '创建沙箱即授予 AI 本次任务的全部沙箱内操作权限(任务级授权)' }
-    case 'desktop_build_template':
-    case 'desktop_pause_sandbox':
-    case 'desktop_resume_sandbox':
-    case 'desktop_destroy_sandbox':
-    case 'desktop_commit_sandbox':
-      return { ask: true, reason: '沙箱管理操作,需要确认' }
     // Android 实体机(设计 §5):connect 的确认 = 任务级授权,之后设备上
     // 截图/触控由宿主按授权在执行点放行;open_live 软确认(开直播窗口);
     // android_exec 恒确认 hard;pull/push/wireless 恒确认软档(上面集合)。
@@ -327,14 +313,6 @@ const STARHUB_DOMAIN_TOOLS: ReadonlySet<string> = new Set([
   'es_list_indices', 'es_cluster_health', 'es_get_mapping', 'es_search',
   'es_get_document', 'es_count',
   'docker_list_containers', 'docker_logs', 'docker_inspect', 'docker_exec',
-  // 沙箱桌面(Ubuntu 容器沙箱平台)
-  'desktop_list_templates', 'desktop_build_template', 'desktop_create_sandbox',
-  'desktop_sandbox_status', 'desktop_pause_sandbox', 'desktop_resume_sandbox',
-  'desktop_destroy_sandbox', 'desktop_commit_sandbox', 'desktop_sandbox_replay',
-  'desktop_screenshot', 'desktop_list_windows', 'desktop_get_foreground_window',
-  'desktop_focus_window', 'desktop_click', 'desktop_double_click',
-  'desktop_move_mouse', 'desktop_scroll', 'desktop_drag', 'desktop_type',
-  'desktop_press_key', 'desktop_exec', 'desktop_request_user_action',
   // Android 实体机(adb 直连真实设备)
   'android_list_devices', 'android_connect', 'android_disconnect',
   'android_device_status', 'android_replay', 'android_wireless',
@@ -415,7 +393,7 @@ export function apply(ctx: Context, config: ApprovalBridgeConfig = {}): void {
   //    volatile 字段,describe 的投影值可直接读。
   //    v0.106.1:任何 preset 都钉 ask,绝不钉 never——never 会让
   //    dsh-user-approval 的 decide() 先于 answerer 直接拒,hard 档删除
-  //    确认被静默驳回(全访问下 desktop_exec 必拒的事故)。全访问的
+  //    确认被静默驳回(全访问下 android_exec 必拒的事故)。全访问的
   //    「软确认放行」改由风险门按 preset 判断(见下)。
   const readDefaultPreset = (): string | undefined => {
     const value = ctx.settings.describe().find(row => row.ns === PERMISSION_NAMESPACE)?.value as { defaultPreset?: unknown } | undefined

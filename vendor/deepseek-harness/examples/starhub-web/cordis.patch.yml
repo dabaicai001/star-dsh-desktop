@@ -25,7 +25,7 @@
 
 # 全访问语义收窄(v0.106.1):danger-full-access 的 approval 由 never 改 ask。
 # never 会让 dsh-user-approval 的 decide() 先于所有 answerer 直接拒,StarHub
-# 风险门的 hard 档(DELETE FROM / rm -rf / desktop_exec 等删除/高危确认)被
+# 风险门的 hard 档(DELETE FROM / rm -rf / android_exec 等删除/高危确认)被
 # 静默驳回——「全访问」变成「hard 确认卡必拒」。改 ask 后由 starhub-approval-bridge
 # 风险门按 preset 判定:全访问预设下软确认(普通写操作)静默放行,hard 档照弹;
 # dsh 自家 bash/fs 工具在 sandbox danger-full-access 下本就不走审批升级,行为不变。
