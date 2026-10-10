@@ -9,6 +9,14 @@
 
 ---
 
+## [0.128.2] - 2026-10-10
+
+### 修复
+- 🐛 **CI 第一次真正跑起来就抓到的两个「只有 CI 会红」的测试缺陷**(v0.128.1 修好工作流文件的非法 YAML 之后,CI 与发布链才第一次真正执行):
+  1. **`starhub-domain-android` 的执行契约用例在没装 adb 的机器上必挂**。用例靠 `std::env::set_var("STARHUB_ADB_PATH", "/bin/sh")` 让 `resolve_adb` 成功,但 `set_var`/`remove_var` 是**进程级全局**,而 cargo test 默认多线程跑同一个测试二进制——一个用例的 `remove_var` 会落进另一个用例 `set_var` 与 `resolve_adb` 之间,让它回落到 PATH / 常见位置。开发机上装着 adb(且 `STARHUB_ADB_PATH` 环境变量也指着它),回落也成功、看不出来;CI 的 ubuntu runner 上哪都没有 adb,`resolve_adb` 返回「未找到 adb 二进制」,`.expect("double tap")` 直接 panic。修法:改走 `SettingsStore` seam——它是 `resolve_adb` 的**第一个**候选,按用例注入、没有全局状态,顺带把文档里的优先顺序(设置 > 环境变量 > PATH)真正走到。已实测:把 adb 从 PATH 摘掉、`STARHUB_ADB_PATH` 清空,15 + 10 例全绿。
+  2. **`test:provision` 的第 13 例(渲染出的 patch 不是合法 YAML 要 fail loud)在干净检出上永远等不到它要验的报错**。它是唯一一个不走 `provision()` 助手、因而不传 `--runtime` 的用例,回落到仓库根的 `dsh-runtime/`——而那是 **gitignore 的打包产物**,CI 的 checkout 里根本不存在,前置校验先报「闭包外依赖缺失」,YAML 断言自然不匹配。修法:给它补一份自己的 runtime fixture(与其余 12 例同款)。已实测:把 `dsh-runtime/` 临时改名,13 例全绿。
+- 🗑️ **撤掉 `v0.128.1` 这个 tag**:它推出去之后发布链才第一次真正跑,然后红在上面那两个测试缺陷上(没产出任何 Release)。修复以 v0.128.2 发出;`v0.128.1` 作为「推了但没发布成功」的空 tag 删掉,免得留在 tag 列表里误导。
+
 ## [0.128.1] - 2026-10-10
 
 ### 修复

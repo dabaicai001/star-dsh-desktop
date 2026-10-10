@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.128.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.128.2-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,8 +47,9 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.128.1 (2026-10-10)
-- 🐛 **修好两个工作流文件的非法 YAML——CI 与发布链自 M4 第 3 步起一次都没真正跑过**:步骤名 `- name: Smoke: provisioning + host boot` 的值里那个 `: ` 在 YAML 里是映射条目分隔符,`ci.yml` 与 `release.yml` 两份都因此非法;GitHub 加载不了工作流文件,一个 job 都不起、秒级 failure,只留一句「workflow file issue」,没有任何步骤日志。`v0.128.0` 的 tag 因此没产出任何 Release(上一个 Release 还是 v0.126.0)。新增 `npm run test:workflows` 作护栏,`ci.yml` 里也加了一道最早的 YAML 校验步骤。
+### v0.128.2 (2026-10-10)
+- 🐛 **修两个「只有 CI 会红」的测试缺陷**——v0.128.1 修好工作流文件的非法 YAML 之后,CI 与发布链才第一次真正执行,然后立刻红在这两处:① `starhub-domain-android` 的执行契约用例靠 `std::env::set_var("STARHUB_ADB_PATH", "/bin/sh")` 让 `resolve_adb` 成功,而 `set_var`/`remove_var` 是**进程级全局**、cargo test 默认多线程跑同一个二进制,一个用例的 `remove_var` 会落进另一个用例的 `set_var` 与 `resolve_adb` 之间;开发机上装着 adb 所以回落也成功,CI 的 ubuntu runner 上哪都没有 adb → `.expect("double tap")` panic。改走 `SettingsStore` seam(按用例注入、无全局状态)。② `test:provision` 第 13 例是唯一不传 `--runtime` 的用例,回落到 gitignore 的 `dsh-runtime/`,干净检出里不存在 → 前置校验先报「闭包外依赖缺失」,永远等不到它要验的 YAML 报错。给它补一份自己的 runtime fixture。
+- 🗑️ **撤掉 `v0.128.1` 这个 tag**:它推出去之后发布链才第一次真正跑,然后红在上面那两个缺陷上,没产出任何 Release。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
