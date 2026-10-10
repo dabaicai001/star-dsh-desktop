@@ -123,7 +123,7 @@ jobs:
         # windowDist 指过去。
         run: npm run build:window
 
-      - name: Smoke: provisioning + host boot
+      - name: 'Smoke: provisioning + host boot'
         # 发布前的最后一道可离线验的门:provisioning 一个一次性 DSH_HOME 并用
         # dsh-runtime 里的便携 node boot 宿主进程,断言五条(工作台 index /
         # invoke 打通 / 未知命令错误通路 / SSE 流 / Go sidecar 活着)。

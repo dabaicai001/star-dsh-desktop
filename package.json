@@ -28,6 +28,7 @@
     "provision:dsh": "node scripts/provision-dsh.mjs",
     "smoke:dsh-desktop": "node scripts/smoke-dsh-desktop.mjs",
     "test:provision": "node --test tests/provision-dsh.test.mjs",
+    "test:workflows": "node --test tests/workflows-yaml.test.mjs",
     "migrate:tauri-data": "node scripts/migrate-tauri-data.mjs",
     "test:migrate": "node --test tests/migrate-tauri-data.test.mjs"
   },

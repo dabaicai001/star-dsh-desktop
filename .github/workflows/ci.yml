@@ -68,6 +68,13 @@ jobs:
       - name: Install dsh runtime dependencies
         run: pnpm --dir vendor/deepseek-harness install --frozen-lockfile
 
+      - name: Validate workflow YAML
+        # 工作流文件本身非法时 GitHub 一个 job 都不起、秒级 failure,后面所有步骤
+        # 根本不会跑——所以这道门拦在最早、最便宜的地方(贡献者本地跑同一条
+        # `npm run test:workflows`)。事故与护栏的来历见
+        # tests/workflows-yaml.test.mjs 顶部的注释。
+        run: npm run test:workflows
+
       - name: Test frontend pure logic
         run: npm run test:utils
 
@@ -104,7 +111,7 @@ jobs:
         # 需 Node ≥24.2;开发机上的 node 24.0 会让进程静默退出 0)。
         run: npm run package:dsh-runtime
 
-      - name: Smoke: provisioning + host boot
+      - name: 'Smoke: provisioning + host boot'
         # 五条断言:工作台 index / invoke 打通 / 未知命令错误通路 / SSE 流 /
         # Go sidecar 活着。见 scripts/smoke-dsh-desktop.mjs。
         run: npm run smoke:dsh-desktop
