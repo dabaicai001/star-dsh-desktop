@@ -10,10 +10,13 @@
  * openConnectionManager(asset) 打开连接对话框的编辑模式;列头带资产数、
  * 刷新与「新建连接」入口,右上角 × 回会话视图(selectPanel(null))。
  *
- * 资产行右键菜单(与任务 3 的 dsh 右键菜单同款 Menu 原语):打开 / 引用到当前
- * 对话框(插入 `@` 引用 chip 并轻绑定资产上下文,与 `@` pick 同语义)/
- * 编辑 / 复制连接信息(名称 + user@host 到剪贴板)/ 删除(删除复用连接对话框编辑
- * 模式内的两步确认删除入口,不在菜单里直接执行破坏性操作)。
+ * 资产行右键菜单(与任务 3 的 dsh 右键菜单同款 Menu 原语):打开 / 在浏览器中
+ * 打开(同一个独立工作台 URL,交给系统默认浏览器;壳的 window.open 处理器只把
+ * http/https 交 shell.openExternal,内置浏览器的 guest 会话禁止请求宿主源,
+ * 见 browser-guests.ts)/ 引用到当前对话框(插入 `@` 引用 chip 并轻绑定资产
+ * 上下文,与 `@` pick 同语义)/ 编辑 / 复制连接信息(名称 + user@host 到剪贴板)/
+ * 删除(删除复用连接对话框编辑模式内的两步确认删除入口,不在菜单里直接执行
+ * 破坏性操作)。
  *
  * 浏览器预览(无 Tauri IPC)时 refresh 落入 preview 态,这里展示预览提示
  * 而不是红错;其他拉取失败给错误 + 重试。
@@ -28,11 +31,13 @@ import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  IconCloseOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium, IconLinkOutlineMedium, IconPlusOutlineMedium,
-  IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconTrashOutlineMedium,
+  IconCloseOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium, IconGlobeOutlineMedium, IconLinkOutlineMedium,
+  IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconTrashOutlineMedium,
   writeClipboard, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { STARHUB_SUBCATEGORIES, assetRowBadge, assetSubtitle, type StarHubAsset, type StarHubSubcategory } from './sections.ts'
+import {
+  STARHUB_SUBCATEGORIES, assetRowBadge, assetSubtitle, assetWindowUrl, type StarHubAsset, type StarHubSubcategory,
+} from './sections.ts'
 import type { RustAsset, StarHubAssetListState, ToolSelection } from './store.ts'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
 import { ExecRecordList } from './conn/ExecRecordList.tsx'
@@ -43,6 +48,21 @@ import css from './StarHubToolWorkspace.module.css'
 /** 无资产概念的子类:展开后渲染各自工作面板,不走资产列表逻辑。 */
 function isAssetlessSubcategory(key: string): boolean {
   return key === 'android'
+}
+
+/**
+ * 在系统默认浏览器里打开该资产的独立工作台页(与壳内面板同一个 URL)。
+ *
+ * 走 `window.open` 而不是内置浏览器:上游 Electron 壳的 `setWindowOpenHandler`
+ * 把 http/https 交给 `shell.openExternal`(系统浏览器),而壳内**内置浏览器**的
+ * guest 会话被策略禁止请求宿主源——`isApplicationHost()` 把同端口 +
+ * `127.0.0.1`/`localhost` 一律 cancel,所以拿内置浏览器开这个 URL 只会白页。
+ * 浏览器预览(无壳)时这里退化为新标签页。
+ * @param asset - 目标资产(取 id/type/config 组装 URL)。
+ */
+function openAssetInBrowser(asset: StarHubAsset): void {
+  const url = new URL(assetWindowUrl(asset), window.location.origin).href
+  window.open(url, '_blank', 'noopener')
 }
 
 /** Business face injected by the registration: the connection wire + bridge/asset writes. */
@@ -96,6 +116,7 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
   const subtitle = assetSubtitle(asset)
   const items: MenuEntry[] = [
     { id: 'open', label: '打开', icon: <IconRightUpOutlineMedium /> },
+    { id: 'browser', label: '在浏览器中打开', icon: <IconGlobeOutlineMedium /> },
     { id: 'reference', label: '引用到当前对话框', icon: <IconLinkOutlineMedium /> },
     { id: 'edit', label: '编辑', icon: <IconEditOutlineMedium /> },
     { id: 'copy', label: copied ? '已复制' : '复制连接信息', icon: <IconCopyOutlineMedium /> },
@@ -132,12 +153,13 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
         items={items}
         onSelect={(id) => {
           if (id === 'open') onOpen()
+          else if (id === 'browser') openAssetInBrowser(asset)
           else if (id === 'reference') onReference()
           else if (id === 'edit') onEdit()
           else if (id === 'copy') {
             const text = subtitle === '' ? asset.name : `${asset.name} ${subtitle}`
             void writeClipboard(text).then((ok) => { if (ok) setCopied(true) })
-          /* v8 ignore start -- 菜单 id 枚举完备(open/reference/edit/copy/delete),delete 条件的假分支不可达 */
+          /* v8 ignore start -- 菜单 id 枚举完备(open/browser/reference/edit/copy/delete),delete 条件的假分支不可达 */
           } else if (id === 'delete') onDelete()
           /* v8 ignore stop */
         }}

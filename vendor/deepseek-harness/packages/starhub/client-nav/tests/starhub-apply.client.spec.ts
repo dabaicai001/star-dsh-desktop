@@ -188,7 +188,8 @@ describe('client-nav apply (rc.2)', () => {
     expect(rowConfig.name).toBe('sidebar.panellist')
     expect(rowConfig.id).toBe('starhub-tools')
     expect(rowConfig.order).toBe(1)
-    expect(rowConfig.label).toBe('工具')
+    // v0.133.0:标签带品牌名,与「插件」「自动化任务」并排时分得清是谁的工具
+    expect(rowConfig.label).toBe('StarHub 工具')
     // main keyed 槽:契约要求同 id 注册,否则 layout.selectPanel 抛错。
     const mainConfig = mainByKey(register, 'starhub-tools') as RegisterOptions
     expect(mainConfig.name).toBe('main')

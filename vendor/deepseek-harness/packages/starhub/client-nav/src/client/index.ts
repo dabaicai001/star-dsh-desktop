@@ -275,11 +275,13 @@ export function apply(ctx: Context): void {
   // 侧栏拥有按钮/标签/选中态,本行只出图标)+ main keyed 槽承载面板本体。
   // 入口点击、执行 按钮都经 layout.selectPanel 切换;开关桥
   // (toolsPanel overlay)随之删除。
+  // 标签带品牌名(v0.133.0):侧栏里「工具」太泛,与「插件」「自动化任务」并列
+  // 时分不清是谁的工具;图标同步换成 StarHub 品牌字形(四角星 + 中心节点)。
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist',
     id: TOOLS_PANEL_ID,
     order: 1,
-    label: '工具',
+    label: 'StarHub 工具',
   }, ToolsPanelIcon))
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main',

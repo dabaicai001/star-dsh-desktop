@@ -331,6 +331,28 @@ describe('StarHubToolWorkspace', () => {
     expect(props.openConnectionManager).toHaveBeenCalledWith(expect.objectContaining({ id: 'e1' }))
   })
 
+  it('opens the asset standalone page in the system browser from the row menu', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    try {
+      const props = workspaceProps()
+      props.bridge.selectSubcategory('terminal')
+      props.assets.update((d) => { d.assets = [sshAsset] })
+      render(<StarHubToolWorkspace {...props} />)
+      fireEvent.contextMenu(screen.getByText('prod-server'))
+      fireEvent.click(screen.getByText('在浏览器中打开'))
+      // 独立工作台 URL(与壳内面板同一个),绝对值交 window.open → 壳转系统浏览器
+      expect(open).toHaveBeenCalledTimes(1)
+      expect(open.mock.calls[0]?.[0]).toBe(
+        `${window.location.origin}/starhub-react/index.html?asset=a1&workbench=ssh`,
+      )
+      // 不开壳内页、不进连接对话框
+      expect(props.bridge.source.getSnapshot().assetId).toBeNull()
+      expect(props.openConnectionManager).not.toHaveBeenCalled()
+    } finally {
+      open.mockRestore()
+    }
+  })
+
   it('keeps the copy label when the clipboard write fails', async () => {
     const props = workspaceProps()
     props.bridge.selectSubcategory('terminal')
