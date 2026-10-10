@@ -57,7 +57,8 @@ starhub/
 │   ├── build-sidecar.*       # Go sidecar 构建
 │   ├── build-window.mjs      # React 工作台构建
 │   ├── bump-version.mjs      # 版本号同步
-│   └── cargo-sidecar.bat     # Windows 上跑 sidecar-rust 的 cargo(MSVC + 工具链)
+│   ├── cargo-sidecar.bat     # Windows 上跑 sidecar-rust 的 cargo(MSVC + 工具链)
+│   └── cargo-sidecar.mjs     # 上面的跨平台包装:Windows 转 .bat,其它平台直调 cargo
 │
 ├── dsh-runtime/             # 打包好的 dsh 运行时(gitignore;package:dsh-runtime 产出)
 ├── dist-starhub-react/      # React 工作台产物(gitignore)
@@ -82,7 +83,7 @@ npm install && pnpm --dir vendor/deepseek-harness install   # 安装依赖
 
 npm run build:window         # 构建 React 工作台(→ dist-starhub-react/)
 npm run sidecar:build        # Go Sidecar(加 :release 为 release 构建)
-npm run sidecar-rust:build   # Rust sidecar(Windows 经 scripts/cargo-sidecar.bat 加载 MSVC)
+npm run sidecar-rust:build   # Rust sidecar(scripts/cargo-sidecar.mjs:Windows 转 .bat 加载 MSVC,其它平台直调 cargo)
 
 npm run test:utils           # node --test 纯逻辑套件;其余套件见 package.json scripts
 npm run test:provision       # provisioning 合并逻辑单测

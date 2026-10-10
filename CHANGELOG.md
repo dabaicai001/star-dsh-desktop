@@ -7,6 +7,13 @@
 
 ## [未发布]
 
+### 修复
+- 🐛 **CI 第二次真跑抓到的两个构建/测试缺陷**(工作流文件的非法 YAML 修好之后,CI 才第一次真正执行;那两个测试缺陷修完之后,才又往前跑到构建步):
+  1. **`npm run sidecar-rust:build` 在 Linux 上直接 exit 127**。它指向 `scripts\cargo-sidecar.bat`——Windows 专用。CI 的 ubuntu matrix 一执行就是 `sh: 1: scriptscargo-sidecar.bat: not found`。新增 `scripts/cargo-sidecar.mjs` 跨平台包装:Windows 仍然转 `.bat`(MSVC 加载 + rustup 工具链 PATH 是刚需),其它平台直调 `cargo ... --manifest-path sidecar-rust/Cargo.toml`(注意 cargo 的全局选项要放在子命令**之后**,放前面会报 `unexpected argument '--manifest-path'`)。
+  2. **`starhub-sidecar` 的直播用例在没装 adb 的机器上必挂**。`ui.android_ui_open_live` 开通道后,轮询泵发现解析不到 adb 会**关掉通道**再退出,紧随其后的 `issue_token` 于是报「直播通道未打开」。开发机上装着 adb 所以本地绿,CI runner 上哪都没有 → 红。修法:给这条用例的 sidecar 子进程固定一个本机一定存在的 `STARHUB_ADB_PATH`(捕帧会失败,但泵不中断、通道不关——正是它要验的降级路径)。实测:把 adb 从 PATH 摘掉、环境变量清空,全量 Rust 套件通过。
+- 🐛 **`build:window` 挂了——上一版把根 `package.json` 的依赖当成死重清空,其中 `zmodem.js` 其实是承重墙**:`packages/starhub/client-nav` 的 `SshTerminalOverlay.tsx` 里 `import ZmodemModule from 'zmodem.js/src/zmodem_browser.js'`,而 `client-nav/package.json` 的 dependencies **漏声明了 `zmodem.js`**——它一直靠 Node 从 vendor 树向上漫游到**仓库根** `node_modules` 才解析到。清空根依赖 = 抽掉承重墙,vite 报 `Rollup failed to resolve import "zmodem.js/src/zmodem_browser.js"`。**上一版 CHANGELOG 里「那一整套依赖本就是死重」的判断对 `zmodem.js` 是错的**,在此更正。修法:把 `zmodem.js@0.1.10` 补进 `client-nav` 自己的 dependencies 并同步 vendor lockfile(只 +10 行),不再依赖仓库根的隐式供给;`pnpm install --frozen-lockfile` 自检通过。
+- 🗑️ **撤掉 `v0.128.2` 这个 tag**:它推出去之后 CI 才第一次真正跑到构建步,然后红在上面第 1 条(Linux 上 `sidecar-rust:build` 调 `.bat`),没产出任何 Release。修复以 v0.128.3 发出。
+
 ---
 
 ## [0.128.2] - 2026-10-10

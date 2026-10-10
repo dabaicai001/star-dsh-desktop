@@ -1580,6 +1580,11 @@ fn ui_devices_methods_roundtrip_through_the_real_binary() {
         .env("STARHUB_CACHE_DIR", dir.join("cache"))
         .env("STARHUB_AUDIT_FILE", dir.join("audit.json"))
         .env("STARHUB_ALERTS_FILE", dir.join("alerts.json"))
+        // 直播泵要能解析到 adb 才会常驻:解析失败它会**关掉通道**再退出,于是
+        // 紧随其后的 issue_token 报「直播通道未打开」。开发机上装着 adb 所以
+        // 本地绿;CI 的 runner 上哪都没有 adb → 红。指一个本机一定存在的文件
+        // 即可(捕帧会失败,但泵不中断、通道不关——正是这条用例要验的降级路径)。
+        .env("STARHUB_ADB_PATH", &assets)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

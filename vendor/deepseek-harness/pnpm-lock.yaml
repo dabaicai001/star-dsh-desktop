@@ -12556,6 +12556,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      zmodem.js:
+        specifier: 0.1.10
+        version: 0.1.10
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -22619,6 +22622,9 @@ packages:
     resolution: {integrity: sha512-9qv4rlDiopXg4E69k+vMHjNN63YFMe9sZMrdlvKnCjlCRWeCBswPPMPUfx+ipsAWq1LXHe70RcbaHdJJpS6hyQ==}
     engines: {node: '>= 10'}
 
+  zmodem.js@0.1.10:
+    resolution: {integrity: sha512-Z1DWngunZ/j3BmIzSJpFZVNV73iHkj89rxXX4IciJdU9ga3nZ7rJ5LkfjV/QDsKhc7bazDWTTJCLJ+iRXD82dw==}
+
   zod-to-json-schema@3.25.2:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
@@ -30467,6 +30473,10 @@ snapshots:
       archiver-utils: 3.0.4
       compress-commons: 4.1.2
       readable-stream: 3.6.2
+
+  zmodem.js@0.1.10:
+    dependencies:
+      crc-32: 1.2.2
 
   zod-to-json-schema@3.25.2(zod@4.4.3):
     dependencies:
