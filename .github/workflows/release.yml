@@ -165,6 +165,15 @@ jobs:
           node scripts/smoke-plugin-bundle.mjs --spec "$asset" --timeout 180000
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Upload plugin tarball
+        # 必须排在依赖签名/更新源 secrets 的那几步**之前**:装机步 fail loud 时
+        # 这一步已经上传完成,发布 job(!cancelled() 照发)才能把它挂上 Release。
+        uses: actions/upload-artifact@v4
+        with:
+          name: starhub-plugin-bundle-${{ github.ref_name }}
+          path: starhub-dsh-plugin-*.tgz
+          if-no-files-found: error
+
       - name: 'Smoke: provisioning + host boot'
         # 发布前的最后一道可离线验的门:provisioning 一个一次性 DSH_HOME 并用
         # dsh-runtime 里的便携 node boot 宿主进程,断言五条(工作台 index /
@@ -243,13 +252,6 @@ jobs:
             --sidecar-go sidecar\bin\starhub-sidecar.exe `
             --window-dist dist-starhub-react
 
-      - name: Upload plugin tarball
-        uses: actions/upload-artifact@v4
-        with:
-          name: starhub-plugin-bundle-${{ github.ref_name }}
-          path: starhub-dsh-plugin-*.tgz
-          if-no-files-found: error
-
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
@@ -260,6 +262,9 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: [windows]
+    # 装机步失败(典型:签名/更新源 secrets 未配)也照发:插件 tarball 已经在
+    # windows job 里早早产出,不该跟着一起消失。取消运行时不发。
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-22.04
 
     steps:
@@ -267,11 +272,36 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download installers
+        # 插件 tarball 与 installer 是两个 artifact;装机步失败时后者可能不存在,
+        # 所以这一步不因为「缺一个」就中断(下面按实际存在的资产分别发布)。
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: starhub-*-${{ github.ref_name }}
           path: release-artifacts
           merge-multiple: true
+
+      - name: Detect available assets
+        # 两类资产分别判定:插件 tarball 由本链的 windows job 在建 sidecar 之后顺手
+        # 产出,与签名/更新源 secrets 无关;installer 才依赖那些 secrets。这样
+        # **推一个 tag 只跑一条链**,装机暂时打不出来也不会让插件 URL 一起没了。
+        id: assets
+        shell: bash
+        run: |
+          shopt -s nullglob globstar
+          tgz=(release-artifacts/**/*.tgz)
+          exe=(release-artifacts/**/*.exe)
+          [ ${#tgz[@]} -gt 0 ] && echo 'has_tgz=true' >> "$GITHUB_OUTPUT" || echo 'has_tgz=false' >> "$GITHUB_OUTPUT"
+          [ ${#exe[@]} -gt 0 ] && echo 'has_exe=true' >> "$GITHUB_OUTPUT" || echo 'has_exe=false' >> "$GITHUB_OUTPUT"
+          echo "插件 tarball: ${tgz[*]:-（无）}"
+          echo "installer:    ${exe[*]:-（无）}"
+          if [ ${#tgz[@]} -eq 0 ] && [ ${#exe[@]} -eq 0 ]; then
+            echo "::error::本次运行没有任何可发布资产(插件 tarball 与 installer 都缺),不创建空 Release"
+            exit 1
+          fi
+          if [ ${#exe[@]} -eq 0 ]; then
+            echo "::warning::没有 installer 产物(打包步失败或被跳过);Release 只挂插件 tarball,run 仍是红的"
+          fi
 
       - name: Extract release notes from CHANGELOG.md
         # 从 CHANGELOG.md 生成 Release 正文(升级变更日志)。
@@ -313,13 +343,23 @@ jobs:
             cat RELEASE_NOTES.md
           fi
 
-      - name: Publish release assets
+      - name: Publish plugin tarball asset
+        # 纯插件形态的资产:任何一次 tag 都要拿到它(装机链的 secrets 与它无关)。
+        if: steps.assets.outputs.has_tgz == 'true'
         uses: softprops/action-gh-release@v2
         with:
           name: StarHub ${{ github.ref_name }}
           body_path: RELEASE_NOTES.md
           generate_release_notes: false
           fail_on_unmatched_files: true
-          files: |
-            release-artifacts/**/*.exe
-            release-artifacts/**/*.tgz
+          files: release-artifacts/**/*.tgz
+
+      - name: Publish installer assets
+        if: steps.assets.outputs.has_exe == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: StarHub ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+          files: release-artifacts/**/*.exe
