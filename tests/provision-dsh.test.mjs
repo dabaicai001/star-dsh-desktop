@@ -7,14 +7,20 @@
  *    保留 `!!js` 表达式与用户行;
  * 2. 端到端:假 vendor 树 + 假 sidecar + 假 dist 跑真脚本,断言 profile 三件套、
  *    十个包、资源落地、patch 受管行,以及**重跑幂等**(含用户行不被冲掉)。
+ *
+ * 另加一条**渲染出的 patch 必须是合法 YAML**:行级合并是字符串操作,拼出非法
+ * YAML 只会在壳启动时炸「failed to parse overlay」——那时用户已经在装机界面
+ * 了。provisioning 落盘前会解析一遍,这里用一份被故意改坏的模板验证它真的
+ * fail loud(而不是把坏文件写出去)。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { mergePatchRows, rowsFromTemplate, validProfileName } from '../scripts/lib/provision-patch.mjs'
 
 /** patch 直接引用但不在 CLI 闭包里的包(与 provisioning 同一份清单)。 */
@@ -333,4 +339,55 @@ test('rowsFromTemplate only picks the managed rows', () => {
   assert.match(rows[0].config, /host: 127\.0\.0\.1/)
   // insert 块里的行(id 缩进 4、config 缩进 6)也要能取到 config
   assert.match(rows[1].config, /sidecarCommand/)
+})
+
+test('a rendered patch that is not valid YAML fails loud instead of being written', (t) => {
+  // 行级合并会把受管行的 config 块整块重排,所以「缩进错」会被修好——要验证
+  // fail loud,得坏在合并管不到的地方:模板里一个**非受管行**的引号不闭。
+  const root = mkdtempSync(join(tmpdir(), 'starhub-provision-yaml-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const vendor = join(root, 'vendor')
+  for (const name of STARHUB_PACKAGES) {
+    const pkg = join(vendor, 'packages', 'starhub', name)
+    mkdirSync(join(pkg, 'lib'), { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), `${JSON.stringify({ name: `@deepseek-ai/dsh-starhub-${name}`, version: '0.0.1', type: 'module' }, undefined, 2)}\n`)
+    writeFileSync(join(pkg, 'lib', 'index.js'), 'export function apply() {}\n')
+  }
+  const examples = join(vendor, 'examples', 'starhub-desktop')
+  mkdirSync(examples, { recursive: true })
+  const good = readFileSync(templatePath, 'utf8')
+  // 坏在一个非受管行上:单引号不闭(YAML 到行尾都在字符串里,下一行的结构被吞)
+  const broken = good.replace(
+    "- id: session-query-sqlite",
+    "- id: session-query-sqlite\n  # 坏行:未闭合的单引号\n  broken: 'oops",
+  )
+  assert.notEqual(broken, good, '模板确实被改坏了')
+  writeFileSync(join(examples, 'cordis.patch.yml'), broken)
+  const bin = join(root, 'bin')
+  mkdirSync(bin, { recursive: true })
+  const rust = join(bin, 'starhub-sidecar-rust')
+  const go = join(bin, 'starhub-sidecar')
+  writeFileSync(rust, 'fake-rust')
+  writeFileSync(go, 'fake-go')
+  const dist = join(root, 'dist')
+  mkdirSync(join(dist, 'assets'), { recursive: true })
+  writeFileSync(join(dist, 'index.html'), '<html><script src="/starhub-react/assets/index.js"></script></html>')
+
+  const home = join(root, 'home')
+  const result = spawnSync(process.execPath, [
+    scriptPath,
+    '--home', home,
+    '--vendor', vendor,
+    '--sidecar-rust', rust,
+    '--sidecar-go', go,
+    '--window-dist', dist,
+  ], { encoding: 'utf8' })
+
+  assert.notEqual(result.status, 0, '坏 YAML 必须 fail loud')
+  assert.match(result.stderr, /不是合法 YAML/)
+  // 坏文件没有被写出去
+  assert.ok(
+    !existsSync(join(home, 'profiles', 'desktop', 'cordis.patch.yml')),
+    '坏 patch 不落盘',
+  )
 })

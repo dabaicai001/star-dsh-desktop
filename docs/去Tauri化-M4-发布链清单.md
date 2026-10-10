@@ -49,6 +49,10 @@ junction 本地包、spawn 便携 node。壳换成上游 Electron 之后没有 R
 7. ✅ **凭据迁移:一次性导入工具**(§六 / R7):`scripts/migrate-tauri-data.mjs`
    —— src-tauri 已删,但用户机器上的老数据(Tauri SQLite `starhub.db` + 系统
    Keyring)还在。工具把它搬进 sidecar 自己的存储,并做**双跑期校验**。
+8. ✅ **渲染出的 patch 必须是合法 YAML**:provisioning 落盘前用 YAML 解析器
+   过一遍(解析器取自 vendor 树,不给仓库根加依赖),并校验受管行恰好各出现
+   一次。坏在**非受管行**上才验得出 fail loud——受管行的 config 块会被 merge
+   自动修好(详见第 8 节)。
 
 ### 第 3 步落地细节(CI 切换)
 
@@ -187,21 +191,37 @@ spawn 的两个 sidecar。
 
 ## 四、验收口径
 
-- `npm run test:provision`:12 例全绿(含端到端:假 vendor 树 + 假 sidecar +
+- `npm run test:provision`:**13 例全绿**(含端到端:假 vendor 树 + 假 sidecar +
   假 dist 跑真脚本;重跑幂等;用户 patch 行不被冲掉;缺输入 fail loud 且不物化
-  半套);
+  半套;**渲染出的 patch 不是合法 YAML 时 fail loud 且不落盘**);
+- `npm run test:migrate`:9 例全绿;
 - `npm run smoke:dsh-desktop`:**五条断言全绿**(开发机实跑,见第 2 节);
 - `packages/starhub/host-static`:`tsc -b` 零错误 + 3 例新 spec 全绿;
 - provisioning 的受管行在 patch 里**各只有一个 `config:` 块**(防摞叠);
 - patch 里不出现 `- id: sdk-jsonrpc-server`(bridge 已取代);
 - `sidecarCommand` 是 YAML **数组**(块序列),不是带引号的流序列字符串;
 - `src-tauri` 删除后:`npm run sidecar-rust:test` 全绿、`npm run smoke:dsh-desktop`
-  全绿、`npm run test:provision` 全绿、`verify:bridge-compat` 全绿;
+  全绿、`npm run test:provision` 全绿、`npm run test:migrate` 全绿、
+  `verify:bridge-compat` 全绿;
   仓库里 `src-tauri` / `tauri` 引用只存在于历史文档(CHANGELOG / docs 踩坑记录);
 - `npm run test:migrate`:9 例全绿(资产/设置/告警/审计/known_hosts 五种线形状、
   密钥导出与裸字符串归一、双跑期校验抓「条数不一致」与「内容不一致」、重跑
   幂等不产生第二份 .bak、dry-run 不落盘、审计修剪到 5000 保留最新、缺库
   fail loud)。
+
+### 第 8 步落地细节(渲染出的 patch 必须是合法 YAML)
+
+provisioning 的行级合并是**字符串操作**:拼出非法 YAML(缩进错、引号不闭)不会
+在合并时暴露,只会在壳启动时炸出一句 `failed to parse overlay`——那时候用户已经
+在装机界面了。因此落盘前先用 YAML 解析器过一遍,并顺带校验受管行恰好各出现
+一次(多一次 = 合并逻辑回归,少一次 = 模板被改坏)。
+
+解析器从 vendor 树取(`vendor/deepseek-harness/node_modules/js-yaml`,上游闭包
+自带),不给仓库根加依赖;取不到就**跳过**校验而不是失败——校验是加固,不是门槛。
+
+有一个反直觉的发现值得记下来:受管行的 **config 块缩进错乱会被 merge 自动修
+好**(合并本来就整块重排 config),所以「坏在受管行上」验不出 fail loud。测试
+因此坏在**非受管行**上(未闭合的单引号)——那才是合并管不到的地方。
 
 ## 五、仍挂着的事
 

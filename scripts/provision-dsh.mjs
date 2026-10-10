@@ -18,7 +18,10 @@
  * 4. 把两个 sidecar 二进制与 React 工作台 dist 落到
  *    `<home>/starhub/resources/`,供上一行的绝对路径引用;
  * 5. 写一份 `<home>/starhub/provision.json` 清单(物化了什么、什么版本),
- *    重跑时据此发现漂移并刷新。
+ *    重跑时据此发现漂移并刷新;
+ * 6. **落盘前把渲染出的 patch 当 YAML 解析一遍**——行级合并是字符串操作,
+ *    拼出非法 YAML(缩进错、引号不闭)只会在壳启动时炸出一句
+ *    `failed to parse overlay`,那时候用户已经在装机界面了。fail loud 要趁早。
  *
  * 为什么不 junction 而拷贝:Rust 侧 junction 指向构建树,升级/换安装目录会让
  * 旧 junction 钉死上一次的路径(漂移),要额外写 `ensure_dir_link_fresh` 兜底。
@@ -33,11 +36,13 @@
  */
 import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { mergePatchRows, rowsFromTemplate, validProfileName, webserverRow } from './lib/provision-patch.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const require = createRequire(import.meta.url)
 
 /** 物化进 profile 的 StarHub 包(packages/starhub/ 下目录名)。
  *  与 Rust web.rs 的 LOCAL_PACKAGES + bridge 对齐;漏列即安装包启动
@@ -195,6 +200,73 @@ async function copyDirFresh(source, target) {
   await rm(target, { recursive: true, force: true })
   await mkdir(dirname(target), { recursive: true })
   await cp(source, target, { recursive: true })
+}
+
+/**
+ * 取 YAML 解析器。优先仓库根的 `node_modules`(将来若加了依赖),否则退回
+ * vendor 树——`vendor/deepseek-harness/node_modules/js-yaml` 是上游闭包自带的,
+ * 不为这一个校验给仓库根加依赖。
+ *
+ * @returns js-yaml 模块,或 null(解析器不可用:校验跳过而非失败——校验是加固,
+ *   不是门槛)。
+ */
+function loadYamlParser() {
+  for (const candidate of [
+    join(repoRoot, 'node_modules', 'js-yaml'),
+    join(repoRoot, 'vendor', 'deepseek-harness', 'node_modules', 'js-yaml'),
+  ]) {
+    try {
+      return require(candidate)
+    } catch {
+      // 试下一个候选
+    }
+  }
+  return null
+}
+
+/**
+ * 校验渲染出的 patch 是合法 YAML,且受管行都在。
+ *
+ * 行级合并是字符串操作,拼出非法 YAML(缩进错、引号不闭)只会在壳启动时炸出一句
+ * `failed to parse overlay`,那时候用户已经在装机界面了。fail loud 要趁早。
+ *
+ * @param text - 渲染后的 patch 全文。
+ * @param path - 目标路径(错误信息用)。
+ * @throws 当 patch 不是合法 YAML,或受管行缺失/重复。
+ */
+function assertValidPatchYaml(text, path) {
+  const yaml = loadYamlParser()
+  if (yaml === null) return // 解析器不可用:跳过校验
+  let document
+  try {
+    document = yaml.load(text)
+  } catch (error) {
+    throw new Error(`渲染出的 cordis.patch.yml 不是合法 YAML(${path}): ${error.message}`)
+  }
+  if (!Array.isArray(document)) {
+    throw new Error(`cordis.patch.yml 顶层必须是 YAML 数组(${path})`)
+  }
+  // 收集所有出现的 id(含 insert 块内的),受管行必须恰好各出现一次
+  const seen = new Map()
+  const walk = (node) => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item)
+      return
+    }
+    if (node === null || typeof node !== 'object') return
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'id' && typeof value === 'string') {
+        seen.set(value, (seen.get(value) ?? 0) + 1)
+      }
+      walk(value)
+    }
+  }
+  walk(document)
+  for (const id of MANAGED_PATCH_IDS) {
+    const count = seen.get(id) ?? 0
+    if (count === 0) throw new Error(`cordis.patch.yml 缺少受管行 ${id}(${path})`)
+    if (count > 1) throw new Error(`cordis.patch.yml 的受管行 ${id} 出现 {count} 次(${path})`)
+  }
 }
 
 /** 读模板 patch,把占位符换成实际值。 */
@@ -366,6 +438,9 @@ async function main() {
   ]
   const existing = existsSync(plan.patchPath) ? await readFile(plan.patchPath, 'utf8') : ''
   const merged = mergePatchRows(existing === '' ? rendered : existing, rows)
+  // 落盘前当 YAML 解析一遍:行级合并是字符串操作,拼出非法 YAML 只会在壳启动时
+  // 炸「failed to parse overlay」——那时用户已经在装机界面了。fail loud 要趁早。
+  assertValidPatchYaml(merged, plan.patchPath)
   if (merged !== existing || !existsSync(plan.patchPath)) {
     await writeFile(plan.patchPath, merged)
     console.log(`[provision-dsh] ${existing === '' ? '写入' : '合并'} cordis.patch.yml(${rows.length} 个受管行)`)

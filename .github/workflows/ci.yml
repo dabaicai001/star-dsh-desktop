@@ -87,6 +87,11 @@ jobs:
       - name: Test provisioning merge logic
         run: npm run test:provision
 
+      - name: Test Tauri→sidecar data migration
+        # src-tauri 已删,但用户机器上的老数据(SQLite + Keyring)还在;导入工具
+        # 与它的双跑期校验是发布链的一环(§六 / R7)。
+        run: npm run test:migrate
+
       - name: Build sidecars and workbench dist
         # 冒烟的前置:两个 sidecar 二进制 + React 工作台 dist。
         run: |
