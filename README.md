@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.128.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.128.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,14 +47,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.128.0 (2026-10-10)
-- 🗑️ **去 Tauri 化 M1–M4 全部完成,StarHub 以上游 DeepSeek Harness Electron 壳的外部插件集形态发布**:Tauri 桌面壳(246 个 `tauri::command`、capabilities/ACL、窗口栈、打包/更新链)整体退役,桌面壳、品牌/签名/更新栈全部归上游;StarHub 交付「10 个 dsh 插件 + 两个 sidecar 子进程 + 静态资产」三件套,由 `scripts/provision-dsh.mjs` 装进 dsh desktop profile。方法面从 85 扩到 **226**(模型面工具 + `ui.*` 工作台命令面),交互全部面板化(资产工作台 / 直播接管制 / 工具面板都是壳内主面板,不再开独立窗口)。
-- 🗑️ **AI 浏览器与 `vendor/obscura` 子模块整体删除**:16 个 `browser_*` 工具 + 4 个 `ui.browser_*` 设置 + 设置页 tab + `starhub-domain-browser` crate + obscura 引擎(707MB / 2616 文件)一并清掉——上游 dsh 原生提供 browser-use 及其可见面,重复造一份只会双轨维护。方法面 246 → 226。
-- ✨ **直播/接管线面板化(M3)**:新 crate `starhub-live`(帧枢纽 + 本地 WS + 一次性令牌 + Android 帧源 scrcpy H.264 / 400ms 截图轮询),bridge 透明字节中继,壳内直播主面板支持围观/接管。
-- ✨ **凭据迁移工具 + provisioning 落盘前 YAML 校验(M4)**:`scripts/migrate-tauri-data.mjs` 把老 Tauri SQLite + 系统 Keyring 搬进 sidecar 存储并做双跑期校验;provisioning 落盘前用 YAML 解析器验一遍,别把坏文件写到装机界面。
-- 🐛 **修掉根 lock 与 package.json 长期不同步**:`npm ci` 在 CI 与发布链的第一行就红(M4 删 `@tauri-apps/*` 时只改了 package.json);顺带清掉根目录整套死依赖,`package-lock.json` 3731 行 → 29 行。
-- ♻️ **CI / 发布链切换**:PR 门换成「前端纯逻辑 + Go 单测 + sidecar-rust 域单测 + provisioning 单测 + provisioning 与宿主冒烟」;发布链换成上游 electron-builder。Linux 不发版(决策 A:等上游出 target)。
-- ✅ 验证:根 16 个测试套件 198 例、Go sidecar、sidecar-rust 域单测、provisioning 13 例、迁移 9 例、宿主冒烟五条断言全绿。
+### v0.128.1 (2026-10-10)
+- 🐛 **修好两个工作流文件的非法 YAML——CI 与发布链自 M4 第 3 步起一次都没真正跑过**:步骤名 `- name: Smoke: provisioning + host boot` 的值里那个 `: ` 在 YAML 里是映射条目分隔符,`ci.yml` 与 `release.yml` 两份都因此非法;GitHub 加载不了工作流文件,一个 job 都不起、秒级 failure,只留一句「workflow file issue」,没有任何步骤日志。`v0.128.0` 的 tag 因此没产出任何 Release(上一个 Release 还是 v0.126.0)。新增 `npm run test:workflows` 作护栏,`ci.yml` 里也加了一道最早的 YAML 校验步骤。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

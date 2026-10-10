@@ -9,6 +9,11 @@
 
 ---
 
+## [0.128.1] - 2026-10-10
+
+### 修复
+- 🐛 **CI 与发布链从 M4 第 3 步起一次都没真正跑过——两个工作流文件都是非法 YAML**:步骤名写成 `- name: Smoke: provisioning + host boot`,值里那个 `: `(冒号加空格)在 YAML 里是映射条目分隔符,整份文件因此非法。GitHub 加载不了工作流文件,于是**一个 job 都不起、秒级 failure**,只留一句「This run likely failed because of a workflow file issue」——没有任何步骤日志,很容易误判成「runner 起不来 / 额度用完」。`ci.yml` 与 `release.yml` 两份都中招,`v0.128.0` 的 tag 因此没产出任何 Release(上一个 Release 还是 v0.126.0)。本地从不跑 CI,所以从 2026-10-09 到发现为止,所有「绿」都是本机单测的绿。修复:两处步骤名加单引号。护栏:新增 `tests/workflows-yaml.test.mjs` + `npm run test:workflows`——① 用 vendor 树的 js-yaml 解析每个工作流文件并断言至少有一个 job;② 扫描所有**裸标量**的值,含 `: ` 即失败(这比等解析器报错更早指出该给哪一行加引号)。`ci.yml` 里也加了一道最早的 `Validate workflow YAML` 步骤。
+
 ## [0.128.0] - 2026-10-10
 
 ### 修复
