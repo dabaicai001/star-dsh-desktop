@@ -113,10 +113,18 @@ impl Sidecar {
 /// (`JsonRpcLineTransport`) demultiplexes by id; this helper mirrors that.
 fn read_response(child: &mut Child) -> String {
     let stdout = child.stdout.as_mut().expect("stdout piped");
-    let mut reader = BufReader::new(stdout);
+    next_response(&mut BufReader::new(stdout))
+}
+
+/// 从既有 reader 读下一条响应帧(跳过无 `id` 的通知帧)。
+///
+/// 与 [`read_response`] 同语义,但复用同一个 reader:并发断言需要按到达顺序
+/// 连读多条响应,逐条新建 `BufReader` 会把读进缓冲区的后续帧一起丢掉。
+fn next_response(reader: &mut impl BufRead) -> String {
     loop {
         let mut line = String::new();
-        reader.read_line(&mut line).expect("read response");
+        let read = reader.read_line(&mut line).expect("read response");
+        assert!(read > 0, "sidecar closed stdout before answering");
         assert!(
             line.ends_with('\n'),
             "response frames are newline-terminated"
@@ -913,6 +921,42 @@ fn a_domain_tool_success_emits_the_ai_origin_event_first() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// ---------- 请求并发(2026-10-10 死锁事故回归) ----------
+
+/// 并发回归:一个在途请求不得阻塞后续请求。
+///
+/// 事故现场:`ui.test_ssh_connection` 停在主机密钥确认上时,整个 stdio 循环被占住,
+/// 对端为了给出确认而发的 `ui.ssh_hostkey_response` 排在管道里读不进来 → 必然
+/// `[HOSTKEY_TIMEOUT]`(实测 60s 才回),同一时间窗内「创建连接」等一切命令一起
+/// 卡死。修复后每条帧各占一个工作线程,慢请求不再堵塞读取线程。
+#[test]
+fn a_pending_request_does_not_block_the_next_one() {
+    let mut sidecar = Sidecar::spawn();
+    // ~5 秒的本机命令:确定性地占住一个工作线程,不依赖网络与外部服务
+    let sleeper = if cfg!(windows) {
+        "ping -n 6 127.0.0.1 > $null"
+    } else {
+        "sleep 5"
+    };
+    sidecar.send(&format!(
+        r#"{{"jsonrpc":"2.0","id":"slow","method":"ui.local_shell_exec","params":{{"command":"{sleeper}","timeoutSec":30}}}}"#
+    ));
+    sidecar.send(r#"{"jsonrpc":"2.0","id":"fast","method":"ping","params":{}}"#);
+
+    let stdout = sidecar.child.stdout.take().expect("stdout piped");
+    let mut reader = BufReader::new(stdout);
+    let first = next_response(&mut reader);
+    assert!(
+        first.contains(r#""id":"fast""#),
+        "ping 必须越过在途的慢请求先被答复(修复前这里会是 slow): {first}"
+    );
+    let second = next_response(&mut reader);
+    assert!(
+        second.contains(r#""id":"slow""#),
+        "慢请求的应答随后到达: {second}"
+    );
+}
+
 // ---------- UI 面(M2):工作台命令 ui.<tauriCommand> ----------
 
 /// UI 面资产 CRUD 的真二进制 roundtrip:建 → 列 → 改 → 删,并断言 snake_case
@@ -943,7 +987,10 @@ fn ui_asset_crud_roundtrips_through_the_real_binary() {
     let updated = sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"u-3","method":"ui.update_asset","params":{"id":"a1","type":"ssh","name":"新名","config":{"host":"10.0.0.2"}}}"#);
     let value: serde_json::Value = serde_json::from_str(&updated).expect("response parses");
     assert_eq!(value["result"]["name"], "新名");
-    assert_eq!(value["result"]["favorite"], false, "未传的 favorite 归缺省");
+    assert_eq!(
+        value["result"]["favorite"], true,
+        "未下发的字段沿用既有行(改名不该顺手取消收藏)"
+    );
 
     let deleted = sidecar.roundtrip(
         r#"{"jsonrpc":"2.0","id":"u-4","method":"ui.delete_asset","params":{"id":"a1"}}"#,
@@ -966,7 +1013,7 @@ fn ui_asset_crud_roundtrips_through_the_real_binary() {
     );
 }
 
-/// UI 面参数校验:Excel 类型已删、缺 id,都是 -32602。
+/// UI 面参数校验:Excel 类型已删、缺 type/name/id,都是 -32602。
 #[test]
 fn ui_asset_methods_validate_parameters() {
     let mut sidecar = Sidecar::spawn();
@@ -977,6 +1024,25 @@ fn ui_asset_methods_validate_parameters() {
         .as_str()
         .expect("message")
         .contains("不支持的资产类型"));
+    // 新建时 id 可省(sidecar 生成 uuid),type/name 仍是必填
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"u-9","method":"ui.create_asset","params":{"name":"x"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32602);
+    assert!(value["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("缺少 type"));
+    let response = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"u-10","method":"ui.create_asset","params":{"type":"ssh"}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
+    assert_eq!(value["error"]["code"], -32602);
+    assert!(value["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("缺少 name"));
     let response =
         sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"u-8","method":"ui.delete_asset","params":{}}"#);
     let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
@@ -985,6 +1051,48 @@ fn ui_asset_methods_validate_parameters() {
         .as_str()
         .expect("message")
         .contains("缺少 id"));
+}
+
+/// 工作台「新建连接」的真实负载(2026-10-10 事故回归):配置包在 `params` 里、
+/// **不带 id**、分组键是 snake_case 的 `group_id`。此前 `ui.create_asset` 硬要
+/// 平铺的 `id`,界面上点「创建」只得到「缺少 id」——连接根本存不下来。
+#[test]
+fn ui_create_asset_accepts_the_workbench_wrapped_payload() {
+    let mut sidecar = Sidecar::spawn();
+    let created = sidecar.roundtrip(
+        r#"{"jsonrpc":"2.0","id":"w-1","method":"ui.create_asset","params":{"params":{"type":"ssh","name":"测试服务器","group_id":null,"config":{"host":"10.0.0.77","port":22,"username":"work","password":"pw"},"tags":[]}}}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&created).expect("response parses");
+    assert!(value["error"].is_null(), "{created}");
+    let id = value["result"]["id"]
+        .as_str()
+        .expect("sidecar 生成的 id")
+        .to_string();
+    assert!(!id.is_empty(), "缺省 id 由 sidecar 生成");
+    assert_eq!(value["result"]["name"], "测试服务器");
+    assert!(
+        value["result"]["config"].get("password").is_none(),
+        "敏感字段不应回流"
+    );
+
+    // 保存(update)是另一种形态:id 平铺在顶层,`params` 里只有 name/config
+    let updated = sidecar.roundtrip(&format!(
+        r#"{{"jsonrpc":"2.0","id":"w-2","method":"ui.update_asset","params":{{"id":"{id}","params":{{"name":"改名","config":{{"host":"10.0.0.77","port":2222,"username":"work"}}}}}}}}"#
+    ));
+    let value: serde_json::Value = serde_json::from_str(&updated).expect("response parses");
+    assert!(value["error"].is_null(), "{updated}");
+    assert_eq!(value["result"]["id"], id.as_str());
+    assert_eq!(value["result"]["name"], "改名");
+    assert_eq!(value["result"]["type"], "ssh", "type 缺省沿用既有行");
+    assert_eq!(value["result"]["config"]["port"], 2222);
+
+    let listed = sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"w-3","method":"ui.get_assets"}"#);
+    let value: serde_json::Value = serde_json::from_str(&listed).expect("response parses");
+    assert_eq!(
+        value["result"].as_array().map(Vec::len),
+        Some(1),
+        "更新不新增行"
+    );
 }
 
 /// UI 面 B 组(交互会话)真二进制 roundtrip:会话不存在 / 无写通道 / 无待应答

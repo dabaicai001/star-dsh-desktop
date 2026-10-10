@@ -1,24 +1,32 @@
 //! StarHub Rust sidecar entry: newline-delimited JSON-RPC 2.0 over stdio.
 //!
 //! One JSON value per `\n`-terminated UTF-8 line, matching the TypeScript
-//! peer `JsonRpcLineTransport`. Requests are answered with exactly one
-//! response frame; notifications and responses are consumed silently;
+//! peer `JsonRpcLineTransport`. Every inbound frame is handled on its own
+//! worker thread: domain handlers block on the tokio runtime for the whole
+//! call (an SSH connect can legitimately wait minutes), and the reader must
+//! keep consuming stdin while that runs. Requests are answered with exactly
+//! one response frame; notifications and responses are consumed silently;
 //! malformed lines are ignored without killing the process. stdin EOF ends
 //! the process with status 0. Diagnostics go to stderr only — stdout is the
 //! protocol channel.
 //!
 //! Domain events (SSH data / MFA prompts / SFTP transfer progress) are
-//! forwarded to the peer as `starhub/domain-event` notifications. They are
-//! queued while a request is in flight and flushed before that request's
-//! response, so the peer observes cause (event) before effect (result).
+//! forwarded to the peer as `starhub/domain-event` notifications **the moment
+//! the domain emits them**. That immediacy is what makes interactive prompts
+//! work at all: the host key / keyboard-interactive / bastion prompts are
+//! delivered while the connect request that waits for the answer is still in
+//! flight, and the answer rides back on the same stdin the reader thread is
+//! still consuming. Queuing them behind a request (the pre-2026-10-10
+//! behaviour) deadlocked every first connection to an unknown host: the peer
+//! could not answer a prompt it only saw after the answer deadline
+//! (see docs/踩坑记录.md).
 //!
 //! The same notification channel carries the bridge contract notifications
 //! (`starhub/domain.event` after a successful domain tool, `starhub/registry.sync`
 //! on registry change, `starhub://open-asset` for the workbench UI action);
 //! the `starhub-bridge` plugin dispatches them by the `event` member.
 use std::io::{BufRead, Write};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use starhub_domain_ssh::events::{EventSink, KnownHostsStore};
 use starhub_sidecar::android_runtime::AndroidRuntime;
@@ -28,12 +36,16 @@ use starhub_sidecar::db_runtime::DbRuntime;
 use starhub_sidecar::jsonrpc::{InboundFrame, OutboundNotification, OutboundResponse};
 use starhub_sidecar::known_hosts_store::FileKnownHostsStore;
 use starhub_sidecar::methods;
+use starhub_sidecar::registry::MethodRegistry;
 use starhub_sidecar::runtime::SshRuntime;
+use starhub_sidecar::ui_runtime::UiRuntime;
 
-/// 域事件出口:把 domain crate 的事件流转成 JSON-RPC 通知,排队等主循环刷盘。
-struct NotificationSink {
-    queue: Mutex<Sender<OutboundNotification>>,
-}
+/// 域事件出口:事件**当场**写成 `starhub/domain-event` 帧。
+///
+/// 不再排队等主循环刷盘:交互式 SSH 提示(主机密钥确认 / MFA 验证码 / 堡垒机
+/// 选机器)必须在等待它的那个请求还挂着的时候就到达对端,否则对端只能在超时
+/// 之后才看到提示——那等于没有提示。
+struct NotificationSink;
 
 impl EventSink for NotificationSink {
     fn emit(&self, event: &str, payload: serde_json::Value) {
@@ -41,28 +53,42 @@ impl EventSink for NotificationSink {
             "starhub/domain-event",
             Some(serde_json::json!({ "event": event, "payload": payload })),
         );
-        // 发送失败只可能是接收端已断开(进程退出中):事件丢弃即可,不影响协议
-        let _ = self.queue.lock().unwrap().send(notification);
+        write_line(&notification.to_line());
     }
 }
 
-/// 一条入站帧的处理上下文(stdio 循环是单线程的,全部借用即可)。
-struct FrameContext<'a> {
-    registry: &'a starhub_sidecar::registry::MethodRegistry,
-    ssh: &'a SshRuntime,
-    sink: &'a Arc<dyn EventSink>,
-    bridge_state: &'a BridgeState,
-    runtime: &'a tokio::runtime::Runtime,
-    /// UI 面设置状态(AI 工具审计写入用)。
-    ui: &'a starhub_sidecar::ui_runtime::UiRuntime,
+/// 写一行协议帧到 stdout。
+///
+/// stdout 的内部锁保证整行原子(帧不会被另一条线程截断),行尾换行即刷。
+/// 写失败只可能是对端已退出(管道关闭):丢弃该帧,不让任意一条线程崩。
+fn write_line(line: &str) {
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    let _ = writeln!(out, "{line}");
+    let _ = out.flush();
 }
 
-/// 处理一条入站帧;返回待应答的响应,期间产生的事件通知排队到 `events`。
+/// 一条入站帧的处理上下文。
+///
+/// 每条帧在自己的工作线程上处理,因此按 `Arc` 持有全部共享状态(`Clone` 只复制
+/// 引用计数);handler 内部的 `block_on` 因此不会连带阻塞 stdio 读取线程或其它在途请求。
+#[derive(Clone)]
+struct FrameContext {
+    registry: Arc<MethodRegistry>,
+    ssh: Arc<SshRuntime>,
+    sink: Arc<dyn EventSink>,
+    bridge_state: Arc<BridgeState>,
+    runtime: Arc<tokio::runtime::Runtime>,
+    /// UI 面设置状态(AI 工具审计写入用)。
+    ui: Arc<UiRuntime>,
+}
+
+/// 处理一条入站帧;返回待应答的响应(事件通知已在产生处即时写出)。
 ///
 /// 通知(如 bridge 的停止生成信号 `starhub/exec.abort`)在这里直接执行——
 /// 它们是协议的一等公民,不是「没有 method 的请求」。其余方法(含
 /// `starhub/open.asset` 等桥命令)都走注册表分发。
-fn handle_frame(frame: &InboundFrame, ctx: &FrameContext<'_>) -> Option<OutboundResponse> {
+fn handle_frame(frame: &InboundFrame, ctx: &FrameContext) -> Option<OutboundResponse> {
     use starhub_sidecar::jsonrpc::FrameKind;
     match frame.kind() {
         FrameKind::Request { id, method, params } => {
@@ -70,7 +96,7 @@ fn handle_frame(frame: &InboundFrame, ctx: &FrameContext<'_>) -> Option<Outbound
             let started = std::time::Instant::now();
             let outcome = if method == EXEC_ABORT_METHOD {
                 // 停止生成:中断在途 exec(以请求形态调用时同样受理,便于对端确认)
-                handle_exec_abort(ctx.ssh, ctx.runtime, &params)
+                handle_exec_abort(&ctx.ssh, &ctx.runtime, &params)
             } else {
                 // 请求帧必然产生应答:dispatch 对 Request 分支不会返回 None
                 let (_, outcome) = ctx
@@ -82,9 +108,9 @@ fn handle_frame(frame: &InboundFrame, ctx: &FrameContext<'_>) -> Option<Outbound
                     if bridge::is_tool_method(&method) {
                         if let Some(text) = result.get("text").and_then(serde_json::Value::as_str) {
                             bridge::after_tool_success(
-                                ctx.ssh,
-                                ctx.sink,
-                                ctx.bridge_state,
+                                &ctx.ssh,
+                                &ctx.sink,
+                                &ctx.bridge_state,
                                 &method,
                                 &params,
                                 text,
@@ -108,7 +134,7 @@ fn handle_frame(frame: &InboundFrame, ctx: &FrameContext<'_>) -> Option<Outbound
             let params = params.unwrap_or(serde_json::Value::Null);
             match method.as_str() {
                 EXEC_ABORT_METHOD => {
-                    if let Err(error) = handle_exec_abort(ctx.ssh, ctx.runtime, &params) {
+                    if let Err(error) = handle_exec_abort(&ctx.ssh, &ctx.runtime, &params) {
                         eprintln!(
                             "starhub-sidecar-rust: {EXEC_ABORT_METHOD} 失败: {}",
                             error.message
@@ -134,7 +160,7 @@ const EXEC_ABORT_METHOD: &str = "starhub/exec.abort";
 /// 参数,失败时附错误原文。解析不出资产上下文时 asset_id/target 为空——
 /// 与 Tauri 版一致(审计不因缺少绑定而丢失)。
 fn record_tool_audit(
-    ctx: &FrameContext<'_>,
+    ctx: &FrameContext,
     method: &str,
     params: &serde_json::Value,
     outcome: &Result<serde_json::Value, starhub_sidecar::jsonrpc::RpcError>,
@@ -191,16 +217,6 @@ fn handle_exec_abort(
     Ok(serde_json::json!({ "aborted": aborted }))
 }
 
-/// 把排队的事件通知全部刷到 stdout(在对应请求的响应之前)。
-fn flush_events(out: &mut impl Write, events: &Receiver<OutboundNotification>) {
-    while let Ok(notification) = events.try_recv() {
-        if writeln!(out, "{}", notification.to_line()).is_err() {
-            return; // stdout closed: peer is gone
-        }
-    }
-    let _ = out.flush();
-}
-
 fn main() {
     let runtime = match methods::build_runtime() {
         Ok(runtime) => Arc::new(runtime),
@@ -209,10 +225,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let (tx, rx): (Sender<OutboundNotification>, Receiver<OutboundNotification>) = mpsc::channel();
-    let sink: Arc<dyn EventSink> = Arc::new(NotificationSink {
-        queue: Mutex::new(tx),
-    });
+    let sink: Arc<dyn EventSink> = Arc::new(NotificationSink);
     // 资产存储 / known_hosts / 会话绑定在 SSH 与 DB 两个域之间共享:
     // 同一份资产存档、同一份 TOFU 策略、同一份「会话 → 资产」绑定。
     let bindings = Arc::new(SessionBindings::new());
@@ -259,7 +272,7 @@ fn main() {
         live.android().clone(),
     ));
     let bridge_state = Arc::new(BridgeState::default());
-    let ui_state = Arc::new(starhub_sidecar::ui_runtime::UiRuntime::from_env());
+    let ui_state = Arc::new(UiRuntime::from_env());
     let registry = methods::registry_with_domains(
         Arc::clone(&runtime),
         Arc::clone(&ssh),
@@ -270,11 +283,16 @@ fn main() {
         Arc::clone(&ui_state),
         Arc::clone(&live),
     );
+    let context = FrameContext {
+        registry,
+        ssh,
+        sink,
+        bridge_state,
+        runtime,
+        ui: ui_state,
+    };
 
     let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
-
     for line in stdin.lock().lines() {
         let line = match line {
             Ok(line) => line,
@@ -286,28 +304,14 @@ fn main() {
         let Some(frame) = InboundFrame::parse(&line) else {
             continue; // malformed line: ignored per protocol contract
         };
-        let context = FrameContext {
-            registry: &registry,
-            ssh: &ssh,
-            sink: &sink,
-            bridge_state: &bridge_state,
-            runtime: &runtime,
-            ui: &ui_state,
-        };
-        let Some(response) = handle_frame(&frame, &context) else {
-            // 通知/响应帧:它自己可能也产生了事件(如停止生成的中断确认),
-            // 这里刷掉,不等下一条入站帧。
-            flush_events(&mut out, &rx);
-            continue;
-        };
-        // 因果顺序:先刷掉本条请求期间产生的事件,再写它的响应——
-        // 对端因此永远先看到「因」(事件)再看到「果」(结果)。
-        flush_events(&mut out, &rx);
-        if writeln!(out, "{}", response.to_line()).is_err() {
-            break; // stdout closed: peer is gone
-        }
-        if out.flush().is_err() {
-            break;
-        }
+        // 每条帧一个工作线程:域 handler 在内部 block_on 到完成(SSH 连接最长可等
+        // 370s 的认证窗口),读取线程绝不替它等——否则对端为了回答这个请求而发的
+        // 下一帧(主机密钥/MFA/堡垒机的应答)会排在管道里读不进来,形成自锁。
+        let worker = context.clone();
+        std::thread::spawn(move || {
+            if let Some(response) = handle_frame(&frame, &worker) {
+                write_line(&response.to_line());
+            }
+        });
     }
 }

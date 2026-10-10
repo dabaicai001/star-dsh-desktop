@@ -29,6 +29,26 @@ fn required_str(params: &Value, key: &str) -> Result<String, RpcError> {
         .ok_or_else(|| RpcError::invalid_params(format!("缺少 {key}")))
 }
 
+/// 取可选字符串参数(空串/缺省一律按缺省处理)。
+fn optional_str(params: &Value, key: &str) -> Option<String> {
+    params
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+/// 工作台参数负载:工作台按 Tauri command 契约把配置包在 `params` 键里
+/// (`invoke('create_asset', { params })`);直接发 JSON-RPC 的调用方(协议
+/// 测试、脚本)平铺下发。两种形态都受理,`params` 不是对象时退回平铺。
+fn payload(params: &Value) -> &Value {
+    params
+        .get("params")
+        .filter(|value| value.is_object())
+        .unwrap_or(params)
+}
+
 /// 取标签数组(缺省空;非字符串元素忽略)。
 fn tags_of(params: &Value) -> Vec<String> {
     params
@@ -66,29 +86,54 @@ pub fn get_assets(store: &AssetStore, _params: &Value) -> Result<Value, RpcError
 
 /// `ui.create_asset` / `ui.update_asset`:新建或更新资产。
 ///
-/// 参数与 Tauri command 同形:`{ id?, type, name, config, groupId?, tags?, favorite? }`;
-/// `id` 缺省 = 新建(由调用方生成,Tauri 侧是前端 uuid,这里沿用同一约定)。
+/// 参数与 Tauri command 同形:`params` 里是
+/// `{ id?, type, name, config, groupId?, tags?, favorite? }`,update 另把 `id`
+/// 平铺在顶层(`{ id, params: { name, config } }`)。`id` 缺省即新建,**由 sidecar
+/// 生成 uuid**(与 Tauri 版 `create_asset(name, type, config) -> Asset` 同一约定):
+/// 工作台「新建连接」对话框从来不带 id,此前这里硬要 `id`,界面上的表现是
+/// 「点创建没反应」——实际是 -32602「缺少 id」(2026-10-10 实测)。
+///
+/// 未下发的字段沿用既有行:update 只改名/改配置时,不会顺手清空 tags / favorite /
+/// 分组,也不会把资产类型丢掉(`type` 缺省取既有行的类型)。
 pub fn upsert_asset(store: &AssetStore, params: &Value) -> Result<Value, RpcError> {
-    let id = required_str(params, "id")?;
-    let asset_type = required_str(params, "type")?;
+    let payload = payload(params);
+    let id = optional_str(params, "id")
+        .or_else(|| optional_str(payload, "id"))
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let existing = store.get(&id).ok();
+    let asset_type = optional_str(payload, "type")
+        .or_else(|| existing.as_ref().map(|record| record.asset_type.clone()))
+        .ok_or_else(|| RpcError::invalid_params("缺少 type"))?;
     check_asset_type(&asset_type)?;
-    let name = required_str(params, "name")?;
-    let config = params.get("config").cloned().unwrap_or(Value::Null);
-    let group_id = params.get("groupId").and_then(Value::as_i64);
-    let favorite = params
+    let name = optional_str(payload, "name")
+        .or_else(|| existing.as_ref().map(|record| record.name.clone()))
+        .ok_or_else(|| RpcError::invalid_params("缺少 name"))?;
+    let config = payload
+        .get("config")
+        .cloned()
+        .or_else(|| existing.as_ref().map(|record| record.config.clone()))
+        .unwrap_or(Value::Null);
+    // 分组键两种拼法都认:工作台对话框发 snake_case 的 `group_id`,sidecar 契约
+    // 是 camelCase 的 `groupId`(Tauri 侧 command 参数名)。
+    let group_id = payload
+        .get("groupId")
+        .or_else(|| payload.get("group_id"))
+        .and_then(Value::as_i64)
+        .or_else(|| existing.as_ref().and_then(|record| record.group_id));
+    let tags = match payload.get("tags") {
+        Some(_) => tags_of(payload),
+        None => existing
+            .as_ref()
+            .map(|record| record.tags.clone())
+            .unwrap_or_default(),
+    };
+    let favorite = payload
         .get("favorite")
         .and_then(Value::as_bool)
+        .or_else(|| existing.as_ref().map(|record| record.favorite))
         .unwrap_or(false);
     let record = store
-        .upsert(
-            &id,
-            &asset_type,
-            &name,
-            config,
-            group_id,
-            tags_of(params),
-            favorite,
-        )
+        .upsert(&id, &asset_type, &name, config, group_id, tags, favorite)
         .map_err(RpcError::internal)?;
     Ok(record.to_ui_json())
 }
@@ -195,17 +240,66 @@ mod tests {
     }
 
     #[test]
+    fn workbench_create_accepts_the_wrapped_shape_and_generates_the_id() {
+        let (store, dir) = store("workbench");
+        // 工作台「新建连接」的真实负载:配置包在 `params` 里、不带 id、分组键是 group_id
+        let created = upsert_asset(
+            &store,
+            &json!({
+                "params": {
+                    "type": "ssh",
+                    "name": "测试服务器",
+                    "group_id": null,
+                    "config": { "host": "10.0.0.9", "port": 22, "username": "work", "password": "pw" },
+                    "tags": [],
+                }
+            }),
+        )
+        .expect("create");
+        let id = created["id"]
+            .as_str()
+            .expect("sidecar 生成的 id")
+            .to_string();
+        assert!(!id.is_empty());
+        assert_eq!(created["name"], "测试服务器");
+        assert_eq!(created["group_id"], Value::Null);
+        // 保存(update)是另一种形态:id 平铺在顶层、`params` 里只有 name/config
+        let updated = upsert_asset(
+            &store,
+            &json!({
+                "id": id,
+                "params": {
+                    "name": "改名",
+                    "config": { "host": "10.0.0.9", "port": 2222, "username": "work" },
+                },
+            }),
+        )
+        .expect("update");
+        assert_eq!(updated["id"], id);
+        assert_eq!(updated["name"], "改名");
+        assert_eq!(updated["type"], "ssh", "type 缺省沿用既有行");
+        assert_eq!(updated["config"]["port"], 2222);
+        assert_eq!(store.list().expect("list").len(), 1, "更新不新增行");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn parameter_validation_matches_the_tauri_wording() {
         let (store, dir) = store("validate");
-        let missing_id =
-            upsert_asset(&store, &json!({ "type": "ssh", "name": "x" })).expect_err("缺 id");
+        let missing_type = upsert_asset(&store, &json!({ "name": "x" })).expect_err("缺 type");
         assert!(
-            missing_id.message.contains("缺少 id"),
+            missing_type.message.contains("缺少 type"),
             "{}",
-            missing_id.message
+            missing_type.message
         );
-        let bad_type = upsert_asset(&store, &json!({ "id": "a1", "type": "excel", "name": "x" }))
-            .expect_err("Excel 已删");
+        let missing_name = upsert_asset(&store, &json!({ "type": "ssh" })).expect_err("缺 name");
+        assert!(
+            missing_name.message.contains("缺少 name"),
+            "{}",
+            missing_name.message
+        );
+        let bad_type =
+            upsert_asset(&store, &json!({ "type": "excel", "name": "x" })).expect_err("Excel 已删");
         assert!(
             bad_type.message.contains("不支持的资产类型"),
             "{}",
