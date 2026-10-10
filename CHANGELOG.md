@@ -7,6 +7,9 @@
 
 ## [未发布]
 
+### 修复
+- 🔧 **Release 链补上 `apps/desktop/.env.windows` 的 CI 物化**——上游 Electron 打包脚本要求该文件存在(它被 gitignore,因为装签名证书与更新源),于是发布链走到最后一步「Package upstream Electron shell」必失败。现在 `release.yml` 在打包前从 **GitHub Secrets** 物化它:发布 id(`DOWNLOAD_TEST_RELEASE_ID`,32 位小写十六进制)是 secret——每一批必须稳定,重试与升级测试复用同一个,不能每次跑重新生成;其余项(app id / 更新环境 / 强制更新源 / 允许登录源 / 下载源)缺省沿用**旧 Tauri 配置的值**:`com.starhub.app` + `https://github.com`(旧 `tauri.conf.json` 的 updater 就指向 GitHub Releases 的 `latest.json`)。缺发布 id 时**本步就 fail loud** 并说清缺哪一项、去哪加,不留给上游脚本报一句「读不到文件」。本地已用生成的 env 跑上游 `package-target.ts win-x64 --unsigned --check` 验证:env 校验通过,报错前进到工具链预检(本机 MSVC 装在非标准路径 `D:\c++1\VC`,vswhere 找不到;GitHub windows-2022 runner 自带 Build Tools,不受影响)。
+
 ---
 
 ## [0.128.5] - 2026-10-10

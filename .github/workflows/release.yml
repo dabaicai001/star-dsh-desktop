@@ -129,6 +129,60 @@ jobs:
         # invoke 打通 / 未知命令错误通路 / SSE 流 / Go sidecar 活着)。
         run: npm run smoke:dsh-desktop
 
+      - name: Write apps/desktop/.env.windows (packaging settings)
+        # 上游打包脚本要求 apps/desktop/.env.windows 存在——它被 gitignore,因为
+        # 装签名证书与更新源。CI 里从 GitHub Secrets 物化:发布 id 每一批必须稳定
+        # (重试与升级测试复用同一个),不能每次跑都重新生成,所以它是 secret 而
+        # 不是脚本里现算。
+        #
+        # 需要配置的 secret(仓库 Settings → Secrets and variables → Actions):
+        #   DOWNLOAD_TEST_RELEASE_ID                  必填,32 位小写十六进制
+        #   DSH_DESKTOP_APP_ID                        缺省 com.starhub.app
+        #   DSH_DESKTOP_AUTO_UPDATE_ENV               缺省 test
+        #   DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN  缺省 https://github.com
+        #   DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN  缺省 https://github.com
+        #   DSH_DESKTOP_MANDATORY_UPDATE_AUTH_ORIGINS 缺省 https://github.com
+        #   DOWNLOAD_TEST_ORIGIN                      缺省 https://github.com
+        # 缺 DOWNLOAD_TEST_RELEASE_ID 时本步就 fail loud 并说清缺哪一项,不要留给
+        # 上游打包脚本报一句读不到文件。
+        shell: pwsh
+        env:
+          SECRET_APP_ID: ${{ secrets.DSH_DESKTOP_APP_ID }}
+          SECRET_UPDATE_ENV: ${{ secrets.DSH_DESKTOP_AUTO_UPDATE_ENV }}
+          SECRET_RELEASE_ID: ${{ secrets.DOWNLOAD_TEST_RELEASE_ID }}
+          SECRET_TEST_ORIGIN: ${{ secrets.DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN }}
+          SECRET_PROD_ORIGIN: ${{ secrets.DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN }}
+          SECRET_AUTH_ORIGINS: ${{ secrets.DSH_DESKTOP_MANDATORY_UPDATE_AUTH_ORIGINS }}
+          SECRET_DOWNLOAD_ORIGIN: ${{ secrets.DOWNLOAD_TEST_ORIGIN }}
+        run: |
+          $appId        = if ($env:SECRET_APP_ID)        { $env:SECRET_APP_ID }        else { 'com.starhub.app' }
+          $updateEnv    = if ($env:SECRET_UPDATE_ENV)    { $env:SECRET_UPDATE_ENV }    else { 'test' }
+          $testOrigin   = if ($env:SECRET_TEST_ORIGIN)   { $env:SECRET_TEST_ORIGIN }   else { 'https://github.com' }
+          $prodOrigin   = if ($env:SECRET_PROD_ORIGIN)   { $env:SECRET_PROD_ORIGIN }   else { 'https://github.com' }
+          $authOrigins  = if ($env:SECRET_AUTH_ORIGINS)  { $env:SECRET_AUTH_ORIGINS }  else { 'https://github.com' }
+          $downloadOrig = if ($env:SECRET_DOWNLOAD_ORIGIN) { $env:SECRET_DOWNLOAD_ORIGIN } else { 'https://github.com' }
+          $releaseId    = $env:SECRET_RELEASE_ID
+          if (-not $releaseId) {
+            throw "缺少 secret DOWNLOAD_TEST_RELEASE_ID(32 位小写十六进制,每批稳定;重试与升级测试复用同一个)。在仓库 Settings -> Secrets and variables -> Actions 里添加后再跑。"
+          }
+          if ($releaseId -notmatch '^[0-9a-f]{32}$') {
+            throw "DOWNLOAD_TEST_RELEASE_ID 必须是 32 位小写十六进制,收到: '$releaseId'"
+          }
+          $authConfig = "{`"allowedAuthOrigins`":[`"$authOrigins`"]}"
+          $lines = @(
+            "# 由 release.yml 从 GitHub Secrets 物化;勿手改(该文件被 gitignore)。"
+            "DSH_DESKTOP_APP_ID=$appId"
+            "DSH_DESKTOP_AUTO_UPDATE_ENV=$updateEnv"
+            "DOWNLOAD_TEST_ORIGIN=$downloadOrig"
+            "DOWNLOAD_TEST_RELEASE_ID=$releaseId"
+            "DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=$testOrigin"
+            "DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=$prodOrigin"
+            "DSH_DESKTOP_MANDATORY_UPDATE_CONFIG='$authConfig'"
+          )
+          $target = Join-Path $env:GITHUB_WORKSPACE 'vendor\deepseek-harness\apps\desktop\.env.windows'
+          Set-Content -Path $target -Value $lines -Encoding utf8
+          Write-Host "已写出 $target(app id=$appId, update env=$updateEnv, release id=$($releaseId.Substring(0,4))…)"
+
       - name: Package upstream Electron shell (unsigned)
         # 上游 electron-builder 链原样用;`--unsigned` 因为没有代码签名证书。
         # 产物落在 apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts。

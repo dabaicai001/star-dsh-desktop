@@ -255,8 +255,14 @@ provisioning 的行级合并是**字符串操作**:拼出非法 YAML(缩进错�
 ## 五、仍挂着的事
 
 - **Electron 壳本身的冒烟**:boot 的是宿主进程(上游 smoke-runtime.ts 同款
-  路径),Electron 窗口层要等一次真安装包。**发布链本身也刚刚才第一次真正跑
-  起来**——见下面「补记:CI 与发布链曾经一次都没跑过」。
+  路径),Electron 窗口层要等一次真安装包。**发布链本身已经能一路跑到最后一
+  步**:v0.128.5 起 `ci.yml` 两个 matrix job 22/22 全绿(自 M4 第 3 步以来第一
+  次),`release.yml` 的 windows job 也穿过全部测试、构建、`package:dsh-runtime`、
+  `build:window`、冒烟,只差「Package upstream Electron shell」——它要
+  `apps/desktop/.env.windows`(gitignore,装签名证书与更新源)。已改为在 CI 里
+  从 GitHub Secrets 物化,缺 `DOWNLOAD_TEST_RELEASE_ID` 时本步 fail loud。
+  **待用户操作**:在仓库 Settings → Secrets and variables → Actions 加
+  `DOWNLOAD_TEST_RELEASE_ID`(32 位小写十六进制,每批稳定)。
 - **Linux 不发版(决策 A:等上游)**:上游没有 Linux desktop target,deb/rpm 随
   Tauri 壳退役;`release.yml` 的 linux job 已删,上游出 target 后加回来即可。
 - **真机联调(M3-6)**:Android 设备接上后跑 scrcpy H.264 + 接管互斥 + 延迟实测。
