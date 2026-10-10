@@ -9,6 +9,19 @@
 
 ---
 
+## [0.129.0] - 2026-10-10
+
+### 修复
+- 🐛 **`build:window` 不清落地目录,`dist-starhub-react/` 一代代累积**(v0.129.0 实测 **443.7 MB / 486 个文件**,而单次 vite 产物只有 **21.3 MB / 181 个**):`scripts/build-window.mjs` 只 `mkdir + cp`,带 hash 的 `assets/index-*.js` 与 sourcemap 从不过期,而 provisioning 会把这个目录**整个**拷进安装包。修复:两个落地目录都先 `rm` 再拷。这一条同时决定了纯插件包的体积——组装时再排除 `*.map`(单次产物里占 ~七成),`dist-plugin/` 从 505 MB 降到 **67.2 MB**,tarball **21.5 MB**。
+
+### 新增
+- ✨ **StarHub 现在是一个可安装的 DSH 组合包(bundle)**:新增 `npm run plugin:bundle`(`scripts/build-plugin-bundle.mjs`)把十个内置插件 + React 工作台 dist + 两个 sidecar **拼成一个自包含包** `dist-plugin/`,`--pack` 再打成 `.tgz`;在 dsh 插件页「添加插件」里粘贴 tarball 路径(或发布后的包名)即可安装——不需要 `provision-dsh.mjs`,不需要改 dsh 内核。包内零 `dependencies`/`peerDependencies`(`workspace:` 协议在非 workspace 安装下不可解析,且 `@deepseek-ai/dsh*` 的 peer 会被 DSH 兼容门拦下),行模块只 import dsh 安装树供给的包。新增 `npm run smoke:plugin-bundle`(`scripts/smoke-plugin-bundle.mjs`)复刻插件页的安装动作(`pnpm add <spec>` + 选入 `dsh.profile.bundles`)并起宿主验五条断言:包内 dist 供工作台、包内 sidecar 通 JSON-RPC、错误通路、SSE 事件面、客户端半边进 boot 图——**tarball 路径与目录拷贝两种形态都全绿**。
+- ✨ `tests/plugin-bundle.test.mjs`(6 例)守住三条「装不上就白干」的约束:清单自包含、**客户端半边必须挂在裸包名行上**(DSH 的 client-modules 只把裸包名行当客户端行,纯子路径行会静默不加载)、行 id 与 provisioning 模板一致(用户覆盖与插件页开关按 id 认)。
+
+### 变更
+- 🔧 **两个部署变化项的默认值改为「包内自解析」**(纯插件形态没有 provisioning 注入绝对路径的机会):`starhub-bridge` 的默认 sidecar 命令先用模块同级 `sidecar/starhub-sidecar-rust[.exe]`(Rust 侧按 exe 同级兄弟名找 Go 侧,两个二进制因此同目录落位),找不到才退回裸名走 PATH;`starhub-host-static` 的 dist 解析顺序变成 `windowDist` → `STARHUB_WINDOW_DIST` → **模块同级 `dist/`** → 仓库 `dist-starhub-react`。两者都保留原覆盖能力,开发形态行为不变。
+- 📝 **实测记录(两条反直觉结论,已写进 `docs/纯插件化-适配清单.md`)**:①**「本地目录路径」安装不可用**——dsh 对它是 link,Node 按 realpath 解析,行模块的 `@deepseek-ai/*` 裸 import 不会被运行时的解析层接管,实测 9 个行全部 `failed to import`;而 pnpm 安装(包名 / tarball / git)把包解进 `<profile>/node_modules/.pnpm/…`,realpath 在 profile 树内,同一份产物全部激活。②**bundle 的十行不能全是子路径**:客户端半边必须由裸包名行承载。
+
 ## [0.128.6] - 2026-10-10
 
 ### 修复

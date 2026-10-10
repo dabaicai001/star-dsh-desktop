@@ -12,8 +12,9 @@
  *
  * Location resolution order (first hit wins): the `windowDist` Config field
  * (what the M4 provisioning script writes into the profile patch), then
- * `STARHUB_WINDOW_DIST`, then repo `dist-starhub-react`; a missing dist fails
- * loud at plugin load.
+ * `STARHUB_WINDOW_DIST`, then the `dist/` shipped beside this module (how an
+ * installed bundle carries its own workbench), then repo `dist-starhub-react`;
+ * a missing dist fails loud at plugin load.
  *
  * @module @deepseek-ai/dsh-starhub-host-static
  */
@@ -79,32 +80,36 @@ function findRepoRoot(): string | undefined {
 }
 
 /**
- * Resolve a served dist root for one prefix. The optional env var wins; the
- * fallback checks repo roots (in order) and requires the index to reference
- * assets under the prefix's vite base so bare URLs don't escape to the dsh
- * fallback — a wrong-base index is rejected loud (env) or skipped (fallback).
+ * Resolve a served dist root for one prefix. An explicit source wins and is
+ * strict; otherwise the package-local candidates are tried first, then repo
+ * roots. The index must reference assets under the prefix's vite base so bare
+ * URLs don't escape to the dsh fallback — a wrong-base index is rejected loud
+ * (explicit) or skipped (candidate).
  * @param prefix - the vite base the dist must use (`/starhub` / `/starhub-react`).
- * @param envVar - env var naming an explicit dist root, or undefined.
+ * @param envVar - env var or Config value naming an explicit dist root, or undefined.
  * @param fallbackDirs - repo-root-relative candidates in preference order.
  * @param emptyMessage - thrown when no qualifying dist exists at all.
+ * @param localDirs - absolute package-local candidates, tried before the repo roots.
  * @returns the absolute dist root containing a matching index.html.
  * @throws when no qualifying dist exists.
  */
 export function resolveDist(
   prefix: string, envVar: string | undefined, fallbackDirs: readonly string[], emptyMessage: string,
+  localDirs: readonly string[] = [],
 ): string {
   const fromEnv = envVar !== undefined && envVar !== '' ? envVar : undefined
-  const candidates = fromEnv !== undefined
-    ? [resolve(fromEnv)]
+  const candidates: Array<{ dir: string; strict: boolean }> = fromEnv !== undefined
+    ? [{ dir: resolve(fromEnv), strict: true }]
     : (() => {
       const repoRoot = findRepoRoot()
-      return repoRoot === undefined ? [] : fallbackDirs.map(d => join(repoRoot, d))
+      const repo = repoRoot === undefined ? [] : fallbackDirs.map(d => join(repoRoot, d))
+      return [...localDirs, ...repo].map(dir => ({ dir, strict: false }))
     })()
-  for (const distRoot of candidates) {
+  for (const { dir: distRoot, strict } of candidates) {
     const distIndex = join(distRoot, 'index.html')
     if (!existsSync(distIndex)) continue
     if (readFileSync(distIndex, 'utf8').includes(`${prefix}/assets/`)) return distRoot
-    if (fromEnv !== undefined) {
+    if (strict) {
       throw new Error(
         `starhub-host-static: ${distIndex} 资源引用未带 ${prefix}/ 前缀;` +
         `请用对应 vite base 构建,或把 ${envVar} 指向正确 dist`,
@@ -115,10 +120,29 @@ export function resolveDist(
 }
 
 /**
+ * Package-local dist candidates shipped inside an installed bundle, nearest
+ * ancestor first: a bundle carries the workbench dist beside this module so an
+ * installed plugin needs no provisioning script to inject an absolute path.
+ * @returns absolute candidate dist roots.
+ */
+function pluginLocalDirs(): string[] {
+  const dirs: string[] = []
+  let dir = dirname(fileURLToPath(import.meta.url))
+  for (let depth = 0; depth < 4; depth += 1) {
+    dirs.push(join(dir, 'dist'))
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return dirs
+}
+
+/**
  * Resolve the standalone React window app dist root.
  *
  * Precedence: the `windowDist` Config field (provisioning-installed layout),
- * then `STARHUB_WINDOW_DIST`, then repo `dist-starhub-react`.
+ * then `STARHUB_WINDOW_DIST`, then the dist shipped beside this module (bundle
+ * install), then repo `dist-starhub-react`.
  * @param config - resolved plugin config.
  * @returns absolute dist root.
  */
@@ -129,6 +153,7 @@ export function resolveWindowDistRoot(config: HostStaticConfig = {}): string {
     configured !== '' ? configured : process.env.STARHUB_WINDOW_DIST,
     ['dist-starhub-react'],
     'starhub-host-static: 未找到 StarHub React window dist(先构建 starhub-window,或用 STARHUB_WINDOW_DIST / windowDist 配置指定)',
+    pluginLocalDirs(),
   )
 }
 

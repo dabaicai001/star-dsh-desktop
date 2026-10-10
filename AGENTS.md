@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.128.6(Release 链补上 apps/desktop/.env.windows 的 CI 物化——从 GitHub Secrets 写,缺发布 id 本步 fail loud) |
+| 当前版本 | v0.129.0(✨ **StarHub 可作为 DSH 组合包(bundle)安装**:`npm run plugin:bundle` 拼出自包含的 `dist-plugin/`(`--pack` 出 `.tgz`),在 dsh 插件页「添加插件」粘 tarball 路径或包名即可,不再依赖 provisioning;`npm run smoke:plugin-bundle` 五条断言冒烟。详见 `docs/纯插件化-适配清单.md`) |
 
 ## 架构一句话
 
@@ -54,6 +54,8 @@ starhub/
 ├── scripts/
 │   ├── provision-dsh.mjs     # M4:把 StarHub 组合装进 dsh profile
 │   ├── smoke-dsh-desktop.mjs # M4:provisioning + 宿主进程冒烟
+│   ├── build-plugin-bundle.mjs  # 纯插件形态:拼出自包含 bundle(→ dist-plugin/,--pack 出 .tgz)
+│   ├── smoke-plugin-bundle.mjs  # 纯插件形态:pnpm 安装 + 宿主冒烟(五条断言)
 │   ├── build-sidecar.*       # Go sidecar 构建
 │   ├── build-window.mjs      # React 工作台构建
 │   ├── bump-version.mjs      # 版本号同步
@@ -62,6 +64,7 @@ starhub/
 │
 ├── dsh-runtime/             # 打包好的 dsh 运行时(gitignore;package:dsh-runtime 产出)
 ├── dist-starhub-react/      # React 工作台产物(gitignore)
+├── dist-plugin/             # 纯插件 bundle 组装产物(gitignore;plugin:bundle 产出,--pack 另出 .tgz)
 ├── docs/                    # 技术方案 / 设计系统 / 踩坑记录 / 已知坑索引 / 去Tauri化 M1-M4 清单
 ├── test-sftp/               # SSH/SFTP stub + 桥兼容验收脚本
 └── tests/                   # node --test 单测(utils、AI 上下文/滚动/记忆、SSH prompt/cwd/后台任务、provisioning)
@@ -88,6 +91,8 @@ npm run sidecar-rust:build   # Rust sidecar(scripts/cargo-sidecar.mjs:Windows �
 npm run test:utils           # node --test 纯逻辑套件;其余套件见 package.json scripts
 npm run test:provision       # provisioning 合并逻辑单测
 npm run smoke:dsh-desktop    # provisioning + 宿主进程冒烟(五条断言)
+npm run plugin:bundle        # 纯插件形态:组装 dist-plugin/(加 --pack 出 .tgz,粘进 dsh 插件页)
+npm run smoke:plugin-bundle  # 纯插件形态:真 pnpm 安装 + 宿主冒烟(五条断言)
 npm run verify:bridge-compat # 真 sidecar 二进制 ↔ 桥兼容层全工具面验收
 
 npm run package:dsh-runtime  # 打包 dsh 运行时(→ dsh-runtime/)
@@ -138,4 +143,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-10 (v0.128.6)*
+*最后更新: 2026-10-10 (v0.129.0)*

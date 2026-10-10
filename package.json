@@ -1,6 +1,6 @@
 {
   "name": "starhub",
-  "version": "0.128.6",
+  "version": "0.129.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,8 +26,11 @@
     "verify:web-dist": "node scripts/verify-web-dist.mjs",
     "package:dsh-runtime": "pnpm --dir vendor/deepseek-harness exec tsx scripts/package-dsh-runtime.ts",
     "provision:dsh": "node scripts/provision-dsh.mjs",
+    "plugin:bundle": "node scripts/build-plugin-bundle.mjs",
+    "smoke:plugin-bundle": "node scripts/smoke-plugin-bundle.mjs",
     "smoke:dsh-desktop": "node scripts/smoke-dsh-desktop.mjs",
     "test:provision": "node --test tests/provision-dsh.test.mjs",
+    "test:plugin-bundle": "node --test tests/plugin-bundle.test.mjs",
     "test:workflows": "node --test tests/workflows-yaml.test.mjs",
     "migrate:tauri-data": "node scripts/migrate-tauri-data.mjs",
     "test:migrate": "node --test tests/migrate-tauri-data.test.mjs"

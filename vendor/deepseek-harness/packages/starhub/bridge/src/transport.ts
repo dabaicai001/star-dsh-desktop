@@ -10,6 +10,9 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
 
 /** One spawned sidecar process with its transport and disposer. */
@@ -22,8 +25,36 @@ export interface SidecarHandle {
   dispose(): Promise<void>
 }
 
-/** Default sidecar launch command (resolved against PATH or the bridge Config). */
-export const DEFAULT_SIDECAR_COMMAND: readonly string[] = ['starhub-sidecar-rust']
+/** Bare sidecar name used when nothing is shipped beside this module (PATH lookup). */
+const BARE_SIDECAR_COMMAND = 'starhub-sidecar-rust'
+
+/**
+ * Absolute sidecar paths shipped beside this bridge module, nearest ancestor first.
+ *
+ * A bundle-installed bridge carries its own sidecar (`<plugin>/bridge/sidecar/…`),
+ * and the Go sidecar must sit in that same directory because the Rust sidecar
+ * resolves it as a sibling of its own executable. Ancestors are probed because
+ * the built module sits at different depths in the tsdown and tsc layouts.
+ * @returns candidate executable paths, or the bare name when none exists.
+ */
+function bundledSidecarCandidates(): string[] {
+  const executable = process.platform === 'win32' ? `${BARE_SIDECAR_COMMAND}.exe` : BARE_SIDECAR_COMMAND
+  const candidates: string[] = []
+  let dir = dirname(fileURLToPath(import.meta.url))
+  for (let depth = 0; depth < 4; depth += 1) {
+    candidates.push(join(dir, 'sidecar', executable), join(dir, executable))
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return candidates
+}
+
+/** Default sidecar launch command: the bundled executable when present, else PATH. */
+export const DEFAULT_SIDECAR_COMMAND: readonly string[] = (() => {
+  const bundled = bundledSidecarCandidates().find(candidate => existsSync(candidate))
+  return bundled === undefined ? [BARE_SIDECAR_COMMAND] : [bundled]
+})()
 
 /** Default health-probe budget after spawn. */
 export const DEFAULT_HEALTH_TIMEOUT_MS = 10_000

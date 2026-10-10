@@ -13,7 +13,9 @@ node_modules/
 dist/
 dist-embed/
 dist-starhub-react/
+dist-plugin/
 dist-ssr/
+*.tgz
 .vite/
 *.local
 .npm/
