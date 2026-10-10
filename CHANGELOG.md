@@ -7,7 +7,12 @@
 
 ## [未发布]
 
+---
+
+## [0.128.0] - 2026-10-10
+
 ### 变更
+- 🗑️ **删除 `vendor/obscura` 子模块(用户拍板「整体删除」)**:obscura 无头浏览器引擎(V8 + 原生渲染)是 AI 浏览器 `browser.engine=obscura` 后端的载体,AI 浏览器已在 M4 整体删除,仓库里再没有任何代码引用它——`sidecar-rust` 无 obscura 依赖、`vendor/deepseek-harness` 无引用、CI / 发布链无引用。随子模块一起清掉 `.gitmodules`(它是最后一个子模块,文件本身也删)与 `.git/config` 里的残留 section。删掉之后每次 clone 与 CI 的 `submodules: recursive` 少拉 **707MB / 2616 个文件**。`docs/踩坑记录.md` §52 与 `docs/已知坑索引.md` 第 52 条作为历史记录保留(记的是当年的修复,不是当前状态)。
 - 🐛 **修掉根 lock 与 package.json 长期不同步——`npm ci` 在 CI 与发布链的第一行就红**(去 Tauri 化 M4 收尾):根 `package.json` 的 14 个 runtime 依赖 + `jsdom`/`vite`/`vitest` 三个 dev 依赖是 **React 工作台还长在仓库根时的死重**——工作台搬进 `vendor/deepseek-harness/apps/starhub-window` 之后,`build:window` 走的是 vendor 自己的 pnpm workspace,根 `scripts/` 与 `tests/` 只 import node 内置模块加 `typescript`(单测现编译 vendored TS 用),一个都没引用过它们。死重没人清,`package-lock.json` 从 v0.96.5 起就没重新生成过,于是 `@codemirror/state@6.6.0 does not satisfy ^6.7.1`——`npm ci` 直接 EUSAGE 退出,`ci.yml` 与 `release.yml` 的第一行「Install frontend dependencies」就红,后面九步全跑不到。处理:① 根 `package.json` 清空 `dependencies`、`devDependencies` 只留 `typescript`,删掉同样已失效的 `test` / `test:watch` 脚本(vitest 在仓库根既没有 config 也没有 `src/`,真跑起来会把 `vendor/` 一起 glob 进来);② 删 `tests/linkage.test.ts`——它 mock `@tauri-apps/api`、import 早已不存在的 `@/services/linkage`(vendor 树里也没有对应 spec,纯死文件);③ 删根 `pnpm-lock.yaml`(v0.72.2 Vue 时代的遗留,仓库根是 npm,没有任何东西用它);④ 重新生成 `package-lock.json`,3731 行 → 29 行。验证:`npm ci` 通过、16 个根测试套件 198 例全绿。
 - ✨ **provisioning 落盘前校验渲染出的 patch 是合法 YAML**(去 Tauri 化 M4 第 8 步):行级合并是字符串操作,拼出非法 YAML(缩进错、引号不闭)不会在合并时暴露,只会在壳启动时炸出一句 `failed to parse overlay`——那时候用户已经在装机界面了。因此落盘前先用 YAML 解析器过一遍,并顺带校验受管行恰好各出现一次(多一次 = 合并逻辑回归,少一次 = 模板被改坏)。解析器从 vendor 树取(`vendor/deepseek-harness/node_modules/js-yaml`,上游闭包自带),不给仓库根加依赖;取不到就跳过校验而不是失败——校验是加固,不是门槛。有一个反直觉的发现:受管行的 **config 块缩进错乱会被 merge 自动修好**(合并本来就整块重排 config),所以「坏在受管行上」验不出 fail loud;测试因此坏在**非受管行**上(未闭合的单引号)——那才是合并管不到的地方。
 - ✨ **凭据迁移:一次性导入工具**(去 Tauri 化 §六 / R7):src-tauri 已随 M4 删除,但用户机器上的老数据(Tauri SQLite `starhub.db` + 系统 Keyring)还在。新增 `scripts/migrate-tauri-data.mjs`:只读打开老库(连 `-wal`/`-shm` 一起复制到临时目录,原库一字节不改)→ 按「用户数据」判据搬五类(assets / settings / alert_rule / audit_log / known_hosts)+ 密钥 → sidecar 自己的 JSON 存储,搬完做**双跑期校验**(旧库导出 vs 新存储逐条比对,不一致即非零退出)。三个关键设计:① 按**实际存在的列**构造 SELECT(老库缺列是升级路径常态),绝不为省事静默返回空数组——那会把「缺列」伪装成「没数据」,报告还显示一致,用户资产静默丢光;② **先验后写**(校验读磁盘旧内容,写完才覆盖),反过来永远一致、校验成摆设;③ 顺序保持老库自然行序——sidecar 的 `AssetStore::list()` 是文件顺序即返回顺序、`AlertStore::list()` 是数组 reverse,迁移重排会让用户看到的顺序和旧壳不一致。密钥走 `--secrets-export`(Windows 凭据管理器没有官方 CLI)或平台 CLI(macOS `security` / Linux `secret-tool`),读不到的 key_id 列在报告里不静默丢。**不搬**:`sql_history` / `snippets` / `ai_*`(Tauri 私有使用痕迹,新架构无读取方)、`sandbox_*` / `*_replay_frames`(一次性容器与回放帧)。修掉一个真 bug:`JSON.stringify(v, Object.keys(v).sort())` 的数组型 replacer 是键名白名单,嵌套对象被掏成 `{}`,任何两份数据都「相等」、校验整条失效——改用递归深排序。
@@ -48,8 +53,6 @@
 - 📝 `docs/去Tauri化-M2-命令映射清单.md`:第 4 步(C 组数据面连接)标记完成——86 个 `ui.*` 方法的表驱动转发设计、两种参数形态(Wrapped 拆封 / Flat 平铺)、参数白名单与 broker kind 白名单契约;方法面 123 → 209;C 组行状态 ⬜ → ✅。验收口径更新为 52 项检查。
 - 📝 `docs/去Tauri化-M2-命令映射清单.md`:第 3 步(B 组交互会话)标记完成——30 个 `ui.*` 方法逐面列举(SSH 12 + SFTP 17 + 窗口类降级 1)、契约逐字保持清单、测试与验收结果;方法面 93 → 123;B 组行状态 ⬜ → ✅。验收口径更新为 41 项检查。
 - 📝 `docs/去Tauri化-M1-命令映射清单.md`:第 7 步(Excel 删除 + 兼容层 + 9 插件适配)与第 8 步(全工具验收)标记完成——Excel 行改为「已删除」,工具总数 110 → 86,方法面 85 → 89,分发替换图更新;新增 `npm run verify:bridge-compat`(真 sidecar 二进制 + 兼容层 15 项验收);`AGENTS.md` 技术栈/目录去掉 excelize 与 excel 适配器。
-
----
 
 ## [0.127.0] - 2026-10-08
 
