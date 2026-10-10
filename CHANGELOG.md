@@ -9,6 +9,11 @@
 
 ---
 
+## [0.131.1] - 2026-10-10
+
+### 修复
+- 🐛 **plugin:bundle 静默装旧 client.js**:`plugin:bundle`/`plugin:pack` 只组装不重 build,本地改了 `client-nav/src` 直接打包会把旧界面装进 tarball(界面「改了但没生效」)。前置校验新增 staleness 检查:`client-nav/lib/client.js` 比 `src/` 任一新即 fail loud,提示先跑 client-nav 的 tsdown bundle;CI 不受影响(`package:dsh-runtime` 本就全量重 build)。
+
 ## [0.131.0] - 2026-10-10
 
 ### 移除

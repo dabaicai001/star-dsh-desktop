@@ -26,7 +26,7 @@
  *   node scripts/build-plugin-bundle.mjs [--out <dir>] [--name <pkg>] [--version <x.y.z>]
  *     [--sidecar-rust <path>] [--sidecar-go <path>] [--window-dist <dir>] [--dry-run]
  */
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -398,6 +398,19 @@ async function main() {
   }
   if (!existsSync(join(vendorRoot, 'packages', 'starhub', CLIENT_PLUGIN, 'lib', 'client.js'))) {
     problems.push('客户端半边缺失: packages/starhub/client-nav/lib/client.js(先跑 npm run build:lib:client)')
+  } else {
+    // plugin:bundle 只组装不重 build,client.js 静默装旧代码是最阴的坑
+    // (界面「改了但没生效」)。src 比产物新即 fail loud,逼一次重 build。
+    const clientJs = join(vendorRoot, 'packages', 'starhub', CLIENT_PLUGIN, 'lib', 'client.js')
+    let srcNewest = 0
+    for (const file of await listFilesRecursive(join(vendorRoot, 'packages', 'starhub', CLIENT_PLUGIN, 'src'))) {
+      srcNewest = Math.max(srcNewest, (await stat(file)).mtimeMs)
+    }
+    if (srcNewest > (await stat(clientJs)).mtimeMs) {
+      problems.push(
+        '客户端 client.js 比 src/ 旧(plugin:bundle 不自动重 build):先跑 ' +
+        'pnpm --dir vendor/deepseek-harness --filter @deepseek-ai/dsh-starhub-client-nav run bundle')
+    }
   }
   if (!existsSync(join(options.windowDist, 'index.html'))) {
     problems.push(`工作台 dist 缺失: ${options.windowDist}(先跑 npm run build:window)`)

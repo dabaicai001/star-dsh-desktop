@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.131.0(🗑️ **设置页精简到只剩 Android 设备 + SSH**:审计日志、告警规则、沙箱平台、关于四个设置区块(`settings.section`)整体删除;沙箱平台固定本机(`docker.connect {}` 空参),原「选择既有 Docker 连接」入口随设置页退场。) |
+| 当前版本 | v0.131.1(🐛 **plugin:bundle 静默装旧 client.js**:`plugin:bundle`/`plugin:pack` 只组装不重 build,本地改了 `client-nav/src` 直接打包会把旧界面装进 tarball(界面「改了但没生效」)。前置校验新增 staleness 检查:`client-nav/lib/client.js` 比 `src/` 任一新即 fail loud,提示先跑 client-nav 的 tsdown bundle;CI 不受影响(`package:dsh-runtime` 本就全量重 build)。) |
 
 ## 架构一句话
 
@@ -144,4 +144,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-10 (v0.131.0)*
+*最后更新: 2026-10-10 (v0.131.1)*
