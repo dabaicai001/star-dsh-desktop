@@ -172,10 +172,19 @@ jobs:
 
       - name: Extract release notes from CHANGELOG.md
         # 从 CHANGELOG.md 生成 Release 正文(升级变更日志)。
-        # 优先提取当前版本节 `## [<version>]`(发版时改动会从 [未发布] 移到
-        # 版本节);找不到版本节才回退 `## [未发布]`。
+        # 优先提取当前版本节(发版时改动会从 [未发布] 移到版本节);找不到版本节
+        # 才回退 `## [未发布]`。
         # 提取范围:命中的 `## [` 到下一个 `---` 分隔符;剔除「### 计划中」块
         # (未发布计划,不该进已发布版本的 notes)。发版约定见 AGENTS.md 版本纪律。
+        #
+        # 两个坑,都是这次升 v0.128.0 时实测抓到的:
+        # ① 匹配必须用**前缀正则**,不能整行相等。版本标题长这样:
+        #    `## [0.128.0] - 2026-10-10`(带日期),永远不等于 `## [0.128.0]`。
+        #    整行相等的写法让 active 永远是 0,提取结果恒为空——上面那个
+        #    grep 用的是前缀正则所以能选中 SECTION,两边不一致,于是每个版本
+        #    都走到「没提取到」。
+        # ② 提取为空必须**失败**,不能只 warning。空 notes 的 Release 看起来
+        #    是成功的,用户点开什么都没有,比发布失败更难发现。
         shell: bash
         env:
           REL_VERSION: ${{ github.ref_name }}   # 形如 v0.114.1
@@ -188,13 +197,14 @@ jobs:
             echo "::warning::CHANGELOG.md 没有版本节 '## [$VER]',回退到 '## [未发布]' 提取"
           fi
           awk -v sec="$SECTION" '
-            /^## \[/ { if (active) exit; if ($0 == "## [" sec "]") active = 1; next }
+            /^## \[/ { if (active) exit; if ($0 ~ "^## \\[" sec "\\]") active = 1; next }
             active && /^---/ { exit }
             active && /^### 计划中/ { planned = 1 }
             active && !planned { print }
           ' CHANGELOG.md > RELEASE_NOTES.md
           if [ ! -s RELEASE_NOTES.md ]; then
-            echo "::warning::未提取到可用变更日志,Release 将不带正文"
+            echo "::error::CHANGELOG.md 里没提取到 '$SECTION' 节的正文,Release 不能不带变更日志"
+            exit 1
           else
             echo "---- extracted release notes ----"
             cat RELEASE_NOTES.md
