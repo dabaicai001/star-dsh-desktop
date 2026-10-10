@@ -23,7 +23,9 @@ const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url)
  * value-reached through an aliased package's source must be added here —
  * otherwise resolution falls through to node_modules → `main: lib/index.js`
  * → vite "Failed to resolve entry for package" (v0.122.0: DSH 0.1.7's new
- * `dsh-util-workspace-path` reached through ui-primitives/PathLabel).
+ * `dsh-util-workspace-path` reached through ui-primitives/PathLabel;
+ * v0.128.3: DSH 0.2.1's `dsh-util-code-language` re-exported by
+ * ui-primitives/src/code-highlighting.ts).
  */
 export default defineConfig({
   plugins: [
@@ -52,6 +54,7 @@ export default defineConfig({
       { find: /^@deepseek-ai\/dsh-client-ui-layout$/, replacement: src('../../packages/client/ui-layout/src/index.ts') },
       { find: /^@deepseek-ai\/dsh-client-ui-sidebar$/, replacement: src('../../packages/client/ui-sidebar/src/index.ts') },
       { find: /^@deepseek-ai\/dsh-util-workspace-path$/, replacement: src('../../packages/util/workspace-path/src/index.ts') },
+      { find: /^@deepseek-ai\/dsh-util-code-language$/, replacement: src('../../packages/util/code-language/src/index.ts') },
       { find: /^@deepseek-ai\/dsh-client-store$/, replacement: src('../../packages/client/store/src/index.ts') },
     ],
   },

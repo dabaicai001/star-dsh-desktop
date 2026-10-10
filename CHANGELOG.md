@@ -7,6 +7,12 @@
 
 ## [未发布]
 
+### 修复
+- 🐛 **CI 第三次真跑抓到的两个缺陷**(前两次修完之后,CI 才又各自往前跑了一步):
+  1. **Windows 上 android 执行契约用例 6/10 挂**。v0.128.3 把 `STARHUB_ADB_PATH` 从环境变量改成设置 seam 时,返回的候选写的是 `cmd`——而 `resolve_adb` 只做 `Path::exists()` 校验,`Path::new("cmd").exists()` 在 Windows 上查的是**当前工作目录**、不是 PATH,于是这个候选照样不成立。本地 Windows 一直绿是因为环境变量 `STARHUB_ADB_PATH` 指着真实的 adb,把设置候选顶下去了;CI 的 Windows runner 上两路都没有 → 6 个用例 panic。改成返回 `env!("CARGO_MANIFEST_DIR")`(本 crate 的 manifest 目录):任何平台都一定存在,拿它当 adb spawn 会立刻失败,而捕帧失败只记日志、不关通道。
+  2. **`build:window` 在 CI 上解析不到 `@deepseek-ai/dsh-util-code-language`**。`starhub-window` 的 vite 别名表是一张**手工闭包**(踩坑记录 §51 记过同类事故:v0.122.0 的 `dsh-util-workspace-path`),DSH 0.2.1 新增的 `dsh-util-code-language` 被 `ui-primitives/src/code-highlighting.ts` 再导出,没进表 → 净检出上解析落到 `node_modules` → `main: lib/index.js` 不存在 → `Failed to resolve entry for package`。补上别名,并按 §51 的做法做**净树模拟验收**(临时改名 `packages/util/code-language/lib`,构建仍然通过)。
+- 🗑️ **撤掉 `v0.128.3` 这个 tag**:推出去之后 CI 才第一次真正跑到构建步,然后红在上面第 2 条,没产出任何 Release。修复以 v0.128.4 发出。
+
 ---
 
 ## [0.128.3] - 2026-10-10

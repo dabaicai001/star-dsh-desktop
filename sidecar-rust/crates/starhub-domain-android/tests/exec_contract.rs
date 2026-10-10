@@ -90,24 +90,26 @@ impl Adb for FakeAdb {
 /// `resolve_adb` 成功。但 `set_var` / `remove_var` 是**进程级全局**,而 cargo
 /// test 默认多线程跑同一个测试二进制——一个用例的 `remove_var` 会落进另一个
 /// 用例 `set_var` 与 `resolve_adb` 之间,让它回落到 PATH / 常见位置。开发机上
-/// 装着 adb,回落也成功、看不出来;CI 的 ubuntu runner 上哪都没有 adb,
+/// 装着 adb,回落也成功、看不出来;CI 的 runner 上哪都没有 adb,
 /// `resolve_adb` 直接返回「未找到 adb 二进制」,`.expect("double tap")` 就
 /// panic(v0.128.1 第一次真正跑 CI 时抓到)。
 ///
 /// 改走设置 seam:它是 `resolve_adb` 的**第一个**候选,按用例注入、没有全局
 /// 状态,也就没有这个竞争——顺带把文档里的优先顺序(设置 > 环境变量 > PATH)
 /// 真正走到了。
+///
+/// 路径取**本 crate 的 manifest 目录**,而不是 `cmd` / `/bin/sh` 这种可执行名:
+/// `resolve_adb` 只做 `Path::exists()` 校验,而 `Path::new("cmd").exists()` 在
+/// Windows 上查的是**当前工作目录**、不是 PATH——于是 Windows CI 上这个候选
+/// 照样不成立,又回落到底(v0.128.3 第二次真跑才抓到:本地 Windows 一直绿,是
+/// 因为环境变量 `STARHUB_ADB_PATH` 指着真实的 adb,把设置候选顶下去了)。目录
+/// 一定存在,拿它当 adb  spawn 会立刻失败,而捕帧失败只记日志、不关通道。
 struct StubSettings;
 
 impl SettingsStore for StubSettings {
     fn get<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<Option<String>, String>> {
-        let value = (key == starhub_domain_android::manager::ADB_PATH_SETTING_KEY).then(|| {
-            if cfg!(target_os = "windows") {
-                "cmd".to_string()
-            } else {
-                "/bin/sh".to_string()
-            }
-        });
+        let value = (key == starhub_domain_android::manager::ADB_PATH_SETTING_KEY)
+            .then(|| env!("CARGO_MANIFEST_DIR").to_string());
         Box::pin(async move { Ok(value) })
     }
 }
