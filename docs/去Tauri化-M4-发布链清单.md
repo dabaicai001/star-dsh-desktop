@@ -90,6 +90,7 @@ Rust 门从 src-tauri 的全量 `cargo test` 换成 sidecar-rust 的:前者内�
 | `scripts/refresh-icons.ps1` / `verify-linux-bundles.sh` / `build-linux-jammy.sh` / `build-wsl-linux.sh` | 分别服务 Tauri 图标、Tauri 包审计、Linux Tauri 构建 |
 | obscura 构建/测试五个脚本 | browser 帧源已在 M3 定稿去掉 |
 | 根 `package.json` 的 tauri/cargo/obscura 脚本 + `@tauri-apps/*` 依赖 | 壳没了 |
+| `vendor/obscura` 子模块(用户拍板「整体删除」)+ `.gitmodules` | obscura 是 AI 浏览器 `browser.engine=obscura` 后端的载体,AI 浏览器已删;删后 clone 与 CI 的 `submodules: recursive` 少拉 707MB / 2616 个文件。`踩坑记录` §52 与 `已知坑索引` 第 52 条作为历史记录保留 |
 
 `release.yml` 的 linux / linux-legacy 两个 job **整体删除**(决策 A:等上游出
 Linux target,不保留禁用僵尸);`publish` 的 `needs` 只剩 `windows`。
