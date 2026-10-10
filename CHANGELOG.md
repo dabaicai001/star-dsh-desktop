@@ -9,6 +9,20 @@
 
 ---
 
+## [0.129.1] - 2026-10-10
+
+### 新增
+- ✨ **推 tag 自动把插件 tarball 挂到 GitHub Release**:新增 `.github/workflows/plugin-bundle.yml`——`v*.*.*` tag 或手动 dispatch 时,在 windows runner 上构建 lib/工作台/sidecar、用 `--pack` 组装 bundle、**校验 tarball 内容**(两个 sidecar、工作台 dist、客户端半边都在,且不带 sourcemap)、跑一遍真安装冒烟,最后把资产挂到该 tag 的 Release。它与 `release.yml`(上游 Electron installer,需要签名/更新源 secrets)**完全解耦**:插件那条路的 URL 不再取决于装机包能不能打出来。用户可以粘的 URL 形如
+  `https://github.com/dabaicai001/star-dsh-desktop/releases/download/v<版本>/starhub-dsh-plugin-<版本>-win-x64.tgz`
+- ✨ 新增 `npm run plugin:pack`(组装 + 打 tarball 一步到位)。
+
+### 变更
+- 🔧 **插件 tarball 的资产名带平台标记**:包内是两个平台相关的 sidecar 二进制,同名资产在同一个 Release 上会互相覆盖,而用户粘的 URL 必须唯一指到本平台那一份——现在叫 `starhub-dsh-plugin-<版本>-<win|linux|mac>-<x64|arm64>.tgz`,组装脚本同时把对应的 Release URL 打印出来(`git remote` 解得 owner/repo)。
+- 🔧 POSIX 上给包内两个 sidecar 加可执行位(`chmod 755`):Linux/macOS 解包后没有 `+x` 时桥 spawn 直接 `EACCES`,属于「装完工作台能开、工具全报错」的隐性故障。
+
+### 修复
+- 🐛 **Windows PowerShell 下 `npm run <script> -- --flag` 的 flag 被吞**(踩坑记录 §61):`npm run plugin:bundle -- --pack` 在 pwsh 里脚本收不到 `--pack`,静默走「只组装不打包」分支;CI 的 windows runner 默认 shell 就是 pwsh,同一条命令会让工作流产出不了 tarball。修复:单列 `plugin:pack` 脚本,工作流步骤直接 `node scripts/build-plugin-bundle.mjs --pack`。
+
 ## [0.129.0] - 2026-10-10
 
 ### 修复

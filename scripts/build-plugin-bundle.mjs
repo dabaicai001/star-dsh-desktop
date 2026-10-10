@@ -391,6 +391,7 @@ async function main() {
   console.log(`  客户端     ./client → ${CLIENT_PLUGIN}/lib/client.js`)
   console.log(`  工作台    ${options.windowDist} → host-static/dist(不含 sourcemap)`)
   console.log(`  sidecar   ${basename(rustSidecar)} + ${basename(options.sidecarGo)} → bridge/sidecar/`)
+  console.log(`  资产名    starhub-dsh-plugin-${version}-${platformTag()}.tgz`)
   if (options.dryRun) {
     console.log('[bundle] --dry-run:不落盘')
     return
@@ -433,6 +434,7 @@ async function main() {
   await mkdir(join(options.out, 'bridge', 'sidecar'), { recursive: true })
   await cp(rustSidecar, join(options.out, 'bridge', 'sidecar', SIDECAR_NAMES.rust))
   await cp(options.sidecarGo, join(options.out, 'bridge', 'sidecar', SIDECAR_NAMES.go))
+  await chmodSidecars(join(options.out, 'bridge', 'sidecar'))
 
   await mkdir(join(options.out, 'locale'), { recursive: true })
   await writeFile(join(options.out, 'locale', 'zh.json'), `${JSON.stringify({
@@ -455,10 +457,12 @@ async function main() {
 
   console.log('[bundle] 完成')
   if (options.pack) {
-    const packed = await packTarball(options.out)
+    const packed = await packTarball(options.out, version)
     console.log(`[bundle] tarball: ${packed}`)
-    console.log('[bundle] 在 dsh 插件页「添加插件」里粘贴这个 tarball 的绝对路径:')
-    console.log(`  ${packed}`)
+    console.log('[bundle] 在 dsh 插件页「添加插件」里粘贴下面任一个:')
+    console.log(`  本地文件  ${packed}`)
+    const url = releaseAssetUrl(version, basename(packed))
+    if (url !== null) console.log(`  Release   ${url}(推 tag 后由 plugin-bundle.yml 自动上传)`)
   } else {
     console.log('[bundle] 在 dsh 插件页「添加插件」里粘贴这个绝对路径:')
     console.log(`  ${options.out}`)
@@ -468,16 +472,56 @@ async function main() {
 }
 
 /**
- * 用 npm pack 打 tarball。
+ * POSIX 上给两个 sidecar 加可执行位。
+ *
+ * Windows 的 exe 不关心权限位,但 Linux/macOS 上 tar 包解出来若没有 +x,桥 spawn
+ * 会直接 EACCES——那是「装完工作台能开、工具全报错」级别的故障。
+ * @param dir - sidecar 目录。
+ */
+async function chmodSidecars(dir) {
+  if (process.platform === 'win32') return
+  const { chmod } = await import('node:fs/promises')
+  for (const file of await readdirSafe(dir)) {
+    await chmod(join(dir, file), 0o755)
+  }
+}
+
+/** 产物平台标记(资产名里必须带,因为包内是平台相关的二进制)。 */
+function platformTag() {
+  const os = { win32: 'win', linux: 'linux', darwin: 'mac' }[process.platform] ?? process.platform
+  return `${os}-${process.arch === 'arm64' ? 'arm64' : 'x64'}`
+}
+
+/**
+ * Release 资产 URL(推 tag 后由 `plugin-bundle.yml` 上传同名资产)。
+ * @param version - 包版本(去掉前缀 v)。
+ * @param assetName - 资产文件名。
+ * @returns https URL,或在读不到 GitHub remote 时返回 null。
+ */
+function releaseAssetUrl(version, assetName) {
+  const spawnSync = createRequire(import.meta.url)('node:child_process').spawnSync
+  const remote = spawnSync('git', ['config', '--get', 'remote.origin.url'], { encoding: 'utf8' })
+  const match = /github\.com[:/]([^/]+)\/([^/\s]+?)(?:\.git)?\s*$/.exec(remote.stdout ?? '')
+  if (match === null) return null
+  const [, owner, repo] = match
+  return `https://github.com/${owner}/${repo}/releases/download/v${version}/${assetName}`
+}
+
+/**
+ * 用 npm pack 打 tarball,并改名成**带平台标记**的资产名。
  *
  * package.json 的 `files` 已覆盖 lib / dist / sidecar / locale / patch;`private: true`
- * 只挡发布,不挡 pack。打出来的 .tgz 落仓库根,便于直接粘进插件页。
+ * 只挡发布,不挡 pack。包内是平台相关的二进制(两个 sidecar),所以资产名必须带
+ * 平台:GitHub Release 上同一个 tag 只能有一个同名资产,不带平台会互相覆盖,而
+ * 「粘贴的 URL」必须能唯一指到本平台那一份。
  * @param outDir - 组装好的 bundle 目录。
+ * @param version - 包版本(资产名与 Release tag 都用它)。
  * @returns 生成的 .tgz 绝对路径。
  * @throws 当 npm pack 非零退出或未产出 tarball 时。
  */
-async function packTarball(outDir) {
+async function packTarball(outDir, version) {
   const { spawnSync } = await import('node:child_process')
+  const { rename } = await import('node:fs/promises')
   const before = new Set(await readdirSafe(repoRoot))
   // Windows 上 npm 是 .cmd,不经 shell 起不来;命令串里只有脚本自己算出的绝对路径。
   const packed = spawnSync(`npm pack --pack-destination ${JSON.stringify(repoRoot)}`, {
@@ -490,7 +534,12 @@ async function packTarball(outDir) {
   }
   const produced = (await readdirSafe(repoRoot)).filter(name => name.endsWith('.tgz') && !before.has(name))
   if (produced.length === 0) throw new Error('npm pack 未产出新的 .tgz')
-  return join(repoRoot, produced[produced.length - 1])
+  const source = join(repoRoot, produced[produced.length - 1])
+  const assetName = `starhub-dsh-plugin-${version}-${platformTag()}.tgz`
+  const target = join(repoRoot, assetName)
+  await rm(target, { force: true })
+  await rename(source, target)
+  return target
 }
 
 /** 读目录项(不存在当空目录)。 */

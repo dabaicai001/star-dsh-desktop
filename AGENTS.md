@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.129.0(✨ **StarHub 可作为 DSH 组合包(bundle)安装**:`npm run plugin:bundle` 拼出自包含的 `dist-plugin/`(`--pack` 出 `.tgz`),在 dsh 插件页「添加插件」粘 tarball 路径或包名即可,不再依赖 provisioning;`npm run smoke:plugin-bundle` 五条断言冒烟。详见 `docs/纯插件化-适配清单.md`) |
+| 当前版本 | v0.129.1(✨ **推 tag 自动把插件 tarball 挂到 GitHub Release**:`plugin-bundle.yml` 与 Electron installer 链解耦,资产名 `starhub-dsh-plugin-<版本>-<平台>.tgz`,用户粘的 URL 形如 `releases/download/v<版本>/starhub-dsh-plugin-<版本>-win-x64.tgz`) |
 
 ## 架构一句话
 
@@ -92,6 +92,7 @@ npm run test:utils           # node --test 纯逻辑套件;其余套件见 packa
 npm run test:provision       # provisioning 合并逻辑单测
 npm run smoke:dsh-desktop    # provisioning + 宿主进程冒烟(五条断言)
 npm run plugin:bundle        # 纯插件形态:组装 dist-plugin/(加 --pack 出 .tgz,粘进 dsh 插件页)
+npm run plugin:pack          # 同上并打 tarball(Windows PowerShell 下 `npm run x -- --pack` 会被吞参,故单列一个脚本)
 npm run smoke:plugin-bundle  # 纯插件形态:真 pnpm 安装 + 宿主冒烟(五条断言)
 npm run verify:bridge-compat # 真 sidecar 二进制 ↔ 桥兼容层全工具面验收
 
@@ -143,4 +144,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-10 (v0.129.0)*
+*最后更新: 2026-10-10 (v0.129.1)*

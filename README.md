@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.129.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.129.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,11 +47,12 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.129.0 (2026-10-10)
-- ✨ ✨ **StarHub 现在是一个可安装的 DSH 组合包(bundle)**:新增 `npm run plugin:bundle`(`scripts/build-plugin-bundle.mjs`)把十个内置插件 + React 工作台 dist + 两个 sidecar **拼成一个自包含包** `dist-plugin/`,`--pack` 再打成 `.tgz`;在 dsh 插件页「添加插件」里粘贴 tarball 路径(或发布后的包名)即可安装——不需要 `provision-dsh.mjs`,不需要改 dsh 内核。包内零 `dependencies`/`peerDependencies`(`workspace:` 协议在非 workspace 安装下不可解析,且 `@deepseek-ai/dsh*` 的 peer 会被 DSH 兼容门拦下),行模块只 import dsh 安装树供给的包。新增 `npm run smoke:plugin-bundle`(`scripts/smoke-plugin-bundle.mjs`)复刻插件页的安装动作(`pnpm add <spec>` + 选入 `dsh.profile.bundles`)并起宿主验五条断言:包内 dist 供工作台、包内 sidecar 通 JSON-RPC、错误通路、SSE 事件面、客户端半边进 boot 图——**tarball 路径与目录拷贝两种形态都全绿**。
-- ✨ ✨ `tests/plugin-bundle.test.mjs`(6 例)守住三条「装不上就白干」的约束:清单自包含、**客户端半边必须挂在裸包名行上**(DSH 的 client-modules 只把裸包名行当客户端行,纯子路径行会静默不加载)、行 id 与 provisioning 模板一致(用户覆盖与插件页开关按 id 认)。
-- 🔧 🔧 **两个部署变化项的默认值改为「包内自解析」**(纯插件形态没有 provisioning 注入绝对路径的机会):`starhub-bridge` 的默认 sidecar 命令先用模块同级 `sidecar/starhub-sidecar-rust[.exe]`(Rust 侧按 exe 同级兄弟名找 Go 侧,两个二进制因此同目录落位),找不到才退回裸名走 PATH;`starhub-host-static` 的 dist 解析顺序变成 `windowDist` → `STARHUB_WINDOW_DIST` → **模块同级 `dist/`** → 仓库 `dist-starhub-react`。两者都保留原覆盖能力,开发形态行为不变。
-- 🔧 📝 **实测记录(两条反直觉结论,已写进 `docs/纯插件化-适配清单.md`)**:①**「本地目录路径」安装不可用**——dsh 对它是 link,Node 按 realpath 解析,行模块的 `@deepseek-ai/*` 裸 import 不会被运行时的解析层接管,实测 9 个行全部 `failed to import`;而 pnpm 安装(包名 / tarball / git)把包解进 `<profile>/node_modules/.pnpm/…`,realpath 在 profile 树内,同一份产物全部激活。②**bundle 的十行不能全是子路径**:客户端半边必须由裸包名行承载。
+### v0.129.1 (2026-10-10)
+- ✨ ✨ **推 tag 自动把插件 tarball 挂到 GitHub Release**:新增 `.github/workflows/plugin-bundle.yml`——`v*.*.*` tag 或手动 dispatch 时,在 windows runner 上构建 lib/工作台/sidecar、用 `--pack` 组装 bundle、**校验 tarball 内容**(两个 sidecar、工作台 dist、客户端半边都在,且不带 sourcemap)、跑一遍真安装冒烟,最后把资产挂到该 tag 的 Release。它与 `release.yml`(上游 Electron installer,需要签名/更新源 secrets)**完全解耦**:插件那条路的 URL 不再取决于装机包能不能打出来。用户可以粘的 URL 形如
+- ✨ ✨ 新增 `npm run plugin:pack`(组装 + 打 tarball 一步到位)。
+- 🔧 🔧 **插件 tarball 的资产名带平台标记**:包内是两个平台相关的 sidecar 二进制,同名资产在同一个 Release 上会互相覆盖,而用户粘的 URL 必须唯一指到本平台那一份——现在叫 `starhub-dsh-plugin-<版本>-<win|linux|mac>-<x64|arm64>.tgz`,组装脚本同时把对应的 Release URL 打印出来(`git remote` 解得 owner/repo)。
+- 🔧 🔧 POSIX 上给包内两个 sidecar 加可执行位(`chmod 755`):Linux/macOS 解包后没有 `+x` 时桥 spawn 直接 `EACCES`,属于「装完工作台能开、工具全报错」的隐性故障。
+- 🐛 🐛 **Windows PowerShell 下 `npm run <script> -- --flag` 的 flag 被吞**(踩坑记录 §61):`npm run plugin:bundle -- --pack` 在 pwsh 里脚本收不到 `--pack`,静默走「只组装不打包」分支;CI 的 windows runner 默认 shell 就是 pwsh,同一条命令会让工作流产出不了 tarball。修复:单列 `plugin:pack` 脚本,工作流步骤直接 `node scripts/build-plugin-bundle.mjs --pack`。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

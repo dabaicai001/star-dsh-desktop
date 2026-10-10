@@ -1,0 +1,190 @@
+name: Publish StarHub plugin bundle
+
+# 纯插件形态的分发链:**只**产出「可被 dsh 插件页直接安装」的 bundle tarball,
+# 并挂到 GitHub Release 上。与 `release.yml`(上游 Electron installer,90 分钟、
+# 需要签名/更新源 secrets)完全解耦——插件那条路的 URL 不应该取决于装机包能不能打出来。
+#
+# 推 tag 后自动跑;也可手动 dispatch(输入已有 tag,用于补发或重跑)。
+#
+# 产出的资产名与 `scripts/build-plugin-bundle.mjs` 打印的一致:
+#   starhub-dsh-plugin-<版本>-<平台>.tgz
+# 用户在 dsh 插件页「添加插件」里粘贴的就是它的 Release URL:
+#   https://github.com/<owner>/<repo>/releases/download/v<版本>/starhub-dsh-plugin-<版本>-win-x64.tgz
+#
+# 平台:本期只有 Windows(与 release.yml 同因:上游桌面壳只支持 win/mac,
+# 而包内是两个平台相关的 sidecar 二进制)。加 Linux/macOS 只需照抄本 job 换
+# runner 与工具链,资产名会由脚本按平台自动区分。
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已有 tag(如 v0.129.1);留空则用当前 ref"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: plugin-bundle-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Plugin bundle / Windows x86_64
+    runs-on: windows-2022
+    timeout-minutes: 60
+    # 与 release.yml 同款:checkout 路径 + pnpm 嵌套 node_modules 会顶到 Windows
+    # 260 字符上限,subst 到短盘符 S:\ 再干活。
+    defaults:
+      run:
+        working-directory: 'S:\'
+    env:
+      DSH_BUILD_WORKSPACE: 'S:\'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Map workspace to a short drive (Windows path-length fix)
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          subst S: $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'S:\')) {
+            throw "subst S: -> $env:GITHUB_WORKSPACE failed (drive may be in use)"
+          }
+          Write-Host "workspace mapped to S:\ ($env:GITHUB_WORKSPACE)"
+
+      - name: Set up Node.js
+        # 需要 ≥24.2:宿主 CLI 入口用 `import.meta.main` 自决是否执行(§48),
+        # 低版本会让 CLI 静默退 0,冒烟会误判成「起不来」。
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.x
+          cache-dependency-path: sidecar/go.sum
+
+      - name: Set up Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal
+          rustup default 1.96.0
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install dsh runtime dependencies
+        run: pnpm --dir vendor/deepseek-harness install --frozen-lockfile
+
+      - name: Build plugin host/client libs
+        run: npm run build:lib
+
+      - name: Build StarHub React window resources
+        run: npm run build:window
+
+      - name: Build release sidecars
+        run: |
+          npm run sidecar:build:release
+          npm run sidecar-rust:build:release
+
+      - name: Assemble plugin bundle and pack tarball
+        # 组装脚本自己 fail loud:缺 lib/dist/sidecar、exports 目标缺失、patch 非法
+        # 都在这里拦下,不会产出一个装完才炸的包。
+        #
+        # 直接 node 调用而不是 `npm run plugin:bundle -- --pack`:Windows 的
+        # PowerShell 会把 `--` 之后的参数吞掉(实测),CI 上会静默退化成「只组装不打包」。
+        run: node scripts/build-plugin-bundle.mjs --pack
+
+      - name: Verify tarball contents
+        # 包体是「安装后能不能跑」的全部;sidecar 与工作台 dist 必须真的在 tarball 里
+        # (npm 的 files 白名单 + .gitignore 历史上都咬过人)。
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $asset = "starhub-dsh-plugin-$version-win-x64.tgz"
+          if (-not (Test-Path $asset)) { throw "缺少 $asset" }
+          $entries = tar -tzf $asset
+          $required = @(
+            'package/package.json',
+            'package/cordis.patch.yml',
+            'package/bridge/sidecar/starhub-sidecar-rust.exe',
+            'package/bridge/sidecar/starhub-sidecar.exe',
+            'package/host-static/dist/index.html',
+            'package/client-nav/lib/client.js'
+          )
+          foreach ($needle in $required) {
+            if (-not ($entries -match [regex]::Escape($needle))) { throw "tarball 缺少 $needle" }
+          }
+          if ($entries -match '\.map$') { throw "tarball 不该带 sourcemap" }
+          Write-Host "tarball $asset 内容校验通过($($entries.Count) 项,含两个 sidecar 与工作台 dist)"
+
+      - name: 'Smoke: install the tarball into a throwaway profile and boot the host'
+        # 复刻插件页的安装动作(pnpm add <tarball> + 选入 dsh.profile.bundles),
+        # 再起宿主验五条断言(包内 dist / 包内 sidecar / 错误通路 / SSE / 客户端半边)。
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          node scripts/smoke-plugin-bundle.mjs --spec "$PWD\starhub-dsh-plugin-$version-win-x64.tgz" --timeout 180000
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload plugin tarball (workflow artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: starhub-plugin-bundle-${{ inputs.tag || github.ref_name }}
+          path: starhub-dsh-plugin-*.tgz
+          if-no-files-found: error
+
+      - name: Extract release notes from CHANGELOG.md
+        # 与 release.yml 同一套提取规则;区别是**容忍取不到**:手动 dispatch 到一个
+        # 老 tag 或在 tag 之前跑时,Release 正文退回一句安装说明,而不是让整条链失败。
+        shell: bash
+        env:
+          REL_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          VER="${REL_TAG#v}"
+          NOTES="RELEASE_NOTES.md"
+          if [ -f CHANGELOG.md ] && grep -q "^## \[$VER\]" CHANGELOG.md; then
+            awk -v sec="$VER" '
+              /^## \[/ { if (active) exit; if ($0 ~ "^## \\[" sec "\\]") active = 1; next }
+              active && /^---/ { exit }
+              active && /^### 计划中/ { planned = 1 }
+              active && !planned { print }
+            ' CHANGELOG.md > "$NOTES"
+          fi
+          if [ ! -s "$NOTES" ]; then
+            printf 'StarHub 组合包(纯插件形态)。\n\n在 dsh 插件页「添加插件」里粘贴下面的 .tgz 链接即可安装;装完重启 dsh(或等 HMR 组合)。\n' > "$NOTES"
+            echo "::warning::CHANGELOG.md 没有 '## [$VER]' 节,Release 正文退回安装说明"
+          fi
+          cat "$NOTES"
+
+      - name: Publish plugin tarball to the GitHub Release
+        # Release 由本步创建或更新;release.yml 若也在同一 tag 上跑,后到者覆盖
+        # 名称与正文(两份文案同源,内容一致),资产各自追加,互不覆盖。
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: StarHub ${{ inputs.tag || github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+          files: starhub-dsh-plugin-*.tgz
