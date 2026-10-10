@@ -32,7 +32,7 @@ const templatePath = join(repoRoot, 'vendor', 'deepseek-harness', 'examples', 's
 
 const STARHUB_PACKAGES = [
   'client-nav', 'host-static', 'tool-context', 'bridge', 'tools',
-  'approval-bridge', 'session-registry', 'domain-events', 'live-context', 'commit-message',
+  'approval-bridge', 'session-registry', 'domain-events', 'live-context',
 ]
 
 /** 受管行:provisioning 负责维护的 patch 行 id。 */

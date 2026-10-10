@@ -57,7 +57,6 @@ const STARHUB_PACKAGES = [
   'session-registry',
   'domain-events',
   'live-context',
-  'commit-message',
 ]
 
 /** 每个包要拷贝进 profile 的运行时段(构建产物 + manifest)。 */

@@ -4,7 +4,7 @@
  *
  * 目标产物是一个**自包含的 DSH 组合包**:在 dsh 插件页「添加插件」里粘贴它的
  * 绝对路径即可安装(本地目录安装 = pnpm link,不装依赖、不联网)。因此本脚本
- * 只做一件事:把十个 StarHub 内置插件的运行时段 + 工作台 dist + 两个 sidecar
+ * 只做一件事:把九个 StarHub 内置插件的运行时段 + 工作台 dist + 两个 sidecar
  * 二进制拼进一个包目录,并生成该包自己的 `package.json` 与 `cordis.patch.yml`。
  *
  * 三条形态约束(见 docs/纯插件化-适配清单.md):
@@ -37,7 +37,7 @@ const vendorRoot = join(repoRoot, 'vendor', 'deepseek-harness')
 const require = createRequire(import.meta.url)
 
 /**
- * 组装进 bundle 的十个 StarHub 内置插件。
+ * 组装进 bundle 的九个 StarHub 内置插件。
  *
  * `row` 是 patch 行的 id(与 `examples/starhub-desktop/cordis.patch.yml` 一致,
  * 用户覆盖与插件页开关都按 id 认,不许改名);`license` 承载每行的展示文案。
@@ -117,15 +117,6 @@ const PLUGINS = [
       zh: '把直播/接管快照注入 agent 上下文。',
       en: 'Injects live and takeover snapshots into agent context.',
     },
-  },
-  {
-    short: 'commit-message', row: 'starhub-commit-message',
-    entry: 'lib/types/index.js', title: { zh: 'StarHub 提交信息生成', en: 'StarHub commit message' },
-    description: {
-      zh: '提供 /starhub/git/commit-message 端点,经当前模型路由生成提交信息。',
-      en: 'Provides the /starhub/git/commit-message endpoint for AI commit messages.',
-    },
-    config: { maxInputBytes: 16384, maxOutputTokens: 512, timeoutMs: 30000 },
   },
 ]
 

@@ -116,8 +116,7 @@ const WEB_STATIC_RELS = [
  * 与 Rust web.rs 的 LOCAL_PACKAGES 对齐;入包后保持 dev 布局可复用 junction 逻辑。
  * tool-context 自 v0.71 起被 examples/starhub-web/cordis.patch.yml 引用,
  * 2026-08-18 起壳内会话可调 starhub 工具,starhub-tools / approval-bridge /
- * session-registry / domain-events / live-context 一并入列,
- * 2026-08-22 起 commit-message 入列(分支胶囊「AI 生成提交信息」端点)。
+ * session-registry / domain-events / live-context 一并入列。
  * v0.92.2 事故的教训保持有效:模板(cordis.patch.yml)引用过的每个包都必须
  * 出现在本清单,漏列即安装包启动 ERR_MODULE_NOT_FOUND——增删插件时两处同改。
  * 不入包则 profile 启动时按 fail-loud 拒绝缺失插件。 */
@@ -130,7 +129,6 @@ const WEB_LOCAL_PACKAGE_DIRS = [
   'session-registry',
   'domain-events',
   'live-context',
-  'commit-message',
 ]
 
 class BuildCli {

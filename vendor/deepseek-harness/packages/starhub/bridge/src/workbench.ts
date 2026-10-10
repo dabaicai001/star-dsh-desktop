@@ -16,10 +16,10 @@
  *   listener keeps the event names it already uses.
  *
  * Both routes are same-origin under the dsh web server (loopback +
- * trustedHosts policy), matching how `starhub-commit-message` exposes its
- * endpoint. Commands the sidecar does not implement answer
- * `{ok:false,error}` — the workbench renders its preview/error state, the same
- * degradation a missing Tauri IPC produced.
+ * trustedHosts policy), so the workbench reuses the host page's session
+ * without extra authorization plumbing. Commands the sidecar does not
+ * implement answer `{ok:false,error}` — the workbench renders its
+ * preview/error state, the same degradation a missing Tauri IPC produced.
  *
  * @module @deepseek-ai/dsh-starhub-bridge/workbench
  */

@@ -486,7 +486,6 @@
     { "path": "./packages/lsp/tool-lsp" },
     { "path": "./packages/starhub/approval-bridge" },
     { "path": "./packages/starhub/bridge" },
-    { "path": "./packages/starhub/commit-message" },
     { "path": "./packages/starhub/domain-events" },
     { "path": "./packages/starhub/host-static" },
     { "path": "./packages/starhub/live-context" },
