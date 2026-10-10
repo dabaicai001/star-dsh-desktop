@@ -63,6 +63,7 @@ function workspaceProps() {
     api: { settings: { update: () => Promise.resolve({ result: { ok: true } }) } } as never,
     openAsset: bridge.openAsset,
     useSession: (() => undefined) as never,
+    useSessions: (() => undefined) as never,
     sessionId: undefined as never,
     useProjection: (() => undefined) as never,
     useInput: (() => undefined) as never,
