@@ -17,7 +17,7 @@ import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the 'main' SlotMap row (declared by ui-layout).
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import { IconCloseOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronLeftOutlineMedium, IconCloseOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WorkbenchPanelState } from './workbench-panel.ts'
 import css from './StarHubWorkbenchPanel.module.css'
 
@@ -27,6 +27,8 @@ export interface StarHubWorkbenchPanelInjected {
   activatePage: (key: string) => void
   /** 关一页(标签上的 ×)。 */
   closePage: (key: string) => void
+  /** 返回工具列表(标签条左侧按钮;工作台不占侧栏行,页面开着时用户需要显式出口)。 */
+  backToTools: () => void
   hooks: {
     /** 页簿(裸 source,渲染器绑定为 useWorkbench)。 */
     workbench: SnapshotStore<WorkbenchPanelState>
@@ -47,6 +49,7 @@ export function StarHubWorkbenchPanel({
   useWorkbench,
   activatePage,
   closePage,
+  backToTools,
 }: StarHubWorkbenchPanelProps): JSX.Element | null {
   const state = useWorkbench((snapshot) => snapshot)
   if (state.pages.length === 0) return null
@@ -57,6 +60,16 @@ export function StarHubWorkbenchPanel({
   return (
     <div className={css.panel}>
       <div className={css.tabs} role="tablist">
+        <button
+          type="button"
+          className={css.back}
+          title="返回工具列表"
+          aria-label="返回工具列表"
+          onClick={backToTools}
+        >
+          <IconChevronLeftOutlineMedium size={13} />
+          <span>工具</span>
+        </button>
         {state.pages.map((page) => (
           <span key={page.key} className={css.tabSlot}>
             <button

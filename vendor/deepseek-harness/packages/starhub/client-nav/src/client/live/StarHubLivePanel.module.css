@@ -1,10 +1,12 @@
+/* 直播/接管主面板:全部走 dsw alias token,跟随壳内明暗主题。 */
+
 .panel {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--dsw-alias-background, #141414);
-  color: var(--dsw-alias-text, #ddd);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
   font: 13px/1.5 system-ui, sans-serif;
 }
 
@@ -14,7 +16,7 @@
   gap: 4px;
   padding: 6px 8px;
   flex: none;
-  border-bottom: 1px solid var(--dsw-alias-border, #333);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
   overflow-x: auto;
 }
 
@@ -35,12 +37,12 @@
 }
 
 .tab:hover {
-  background: var(--dsw-alias-background-hover, #262626);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .active {
-  background: var(--dsw-alias-background-active, #2d2d2d);
-  border-color: var(--dsw-alias-border, #444);
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  border-color: var(--dsw-alias-border-l3);
 }
 
 .tabLabel {
@@ -57,7 +59,7 @@
 }
 
 .tabClose:hover {
-  background: var(--dsw-alias-background-hover, #3a3a3a);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .bar {
@@ -66,7 +68,7 @@
   gap: 10px;
   padding: 6px 10px;
   flex: none;
-  border-bottom: 1px solid var(--dsw-alias-border, #333);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
   flex-wrap: wrap;
 }
 
@@ -77,17 +79,17 @@
 }
 
 .badgeLive {
-  background: #2d4a2d;
-  color: #8f8;
+  background: var(--dsw-alias-state-success-tertiary);
+  color: var(--dsw-alias-state-success-primary);
 }
 
 .badgeSlow {
-  background: #4a3a2d;
-  color: #fc8;
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-primary);
 }
 
 .dim {
-  color: var(--dsw-alias-text-secondary, #888);
+  color: var(--dsw-alias-label-secondary);
   font-size: 12px;
 }
 
@@ -96,15 +98,16 @@
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  color: #f0a020;
+  color: var(--dsw-alias-state-warn-primary);
 }
 
 .status {
   margin-left: auto;
-  color: var(--dsw-alias-text-secondary, #888);
+  color: var(--dsw-alias-label-secondary);
   font-size: 12px;
 }
 
+/* 画面区:视频 letterbox 始终纯黑,不随主题。 */
 .stage {
   position: relative;
   flex: 1;
@@ -133,6 +136,6 @@
   background: rgba(0, 0, 0, 0.6);
   border-radius: 4px;
   font-size: 12px;
-  color: #fc8;
+  color: var(--dsw-alias-state-warn-primary);
   pointer-events: none;
 }

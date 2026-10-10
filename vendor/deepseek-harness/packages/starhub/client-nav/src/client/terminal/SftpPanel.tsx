@@ -20,8 +20,7 @@ import {
   IconDownloadOutlineMedium, IconFolderOpenOutlineMedium, IconLinkOutlineMedium,
   IconPlusOutlineMedium, IconRefreshOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { tauriInvoke, tauriListen, type TauriUnlisten } from '../tauri.ts'
-import { isTauriRuntime } from '../settings/services.ts'
+import { isTauriRuntime, tauriInvoke, tauriListen, type TauriUnlisten } from '../tauri.ts'
 import type { RustAsset } from '../store.ts'
 import {
   sftpList, sftpEnsureSession, sftpStartUpload, sftpStartDownload,

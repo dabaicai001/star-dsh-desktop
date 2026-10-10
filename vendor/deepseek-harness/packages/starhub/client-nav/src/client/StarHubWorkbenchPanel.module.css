@@ -13,7 +13,8 @@
   font-size: 13px;
 }
 
-/* 标签条:一页一签,当前页高亮;可横向滚动(多资产并发)。 */
+/* 标签条:左侧固定「返回工具」出口(v0.130.0;工作台不占侧栏行,页面开着时
+   无该出口回不去工具列表),其后一页一签,当前页高亮;可横向滚动(多资产并发)。 */
 .tabs {
   display: flex;
   align-items: stretch;
@@ -23,6 +24,31 @@
   padding: 6px 8px 0;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
+}
+
+/* 返回工具列表:标签条左侧的固定出口,不随标签滚动(独立视觉单元)。 */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  position: sticky;
+  left: 0;
+  margin: 0 4px 2px 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.back:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 /* 一签 = 主按钮 + 关闭钮的外壳(两者同处一个标签视觉单元)。 */

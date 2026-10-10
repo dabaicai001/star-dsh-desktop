@@ -53,8 +53,6 @@ import { focusWindowByKey, installWorkbenchPageHost, openNewPage, tauriInvoke } 
 import { ScreenshotButton } from './screenshot/ScreenshotButton.tsx'
 import { StarHubOverlay } from './StarHubOverlay.tsx'
 import { ToolsPanelIcon } from './ToolsPanelIcon.tsx'
-import { GitBranchPill } from './git/GitBranchPill.tsx'
-import { createGitWorkbenchBridge } from './git/git-workbench-state.ts'
 import { StarHubToolWorkspace, type StarHubToolWorkspaceInjected } from './StarHubToolWorkspace.tsx'
 import { StarHubWorkbenchPanel, type StarHubWorkbenchPanelInjected } from './StarHubWorkbenchPanel.tsx'
 import { createWorkbenchPanelStore, type WorkbenchPage } from './workbench-panel.ts'
@@ -64,13 +62,9 @@ import {
   type LiveChannel,
 } from './live/live-panel.ts'
 import { StarHubLivePanel, type StarHubLivePanelInjected } from './live/StarHubLivePanel.tsx'
-import { AboutTab } from './settings/about.tsx'
 import { AndroidSettingsTab } from './settings/android.tsx'
-import { SandboxSettingsTab } from './settings/sandbox.tsx'
 import { SshSettingsTab } from './settings/ssh.tsx'
 import { SandboxUserActionBanner } from './sandbox/SandboxUserActionBanner.tsx'
-import { AlertTab } from './settings/alert.tsx'
-import { AuditTab } from './settings/audit.tsx'
 
 /**
  * Required services: the slot registry, the connection wire, the input-trigger
@@ -116,9 +110,6 @@ export function apply(ctx: Context): void {
   const assets = createStarHubAssets()
   const selection = createToolSelectionBridge()
   const connectionManager = createConnectionManagerOverlay()
-  // Git 工作台视图开关(v0.118.0):会话头部分支胶囊(入口)与工具面板
-  // (视图承载)共享,与执行记录视图二向互斥。
-  const gitWorkbench = createGitWorkbenchBridge()
   // SSH 执行记录桥(v0.100.0,v0.100.1 会话隔离):ssh:exec-done 事件在
   // apply 层订阅(下方 ctx.effect),记录打上「当时活跃会话」标记;头部
   // 「执行」按钮与工具抽屉的执行记录视图只展示当前会话的条目。
@@ -134,7 +125,7 @@ export function apply(ctx: Context): void {
   // (api-gateway 的 ClientRemote);settings 写入统一经 remote.settings。
   const settingsWriter = ctx.remote.settings
   // 主面板切换(ui-layout 服务):工具入口从 footer.action 迁到 panellist 后,
-  // 侧栏行点击与头部 git/执行 按钮跳转都走它(null = 回会话视图)。
+  // 侧栏行点击与头部「执行」按钮跳转都走它(null = 回会话视图)。
   const layout = ctx.get('layout') as LayoutPanelSwitch
   const inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
   const sessions = ctx.get('sessions') as ISessions
@@ -232,8 +223,6 @@ export function apply(ctx: Context): void {
     openAsset: openAssetPage,
     refreshAssets: assets.refresh,
     openConnectionManager: connectionManager.open,
-    // Git 工作台视图(v0.118.0):面板头「关闭」回到资产列表。
-    closeGitWorkbench: gitWorkbench.close,
     // 执行记录视图(v0.100.0):头部「执行」按钮的开关与清空(关闭回到资产列表)。
     closeExecView: execRecords.closeView,
     clearExecRecords: execRecords.clear,
@@ -245,16 +234,16 @@ export function apply(ctx: Context): void {
         console.error('关闭 SSH 连接失败:', sessionId, e)
       })
     },
-    // 关闭工具面板(面板右上角 ×):一并复位两个视图开关——面板虽回会话,
-    // 若残留 true,下回点「分支/执行」胶囊会走到 close 分支而非打开,
+    // 关闭工具面板(面板右上角 ×):一并复位执行记录视图开关——面板虽回
+    // 会话,若残留 true,下回点「执行」胶囊会走到 close 分支而非打开,
     // 看起来没反应。主面板模式 × = 回会话视图(null = conversation)。
     closeTools: () => {
-      gitWorkbench.close()
       execRecords.closeView()
       layout.selectPanel(null)
     },
-    // 选中一个子类:写入选择桥,面板展开该子类的资产列表。
-    selectSubcategory: (key: string) => { selection.selectSubcategory(key) },
+    // 选中/收起一个子类:写入选择桥(手风琴,再点当前行收起);面板据此
+    // 展开该子类的资产列表或收起。
+    selectSubcategory: (key: string | null) => { selection.selectSubcategory(key) },
     // 资产行右键「引用到当前对话框」(v0.103.0):与 `@` 资产 source pick 同语义——
     // 先轻绑定资产上下文(starhub-tool-context settings,会话级),再把引用 chip
     // 插到草稿末尾(insertReference 走输入机,chip 由 starhub-asset codec 在提交时
@@ -286,14 +275,13 @@ export function apply(ctx: Context): void {
     hooks: {
       selection: selection.source,
       assets: assets.source,
-      gitWorkbench: gitWorkbench.source,
       execRecords: execRecords.source,
     },
   })
   // 工具面板(v0.123.2):从侧栏底部 footer.action + shell.overlay 浮层迁到
   // **主面板**——sidebar.panellist 行(order 1,紧随「插件」order 0 之下;
   // 侧栏拥有按钮/标签/选中态,本行只出图标)+ main keyed 槽承载面板本体。
-  // 入口点击、git 分支胶囊、执行 按钮都经 layout.selectPanel 切换;开关桥
+  // 入口点击、执行 按钮都经 layout.selectPanel 切换;开关桥
   // (toolsPanel overlay)随之删除。
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist',
@@ -301,24 +289,19 @@ export function apply(ctx: Context): void {
     order: 1,
     label: '工具',
   }, ToolsPanelIcon))
-  // 直播/接管线(M3):与「工具」同机制的第二个 panellist 行——直播/接管不再是
-  // 独立窗口,壳内要有可见入口。无通道时面板渲染 null(行仍在,点了是空态)。
-  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-    name: 'sidebar.panellist',
-    id: LIVE_PANEL_ID,
-    order: 2,
-    label: '直播',
-  }, ToolsPanelIcon))
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main',
     key: TOOLS_PANEL_ID,
     inject: workspaceInject,
   }, StarHubToolWorkspace))
-  // 工作台主面板(M2 第 6 步):与工具面板同机制的第二個 keyed main 槽。
+  // 工作台主面板(M2 第 6 步):与工具面板同机制的第二个 keyed main 槽。
   // 资产实例操作页在此承载(iframe + 标签条),页簿空时组件渲染 null。
+  // v0.130.0:标签条左侧加「返回工具列表」按钮——工作台不占侧栏行,无该
+  // 入口时用户关掉最后一页才能回工具列表。
   const workbenchInject = (): StarHubWorkbenchPanelInjected => ({
     activatePage: (key) => { workbench.activateIfOpen(key) },
     closePage: (key) => { workbench.close(key) },
+    backToTools: () => { layout.selectPanel(TOOLS_PANEL_ID) },
     hooks: { workbench: workbench.source },
   })
   ctx.slots.inject('main', () => ctx.slots.register({
@@ -326,10 +309,12 @@ export function apply(ctx: Context): void {
     key: WORKBENCH_PANEL_ID,
     inject: workbenchInject,
   }, StarHubWorkbenchPanel))
-  // 直播/接管主面板(M3):与工作台面板同机制的第三个 keyed main 槽。帧与输入
-  // 走宿主 upgrade 路由 `/starhub/live`(bridge 中继到 sidecar 的本地 WS),
-  // 通道簿空时组件渲染 null。入口是「打开直播」按钮(Android 子类)与模型面
-  // `android_open_live` 的 UI 意图;簿空 → 面板让回工具列表。
+  // 直播/接管主面板(M3):keyed main 槽,不占侧栏 panellist 行(v0.130.0
+  // 移除「直播」侧栏行——无通道时点开是空白页;行移除后面板只在有直播
+  // 会话时自动切入,与工作台面板同先例)。帧与输入走宿主 upgrade 路由
+  // `/starhub/live`(bridge 中继到 sidecar 的本地 WS),通道簿空时组件渲染
+  // null。入口是 Android 子类的「直播」按钮与模型面 `android_ui_open_live`
+  // 的 UI 意图;簿空 → 面板让回工具列表(下方订阅)。
   const live = createLivePanelStore()
   const openLiveChannel = (channel: LiveChannel): void => {
     live.open(channel)
@@ -369,27 +354,7 @@ export function apply(ctx: Context): void {
     () => inputTriggers.registerSource(createStarHubAssetSource({ writer: settingsWriter, assets, selection })),
     'starhub: @ asset source',
   )
-  // 会话头部「git 分支胶囊」(2026-08-21;v0.118.0 起为 Git 工作台入口):
-  // 显示当前会话工作区分支 + 脏点,点击把工具抽屉切到「Git 工作台」视图
-  // (分支/暂存/提交/历史/同步全在工作台内);非 git 工作区与浏览器预览
-  // (无 Tauri IPC)不渲染。order 30:排在 ui-jobs 后台任务(20)之后、
-  // utilities 之前。
-  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
-    name: 'conversation.session.header.actions',
-    id: 'starhub-git-branch',
-    order: 30,
-    label: 'StarHub Git',
-    inject: () => ({
-      // 胶囊的首要意图是分支管理,工作台落到「分支」Tab(变更/历史可再切)。
-      openWorkbench: () => {
-        gitWorkbench.open('branches')
-        execRecords.closeView()
-        layout.selectPanel(TOOLS_PANEL_ID)
-      },
-      hooks: { gitWorkbench: gitWorkbench.source },
-    }),
-  }, GitBranchPill))
-  // 会话头部「执行」按钮(v0.100.0):分支胶囊旁,点击打开工具抽屉并切到
+  // 会话头部「执行」按钮(v0.100.0):点击打开工具抽屉并切到
   // 「SSH 执行记录」视图(ai 静默执行的 ssh_exec 完成记录,行点击展开/收起,
   // 多条纵向滚动);再次点击返回资产列表。数据由 apply 层的 execRecords 桥
   // 常驻订阅 ssh:exec-done 累积,按钮只是开关。
@@ -401,7 +366,6 @@ export function apply(ctx: Context): void {
     inject: () => ({
       openExecView: () => {
         execRecords.openView()
-        gitWorkbench.close()
         layout.selectPanel(TOOLS_PANEL_ID)
       },
       closeExecView: execRecords.closeView,
@@ -467,20 +431,16 @@ export function apply(ctx: Context): void {
   // 设置融入底部设置齿轮:dsh 设置面板侧栏的 StarHub 分区(平铺,rc.2 上游
   // SettingsSectionRow 只支持 id/order/label,无分组字段——各 tab 直接
   // 以平铺 section 呈现;order 30 起排在通用(0)/模型(10)/内置插件(15)/
-  // Agent 预设(20)之后。v0.123.1 起「插件市场」与「AI 助手」tab 移除:
-  // 前者由壳内首页「插件」面板接管,后者(长期记忆)整条栈退场)。
+  // Agent 预设(20)之后)。v0.130.0:只留 Android 设备与 SSH 两个连接配置
+  // tab(审计日志 / 告警规则 / 沙箱平台 / 关于 移除)。
   const starhubTabs: ReadonlyArray<{
     id: string
     order: number
     label: string
     component: () => JSX.Element
   }> = [
-    { id: 'starhub-audit', order: 30, label: '审计日志', component: AuditTab },
-    { id: 'starhub-alert', order: 31, label: '告警规则', component: AlertTab },
-    { id: 'starhub-sandbox', order: 32, label: '沙箱平台', component: SandboxSettingsTab },
-    { id: 'starhub-android', order: 33, label: 'Android 设备', component: AndroidSettingsTab },
-    { id: 'starhub-ssh', order: 34, label: 'SSH', component: SshSettingsTab },
-    { id: 'starhub-about', order: 35, label: '关于', component: AboutTab },
+    { id: 'starhub-android', order: 30, label: 'Android 设备', component: AndroidSettingsTab },
+    { id: 'starhub-ssh', order: 31, label: 'SSH', component: SshSettingsTab },
   ]
   for (const tab of starhubTabs) {
     ctx.slots.inject('settings.section', () => ctx.slots.register({

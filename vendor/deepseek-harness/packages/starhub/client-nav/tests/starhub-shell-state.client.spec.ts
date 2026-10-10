@@ -136,6 +136,13 @@ describe('createToolSelectionBridge', () => {
     expect(sel.routePrefix).toBeNull()
   })
 
+  it('selectSubcategory(null) collapses the accordion (v0.130.0: 点已展开行收起)', () => {
+    const bridge = createToolSelectionBridge()
+    bridge.selectSubcategory('terminal')
+    bridge.selectSubcategory(null)
+    expect(bridge.source.getSnapshot().subcategory).toBeNull()
+  })
+
   it('openAsset is a no-op for route-less asset types', () => {
     const bridge = createToolSelectionBridge()
     bridge.openAsset({ ...asset('local'), id: 'l1' })

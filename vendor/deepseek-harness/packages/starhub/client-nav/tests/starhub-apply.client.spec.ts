@@ -1,20 +1,22 @@
 // @vitest-environment jsdom
 /**
  * client-nav 插件装配(apply,rc.2 适配后):各槽位注册的槽名、组件与注入面
- * (工具面板桥 / 连接对话框桥 / git 分支胶囊 / 截图按钮附件 / 壳内工作台面板)
+ * (工具面板桥 / 连接对话框桥 / 执行记录抽屉 / 截图按钮附件 / 壳内工作台面板)
  * 与工具树子类选中语义(selectSubcategory 写选择桥,不再联动布局开关)。
  * rc.2 注册面(v0.100.0 起右下角 BastionExecPanel 浮层席位移除;
- * v0.105.0 起沙箱桌面横幅 + 沙箱平台设置 tab 入列;v0.121.8 起文件树/
- * 文件查看/@ 文件源随「文件功能」移除;v0.123.1 起「插件市场」「AI 助手」
- * tab 移除——前者由壳内首页「插件」面板接管,后者(长期记忆)整条栈退场;
- * v0.123.2 起「工具」入口从 sidebar.footer.action + shell.overlay 浮层迁到
- * sidebar.panellist 行 + main 主面板;去 Tauri 化 M2 第 6 步起资产实例操作页
- * 从独立 webview 窗口改为壳内工作台主面板——第二个 keyed main 槽;去 Tauri 化
- * M3 起直播/接管线从独立直播窗口改为壳内直播主面板——第三个 keyed main 槽:
+ * v0.121.8 起文件树/文件查看/@ 文件源随「文件功能」移除;v0.123.1 起
+ * 「插件市场」「AI 助手」tab 移除——前者由壳内首页「插件」面板接管,后者
+ * (长期记忆)整条栈退场;v0.123.2 起「工具」入口从 sidebar.footer.action +
+ * shell.overlay 浮层迁到 sidebar.panellist 行 + main 主面板;去 Tauri 化 M2
+ * 第 6 步起资产实例操作页从独立 webview 窗口改为壳内工作台主面板——第二个
+ * keyed main 槽;去 Tauri 化 M3 起直播/接管线从独立直播窗口改为壳内直播主
+ * 面板——第三个 keyed main 槽;v0.130.0 起直播行/git 分支胶囊/审计日志/
+ * 告警规则/沙箱平台/关于 tab 移除——直播面板保留 keyed main 槽(不占侧栏行,
+ * AI 触发直播时自动接管):
  * `shell.overlay`×3(overlay / AI 连接卡 / 沙箱横幅)+ `sidebar.panellist`
- * (工具行 / 直播行)+ `main`×3(工具面板 / 工作台面板 / 直播面板)+
- * `conversation.session.header.actions`×2(git / 执行)+
- * `conversation.input.left`(截图)+ `settings.section`×7。
+ * ×1(工具行)+ `main`×3(工具面板 / 工作台面板 / 直播面板)+
+ * `conversation.session.header.actions`×1(执行)+
+ * `conversation.input.left`(截图)+ `settings.section`×2(Android / SSH)。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
@@ -25,18 +27,13 @@ import { StarHubOverlay } from '../src/client/StarHubOverlay.tsx'
 import { StarHubToolWorkspace } from '../src/client/StarHubToolWorkspace.tsx'
 import { StarHubWorkbenchPanel } from '../src/client/StarHubWorkbenchPanel.tsx'
 import { StarHubLivePanel } from '../src/client/live/StarHubLivePanel.tsx'
-import { GitBranchPill } from '../src/client/git/GitBranchPill.tsx'
 import { ExecDrawerButton } from '../src/client/conn/ExecDrawerButton.tsx'
 import { StarHubConnCard } from '../src/client/conn/StarHubConnCard.tsx'
 import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
 import { SandboxUserActionBanner } from '../src/client/sandbox/SandboxUserActionBanner.tsx'
-import { SandboxSettingsTab } from '../src/client/settings/sandbox.tsx'
 import { AndroidSettingsTab } from '../src/client/settings/android.tsx'
 import { SshSettingsTab } from '../src/client/settings/ssh.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
-import { AboutTab } from '../src/client/settings/about.tsx'
-import { AlertTab } from '../src/client/settings/alert.tsx'
-import { AuditTab } from '../src/client/settings/audit.tsx'
 import { restoreHostBridge } from './host-bridge.ts'
 
 afterEach(() => {
@@ -130,32 +127,31 @@ describe('client-nav apply (rc.2)', () => {
     applyPlugin(ctx)
     expect(inject.mock.calls.map(c => c[0])).toEqual([
       'shell.overlay', 'shell.overlay', 'shell.overlay',
-      'sidebar.panellist', 'sidebar.panellist', 'main', 'main', 'main',
-      'conversation.session.header.actions', 'conversation.session.header.actions',
+      'sidebar.panellist', 'main', 'main', 'main',
+      'conversation.session.header.actions',
       'conversation.input.left',
-      'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section', 'settings.section',
+      'settings.section', 'settings.section',
     ])
     const components = register.mock.calls.map(c => c[1])
     expect(components).toEqual([
       StarHubOverlay, StarHubConnCard, SandboxUserActionBanner,
-      ToolsPanelIcon, ToolsPanelIcon, StarHubToolWorkspace, StarHubWorkbenchPanel, StarHubLivePanel,
-      GitBranchPill, ExecDrawerButton,
+      ToolsPanelIcon, StarHubToolWorkspace, StarHubWorkbenchPanel, StarHubLivePanel,
+      ExecDrawerButton,
       ScreenshotButton,
-      AuditTab, AlertTab, SandboxSettingsTab, AndroidSettingsTab, SshSettingsTab, AboutTab,
+      AndroidSettingsTab, SshSettingsTab,
     ])
   })
 
-  it('live entry rides its own panellist row above the live main panel', () => {
+  it('live panel rides a keyed main slot with no panellist row (v0.130.0: row removed)', () => {
     const { ctx, register } = fakeContext()
     applyPlugin(ctx)
-    // 直播行(M3):紧随「工具」(order 1)之下;侧栏拥有按钮/标签/选中态。
-    // 下标 4 = 第二个 sidebar.panellist 注册(直播行);main 槽一律按 key 找。
-    const rowConfig = register.mock.calls[4]![0] as RegisterOptions
-    expect(rowConfig.name).toBe('sidebar.panellist')
-    expect(rowConfig.id).toBe('starhub-live')
-    expect(rowConfig.order).toBe(2)
-    expect(rowConfig.label).toBe('直播')
-    // main keyed 槽:契约要求同 id 注册,否则 layout.selectPanel 抛错。
+    // v0.130.0:直播侧栏行移除(空壳白屏 + 无会话态);面板保留 keyed main 槽,
+    // 由 Android 面板「直播」按钮 / android_ui_open_live 拉起(与工作台面板同
+    // 形态:keyed main 不占侧栏行)。侧栏行只剩「工具」一条。
+    const rows = register.mock.calls.filter(c => (c[0] as RegisterOptions).name === 'sidebar.panellist')
+    expect(rows).toHaveLength(1)
+    expect((rows[0]![0] as RegisterOptions).id).toBe('starhub-tools')
+    // main keyed 槽仍在:契约要求同 id 注册,否则 layout.selectPanel 抛错。
     const mainConfig = mainByKey(register, 'starhub-live')
     expect(mainConfig.name).toBe('main')
     expect(mainConfig.key).toBe('starhub-live')
@@ -197,7 +193,7 @@ describe('client-nav apply (rc.2)', () => {
     expect(mainConfig.key).toBe('starhub-tools')
   })
 
-  it('git pill and exec drawer switch to the tools main panel; × returns to the session', () => {
+  it('exec drawer switches to the tools main panel; × returns to the session', () => {
     const selectPanel = vi.fn()
     const { ctx, register } = fakeContext({ layout: { selectPanel } })
     applyPlugin(ctx)
@@ -206,16 +202,12 @@ describe('client-nav apply (rc.2)', () => {
     // 工具面板 × = 回会话视图(null = 默认 conversation 面板)。
     mainInjected.closeTools()
     expect(selectPanel).toHaveBeenCalledWith(null)
-    // git 分支胶囊:打开工作台并切到工具面板。
-    const gitConfig = register.mock.calls.find(c => (c[0] as RegisterOptions).id === 'starhub-git-branch')![0]
-    const gitInjected = gitConfig.inject() as { openWorkbench: () => void }
-    gitInjected.openWorkbench()
-    expect(selectPanel).toHaveBeenCalledWith('starhub-tools')
     // 执行 按钮:打开执行记录视图并切到工具面板。
     const execConfig = register.mock.calls.find(c => (c[0] as RegisterOptions).id === 'starhub-exec-drawer')![0]
     const execInjected = execConfig.inject() as { openExecView: () => void }
     execInjected.openExecView()
-    expect(selectPanel).toHaveBeenCalledTimes(3)
+    expect(selectPanel).toHaveBeenCalledTimes(2)
+    expect(selectPanel).toHaveBeenLastCalledWith('starhub-tools')
   })
 
   it('exec drawer pill opens and closes the records view', () => {
@@ -300,6 +292,10 @@ describe('client-nav apply (rc.2)', () => {
       closePage.closePage('es1')
       expect(injected.hooks.workbench.getSnapshot().pages).toEqual([])
       expect(selectPanel).toHaveBeenCalledWith('starhub-tools')
+      // v0.130.0:标签条左侧「返回工具列表」出口——页面开着时也能回工具列表。
+      const backToTools = injected as unknown as { backToTools: () => void }
+      backToTools.backToTools()
+      expect(selectPanel).toHaveBeenLastCalledWith('starhub-tools')
     } finally {
       openSpy.mockRestore()
     }
@@ -413,7 +409,7 @@ describe('client-nav apply (rc.2)', () => {
     // ctx.remote.<ns> 要求 fiber 声明点号全名,否则 apply 抛
     // "cannot get property … without inject"(v0.121.7 启动事故)。
     expect(injectList).toContain('remote.settings')
-    // v0.123.2:工具面板迁主面板,入口/git/执行 跳转走 ui-layout 的 layout 服务。
+    // v0.123.2:工具面板迁主面板,入口/执行 跳转走 ui-layout 的 layout 服务。
     expect(injectList).toContain('layout')
   })
 })

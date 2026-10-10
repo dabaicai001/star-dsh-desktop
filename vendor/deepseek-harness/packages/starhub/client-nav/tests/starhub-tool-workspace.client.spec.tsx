@@ -36,34 +36,19 @@ async function withoutHostBridge<T>(run: () => Promise<T>): Promise<T> {
  * the component's PropsRuntime requires (the component itself only reads the
  * injected face).
  */
-function workspaceProps(opts: { cwd?: string; sessionId?: string } = {}) {
+function workspaceProps() {
   const assets = createSnapshotStore<StarHubAssetListState>({ assets: [], loading: false, error: null, preview: false })
   const bridge = createToolSelectionBridge()
-  const gitWorkbench = createSnapshotStore<{ open: boolean; initialTab: 'changes' | 'history' | 'branches' }>({ open: false, initialTab: 'changes' })
   const execRecords = createSnapshotStore<ExecRecordsState>({ viewOpen: false, records: [] })
   const useAssets = <S,>(sel: (s: StarHubAssetListState) => S) => sel(assets.getSnapshot())
   const useSelection = <S,>(sel: (s: ToolSelection) => S) => sel(bridge.source.getSnapshot())
-  const useGitWorkbench = <S,>(sel: (s: { open: boolean; initialTab: 'changes' | 'history' | 'branches' }) => S) => sel(gitWorkbench.getSnapshot())
   const useExecRecords = <S,>(sel: (s: ExecRecordsState) => S) => sel(execRecords.getSnapshot())
-  const sessionId = opts.sessionId === undefined ? undefined : opts.sessionId as never
-  const useSessions = ((sel: (s: { ids: string[]; byId: Record<string, { cwd?: string; retainedBy?: Record<string, number> } | undefined> }) => unknown) => {
-    const state = {
-      // 0.1.7:当前会话 = mainView 保留的会话(currentSessionId 推导)。
-      ids: opts.sessionId === undefined ? [] : [opts.sessionId],
-      byId: opts.sessionId === undefined || opts.cwd === undefined
-        ? {}
-        : { [opts.sessionId]: { cwd: opts.cwd, retainedBy: { mainView: 1 } } },
-    }
-    return sel(state)
-  }) as never
   return {
     assets,
     bridge,
-    gitWorkbench,
     execRecords,
     refreshAssets: vi.fn(),
     openConnectionManager: vi.fn(),
-    closeGitWorkbench: vi.fn(),
     closeExecView: vi.fn(),
     clearExecRecords: vi.fn(),
     disconnectExecSession: vi.fn(),
@@ -72,15 +57,13 @@ function workspaceProps(opts: { cwd?: string; sessionId?: string } = {}) {
     insertAssetReference: vi.fn(),
     useAssets,
     useSelection,
-    useGitWorkbench,
-    useSessions,
     useExecRecords,
     // settings.update stub: the tool-context sync effect calls it and must
     // not throw in jsdom (no real wire).
     api: { settings: { update: () => Promise.resolve({ result: { ok: true } }) } } as never,
     openAsset: bridge.openAsset,
     useSession: (() => undefined) as never,
-    sessionId,
+    sessionId: undefined as never,
     useProjection: (() => undefined) as never,
     useInput: (() => undefined) as never,
     inputActions: {} as never,
@@ -380,12 +363,11 @@ describe('StarHubToolWorkspace', () => {
     }
   })
 
-  it('renders the exec records and keeps the asset list when no session cwd exists', () => {
+  it('renders the asset list when the exec view is closed', () => {
     const props = workspaceProps()
     props.bridge.selectSubcategory('terminal')
     props.assets.update((d) => { d.assets = [sshAsset] })
     render(<StarHubToolWorkspace {...props} />)
-    // 无 cwd:Git 工作台不可用,资产列表照常
     expect(screen.getByText('prod-server')).toBeTruthy()
     expect(screen.queryByText('SSH 执行记录')).toBeNull()
   })
@@ -455,35 +437,19 @@ describe('StarHubToolWorkspace', () => {
     expect(clear.disabled).toBe(true)
   })
 
-  it('switches to the Git workbench view when the bridge is open and a session cwd exists', async () => {
-    const props = workspaceProps({ cwd: 'E:\\ws\\demo', sessionId: 'sess-1' })
-    props.gitWorkbench.update((d) => { d.open = true })
-    render(<StarHubToolWorkspace {...props} />)
-    // 测试环境无宿主桥 → 探测失败后渲染非 git 空态(面板确已挂载)
-    expect(await screen.findByText('当前工作区不是 git 仓库')).toBeTruthy()
-    expect(screen.getByText('E:\\ws\\demo')).toBeTruthy()
-    // 面板头「关闭」走注入的 closeGitWorkbench
-    fireEvent.click(screen.getByLabelText('关闭 Git 工作台'))
-    expect(props.closeGitWorkbench).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps the exec view in precedence over the Git workbench view', () => {
-    const props = workspaceProps({ cwd: 'E:\\ws\\demo', sessionId: 'sess-1' })
-    props.gitWorkbench.update((d) => { d.open = true })
-    props.execRecords.update((d) => { d.viewOpen = true })
-    render(<StarHubToolWorkspace {...props} />)
-    expect(screen.getByText('SSH 执行记录')).toBeTruthy()
-    expect(screen.queryByText('当前工作区不是 git 仓库')).toBeNull()
-  })
-
-  it('does not render the Git workbench view without a session cwd even when open', () => {
+  it('toggles a subcategory: clicking the expanded row collapses it (null), clicking another expands it', () => {
     const props = workspaceProps()
-    props.gitWorkbench.update((d) => { d.open = true })
     props.bridge.selectSubcategory('terminal')
-    props.assets.update((d) => { d.assets = [sshAsset] })
-    render(<StarHubToolWorkspace {...props} />)
-    expect(screen.getByText('prod-server')).toBeTruthy()
-    expect(screen.queryByText('当前工作区不是 git 仓库')).toBeNull()
+    const view = render(<StarHubToolWorkspace {...props} />)
+    // 已展开的子类行再点一次 → 收起(selectSubcategory(null))
+    const terminalRow = screen.getByRole('button', { name: /终端/ })
+    expect(terminalRow.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(terminalRow)
+    expect(props.selectSubcategory).toHaveBeenCalledWith(null)
+    // 收起点另一行 → 展开该子类
+    fireEvent.click(screen.getByRole('button', { name: /数据库/ }))
+    expect(props.selectSubcategory).toHaveBeenCalledWith('database')
+    view.unmount()
   })
 
 })

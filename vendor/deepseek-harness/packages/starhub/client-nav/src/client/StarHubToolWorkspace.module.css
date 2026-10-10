@@ -109,12 +109,6 @@
   padding: 2px 0 6px 22px;
 }
 
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .count {
   font-size: 11px;
   padding: 0 6px;

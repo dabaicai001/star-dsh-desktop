@@ -138,8 +138,8 @@ export interface ToolSelection {
 export interface ToolSelectionBridge {
   /** 注入 hooks 舱位的裸 observable(身份与快照引用在变化前保持稳定)。 */
   source: SnapshotStore<ToolSelection>
-  /** 选中子类(侧栏点击;不影响已打开的资产实例)。 */
-  selectSubcategory: (key: string) => void
+  /** 选中子类(侧栏点击;不影响已打开的资产实例);null = 全部收起(手风琴)。 */
+  selectSubcategory: (key: string | null) => void
   /** 打开资产实例操作页:按资产类型派生路由前缀,并生成一次 instanceId。 */
   openAsset: (asset: StarHubAsset) => void
   /** 关闭当前资产实例操作页(保留子类选择)。 */

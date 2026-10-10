@@ -4,6 +4,7 @@
  * 本组件挂 ui-layout 的 root-scope `main` keyed 槽(契约:panellist 的 id
  * 必须在 main 有同名注册),显示当前子类(终端 / 数据库 / Docker)的资产
  * (连接)列表;无资产概念的子类(沙箱桌面 / Android)渲染各自的工作面板。
+ * 子类行为手风琴:点行展开,再点一次收起(v0.130.0;null = 全部收起)。
  * 点资产行经注入的 openAsset 回调新开该实例的独立操作页窗口(桌面端 Tauri
  * webview 窗口,浏览器预览新标签页)。行尾 hover 出编辑钮,经
  * openConnectionManager(asset) 打开连接对话框的编辑模式;列头带资产数、
@@ -18,16 +19,14 @@
  * 而不是红错;其他拉取失败给错误 + 重试。
  *
  * 历史形态:rc.2 起先挂 shell.overlay 浮层(侧栏底部 footer.action 入口 +
- * toolsPanel 开关桥);v0.123.2 迁主面板,开关桥删除,入口与 git/执行 头部
- * 按钮统一走 layout.selectPanel。root scope 无框架注入的 sessionId,Git
- * 工作台视图的 cwd 改从全局「当前会话」读取。
+ * toolsPanel 开关桥);v0.123.2 迁主面板,开关桥删除,入口与「执行」头部
+ * 按钮统一走 layout.selectPanel。
  */
 import { useEffect, useState } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the 'main' SlotMap row (declared by ui-layout).
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import { currentSessionId } from './current-session.ts'
 import {
   IconCloseOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium, IconLinkOutlineMedium, IconPlusOutlineMedium,
   IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconTrashOutlineMedium,
@@ -36,8 +35,6 @@ import {
 import { STARHUB_SUBCATEGORIES, assetRowBadge, assetSubtitle, type StarHubAsset, type StarHubSubcategory } from './sections.ts'
 import type { RustAsset, StarHubAssetListState, ToolSelection } from './store.ts'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
-import { GitWorkbenchPanel } from './git/GitWorkbenchPanel.tsx'
-import type { GitWorkbenchState } from './git/git-workbench-state.ts'
 import { ExecRecordList } from './conn/ExecRecordList.tsx'
 import type { ExecRecordsState } from './conn/exec-records.ts'
 import { SandboxPanel } from './sandbox/SandboxPanel.tsx'
@@ -55,8 +52,6 @@ export interface StarHubToolWorkspaceInjected {
   refreshAssets: () => void
   /** 打开连接对话框:不传资产 = 新建;传资产 = 编辑(含删除入口)。 */
   openConnectionManager: (asset?: RustAsset) => void
-  /** 切回资产列表视图(Git 工作台面板头「关闭」;v0.118.0 Git 工作台视图)。 */
-  closeGitWorkbench: () => void
   /** 切回资产列表视图(执行记录视图头部「返回」;v0.100.0 执行记录入抽屉)。 */
   closeExecView: () => void
   /** 清空当前会话的执行记录(执行记录视图头部「清空」,随会话隔离)。 */
@@ -65,14 +60,13 @@ export interface StarHubToolWorkspaceInjected {
   disconnectExecSession: (sessionId: string) => void
   /** 关闭工具面板:主面板模式 = 回会话视图(layout.selectPanel(null))。 */
   closeTools: () => void
-  /** 选中一个子类(展开/聚焦该子类的资产列表)。 */
-  selectSubcategory: (key: string) => void
+  /** 选中/收起一个子类:null = 全部收起(手风琴,再点当前行收起)。 */
+  selectSubcategory: (key: string | null) => void
   /** 把资产作为引用 chip 插入当前会话对话框并轻绑定资产上下文(资产行右键「引用到当前对话框」)。 */
   insertAssetReference: (asset: RustAsset) => void
   hooks: {
     selection: SnapshotStore<ToolSelection>
     assets: SnapshotStore<StarHubAssetListState>
-    gitWorkbench: SnapshotStore<GitWorkbenchState>
     execRecords: SnapshotStore<ExecRecordsState>
   }
 }
@@ -169,19 +163,14 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
  * 「执行」按钮把 execRecords 桥置 viewOpen 并切到本面板后,内容切换为
  * ExecRecordList(仅本会话的静默执行记录,行点击展开/收起,行尾按钮断开连接并
  * 移除,容器纵向滚动);ssh:exec-done 由 apply 层订阅入桥,本组件只是读端。
- *
- * Git 工作台视图(v0.118.0):会话头部分支胶囊(GitBranchPill,已融合为
- * 工作台入口)把 gitWorkbench 桥置 open 并切到本面板后,内容切换为
- * GitWorkbenchPanel(以当前会话 cwd 为工作区:变更/暂存/提交/diff/历史/分支);
- * 两个视图互斥,开关组合由 apply 层的注册注入保证。
  * @param props - composed slot props (main-panel runtime share + injected face).
  * @returns the panel content (rendered only while the sidebar row selects it).
  */
 export function StarHubToolWorkspace({
   openAsset, refreshAssets, openConnectionManager,
-  closeGitWorkbench, closeExecView, clearExecRecords, disconnectExecSession,
+  closeExecView, clearExecRecords, disconnectExecSession,
   closeTools, selectSubcategory, insertAssetReference,
-  useSelection, useAssets, useGitWorkbench, useSessions, useExecRecords,
+  useSelection, useAssets, useExecRecords,
 }: StarHubToolWorkspaceProps) {
   const assets = useAssets(s => s.assets)
   const loading = useAssets(s => s.loading)
@@ -189,19 +178,9 @@ export function StarHubToolWorkspace({
   const preview = useAssets(s => s.preview)
   const activeSubcategory = useSelection(s => s.subcategory)
   const activeAssetId = useSelection(s => s.assetId)
-  // Git 工作台视图(v0.118.0):hook 未提供时视为关闭(独立渲染兼容)。
-  const gitOpen = useGitWorkbench?.(s => s.open) ?? false
-  const gitInitialTab = useGitWorkbench?.(s => s.initialTab) ?? 'changes'
   // 执行记录视图(v0.100.0):hook 未提供时视为关闭 + 空列表(独立渲染兼容)。
   const execViewOpen = useExecRecords?.(s => s.viewOpen) ?? false
   const execRecords = useExecRecords?.(s => s.records) ?? []
-  // 当前会话 cwd 经 root-scope 的 useSessions 响应式读取(main 面板无
-  // 框架注入 sessionId;注入期快照会过期,故此处订阅全局当前会话)。
-  // 0.1.7:list 快照不再带 current,当前会话 = mainView 保留的会话(currentSessionId)。
-  const sessionCwd = useSessions?.(s => {
-    const id = currentSessionId(s)
-    return id === undefined ? undefined : s.byId[id]?.cwd
-  })
 
   // 挂载时(以及切换子类时)重新拉取(回调内部对并发拉取去重)。
   useEffect(() => { refreshAssets() }, [activeSubcategory, refreshAssets])
@@ -215,8 +194,6 @@ export function StarHubToolWorkspace({
           onClear={clearExecRecords}
           onDisconnect={disconnectExecSession}
         />
-      ) : gitOpen && sessionCwd !== undefined ? (
-        <GitWorkbenchPanel cwd={sessionCwd} initialTab={gitInitialTab} onClose={closeGitWorkbench} />
       ) : (
         <>
           <header className={css.header}>
@@ -291,7 +268,7 @@ function renderSubcategory(
     openAsset: (asset: StarHubAsset) => void
     openConnectionManager: (asset?: RustAsset) => void
     refreshAssets: () => void
-    selectSubcategory: (key: string) => void
+    selectSubcategory: (key: string | null) => void
     insertAssetReference: (asset: RustAsset) => void
   },
 ) {
@@ -304,7 +281,7 @@ function renderSubcategory(
         type="button"
         className={`${css.category} ${expanded ? css.active : ''}`}
         aria-expanded={expanded}
-        onClick={() =>{  handlers.selectSubcategory(subcategory.key) }}
+        onClick={() =>{  handlers.selectSubcategory(expanded ? null : subcategory.key) }}
       >
         <Icon size={13} />
         <span className={css.categoryLabel}>{subcategory.label}</span>
