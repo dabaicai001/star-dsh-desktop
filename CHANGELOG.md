@@ -9,6 +9,11 @@
 
 ---
 
+## [0.129.7] - 2026-10-10
+
+### 修复
+- 🐛 **插件装上桌面端但启用被回滚:"loaded without registering"**:`client.js` 由 tsdown 在构建期把**源包名**(`@deepseek-ai/dsh-starhub-client-nav`)烙进 `__ModuleLoader__.load({ id })`,而宿主给安装包下发的 boot 图行 id 是**安装包名**(`@starhub/dsh-plugin`)——加载器按行 id 等注册,脚本执行了却没注册同名 id,于是客户端半边同步失败、服务端启用状态整体回滚(host 端一切正常,所以只有点启用时才炸)。修复:`build-plugin-bundle.mjs` 组装时把产物 `client.js` 里的源包名整体改写成 bundle 包名(注册 id、样式 `data-plugin` 标签一并改,源码不动);`assertBundle` 新增「注册 id == 安装包名」自检,fail loud 提前到打包前;`tests/plugin-bundle.test.mjs` 补两条改写单测。
+
 ## [0.129.6] - 2026-10-10
 
 ### 变更

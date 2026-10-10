@@ -15,7 +15,12 @@
  *    在非 workspace 安装下既不可解析又会被判不兼容,本产物一个都不声明;
  * 3. **资产包内自解析**:sidecar 落在 bridge 模块同级的 `sidecar/`(Rust 侧按 exe
  *    同级兄弟名找 Go 侧),dist 落在 host-static 模块同级的 `dist/`——patch 里
- *    不出现任何机器相关绝对路径。
+ *    不出现任何机器相关绝对路径;
+ * 4. **客户端注册 id = 安装包名**:`client.js` 由 tsdown 在构建期把**源包名**
+ *    (`@deepseek-ai/dsh-starhub-client-nav`)烙进 `__ModuleLoader__.load({ id })`
+ *    与样式标签,而宿主 boot 图按**安装包名**(本 bundle 名)建行,加载器只认
+ *    同一个 id——不一致就 "loaded without registering",插件启用被回滚。组装时
+ *    把产物里的源包名整体改写成 bundle 名(源码不动,workspace 内开发仍用它)。
  *
  * 用法:
  *   node scripts/build-plugin-bundle.mjs [--out <dir>] [--name <pkg>] [--version <x.y.z>]
@@ -305,6 +310,33 @@ function renderManifest(packageName, version) {
 }
 
 /**
+ * 把产物里客户端半边的注册 id 从**源包名**改写成 **bundle 包名**。
+ *
+ * `client.js` 由 tsdown 的 clientBundle 预设在构建期把源包名
+ * (`@deepseek-ai/dsh-starhub-client-nav`)烙进 `__ModuleLoader__.load({ id })`、
+ * 样式 `data-plugin` 标签与 tagId;而宿主给安装包下发的 boot 图行 id 是声明
+ * `dsh.client` 的**安装包名**。加载器按行 id 等注册,两者不一致时脚本明明执行了
+ * 却报 "loaded without registering",插件启用被整体回滚(见
+ * packages/client/modules/src/client/system.ts 的 arrive())。
+ * 只改产物:源码保持源包名(workspace 内开发与上游流仍按它解析)。
+ * @param outDir - 组装产物目录。
+ * @param packageName - bundle 包名(安装后的包名)。
+ * @throws 当 client.js 里找不到源包名时(上游构建格式变了,需要跟进)。
+ */
+async function rewriteClientRegistrationId(outDir, packageName) {
+  const sourceName = JSON.parse(await readFile(
+    join(vendorRoot, 'packages', 'starhub', CLIENT_PLUGIN, 'package.json'), 'utf8',
+  )).name
+  if (sourceName === packageName) return
+  const clientFile = join(outDir, CLIENT_PLUGIN, 'lib', 'client.js')
+  const code = await readFile(clientFile, 'utf8')
+  if (!code.includes(sourceName)) {
+    throw new Error(`${CLIENT_PLUGIN}/lib/client.js 未含源包名 ${sourceName},注册 id 改写无从下手`)
+  }
+  await writeFile(clientFile, code.split(sourceName).join(packageName), 'utf8')
+}
+
+/**
  * 校验:每个 exports 目标存在、patch 可解析且每行 name 有对应导出。
  * 拼出来的包如果在安装后才炸(缺文件、非法 YAML),用户已经在插件页点过安装了,
  * 所以这里 fail loud 要趁早。
@@ -320,6 +352,16 @@ async function assertBundle(outDir, manifest, patchText, packageName) {
   // 所以在组装期就拦住(CI 的 tar 内容校验是第二道)。
   for (const file of await listFilesRecursive(outDir)) {
     if (file.endsWith('.map')) problems.push(`产物里不应有 sourcemap: ${file.slice(outDir.length + 1)}`)
+  }
+  // 客户端半边必须按安装包名注册:boot 图按包名建行,加载器只认
+  // `__ModuleLoader__.load({ id })` 里的同一个 id,不一致就是
+  // "loaded without registering"(只在用户点启用时才炸,所以必须在组装期拦住)。
+  const clientJs = await readFile(join(outDir, CLIENT_PLUGIN, 'lib', 'client.js'), 'utf8')
+  const registered = /\b__ModuleLoader__\.load\(\s*\{\s*id:\s*"([^"]+)"/.exec(clientJs)
+  if (registered === null) {
+    problems.push(`${CLIENT_PLUGIN}/lib/client.js 没有 __ModuleLoader__.load 注册调用`)
+  } else if (registered[1] !== packageName) {
+    problems.push(`客户端注册 id 是 "${registered[1]}",应为安装包名 "${packageName}"`)
   }
   const yaml = loadYamlParser()
   if (yaml === null) {
@@ -435,6 +477,9 @@ async function main() {
       }, undefined, 2)}\n`)
     }
   }
+
+  // 客户端注册 id 改写必须在 assertBundle 之前完成(自检会校验它)。
+  await rewriteClientRegistrationId(options.out, options.name)
 
   // 工作台 dist:sourcemap 是开发产物(单次构建里占 ~七成体积),分发包不带。
   await cp(options.windowDist, join(options.out, 'host-static', 'dist'), {
@@ -597,4 +642,4 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(
   })
 }
 
-export { PLUGINS, CLIENT_PLUGIN, ICON_SVG, renderManifest, renderPatch, SIDECAR_NAMES }
+export { PLUGINS, CLIENT_PLUGIN, ICON_SVG, renderManifest, renderPatch, rewriteClientRegistrationId, SIDECAR_NAMES }

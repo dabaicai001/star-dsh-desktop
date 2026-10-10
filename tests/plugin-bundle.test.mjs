@@ -10,17 +10,21 @@
  *    client-modules 只把「裸包名」行当客户端行(`exactPackageSpecifier` 对子路径
  *    返回 undefined),客户端半边挂在纯子路径行上会静默不加载;
  * 3. 行的 id 与 provisioning 那份模板一致——id 是公共标识,用户覆盖与插件页
- *    开关都按 id 认。
+ *    开关都按 id 认;
+ * 4. 产物里客户端半边的注册 id 必须被改写成**安装包名**——tsdown 构建期烙的是
+ *    源包名,而宿主 boot 图按安装包名建行,加载器只认同一个 id,不一致就是
+ *    "loaded without registering",插件启用被整体回滚(实测踩到)。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const { PLUGINS, CLIENT_PLUGIN, ICON_SVG, renderManifest, renderPatch } = await import(
+const { PLUGINS, CLIENT_PLUGIN, ICON_SVG, renderManifest, renderPatch, rewriteClientRegistrationId } = await import(
   '../scripts/build-plugin-bundle.mjs'
 )
 const require = createRequire(import.meta.url)
@@ -104,4 +108,46 @@ test('图标是内嵌 SVG 且远小于 256 KiB 上限', () => {
   assert.ok(!/url\(\s*['"]?https?:/i.test(ICON_SVG), '图标不得引用外部样式')
   assert.ok(!/<image\b/i.test(ICON_SVG), '图标不得内嵌位图')
   assert.ok(Buffer.byteLength(ICON_SVG) < 256 * 1024)
+})
+
+test('客户端注册 id 从源包名改写成安装包名(否则 loaded without registering)', async () => {
+  const sourceName = createRequire(import.meta.url)(
+    join(repoRoot, 'vendor', 'deepseek-harness', 'packages', 'starhub', CLIENT_PLUGIN, 'package.json'),
+  ).name
+  assert.notEqual(sourceName, PACKAGE_NAME, '前提:源包名与安装包名不同,改写才有意义')
+
+  const out = mkdtempSync(join(tmpdir(), 'starhub-bundle-rewrite-'))
+  try {
+    const clientDir = join(out, CLIENT_PLUGIN, 'lib')
+    mkdirSync(clientDir, { recursive: true })
+    const clientFile = join(clientDir, 'client.js')
+    writeFileSync(clientFile, [
+      'window.__ModuleLoader__.load({',
+      `\tid: "${sourceName}",`,
+      '\tfactory: (require) => {},',
+      '})',
+      `tag.dataset.plugin = "${sourceName}"`,
+    ].join('\n'), 'utf8')
+
+    await rewriteClientRegistrationId(out, PACKAGE_NAME)
+
+    const rewritten = readFileSync(clientFile, 'utf8')
+    assert.ok(rewritten.includes(`id: "${PACKAGE_NAME}"`), '注册 id 必须是安装包名')
+    assert.ok(rewritten.includes(`dataset.plugin = "${PACKAGE_NAME}"`), '样式标签一并改写(HMR 清理按行 id 认)')
+    assert.ok(!rewritten.includes(sourceName), '产物里不得残留源包名')
+  } finally {
+    rmSync(out, { recursive: true, force: true })
+  }
+})
+
+test('源包名在 client.js 里找不到时 fail loud(上游构建格式变了要跟进)', async () => {
+  const out = mkdtempSync(join(tmpdir(), 'starhub-bundle-rewrite-'))
+  try {
+    const clientDir = join(out, CLIENT_PLUGIN, 'lib')
+    mkdirSync(clientDir, { recursive: true })
+    writeFileSync(join(clientDir, 'client.js'), 'window.__ModuleLoader__.load({ id: "something-else" })', 'utf8')
+    await assert.rejects(() => rewriteClientRegistrationId(out, PACKAGE_NAME), /未含源包名/)
+  } finally {
+    rmSync(out, { recursive: true, force: true })
+  }
 })

@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.129.6-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.129.7-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,9 +47,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.129.6 (2026-10-10)
-- 🔧 🔧 **没配发布 secret 时,发布链改为「跳过装机 + warning」而不是 fail loud**:`DOWNLOAD_TEST_RELEASE_ID` 等签名/更新源凭据缺失时,`release.yml` 的 windows job 现在会在 `Detect packaging secrets` 一步判定并打 `::warning::`,随后**跳过** `Write apps/desktop/.env.windows`、`Package upstream Electron shell` 与 `Upload Windows installer`,整条 run 变绿、Release 里只有插件 tarball(插件页照样能装)。**配了但写错仍 fail loud**(misconfiguration ≠ not configured):非法 release id 会在同一判定位抛错。实现细节:GitHub 的上下文表里 `secrets` 不可用于步骤 `if:`,所以先读进 env、判完写成 step output,下游按 output 决定 `if`。
-- 🔧 🔧 **装机链失败也照发插件 tarball**:推一个 tag 只跑 `release.yml` 一条链,但装机步依赖签名/更新源 secrets(`DOWNLOAD_TEST_RELEASE_ID` 等,未配时按设计 fail loud),原来会让整个 Release 一起消失——插件 URL 也跟着没了。现在:插件 tarball 的 artifact 上传**提前到那几步之前**;`publish` job 改 `if: ${{ !cancelled() }}` 照发,新增 **Detect available assets** 分别判定两类资产——插件 tarball 有就发、installer 有才发、两者都没有则明确报错不建空 Release;installer 缺失时打 `::warning::` 且 run 仍是红的(问题不会被藏起来)。
+### v0.129.7 (2026-10-10)
+- 🐛 🐛 **插件装上桌面端但启用被回滚:"loaded without registering"**:`client.js` 由 tsdown 在构建期把**源包名**(`@deepseek-ai/dsh-starhub-client-nav`)烙进 `__ModuleLoader__.load({ id })`,而宿主给安装包下发的 boot 图行 id 是**安装包名**(`@starhub/dsh-plugin`)——加载器按行 id 等注册,脚本执行了却没注册同名 id,于是客户端半边同步失败、服务端启用状态整体回滚(host 端一切正常,所以只有点启用时才炸)。修复:`build-plugin-bundle.mjs` 组装时把产物 `client.js` 里的源包名整体改写成 bundle 包名(注册 id、样式 `data-plugin` 标签一并改,源码不动);`assertBundle` 新增「注册 id == 安装包名」自检,fail loud 提前到打包前;`tests/plugin-bundle.test.mjs` 补两条改写单测。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
