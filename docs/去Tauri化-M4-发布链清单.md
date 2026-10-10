@@ -255,10 +255,34 @@ provisioning 的行级合并是**字符串操作**:拼出非法 YAML(缩进错�
 ## 五、仍挂着的事
 
 - **Electron 壳本身的冒烟**:boot 的是宿主进程(上游 smoke-runtime.ts 同款
-  路径),Electron 窗口层要等一次真安装包。
+  路径),Electron 窗口层要等一次真安装包。**发布链本身也刚刚才第一次真正跑
+  起来**——见下面「补记:CI 与发布链曾经一次都没跑过」。
 - **Linux 不发版(决策 A:等上游)**:上游没有 Linux desktop target,deb/rpm 随
   Tauri 壳退役;`release.yml` 的 linux job 已删,上游出 target 后加回来即可。
 - **真机联调(M3-6)**:Android 设备接上后跑 scrcpy H.264 + 接管互斥 + 延迟实测。
 - **凭据迁移的 Keyring 半边**:Windows 凭据管理器没有官方 CLI,需用户在旧壳
   导出 `--secrets-export`(工具已支持并在报告里列出读不到的 key_id);dsh
   credentials 服务作为密钥长期归属仍未接线(§六)。
+
+### 补记:CI 与发布链曾经一次都没跑过(v0.128.1 修)
+
+M4 第 3 步把 `linux-compat.yml` 换成 `ci.yml`、重写 `release.yml` 时,步骤名
+写成 `- name: Smoke: provisioning + host boot`——值里那个 `: `(冒号加空格)
+在 YAML 里是映射条目分隔符,整份文件非法。GitHub 加载不了工作流文件,于是
+**一个 job 都不起、秒级 failure**,只留一句「This run likely failed because
+of a workflow file issue」,没有任何步骤日志。从 2026-10-09 到 2026-10-10
+被发现为止,CI 门和发布链一次都没真正跑过;`v0.128.0` 的 tag 也没产出任何
+Release(上一个 Release 还是 v0.126.0)。
+
+**本地发现不了,因为本地从不跑 CI**——那期间所有「绿」都是本机单测的绿
+(`test:provision` / `test:migrate` / `smoke:dsh-desktop` 都是直接 node 跑,
+不经过 GitHub)。这条坑值得记住:**「工作流文件合法」和「CI 真的在跑」是两件
+事**,前者只能在 GitHub 的 Actions 页上确认,或者像现在这样加一道
+`npm run test:workflows`(新增 `tests/workflows-yaml.test.mjs`,断言每个工作流
+是合法 YAML 且至少有一个 job,并扫描所有裸标量值里的 `: `)在最早、最便宜的
+位置拦住。
+
+顺带还修了一个同源问题:release.yml 提取 Release 正文的 awk 用整行相等去匹配
+版本标题(`$0 == "## [0.128.0]"`),而标题长这样:`## [0.128.0] - 2026-10-10`
+(带日期)——永远不相等,`RELEASE_NOTES.md` 恒为空,Release 看着成功、点开没
+正文。改成前缀正则,并把「提取为空」从 warning 升成 error。
