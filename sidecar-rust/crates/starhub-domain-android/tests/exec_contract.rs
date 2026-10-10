@@ -84,11 +84,31 @@ impl Adb for FakeAdb {
     }
 }
 
-struct NoSettings;
+/// 设置存根:只为 `android.adb_path` 返回一个**本机一定存在**的老实路径。
+///
+/// 这些用例原来靠 `std::env::set_var("STARHUB_ADB_PATH", "/bin/sh")` 让
+/// `resolve_adb` 成功。但 `set_var` / `remove_var` 是**进程级全局**,而 cargo
+/// test 默认多线程跑同一个测试二进制——一个用例的 `remove_var` 会落进另一个
+/// 用例 `set_var` 与 `resolve_adb` 之间,让它回落到 PATH / 常见位置。开发机上
+/// 装着 adb,回落也成功、看不出来;CI 的 ubuntu runner 上哪都没有 adb,
+/// `resolve_adb` 直接返回「未找到 adb 二进制」,`.expect("double tap")` 就
+/// panic(v0.128.1 第一次真正跑 CI 时抓到)。
+///
+/// 改走设置 seam:它是 `resolve_adb` 的**第一个**候选,按用例注入、没有全局
+/// 状态,也就没有这个竞争——顺带把文档里的优先顺序(设置 > 环境变量 > PATH)
+/// 真正走到了。
+struct StubSettings;
 
-impl SettingsStore for NoSettings {
-    fn get<'a>(&'a self, _key: &'a str) -> BoxFuture<'a, Result<Option<String>, String>> {
-        Box::pin(async move { Ok(None) })
+impl SettingsStore for StubSettings {
+    fn get<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<Option<String>, String>> {
+        let value = (key == starhub_domain_android::manager::ADB_PATH_SETTING_KEY).then(|| {
+            if cfg!(target_os = "windows") {
+                "cmd".to_string()
+            } else {
+                "/bin/sh".to_string()
+            }
+        });
+        Box::pin(async move { Ok(value) })
     }
 }
 
@@ -178,7 +198,7 @@ fn android_in_temp(label: &str) -> (Android<'static>, std::path::PathBuf) {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let adb: &'static mut dyn Adb = Box::leak(Box::new(FakeAdb::new()));
-    let settings: &'static mut dyn SettingsStore = Box::leak(Box::new(NoSettings));
+    let settings: &'static mut dyn SettingsStore = Box::leak(Box::new(StubSettings));
     let cache: &'static mut dyn CacheDir = Box::leak(Box::new(TempCache(dir.clone())));
     let frames: &'static mut dyn FrameStore = Box::leak(Box::new(MemoryFrames::default()));
     let live: &'static mut dyn LiveLauncher = Box::leak(Box::new(NoLive));
@@ -238,15 +258,6 @@ async fn write_tools_require_device_authorization() {
 async fn tap_builds_the_expected_input_command_and_records_a_frame() {
     let (android, dir) = android_in_temp("tap");
     grant(&android).await;
-    // adb 路径解析:本机可能没有 adb —— 用环境变量指向一个存在的老实路径
-    std::env::set_var(
-        "STARHUB_ADB_PATH",
-        if cfg!(target_os = "windows") {
-            "cmd"
-        } else {
-            "/bin/sh"
-        },
-    );
     let text = execute(&android, "android_tap", &json!({ "x": 100, "y": 200 }))
         .await
         .expect("tap");
@@ -259,7 +270,6 @@ async fn tap_builds_the_expected_input_command_and_records_a_frame() {
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].2, "tap(100,200)");
     drop(frames);
-    std::env::remove_var("STARHUB_ADB_PATH");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -267,14 +277,6 @@ async fn tap_builds_the_expected_input_command_and_records_a_frame() {
 async fn double_tap_adds_the_second_tap() {
     let (android, dir) = android_in_temp("dbltap");
     grant(&android).await;
-    std::env::set_var(
-        "STARHUB_ADB_PATH",
-        if cfg!(target_os = "windows") {
-            "cmd"
-        } else {
-            "/bin/sh"
-        },
-    );
     let text = execute(&android, "android_double_tap", &json!({ "x": 5, "y": 6 }))
         .await
         .expect("double tap");
@@ -285,7 +287,6 @@ async fn double_tap_adds_the_second_tap() {
         "{:?}",
         args
     );
-    std::env::remove_var("STARHUB_ADB_PATH");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -293,14 +294,6 @@ async fn double_tap_adds_the_second_tap() {
 async fn press_key_maps_friendly_names_and_rejects_injection() {
     let (android, dir) = android_in_temp("key");
     grant(&android).await;
-    std::env::set_var(
-        "STARHUB_ADB_PATH",
-        if cfg!(target_os = "windows") {
-            "cmd"
-        } else {
-            "/bin/sh"
-        },
-    );
     let text = execute(&android, "android_press_key", &json!({ "key": "back" }))
         .await
         .expect("press key");
@@ -323,7 +316,6 @@ async fn press_key_maps_friendly_names_and_rejects_injection() {
         calls_before,
         "非法键名不应触达设备"
     );
-    std::env::remove_var("STARHUB_ADB_PATH");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -331,14 +323,6 @@ async fn press_key_maps_friendly_names_and_rejects_injection() {
 async fn type_escapes_percent_and_space() {
     let (android, dir) = android_in_temp("type");
     grant(&android).await;
-    std::env::set_var(
-        "STARHUB_ADB_PATH",
-        if cfg!(target_os = "windows") {
-            "cmd"
-        } else {
-            "/bin/sh"
-        },
-    );
     let text = execute(&android, "android_type", &json!({ "text": "100% ok" }))
         .await
         .expect("type");
@@ -346,7 +330,6 @@ async fn type_escapes_percent_and_space() {
     let args = as_fake_adb(android.adb).last_args();
     // escape_input_text: "100% ok" → "100%%%sok"(% 翻倍、空格 → %s),再过 sh_quote
     assert!(args[1].contains("input text '100%%%sok'"), "{:?}", args);
-    std::env::remove_var("STARHUB_ADB_PATH");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -354,14 +337,6 @@ async fn type_escapes_percent_and_space() {
 async fn push_rejects_paths_outside_the_whitelist() {
     let (android, dir) = android_in_temp("push");
     grant(&android).await;
-    std::env::set_var(
-        "STARHUB_ADB_PATH",
-        if cfg!(target_os = "windows") {
-            "cmd"
-        } else {
-            "/bin/sh"
-        },
-    );
     let err = execute(
         &android,
         "android_push",
@@ -378,7 +353,6 @@ async fn push_rejects_paths_outside_the_whitelist() {
     .await
     .expect_err("含 ..");
     assert!(err.contains("远端目录非法"), "{err}");
-    std::env::remove_var("STARHUB_ADB_PATH");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -386,14 +360,6 @@ async fn push_rejects_paths_outside_the_whitelist() {
 async fn takeover_blocks_write_operations() {
     let (android, dir) = android_in_temp("takeover");
     grant(&android).await;
-    std::env::set_var(
-        "STARHUB_ADB_PATH",
-        if cfg!(target_os = "windows") {
-            "cmd"
-        } else {
-            "/bin/sh"
-        },
-    );
     // 换一个「接管中」的 takeover 实现(其余 seam 复用)
     let taking: &'static mut dyn TakeoverState = Box::leak(Box::new(TakingOver));
     let context = Android {
@@ -410,7 +376,6 @@ async fn takeover_blocks_write_operations() {
         .await
         .expect_err("接管中");
     assert!(err.contains("用户正在直播窗口中接管"), "{err}");
-    std::env::remove_var("STARHUB_ADB_PATH");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

@@ -372,12 +372,22 @@ test('a rendered patch that is not valid YAML fails loud instead of being writte
   const dist = join(root, 'dist')
   mkdirSync(join(dist, 'assets'), { recursive: true })
   writeFileSync(join(dist, 'index.html'), '<html><script src="/starhub-react/assets/index.js"></script></html>')
+  // 闭包外的 patch 依赖也要在:不传 --runtime 会回落到仓库根的 dsh-runtime,
+  // 而它是 gitignore 的打包产物——干净检出(CI)里根本不存在,前置校验先报
+  // 「闭包外依赖缺失」,这条用例就永远等不到它要验的 YAML 报错。
+  for (const name of RUNTIME_HOSTED_PATCH_DEPS) {
+    const pkg = join(root, 'runtime', 'node_modules', '@deepseek-ai', name)
+    mkdirSync(join(pkg, 'lib'), { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), `${JSON.stringify({ name: `@deepseek-ai/${name}`, version: '0.0.1', type: 'module' }, undefined, 2)}\n`)
+    writeFileSync(join(pkg, 'lib', 'index.js'), 'export function apply() {}\n')
+  }
 
   const home = join(root, 'home')
   const result = spawnSync(process.execPath, [
     scriptPath,
     '--home', home,
     '--vendor', vendor,
+    '--runtime', join(root, 'runtime'),
     '--sidecar-rust', rust,
     '--sidecar-go', go,
     '--window-dist', dist,
