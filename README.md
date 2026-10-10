@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.129.4-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.129.6-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,8 +47,9 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.129.4 (2026-10-10)
-- 🐛 🐛 **手动兜底链的插件冒烟在 CI 上读不到 boot 图**(v0.129.2 那条 run 的唯一红点:四条断言全绿、客户端那条 `status=404`):插件冒烟的「客户端半边进入 boot 图」要读 `/` 返回的 HTML,而 `plugin-bundle.yml` 用的是 **vendor 源码 CLI**,它的安装树里没有 `apps/web/dist`,认证通过也只会 404。`release.yml` 不受影响——它先 `package:dsh-runtime`,冒烟用的是打包后的运行时。修复:手动链在冒烟前加 `npm run build:web`;冒烟脚本对 404 给出明确提示(缺 web dist → 先 `build:web` 或 `package:dsh-runtime`),不再让人对着一个 404 猜。
+### v0.129.6 (2026-10-10)
+- 🔧 🔧 **没配发布 secret 时,发布链改为「跳过装机 + warning」而不是 fail loud**:`DOWNLOAD_TEST_RELEASE_ID` 等签名/更新源凭据缺失时,`release.yml` 的 windows job 现在会在 `Detect packaging secrets` 一步判定并打 `::warning::`,随后**跳过** `Write apps/desktop/.env.windows`、`Package upstream Electron shell` 与 `Upload Windows installer`,整条 run 变绿、Release 里只有插件 tarball(插件页照样能装)。**配了但写错仍 fail loud**(misconfiguration ≠ not configured):非法 release id 会在同一判定位抛错。实现细节:GitHub 的上下文表里 `secrets` 不可用于步骤 `if:`,所以先读进 env、判完写成 step output,下游按 output 决定 `if`。
+- 🔧 🔧 **装机链失败也照发插件 tarball**:推一个 tag 只跑 `release.yml` 一条链,但装机步依赖签名/更新源 secrets(`DOWNLOAD_TEST_RELEASE_ID` 等,未配时按设计 fail loud),原来会让整个 Release 一起消失——插件 URL 也跟着没了。现在:插件 tarball 的 artifact 上传**提前到那几步之前**;`publish` job 改 `if: ${{ !cancelled() }}` 照发,新增 **Detect available assets** 分别判定两类资产——插件 tarball 有就发、installer 有才发、两者都没有则明确报错不建空 Release;installer 缺失时打 `::warning::` 且 run 仍是红的(问题不会被藏起来)。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

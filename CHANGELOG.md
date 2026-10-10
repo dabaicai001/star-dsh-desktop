@@ -7,10 +7,15 @@
 
 ## [未发布]
 
+---
+
+## [0.129.6] - 2026-10-10
+
+### 变更
+- 🔧 **没配发布 secret 时,发布链改为「跳过装机 + warning」而不是 fail loud**:`DOWNLOAD_TEST_RELEASE_ID` 等签名/更新源凭据缺失时,`release.yml` 的 windows job 现在会在 `Detect packaging secrets` 一步判定并打 `::warning::`,随后**跳过** `Write apps/desktop/.env.windows`、`Package upstream Electron shell` 与 `Upload Windows installer`,整条 run 变绿、Release 里只有插件 tarball(插件页照样能装)。**配了但写错仍 fail loud**(misconfiguration ≠ not configured):非法 release id 会在同一判定位抛错。实现细节:GitHub 的上下文表里 `secrets` 不可用于步骤 `if:`,所以先读进 env、判完写成 step output,下游按 output 决定 `if`。
+
 ### 变更
 - 🔧 **装机链失败也照发插件 tarball**:推一个 tag 只跑 `release.yml` 一条链,但装机步依赖签名/更新源 secrets(`DOWNLOAD_TEST_RELEASE_ID` 等,未配时按设计 fail loud),原来会让整个 Release 一起消失——插件 URL 也跟着没了。现在:插件 tarball 的 artifact 上传**提前到那几步之前**;`publish` job 改 `if: ${{ !cancelled() }}` 照发,新增 **Detect available assets** 分别判定两类资产——插件 tarball 有就发、installer 有才发、两者都没有则明确报错不建空 Release;installer 缺失时打 `::warning::` 且 run 仍是红的(问题不会被藏起来)。
-
----
 
 ## [0.129.4] - 2026-10-10
 

@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.129.4(✨ StarHub 可作为 DSH 组合包装进任意 profile;🔧 一个 tag 只跑一条发布链,插件 tarball 与 installer 同链产出;🐛 修手动兜底链冒烟缺 `apps/web/dist`;详见 `docs/纯插件化-适配清单.md`) |
+| 当前版本 | v0.129.6(🔧 **没配发布 secret 时,发布链改为「跳过装机 + warning」而不是 fail loud**:`DOWNLOAD_TEST_RELEASE_ID` 等签名/更新源凭据缺失时,`release.yml` 的 windows job 现在会在 `Detect packaging secrets` 一步判定并打 `::warning::`,随后**跳过** `Write apps/desktop/.env.windows`、`Package upstream Electron shell` 与 `Upload Windows installer`,整条 run 变绿、Release 里只有插件 tarball(插件页照样能装)。**配了但写错仍 fail loud**(misconfiguration ≠ not configured):非法 release id 会在同一判定位抛错。实现细节:GitHub 的上下文表里 `secrets` 不可用于步骤 `if:`,所以先读进 env、判完写成 step output,下游按 output 决定 `if`。) |
 
 ## 架构一句话
 
@@ -144,4 +144,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-10 (v0.129.4)*
+*最后更新: 2026-10-10 (v0.129.6)*
