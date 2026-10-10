@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.128.5-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.128.6-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -47,9 +47,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.128.5 (2026-10-10)
-- 🐛 **修好 `pnpm run build:lib`——38 个类型错误全在 StarHub 自己的测试文件里,`package:dsh-runtime` 因此必失败**。`package:dsh-runtime` 第一步就是 `pnpm run build`(host + client 两面全量 tsc),而它从 DSH 0.2.1 升级起就是红的;本地早前能过是 tsc 增量缓存的假象。四类根因:① vitest 的 matcher 不再收第二个参数(消息挪到 `expect(x, 'msg')` 上);② `noUnusedParameters` 下 17 处未使用的 `command` 形参(改名 `_command`);③ `exactOptionalPropertyTypes` 下全局面还原写不回 `X | undefined`;④ **client bundle purity 门禁(0.2.1 新增)**——`createSnapshotStore` 从 `dsh-client-runtime/client` 取值导入,改从基线外部 `dsh-client-store` 导入。另修补 `tsconfig.client.json` 漏列 `host-bridge.ts`(TS6307)与工作台面板 spec 的 props 桩造型。
-- 🗑️ **撤掉 `v0.128.4` 这个 tag**:推出去之后 CI 才第一次真正跑到 `package:dsh-runtime`,然后红在上面那条,没产出任何 Release。
+### v0.128.6 (2026-10-10)
+- 🔧 **Release 链补上 `apps/desktop/.env.windows` 的 CI 物化**:上游 Electron 打包脚本要求该文件存在(它被 gitignore,因为装签名证书与更新源),发布链因此走到最后一步必失败。现在 `release.yml` 在打包前从 GitHub Secrets 物化它——发布 id 是 secret(每批稳定,重试与升级测试复用同一个),其余项缺省沿用旧 Tauri 配置的值(`com.starhub.app` + `https://github.com`)。缺发布 id 时本步就 fail loud 并说清去哪加。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
