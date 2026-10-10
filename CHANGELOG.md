@@ -11,6 +11,9 @@
 
 ## [0.128.0] - 2026-10-10
 
+### 修复
+- 🐛 **Release 正文提取恒为空——版本标题匹配写成了整行相等**:`release.yml` 用 awk 从 CHANGELOG 提当前版本节当 Release 正文,匹配条件是 `$0 == "## [" sec "]"`,但版本标题长这样:`## [0.128.0] - 2026-10-10`(带日期),永远不等于 `## [0.128.0]`。而选 SECTION 的 grep 用的是前缀正则(`^## \[$VER\]`)——两边不一致,于是每个版本都选中了 SECTION,又什么都提取不到,`RELEASE_NOTES.md` 恒为空,只留一句 warning,Release 看着成功、点开没正文。改成前缀正则 `$0 ~ "^## \\[" sec "\\]"`;同时把「提取为空」从 warning 升成 `error` + `exit 1`——空 notes 的发布比发布失败更难发现。用 Git 自带的 awk.exe 跑同一份程序实测:修复前提取 0 行,修复后 41 行;`sec=未发布` 提取 0 行并按新逻辑正确走失败分支(发版后 [未发布] 已空)。
+
 ### 变更
 - 🗑️ **删除 `vendor/obscura` 子模块(用户拍板「整体删除」)**:obscura 无头浏览器引擎(V8 + 原生渲染)是 AI 浏览器 `browser.engine=obscura` 后端的载体,AI 浏览器已在 M4 整体删除,仓库里再没有任何代码引用它——`sidecar-rust` 无 obscura 依赖、`vendor/deepseek-harness` 无引用、CI / 发布链无引用。随子模块一起清掉 `.gitmodules`(它是最后一个子模块,文件本身也删)与 `.git/config` 里的残留 section。删掉之后每次 clone 与 CI 的 `submodules: recursive` 少拉 **707MB / 2616 个文件**。`docs/踩坑记录.md` §52 与 `docs/已知坑索引.md` 第 52 条作为历史记录保留(记的是当年的修复,不是当前状态)。
 - 🐛 **修掉根 lock 与 package.json 长期不同步——`npm ci` 在 CI 与发布链的第一行就红**(去 Tauri 化 M4 收尾):根 `package.json` 的 14 个 runtime 依赖 + `jsdom`/`vite`/`vitest` 三个 dev 依赖是 **React 工作台还长在仓库根时的死重**——工作台搬进 `vendor/deepseek-harness/apps/starhub-window` 之后,`build:window` 走的是 vendor 自己的 pnpm workspace,根 `scripts/` 与 `tests/` 只 import node 内置模块加 `typescript`(单测现编译 vendored TS 用),一个都没引用过它们。死重没人清,`package-lock.json` 从 v0.96.5 起就没重新生成过,于是 `@codemirror/state@6.6.0 does not satisfy ^6.7.1`——`npm ci` 直接 EUSAGE 退出,`ci.yml` 与 `release.yml` 的第一行「Install frontend dependencies」就红,后面九步全跑不到。处理:① 根 `package.json` 清空 `dependencies`、`devDependencies` 只留 `typescript`,删掉同样已失效的 `test` / `test:watch` 脚本(vitest 在仓库根既没有 config 也没有 `src/`,真跑起来会把 `vendor/` 一起 glob 进来);② 删 `tests/linkage.test.ts`——它 mock `@tauri-apps/api`、import 早已不存在的 `@/services/linkage`(vendor 树里也没有对应 spec,纯死文件);③ 删根 `pnpm-lock.yaml`(v0.72.2 Vue 时代的遗留,仓库根是 npm,没有任何东西用它);④ 重新生成 `package-lock.json`,3731 行 → 29 行。验证:`npm ci` 通过、16 个根测试套件 198 例全绿。
