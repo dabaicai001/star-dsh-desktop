@@ -9,6 +9,11 @@
 
 ---
 
+## [0.133.1] - 2026-10-10
+
+### 修复
+- 🐛 **「在浏览器中打开」没有反应**:v0.133.0 只走前端 `window.open`,依赖上游壳的 `setWindowOpenHandler` → `shell.openExternal` 这一环(且新代码漏了 `tauriInvoke` 的 import,异常被静默吞掉)。现在改为**宿主 sidecar 直接唤起系统浏览器**:新增 `ui.open_external_url`(Windows `rundll32 url.dll,FileProtocolHandler` / macOS `open` / Linux `xdg-open`,参数向量直达进程不经 shell),前端 `window.open` 仅作回落(旧宿主 / 浏览器预览)。只受理绝对 http/https、拒空白与控制字符、长度上限 2048。
+
 ## [0.133.0] - 2026-10-10
 
 ### 新增

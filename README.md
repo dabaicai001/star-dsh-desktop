@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.133.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.133.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,10 +45,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.133.0 (2026-10-10)
-- ✨ ✨ **工具面板资产行右键「在浏览器中打开」**:把该资产的独立工作台页(`/starhub-react/index.html?asset=…`)交给**系统默认浏览器**开成独立窗口,方便拖到第二块屏或与主壳并排(壳的 `window.open` 处理器把 http/https 转 `shell.openExternal`)。同一个 URL 在壳内仍是面板页,两者共用一套宿主桥。
-- 🔧 🎨 **侧栏入口更名「StarHub 工具」并换品牌图标**:侧栏里「工具」与「插件」「自动化任务」并列时分不清是谁的工具;图标从通用数据库字形换成 StarHub 品牌标记(四角星 + 中心节点,与插件页 `icon.svg` 同源,线条规格与 dsh 图标一致)。
-- 📝 📝 **记录「dsh 内置浏览器打开 StarHub 页面白页」的原因**:壳的 webview guest 会话被策略禁止请求宿主源(同端口 + `127.0.0.1`/`localhost` 一律 cancel),所以 `http://127.0.0.1:19387/...` 在内置浏览器里必然白页——要用浏览器看就用系统浏览器打开。
+### v0.133.1 (2026-10-10)
+- 🐛 🐛 **「在浏览器中打开」没有反应**:v0.133.0 只走前端 `window.open`,依赖上游壳的 `setWindowOpenHandler` → `shell.openExternal` 这一环(且新代码漏了 `tauriInvoke` 的 import,异常被静默吞掉)。现在改为**宿主 sidecar 直接唤起系统浏览器**:新增 `ui.open_external_url`(Windows `rundll32 url.dll,FileProtocolHandler` / macOS `open` / Linux `xdg-open`,参数向量直达进程不经 shell),前端 `window.open` 仅作回落(旧宿主 / 浏览器预览)。只受理绝对 http/https、拒空白与控制字符、长度上限 2048。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
