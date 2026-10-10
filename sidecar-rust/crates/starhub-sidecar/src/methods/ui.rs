@@ -14,7 +14,7 @@
 
 use serde_json::{json, Value};
 
-use crate::assets::{AssetRecord, AssetStore};
+use crate::assets::AssetStore;
 use crate::jsonrpc::RpcError;
 
 /// 资产类型白名单(与 Tauri `assets` 表 CHECK 一致;Excel 已删)。
@@ -75,13 +75,27 @@ fn check_asset_type(asset_type: &str) -> Result<(), RpcError> {
     )))
 }
 
-/// `ui.get_assets`:全量资产(snake_case,与工作台 `RustAsset` 对齐;不含密钥)。
+/// `ui.get_assets`:全量资产(snake_case,与工作台 `RustAsset` 对齐)。
+///
+/// `config` 是**合并密钥后**的配置,与 Tauri 版 `get_assets` 经 keyring hydrate
+/// 同语义:工作台的 SSH 终端与数据库面板直接从 `asset.config` 取密码建连
+/// (`buildSshAuth(asset.config)`),清单不合并就等于发空密码——服务端回
+/// `[AUTH_FAILED] Authentication rejected and no further methods available`
+/// (2026-10-10 实测)。模型面的 `starhub_list_assets` 文本摘要仍只取非敏感字段。
 pub fn get_assets(store: &AssetStore, _params: &Value) -> Result<Value, RpcError> {
     let records = store.list().map_err(RpcError::internal)?;
-    Ok(json!(records
+    let items = records
         .iter()
-        .map(AssetRecord::to_ui_json)
-        .collect::<Vec<_>>()))
+        .map(|record| {
+            let mut value = record.to_ui_json();
+            // 密钥缺失/存储损坏时退回未合并的配置:清单照常打得开,认证失败在执行点报。
+            if let Ok((_asset_type, merged)) = store.load_asset_config(&record.id) {
+                value["config"] = merged;
+            }
+            value
+        })
+        .collect::<Vec<_>>();
+    Ok(json!(items))
 }
 
 /// `ui.create_asset` / `ui.update_asset`:新建或更新资产。
@@ -187,7 +201,7 @@ mod tests {
         assert_eq!(created["favorite"], true);
         assert_eq!(created["tags"], json!(["prod", "prod"]));
         assert!(created["created_at"].as_i64().unwrap() > 0);
-        // 敏感字段被拆走:返回与列表都不带 password
+        // 敏感字段被拆到密钥存储:创建响应里不带 password
         assert!(created["config"].get("password").is_none());
         let listed = get_assets(&store, &json!({})).expect("list");
         let items = listed.as_array().expect("array");
@@ -195,8 +209,8 @@ mod tests {
         assert!(serde_json::to_string(&items[0])
             .unwrap()
             .contains("group_id"));
-        assert!(!serde_json::to_string(&items[0]).unwrap().contains("s3cret"));
-        // 合并密钥后仍拿得到密码(连接面用)
+        // 清单合并密钥(Tauri 版 get_assets 同语义):工作台正是从 asset.config 取密码建连
+        assert_eq!(items[0]["config"]["password"], "s3cret");
         let (_type, merged) = store.load_asset_config("a1").expect("load");
         assert_eq!(merged["password"], "s3cret");
         let _ = std::fs::remove_dir_all(&dir);

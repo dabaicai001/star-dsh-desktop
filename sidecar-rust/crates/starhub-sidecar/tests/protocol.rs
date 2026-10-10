@@ -982,7 +982,12 @@ fn ui_asset_crud_roundtrips_through_the_real_binary() {
     let items = value["result"].as_array().expect("array");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["name"], "验收机");
-    assert!(!listed.contains("s3cret"), "清单不得带密钥");
+    // 清单合并密钥(Tauri 版 get_assets 同语义):工作台从 asset.config 取密码建连,
+    // 不合并就等于发空密码 → 服务端 [AUTH_FAILED] Authentication rejected。
+    assert_eq!(
+        items[0]["config"]["password"], "s3cret",
+        "清单必须带密钥(Tauri 版 hydrate 语义)"
+    );
 
     let updated = sidecar.roundtrip(r#"{"jsonrpc":"2.0","id":"u-3","method":"ui.update_asset","params":{"id":"a1","type":"ssh","name":"新名","config":{"host":"10.0.0.2"}}}"#);
     let value: serde_json::Value = serde_json::from_str(&updated).expect("response parses");
