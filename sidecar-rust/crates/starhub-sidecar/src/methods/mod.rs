@@ -5,7 +5,7 @@
 //! contract constant from `starhub-contract`), while `starhub/capabilities`
 //! reports the live registry inventory for bridge diagnostics.
 //!
-//! Domain modules (ssh/sftp, then db/redis/es/docker; android/desktop next)
+//! Domain modules (ssh/sftp, then db/redis/es/docker; android next)
 //! register through the runtime shim: their handlers are async, the
 //! registry surface stays synchronous, so [`registry_with_domains`] wraps each
 //! handler in `Runtime::block_on`. The stdio loop processes one request at a
@@ -19,14 +19,12 @@ use tokio::runtime::Runtime;
 
 use crate::android_runtime::AndroidRuntime;
 use crate::db_runtime::DbRuntime;
-use crate::desktop_runtime::DesktopRuntime;
 use crate::jsonrpc::RpcError;
 use crate::registry::{MethodRegistry, SIDECAR_PROTOCOL_VERSION};
 use crate::runtime::SshRuntime;
 
 pub mod android;
 pub mod db;
-pub mod desktop;
 pub mod ssh;
 pub mod ui;
 pub mod ui_db;
@@ -106,8 +104,8 @@ macro_rules! register_async_all {
 /// Build the registry with the built-ins plus every registered domain method.
 ///
 /// `runtime` drives the async domain handlers; `ssh` owns the SSH/SFTP session
-/// state, `db` the Go sidecar client, `desktop` the sandbox-desktop state and
-/// `android` the device state. The browser domain is gone entirely (M4: upstream
+/// state, `db` the Go sidecar client and `android` the device state. The browser
+/// domain is gone entirely (M4: upstream
 /// dsh provides browser-use natively, so StarHub no longer ships `browser_*`
 /// tools or its engine/settings surface).
 ///
@@ -122,7 +120,6 @@ pub fn registry_with_domains(
     runtime: Arc<Runtime>,
     ssh: Arc<SshRuntime>,
     db: Arc<DbRuntime>,
-    desktop: Arc<DesktopRuntime>,
     android: Arc<AndroidRuntime>,
     sink: Arc<dyn starhub_domain_ssh::events::EventSink>,
     bridge_state: Arc<crate::bridge::BridgeState>,
@@ -295,9 +292,8 @@ pub fn registry_with_domains(
             });
         }
 
-        // UI 面 D 组第二批(Android 设备设置 + 沙箱桌面 UI):存储/管理器多已在
-        // sidecar,这里只补 ui.* 包装。`android_ui_open_live` 在 M3 真开通道;
-        // `desktop_ui_open_live_window` 是终态降级(帧源去掉,归 dsh 原生)。
+        // UI 面 D 组第二批(Android 设备设置):存储/管理器多已在 sidecar,这里
+        // 只补 ui.* 包装。`android_ui_open_live` 在 M3 真开通道。
         // 每条注册一个块:块作用域即闭包捕获的边界,变量名可重复。
         {
             let android = Arc::clone(&android);
@@ -327,60 +323,6 @@ pub fn registry_with_domains(
             let runtime = Arc::clone(&runtime);
             registry.register("ui.android_ui_open_live", move |params| {
                 runtime.block_on(crate::methods::ui_devices::android_open_live(&live, params))
-            });
-        }
-        {
-            let desktop = Arc::clone(&desktop);
-            registry.register("ui.desktop_ui_overview", move |_params| {
-                crate::methods::ui_devices::desktop_overview(&desktop)
-            });
-        }
-        {
-            let desktop = Arc::clone(&desktop);
-            registry.register("ui.desktop_ui_set_platform", move |params| {
-                crate::methods::ui_devices::desktop_set_platform(&desktop, params)
-            });
-        }
-        {
-            let desktop = Arc::clone(&desktop);
-            registry.register("ui.desktop_ui_upsert_template", move |params| {
-                crate::methods::ui_devices::desktop_upsert_template(&desktop, params)
-            });
-        }
-        {
-            let desktop = Arc::clone(&desktop);
-            registry.register("ui.desktop_ui_delete_template", move |params| {
-                crate::methods::ui_devices::desktop_delete_template(&desktop, params)
-            });
-        }
-        {
-            let desktop = Arc::clone(&desktop);
-            registry.register("ui.desktop_ui_replay_frames", move |params| {
-                crate::methods::ui_devices::desktop_replay_frames(&desktop, params)
-            });
-        }
-        {
-            let desktop = Arc::clone(&desktop);
-            let runtime = Arc::clone(&runtime);
-            registry.register("ui.desktop_ui_lifecycle", move |params| {
-                runtime.block_on(crate::methods::ui_devices::desktop_lifecycle(
-                    &desktop, params,
-                ))
-            });
-        }
-        {
-            let desktop = Arc::clone(&desktop);
-            registry.register("ui.desktop_ui_open_live_window", move |params| {
-                crate::methods::ui_devices::desktop_open_live_window(&desktop, params)
-            });
-        }
-        {
-            let desktop = Arc::clone(&desktop);
-            let runtime = Arc::clone(&runtime);
-            registry.register("ui.desktop_user_action_reply", move |params| {
-                runtime.block_on(crate::methods::ui_devices::desktop_user_action_reply(
-                    &desktop, params,
-                ))
             });
         }
 
@@ -423,8 +365,7 @@ pub fn registry_with_domains(
 
         // UI 面 M3:直播/接管面板的通道管理。帧与输入走 WS(见 starhub-live),
         // 这里只开关通道与发令牌。M3 定稿只有一个帧源(Android 真机):
-        // `android_ui_open_live` 真开通道,`desktop_ui_open_live_window` 是终态
-        // 降级(上游 dsh 原生 computer-use 承接)。
+        // `android_ui_open_live` 真开通道。
         {
             let live = Arc::clone(&live_state);
             let runtime = Arc::clone(&runtime);
@@ -620,162 +561,6 @@ pub fn registry_with_domains(
             db,
             "docker_exec",
             crate::methods::db::docker_exec_method
-        );
-
-        // Desktop 域:22 个方法,方法名 = 工具名
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_list_templates",
-            crate::methods::desktop::list_templates_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_build_template",
-            crate::methods::desktop::build_template_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_create_sandbox",
-            crate::methods::desktop::create_sandbox_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_sandbox_status",
-            crate::methods::desktop::sandbox_status_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_pause_sandbox",
-            crate::methods::desktop::pause_sandbox_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_resume_sandbox",
-            crate::methods::desktop::resume_sandbox_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_destroy_sandbox",
-            crate::methods::desktop::destroy_sandbox_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_commit_sandbox",
-            crate::methods::desktop::commit_sandbox_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_sandbox_replay",
-            crate::methods::desktop::sandbox_replay_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_screenshot",
-            crate::methods::desktop::screenshot_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_list_windows",
-            crate::methods::desktop::list_windows_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_get_foreground_window",
-            crate::methods::desktop::get_foreground_window_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_focus_window",
-            crate::methods::desktop::focus_window_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_click",
-            crate::methods::desktop::click_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_double_click",
-            crate::methods::desktop::double_click_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_move_mouse",
-            crate::methods::desktop::move_mouse_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_scroll",
-            crate::methods::desktop::scroll_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_drag",
-            crate::methods::desktop::drag_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_type",
-            crate::methods::desktop::type_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_press_key",
-            crate::methods::desktop::press_key_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_exec",
-            crate::methods::desktop::exec_method
-        );
-        register_async!(
-            &mut registry,
-            runtime,
-            desktop,
-            "desktop_request_user_action",
-            crate::methods::desktop::request_user_action_method
         );
 
         // Android 域:20 个方法,方法名 = 工具名

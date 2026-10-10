@@ -1,8 +1,8 @@
 //! Android 管理器:任务级授权 + adb 路径缓存(从 `src-tauri/src/android/mod.rs`
 //! 平移,零改动;直播注册表留在宿主——那是窗口面)。
 //!
-//! 授权语义与沙箱桌面同档:`android_connect` 建立 session → serial 授权
-//! (60 分钟),执行点强制存在性 / 过期 / serial 匹配。
+//! 授权语义:任务级——`android_connect` 建立 session → serial 授权(60 分钟),
+//! 执行点强制存在性 / 过期 / serial 匹配。
 
 use std::collections::HashMap;
 
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 pub const ADB_PATH_SETTING_KEY: &str = "android.adb_path";
 /// 环境变量:adb 二进制路径(设置项的兜底)。
 pub const ADB_PATH_ENV_KEY: &str = "STARHUB_ADB_PATH";
-/// 任务授权时长(秒),与沙箱桌面同档。
+/// 任务授权时长(秒)。
 pub const AUTHZ_TTL_SECS: i64 = 60 * 60;
 
 /// 授权条目:android_connect 建立,到期/断开即失效。

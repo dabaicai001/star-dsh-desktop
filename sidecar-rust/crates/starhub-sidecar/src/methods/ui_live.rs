@@ -53,7 +53,7 @@ fn channel_info_json(info: &ChannelInfo) -> Value {
 
 /// `ui.live_open`:打开一台设备的直播通道。
 ///
-/// M3 定稿只有 Android 一个帧源:browser 与沙箱桌面的直播/接管线**不做**——
+/// M3 定稿只有 Android 一个帧源:其它帧源(browser 等)的直播/接管线**不做**——
 /// 上游 dsh 原生提供 browser-use / computer-use 及其可见面,StarHub 重复造一份
 /// 只会双轨维护。因此这里只接受 `kind: "android"`(缺省亦然),其它 kind 是明确
 /// 的参数错误而不是静默降级。
@@ -64,7 +64,7 @@ pub async fn live_open(live: &LiveRuntime, params: &Value) -> Result<Value, RpcE
         .unwrap_or(KIND_ANDROID);
     if kind != KIND_ANDROID {
         return Err(RpcError::invalid_params(format!(
-            "不支持的直播通道类型: {kind}(M3 定稿仅 android;browser 与沙箱桌面的直播/接管由 dsh 原生能力承接)"
+            "不支持的直播通道类型: {kind}(M3 定稿仅 android;其它帧源的直播/接管由 dsh 原生能力承接)"
         )));
     }
     let serial = required_str(params, "serial")?;
@@ -157,7 +157,7 @@ mod tests {
     /// 测试用运行时:不起 WS server,只验方法面的参数校验与状态转换。
     fn test_runtime() -> LiveRuntime {
         LiveRuntime::without_server(
-            Arc::new(crate::desktop_runtime::FileSettingsStore::new(
+            Arc::new(crate::settings_store::FileSettingsStore::new(
                 std::env::temp_dir().join(format!("starhub-ui-live-{}", std::process::id())),
             )),
             Arc::new(starhub_domain_android::AndroidManager::new()),
@@ -203,8 +203,8 @@ mod tests {
     #[tokio::test]
     async fn live_open_rejects_unknown_kinds() {
         let live = test_runtime();
-        // browser / desktop 帧源已去掉(dsh 原生承接):明确参数错误,不静默降级
-        for kind in ["browser", "desktop"] {
+        // browser / vnc 帧源不做(dsh 原生承接):明确参数错误,不静默降级
+        for kind in ["browser", "vnc"] {
             let err = live_open(&live, &json!({ "kind": kind, "serial": "x" }))
                 .await
                 .unwrap_err();

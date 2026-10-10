@@ -29,7 +29,7 @@ use crate::runtime::SshRuntime;
 /// 生成 AI 起源领域事件的工具方法前缀(契约 §1/M4:域工具才有 AI 动作语义;
 /// 全局工具 list_capabilities / list_assets 与 UI/桥方法不产生事件)。
 const TOOL_METHOD_PREFIXES: &[&str] = &[
-    "ssh_", "sftp_", "db_", "redis_", "es_", "docker_", "desktop_", "android_", "browser_",
+    "ssh_", "sftp_", "db_", "redis_", "es_", "docker_", "android_", "browser_",
 ];
 
 /// 是否域工具方法(决定成功后是否回写 AI 起源领域事件)。
@@ -296,7 +296,6 @@ mod tests {
         assert!(is_tool_method("redis_exec"));
         assert!(is_tool_method("es_search"));
         assert!(is_tool_method("docker_logs"));
-        assert!(is_tool_method("desktop_exec"));
         assert!(is_tool_method("android_tap"));
         assert!(is_tool_method("browser_open"));
         // 全局 / UI / 桥方法不产生 AI 起源事件

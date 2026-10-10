@@ -1,9 +1,8 @@
 //! StarHub Android-device domain, extracted from the retired Tauri shell.
 //!
 //! 设计:`docs/superpowers/specs/2026-08-30-android-device-design.md`。
-//! 与沙箱桌面(desktop)并列、互不影响:那里是一次性 Ubuntu 容器,这里是
-//! 用户真实的 Android 手机——误操作是真实后果,因此:
-//! - `android_connect` 的一次确认 = 任务级授权(60 分钟,对齐沙箱模型),
+//! 本域只服务用户真实的 Android 手机——误操作是真实后果,因此:
+//! - `android_connect` 的一次确认 = 任务级授权(60 分钟),
 //!   授权只覆盖选定 serial;授权存在性/过期/serial 匹配由本 crate 在执行点强制;
 //! - 直播窗口内「接管」开启期间 AI 写操作一律拒绝(不撤销授权);
 //! - 每次写操作前自动截屏留档(回放帧),支持回放;

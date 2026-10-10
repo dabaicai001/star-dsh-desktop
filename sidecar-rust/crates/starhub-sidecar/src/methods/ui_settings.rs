@@ -164,7 +164,7 @@ mod tests {
         let ui = UiRuntime::new(
             AuditStore::new(dir.join("audit.json")),
             AlertStore::new(dir.join("alerts.json")),
-            crate::desktop_runtime::FileSettingsStore::new(dir.join("settings.json")),
+            crate::settings_store::FileSettingsStore::new(dir.join("settings.json")),
         );
         (ui, dir)
     }

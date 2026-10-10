@@ -16,9 +16,8 @@
 //! | [`bridge`] | non-tool bridge methods (open/focus, live.snapshot) + AI-origin domain events |
 //! | [`runtime`] | SSH/SFTP session lifecycle shared by the `ssh_*` / `sftp_*` methods |
 //! | [`db_runtime`] | Go sidecar client shared by the `db_*` / `es_*` / `docker_*` methods |
-//! | [`desktop_runtime`] | sandbox-desktop state shared by the 22 `desktop_*` methods |
 //! | [`android_runtime`] | Android-device state shared by the 20 `android_*` methods |
-//! | [`desktop_store`] | JSON-file implementation of the sandbox `InstanceStore` seam |
+//! | [`settings_store`] | file-backed settings shared by the Android domain and the UI plane |
 //! | [`assets`] | asset store (JSON file + secret-store seam) |
 //! | [`bindings`] | session → asset bindings (subagent parent chain) |
 //! | [`session_registry`] | assetId → session attachment view (`registry.sync`) |
@@ -34,8 +33,6 @@ pub mod audit_store;
 pub mod bindings;
 pub mod bridge;
 pub mod db_runtime;
-pub mod desktop_runtime;
-pub mod desktop_store;
 pub mod jsonrpc;
 pub mod known_hosts_store;
 pub mod live_runtime;
@@ -43,4 +40,5 @@ pub mod methods;
 pub mod registry;
 pub mod runtime;
 pub mod session_registry;
+pub mod settings_store;
 pub mod ui_runtime;

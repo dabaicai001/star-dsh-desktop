@@ -190,7 +190,7 @@ async fn record_frame(android: &Android<'_>, adb: &str, serial: &str, action: &s
 /// 直播接管中(AI 写操作互斥;不撤销授权)。
 ///
 /// 宿主注入的判定:Tauri 查 live 注册表;sidecar 侧由直播面板的接管状态经
-/// 桥命令下发(与 desktop 同姿势)。
+/// 桥命令下发。
 async fn guard_takeover(android: &Android<'_>, serial: &str) -> Result<(), String> {
     if android.is_takeover(serial) {
         return Err("用户正在直播窗口中接管设备操作,请稍后重试(接管不撤销授权)".to_string());

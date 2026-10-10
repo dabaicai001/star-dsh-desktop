@@ -4,16 +4,16 @@
 //! 平级:审计日志与告警规则都是低频小数据,JSON 文件承载(不值得引入 SQLite),
 //! 字段与语义以 Tauri 版 SQLite 表为契约。
 //!
-//! `settings` 与 desktop / android 两个域的 `FileSettingsStore` 指向**同一个
-//! 文件**:该实现无内存缓存(每次读全部 / 写穿透),多实例共存是安全的;UI 面的
-//! 浏览器引擎 / Jev 配置也走这一份。
+//! `settings` 与 Android 域的 `FileSettingsStore` 指向**同一个文件**:该实现
+//! 无内存缓存(每次读全部 / 写穿透),多实例共存是安全的;UI 面的浏览器引擎 /
+//! Jev 配置也走这一份。
 //!
-//! D 组其余部分(android 配置 / 沙箱平台)随下一批接入,届时往本结构加字段即可,
-//! 主循环的装配点不变。
+//! D 组其余部分(android 配置)随下一批接入,届时往本结构加字段即可,主循环的
+//! 装配点不变。
 
 use crate::alert_store::AlertStore;
 use crate::audit_store::AuditStore;
-use crate::desktop_runtime::FileSettingsStore;
+use crate::settings_store::FileSettingsStore;
 
 /// UI 面 D 组状态(设置 + 审计 + 告警)。
 pub struct UiRuntime {
@@ -51,7 +51,7 @@ impl UiRuntime {
         &self.alerts
     }
 
-    /// 设置存储(浏览器引擎 / Jev 配置;与 desktop / android 域同一份文件)。
+    /// 设置存储(浏览器引擎 / Jev 配置;与 Android 域同一份文件)。
     pub fn settings(&self) -> &FileSettingsStore {
         &self.settings
     }

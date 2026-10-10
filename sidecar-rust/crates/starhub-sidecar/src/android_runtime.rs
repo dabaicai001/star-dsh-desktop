@@ -5,7 +5,7 @@
 //! | seam | sidecar 实现 |
 //! |---|---|
 //! | `Adb` | `LocalAdb`(本机 spawn adb——adb 是宿主机工具,与 sidecar 同机) |
-//! | `SettingsStore` | `FileSettingsStore`(与 desktop 域共用 settings.json) |
+//! | `SettingsStore` | `FileSettingsStore`(`starhub-settings.json`,UI 面与 adb 路径共用) |
 //! | `CacheDir` | `STARHUB_CACHE_DIR` / `<cwd>/starhub-cache` |
 //! | `FrameStore` | [`FileFrameStore`](crate::methods::android::FileFrameStore) |
 //! | `LiveLauncher` | [`HubLiveLauncher`](crate::methods::android::HubLiveLauncher)(M3:帧通道) |
@@ -24,8 +24,8 @@ use starhub_live::{FrameHub, HubTakeoverState};
 
 use crate::assets::AssetStore;
 use crate::bindings::SessionBindings;
-use crate::desktop_runtime::FileSettingsStore;
 use crate::methods::android::{EnvCacheDir, FileFrameStore, HubLiveLauncher};
+use crate::settings_store::FileSettingsStore;
 
 /// Android 域运行时(20 个 `android_*` 方法共享)。
 pub struct AndroidRuntime {
@@ -107,7 +107,7 @@ impl AndroidRuntime {
         &self.adb
     }
 
-    /// 设置存储(UI 面 adb 路径读写;与 desktop 域共用同一份文件)。
+    /// 设置存储(UI 面 adb 路径读写,与直播泵共享同一份文件)。
     pub fn settings(&self) -> &FileSettingsStore {
         &self.settings
     }
@@ -132,7 +132,7 @@ impl AndroidRuntime {
     }
 }
 
-/// 空设置存储(`with_paths` 的测试装配用;真实装配走 `FileSettingsStore`)。
+/// 空设置存储(`with_paths` 的测试装配用;真实装配走 [`FileSettingsStore`])。
 struct NullSettings;
 
 impl starhub_domain_android::SettingsStore for NullSettings {

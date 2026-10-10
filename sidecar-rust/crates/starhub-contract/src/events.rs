@@ -104,8 +104,6 @@ pub fn kind_for_tool(tool: &str) -> &'static str {
         // db 查询类(db_query / redis_exec / es_* 查询)
         "db_query" | "redis_exec" => "db.query_executed",
         other if other.starts_with("es_") => "db.query_executed",
-        // 沙箱桌面动作类
-        other if other.starts_with("desktop_") => "desktop.action",
         // Android 实体机动作类
         other if other.starts_with("android_") => "android.action",
         _ => "tool.executed",
@@ -159,28 +157,6 @@ fn tool_summary(tool: &str, args: &serde_json::Value) -> String {
                 format!("{other} 执行成功")
             } else {
                 format!("{other}: {index}")
-            }
-        }
-        // 沙箱桌面:desktop_type 只记输入长度(凭据防御),exec 记命令全文(箱内执行),
-        // 点击/拖拽记坐标,其余记模板/沙箱定位信息。
-        "desktop_type" => {
-            let len = get("text").chars().count();
-            format!("desktop_type: 输入 {len} 字符")
-        }
-        "desktop_exec" => format!("desktop_exec: {}", get("command")),
-        "desktop_click" | "desktop_double_click" | "desktop_move_mouse" => {
-            format!("{tool}: ({},{})", get("x"), get("y"))
-        }
-        "desktop_press_key" => format!("desktop_press_key: {}", get("key")),
-        "desktop_create_sandbox" => {
-            format!("desktop_create_sandbox: 模板 {}", get("template"))
-        }
-        other if other.starts_with("desktop_") => {
-            let sandbox = get("sandboxId");
-            if sandbox.is_empty() {
-                format!("{other} 执行成功")
-            } else {
-                format!("{other}: 沙箱 {sandbox}")
             }
         }
         // Android 实体机:android_type 只记输入长度(凭据防御),exec 记命令全文,

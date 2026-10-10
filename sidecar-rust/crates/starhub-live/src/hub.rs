@@ -9,8 +9,8 @@
 //! - **接管**标志是帧枢纽级(不是源级):域工具的执行点经 `TakeoverState`
 //!   seam 读它,AI 写操作一律拒绝(不撤销授权)。
 //!
-//! **只有一个帧源:Android**(去 Tauri 化 M3 定稿)。browser 与沙箱桌面的直播/
-//! 接管**不做**——上游 dsh 原生提供 browser-use / computer-use 及其可见面,
+//! **只有一个帧源:Android**(去 Tauri 化 M3 定稿)。其它帧源的直播/接管
+//! **不做**——上游 dsh 原生提供 browser-use / computer-use 及其可见面,
 //! StarHub 重复造一份只会带来双轨维护。因此这里只登记 `android` 一种通道类型,
 //! 不为不存在的源预留位置(预留即漂移)。
 //!
@@ -33,7 +33,7 @@ pub const KIND_ANDROID: &str = "android";
 /// 人工输入动作(面板 → 源)。`SetTakeover` 由帧枢纽自行处理,不转发给源。
 #[derive(Debug, Clone)]
 pub enum LiveInput {
-    /// 点击/滑动/按键/文本(Android 与沙箱桌面同形状)。
+    /// 点击/滑动/按键/文本(与直播页的输入形状一致)。
     Gesture(Gesture),
     /// 源自定义动作(browser 的 navigate/click/type …),原样透传。
     Raw(Value),
@@ -494,9 +494,8 @@ mod tests {
     fn channel_id_whitelist() {
         assert!(valid_channel_id("android:emulator-5554"));
         assert!(valid_channel_id("android:192.168.1.5:43217"));
-        // M3 定稿:只有 Android 一个帧源(browser / 沙箱桌面由 dsh 原生承接)
+        // M3 定稿:只有 Android 一个帧源(其它前缀一律非法)
         assert!(!valid_channel_id("browser:page-1"), "browser 帧源已去掉");
-        assert!(!valid_channel_id("desktop:inst-1"), "沙箱桌面帧源已去掉");
         assert!(!valid_channel_id("android"));
         assert!(!valid_channel_id("android:"));
         assert!(!valid_channel_id(":x"));

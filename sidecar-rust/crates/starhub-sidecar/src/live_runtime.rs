@@ -11,7 +11,7 @@
 //! | `live` / `scrcpy` 注册表 | [`FrameHub`] 的通道表 |
 //! | 关窗口停泵 + 回收 scrcpy | 最后一个订阅者离开即关通道(源自行回收) |
 //!
-//! **只有一个帧源:Android 真机。** browser 与沙箱桌面的直播/接管线不做——
+//! **只有一个帧源:Android 真机。** 其它帧源的直播/接管线不做——
 //! 上游 dsh 原生提供 browser-use / computer-use 及其可见面(定稿记录见
 //! `docs/去Tauri化-M3-面板化清单.md`)。
 //!

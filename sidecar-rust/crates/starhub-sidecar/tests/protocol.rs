@@ -538,128 +538,6 @@ fn db_methods_roundtrip_through_the_real_binary() {
         .contains("SELECT 切库不会保留"));
 }
 
-// ---------- Desktop 方法面(M1 第 6 步) ----------
-
-#[test]
-fn capabilities_lists_the_desktop_method_surface() {
-    let mut sidecar = Sidecar::spawn();
-    let response = sidecar
-        .roundtrip(r#"{"jsonrpc":"2.0","id":"cap-desktop","method":"starhub/capabilities"}"#);
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    let methods: Vec<&str> = value["result"]["methods"]
-        .as_array()
-        .expect("methods array")
-        .iter()
-        .map(|m| m.as_str().expect("method name"))
-        .collect();
-    for expected in [
-        "desktop_list_templates",
-        "desktop_build_template",
-        "desktop_create_sandbox",
-        "desktop_sandbox_status",
-        "desktop_pause_sandbox",
-        "desktop_resume_sandbox",
-        "desktop_destroy_sandbox",
-        "desktop_commit_sandbox",
-        "desktop_sandbox_replay",
-        "desktop_screenshot",
-        "desktop_list_windows",
-        "desktop_get_foreground_window",
-        "desktop_focus_window",
-        "desktop_click",
-        "desktop_double_click",
-        "desktop_move_mouse",
-        "desktop_scroll",
-        "desktop_drag",
-        "desktop_type",
-        "desktop_press_key",
-        "desktop_exec",
-        "desktop_request_user_action",
-    ] {
-        assert!(
-            methods.contains(&expected),
-            "missing {expected}: {methods:?}"
-        );
-    }
-}
-
-/// Desktop 方法面 roundtrip(不触 Docker 的分支):模板清单走 JSON 存储,
-/// 空沙箱状态走实例清单——两条都不需要 Go sidecar / Docker daemon。
-#[test]
-fn desktop_methods_roundtrip_through_the_real_binary() {
-    let unique = format!(
-        "starhub-sidecar-desktop-{}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::SeqCst)
-    );
-    let dir = std::env::temp_dir().join(unique);
-    std::fs::create_dir_all(&dir).expect("temp dir");
-    let assets = dir.join("assets.json");
-    std::fs::write(&assets, br#"{"assets":[]}"#).expect("seed assets file");
-    let sandbox = dir.join("sandbox.json");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_starhub-sidecar-rust"));
-    command
-        .env("STARHUB_ASSETS_FILE", &assets)
-        .env("STARHUB_SECRETS_FILE", "")
-        .env("STARHUB_KNOWN_HOSTS_FILE", dir.join("known-hosts.json"))
-        .env("STARHUB_SANDBOX_FILE", &sandbox)
-        .env("STARHUB_SETTINGS_FILE", dir.join("settings.json"))
-        .env("STARHUB_CACHE_DIR", dir.join("cache"))
-        // 域工具调用会写 AI 审计,落临时目录(不污染 cwd)
-        .env("STARHUB_AUDIT_FILE", dir.join("audit.json"))
-        .env("STARHUB_ALERTS_FILE", dir.join("alerts.json"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = command.spawn().expect("sidecar binary spawns");
-
-    fn roundtrip(child: &mut Child, request: &str) -> String {
-        let stdin = child.stdin.as_mut().expect("stdin piped");
-        stdin.write_all(request.as_bytes()).expect("write request");
-        stdin.write_all(b"\n").expect("write newline");
-        stdin.flush().expect("flush request");
-        read_response(child)
-    }
-
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"d-1","method":"desktop_list_templates","params":{}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(value["error"].is_null(), "{response}");
-    let text = value["result"]["text"].as_str().unwrap();
-    assert!(text.contains("模板名 | 镜像状态 | 创建时间"), "{text}");
-    assert!(text.contains("ubuntu-desktop | 未构建"), "{text}");
-
-    // 模板已播种落盘(持久化:重启后仍在)
-    let persisted = std::fs::read_to_string(&sandbox).expect("sandbox file written");
-    assert!(persisted.contains("ubuntu-desktop"), "{persisted}");
-
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"d-2","method":"desktop_sandbox_status","params":{}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(value["error"].is_null(), "{response}");
-    assert_eq!(value["result"]["text"], "当前没有运行中的沙箱实例");
-
-    // 未授权写操作:硬错误(不触 Docker)
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"d-3","method":"desktop_screenshot","params":{"sandboxId":"ghost"}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(value["error"]["code"], -32603);
-    assert!(value["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("没有沙箱授权"));
-
-    drop(child.stdin.take());
-    let _ = child.wait();
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
 #[test]
 fn capabilities_lists_the_android_method_surface() {
     let mut sidecar = Sidecar::spawn();
@@ -760,19 +638,11 @@ fn capabilities_lists_the_android_method_surface() {
         "ui.alert_delete",
         "ui.alert_list",
         "ui.alert_test_webhook",
-        // D 组第二批:Android 设备设置 + 沙箱桌面 UI
+        // D 组第二批:Android 设备设置 + 直播入口
         "ui.android_ui_get_config",
         "ui.android_ui_set_adb_path",
         "ui.android_ui_list_devices",
         "ui.android_ui_open_live",
-        "ui.desktop_ui_overview",
-        "ui.desktop_ui_set_platform",
-        "ui.desktop_ui_upsert_template",
-        "ui.desktop_ui_delete_template",
-        "ui.desktop_ui_replay_frames",
-        "ui.desktop_ui_lifecycle",
-        "ui.desktop_ui_open_live_window",
-        "ui.desktop_user_action_reply",
         // AI 模型密钥(按 id 寻址)+ 归 Electron 壳的宿主持有能力
         "ui.get_ai_model_api_key",
         "ui.set_ai_model_api_key",
@@ -797,14 +667,14 @@ fn capabilities_lists_the_android_method_surface() {
         methods.contains(&"starhub/live.endpoint"),
         "missing starhub/live.endpoint: {methods:?}"
     );
-    // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 22(desktop)+ 20(android)
+    // 方法面总数:12(ssh/sftp + 全局)+ 15(db)+ 20(android)
     // + 5 桥命令 + 4 UI 面(资产 CRUD)+ 30 UI 面 B 组(交互会话)
     // + 86 UI 面 C 组(数据面连接)+ 8 UI 面 D 组(审计/告警)
-    // + 12 UI 面 D 组(Android/沙箱)+ 7 UI 面(密钥/宿主)
-    // + 5 UI 面 M3(直播通道)+ 1 桥命令(live.endpoint)= 226
+    // + 4 UI 面 D 组(Android)+ 7 UI 面(密钥/宿主)
+    // + 5 UI 面 M3(直播通道)+ 1 桥命令(live.endpoint)= 196
     // M4 定稿:AI 浏览器整体删除(16 个 browser_* 工具 + 4 个 ui.browser_* 设置),
     // 上游 dsh 原生提供 browser-use。
-    assert_eq!(methods.len(), 226, "方法面总数: {methods:?}");
+    assert_eq!(methods.len(), 196, "方法面总数: {methods:?}");
 }
 
 /// Android 方法面 roundtrip(不触设备的分支):未授权写操作硬错误;
@@ -825,7 +695,6 @@ fn android_methods_roundtrip_through_the_real_binary() {
         .env("STARHUB_ASSETS_FILE", &assets)
         .env("STARHUB_SECRETS_FILE", "")
         .env("STARHUB_KNOWN_HOSTS_FILE", dir.join("known-hosts.json"))
-        .env("STARHUB_SANDBOX_FILE", dir.join("sandbox.json"))
         .env("STARHUB_SETTINGS_FILE", dir.join("settings.json"))
         .env("STARHUB_CACHE_DIR", dir.join("cache"))
         .env(
@@ -1553,8 +1422,8 @@ fn ui_settings_methods_roundtrip_through_the_real_binary() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// UI 面 D 组第二批(Android 设备设置 + 沙箱桌面 UI)真二进制 roundtrip:
-/// 模板 upsert/delete、平台资产校验、回放帧包装、人工介入幂等、直播降级。
+/// UI 面 D 组第二批(Android 设备设置 + 直播入口)真二进制 roundtrip:
+/// adb 路径校验、直播通道开启、一次性令牌补发。
 #[test]
 fn ui_devices_methods_roundtrip_through_the_real_binary() {
     let unique = format!(
@@ -1565,17 +1434,12 @@ fn ui_devices_methods_roundtrip_through_the_real_binary() {
     let dir = std::env::temp_dir().join(unique);
     std::fs::create_dir_all(&dir).expect("temp dir");
     let assets = dir.join("assets.json");
-    std::fs::write(
-        &assets,
-        r#"{"assets":[{"id":"docker-1","type":"docker","name":"本机 Docker","config":{"dockerTransport":"socket"}},{"id":"ssh-1","type":"ssh","name":"ssh","config":{"host":"10.0.0.7","username":"root"}}]}"#,
-    )
-    .expect("seed assets file");
+    std::fs::write(&assets, br#"{"assets":[]}"#).expect("seed assets file");
     let mut command = Command::new(env!("CARGO_BIN_EXE_starhub-sidecar-rust"));
     command
         .env("STARHUB_ASSETS_FILE", &assets)
         .env("STARHUB_SECRETS_FILE", "")
         .env("STARHUB_KNOWN_HOSTS_FILE", dir.join("known-hosts.json"))
-        .env("STARHUB_SANDBOX_FILE", dir.join("sandbox.json"))
         .env("STARHUB_SETTINGS_FILE", dir.join("settings.json"))
         .env("STARHUB_CACHE_DIR", dir.join("cache"))
         .env("STARHUB_AUDIT_FILE", dir.join("audit.json"))
@@ -1597,96 +1461,6 @@ fn ui_devices_methods_roundtrip_through_the_real_binary() {
         stdin.flush().expect("flush request");
         read_response(child)
     }
-
-    // 空总览
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"e-1","method":"ui.desktop_ui_overview"}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(value["error"].is_null(), "{response}");
-    assert_eq!(value["result"]["instances"], serde_json::json!([]));
-    assert_eq!(value["result"]["templates"], serde_json::json!([]));
-    assert_eq!(value["result"]["platformAssetId"], serde_json::Value::Null);
-
-    // 平台选择:docker 资产接受,ssh 资产拒绝(文案与 Tauri 版一致)
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"e-2","method":"ui.desktop_ui_set_platform","params":{"assetId":"docker-1"}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(value["error"].is_null(), "{response}");
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"e-3","method":"ui.desktop_ui_set_platform","params":{"assetId":"ssh-1"}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(
-        value["error"]["message"], "资产 ssh-1 不是 Docker 连接(ssh)",
-        "{response}"
-    );
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"e-4","method":"ui.desktop_ui_overview"}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(value["result"]["platformAssetId"], "docker-1");
-
-    // 模板 upsert(配方 name 必须与模板名一致)+ delete
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"e-5","method":"ui.desktop_ui_upsert_template","params":{"name":"box","recipeToml":"name = \"box\"\nresolution = \"1280x800\"\n"}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(value["error"].is_null(), "{response}");
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"e-6","method":"ui.desktop_ui_upsert_template","params":{"name":"other","recipeToml":"name = \"box\"\n"}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(
-        value["error"]["message"], "配方内 name(box)与模板名(other)不一致",
-        "{response}"
-    );
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"e-7","method":"ui.desktop_ui_overview"}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    let templates = value["result"]["templates"].as_array().expect("array");
-    assert_eq!(templates.len(), 1);
-    assert_eq!(templates[0]["name"], "box");
-    assert!(templates[0]["createdAt"].as_i64().unwrap() > 0);
-
-    // 回放帧:未知沙箱 = 空数组(形状与 Tauri 版一致)
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"e-8","method":"ui.desktop_ui_replay_frames","params":{"sandboxId":"ghost"}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(value["result"]["frames"], serde_json::json!([]));
-
-    // 生命周期:未知沙箱硬错误;未知动作文案
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"e-9","method":"ui.desktop_ui_lifecycle","params":{"sandboxId":"ghost","action":"pause"}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(
-        value["error"]["message"]
-            .as_str()
-            .is_some_and(|m| m.contains("ghost")),
-        "{response}"
-    );
-
-    // 人工介入应答:未知 requestId 幂等
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"e-10","method":"ui.desktop_user_action_reply","params":{"requestId":"ghost","done":true}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert!(value["error"].is_null(), "{response}");
-    assert!(value["result"].is_null());
 
     // adb 配置:未配置时两个字段都是 null
     let response = roundtrip(
@@ -1760,21 +1534,6 @@ fn ui_devices_methods_roundtrip_through_the_real_binary() {
         value["error"]["message"]
             .as_str()
             .is_some_and(|m| m.contains("直播通道未打开")),
-        "{response}"
-    );
-
-    // 沙箱桌面直播/接管:终态降级(M3 定稿去掉该帧源,归 dsh 原生 computer-use)
-    let response = roundtrip(
-        &mut child,
-        r#"{"jsonrpc":"2.0","id":"e-14","method":"ui.desktop_ui_open_live_window","params":{"sandboxId":"box-1","containerId":"c1","novncPort":15900,"takeover":true}}"#,
-    );
-    let value: serde_json::Value = serde_json::from_str(&response).expect("response parses");
-    assert_eq!(value["error"]["code"], -32603, "{response}");
-    assert!(
-        value["error"]["message"]
-            .as_str()
-            .expect("message")
-            .contains("已不由 StarHub 提供"),
         "{response}"
     );
 

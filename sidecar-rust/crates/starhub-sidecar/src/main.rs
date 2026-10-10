@@ -25,7 +25,6 @@ use starhub_sidecar::android_runtime::AndroidRuntime;
 use starhub_sidecar::bindings::SessionBindings;
 use starhub_sidecar::bridge::{self, BridgeState};
 use starhub_sidecar::db_runtime::DbRuntime;
-use starhub_sidecar::desktop_runtime::DesktopRuntime;
 use starhub_sidecar::jsonrpc::{InboundFrame, OutboundNotification, OutboundResponse};
 use starhub_sidecar::known_hosts_store::FileKnownHostsStore;
 use starhub_sidecar::methods;
@@ -231,20 +230,12 @@ fn main() {
         Arc::clone(&known_hosts),
         Arc::clone(&bindings),
     ));
-    // Desktop 域:六个 seam 全部接 sidecar 自己的实现(JSON 存储 / 文件设置 /
-    // 环境缓存目录 / 事件通知出口),资产与 known_hosts 与另外两个域共用。
-    let desktop = Arc::new(DesktopRuntime::new(
-        Arc::clone(&db),
-        Arc::clone(&ssh.assets()),
-        FileKnownHostsStore::from_env(),
-        Arc::clone(&sink),
-    ));
     // 直播/接管帧出口(M3):帧枢纽先建,Android 域与它共享同一处授权/接管/通道。
     // 直播不再是窗口面——scrcpy H.264 / 截图轮询经本地 WS 推给壳内面板。
     let live_hub = Arc::new(starhub_live::FrameHub::new());
     // adb 路径解析与 Android 域共用同一份文件设置 + 同一个管理器(缓存不分裂)
     let android_settings: Arc<dyn starhub_domain_android::SettingsStore> =
-        Arc::new(starhub_sidecar::desktop_runtime::FileSettingsStore::from_env());
+        Arc::new(starhub_sidecar::settings_store::FileSettingsStore::from_env());
     let android_manager = Arc::new(starhub_domain_android::AndroidManager::new());
     let live = Arc::new(
         match starhub_sidecar::live_runtime::LiveRuntime::with_hub(
@@ -273,7 +264,6 @@ fn main() {
         Arc::clone(&runtime),
         Arc::clone(&ssh),
         Arc::clone(&db),
-        Arc::clone(&desktop),
         Arc::clone(&android),
         Arc::clone(&sink),
         Arc::clone(&bridge_state),

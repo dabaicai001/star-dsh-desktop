@@ -23,8 +23,6 @@ starhub-contract = { path = "../starhub-contract" }
 starhub-domain-ssh = { path = "../starhub-domain-ssh" }
 # DB/Redis/ES/Docker 域:Go sidecar 客户端 + 模型面执行器
 starhub-domain-db = { path = "../starhub-domain-db" }
-# Desktop 域:模板配方 + 任务授权 + xdotool/scrot 编排
-starhub-domain-desktop = { path = "../starhub-domain-desktop" }
 # Android 域:adb 调用 + 任务授权 + 20 个工具执行体
 starhub-domain-android = { path = "../starhub-domain-android" }
 # 直播/接管帧枢纽(M3):本地 WS 帧出口 + Android 帧源(scrcpy/轮询)

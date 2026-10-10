@@ -99,7 +99,7 @@ pub fn parse_wm_size(output: &str) -> Option<(i64, i64)> {
     physical
 }
 
-/// shell 单引号转义(与 desktop 模块同规则)。
+/// shell 单引号转义(adb shell 传参同规则)。
 pub fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }

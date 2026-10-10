@@ -12,12 +12,12 @@ use starhub_domain_android::store::{FrameStore, ReplayFrame};
 use starhub_domain_android::{BoxFuture, CacheDir, LiveLauncher};
 
 use crate::android_runtime::AndroidRuntime;
-use crate::desktop_runtime::FileSettingsStore;
 use crate::jsonrpc::RpcError;
+use crate::settings_store::FileSettingsStore;
 
 use super::ssh::{domain_error, tool_args};
 
-/// 文件设置存储(与 desktop 域共用 `starhub-settings.json`)。
+/// 文件设置存储(`starhub-settings.json`,UI 面与直播泵共用同一份)。
 pub type AndroidSettingsStore = FileSettingsStore;
 
 impl starhub_domain_android::SettingsStore for FileSettingsStore {
@@ -33,7 +33,7 @@ impl starhub_domain_android::SettingsStore for FileSettingsStore {
     }
 }
 
-/// 缓存目录:`STARHUB_CACHE_DIR`(与 desktop 域同根)。
+/// 缓存目录:`STARHUB_CACHE_DIR`(缺省 `<cwd>/starhub-cache`)。
 pub struct EnvCacheDir;
 
 impl CacheDir for EnvCacheDir {
@@ -89,7 +89,7 @@ impl LiveLauncher for HubLiveLauncher {
 /// `{"t":"takeover"}` 消息直接写帧枢纽,域名工具经 [`HubTakeoverState`] 读。
 pub type LiveTakeoverState = starhub_live::HubTakeoverState;
 
-/// JSON 文件版回放帧存储(与沙箱/资产同一套路:写穿透)。
+/// JSON 文件版回放帧存储(与资产存储同一套路:写穿透)。
 pub struct FileFrameStore {
     path: PathBuf,
 }
@@ -179,7 +179,7 @@ impl FrameStore for FileFrameStore {
     }
 }
 
-/// 解析目标会话(与 desktop 同规则:缺省 `default`)。
+/// 解析目标会话(与桥路径同规则:缺省 `default`)。
 fn resolve_session(params: &Value) -> String {
     params
         .get("sessionId")
