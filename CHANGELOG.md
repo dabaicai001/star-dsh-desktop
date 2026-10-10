@@ -9,6 +9,11 @@
 
 ---
 
+## [0.129.4] - 2026-10-10
+
+### 修复
+- 🐛 **手动兜底链的插件冒烟在 CI 上读不到 boot 图**(v0.129.2 那条 run 的唯一红点:四条断言全绿、客户端那条 `status=404`):插件冒烟的「客户端半边进入 boot 图」要读 `/` 返回的 HTML,而 `plugin-bundle.yml` 用的是 **vendor 源码 CLI**,它的安装树里没有 `apps/web/dist`,认证通过也只会 404。`release.yml` 不受影响——它先 `package:dsh-runtime`,冒烟用的是打包后的运行时。修复:手动链在冒烟前加 `npm run build:web`;冒烟脚本对 404 给出明确提示(缺 web dist → 先 `build:web` 或 `package:dsh-runtime`),不再让人对着一个 404 猜。
+
 ## [0.129.3] - 2026-10-10
 
 ### 变更

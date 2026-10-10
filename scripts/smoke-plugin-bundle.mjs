@@ -338,7 +338,10 @@ async function main() {
       const html = await page.text()
       check('客户端半边进入 boot 图(HTML 含 @starhub/dsh-plugin)',
         page.status === 200 && html.includes(BUNDLE_NAME),
-        `status=${page.status} 含包名=${html.includes(BUNDLE_NAME)}`)
+        `status=${page.status} 含包名=${html.includes(BUNDLE_NAME)}`
+        + (page.status === 404
+          ? '(索引路由不可用:宿主安装树里没有 apps/web/dist——先 npm run build:web 或 npm run package:dsh-runtime)'
+          : ''))
     }
   } catch (error) {
     failures += 1

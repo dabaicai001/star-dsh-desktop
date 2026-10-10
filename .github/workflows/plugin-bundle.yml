@@ -140,6 +140,13 @@ jobs:
           if ($entries -match '\.map$') { throw "tarball 不该带 sourcemap" }
           Write-Host "tarball $asset 内容校验通过($($entries.Count) 项,含两个 sidecar 与工作台 dist)"
 
+      - name: Build web shell dist (index route)
+        # 冒烟要读 `window.__DSH_BOOT__` 才能证明「客户端半边进了 boot 图」,而 `/` 由
+        # frontend-static 从安装树解析 `apps/web/dist`:本工作流用的是 vendor 源码 CLI,
+        # 不构建这份 dist 时 `/` 没有索引路由,认证通过也只会 404(v0.129.2 的 run
+        # 就是这么红的——四条断言全绿、客户端那条读不到 HTML)。
+        run: npm run build:web
+
       - name: 'Smoke: install the tarball into a throwaway profile and boot the host'
         # 复刻插件页的安装动作(pnpm add <tarball> + 选入 dsh.profile.bundles),
         # 再起宿主验五条断言(包内 dist / 包内 sidecar / 错误通路 / SSE / 客户端半边)。
