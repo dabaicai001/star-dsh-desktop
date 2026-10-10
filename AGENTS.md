@@ -71,7 +71,7 @@ starhub/
 - **前端**:React + TypeScript 5(strict)+ Vite 5;xterm.js 6(终端)、CodeMirror 6(SQL)、zmodem.js
 - **Rust**:tokio、russh 0.62 + russh-sftp 2、serde、thiserror/anyhow;sidecar-rust 是独立 workspace(零 tauri 依赖,`cargo tree` 不应出现 tauri crate)
 - **Go**:go-sql-driver/mysql、jackc/pgx、modernc.org/sqlite(纯 Go)、go-redis、clickhouse-go、go-mssqldb、go-elasticsearch、docker/docker、zerolog
-- **Node**:上游 dsh Host(desktop profile)+ starhub-bridge 插件
+- **Node**:上游 dsh Host(desktop profile)+ starhub-bridge 插件。**仓库根 `package.json` 零 runtime 依赖**(唯一 devDependency 是 `typescript`,供 `tests/` 现编译 vendored TS)——React 工作台的全部依赖在 `vendor/deepseek-harness` 的 pnpm workspace 里,`npm ci` 在根目录只装一个包;根 `scripts/` 与 `tests/` 只 import node 内置模块。
 
 **铁律 — 新功能优先以 dsh 插件形式注入,禁止改 vendor 内核源码。** 新能力落在 `vendor/deepseek-harness/packages/starhub/*`,经槽位系统(`ctx.slots.register` / `slots.inject`)或 Cordis 服务(`ctx.provide` / `ctx.get`)接入。仅两种例外可动 vendor 源码:(1) 修 DSH 自身的 bug(注释标注「上游补丁」);(2) 扩展点上无法表达且改动最小。不新增 Vue 系依赖。
 

@@ -112,6 +112,32 @@ target;原来 Tauri 链产出的 deb/rpm 没有对应物。`linux` 与 `linux-le
 两个 job 原样保留但 `if: false` 禁用、并不进 `publish` 的 `needs`(否则发布
 永远起不来)。待决策:要么上游出 Linux target,要么单独立一条 Linux 打包路径。
 
+### 第 4 步补记:根 lock 与 package.json 长期不同步(`npm ci` 第一行就红)
+
+删 `@tauri-apps/*` 依赖时只改了 `package.json`,**没重新生成
+`package-lock.json`**——而那份 lock 从 v0.96.5 起就没重新生成过(那之后
+`@codemirror/state` / `@codemirror/view` 等区间在 package.json 里被提过),
+于是 `npm ci` 报 `Invalid: lock file's @codemirror/state@6.6.0 does not
+satisfy @codemirror/state@6.7.1` 直接 EUSAGE 退出。`ci.yml` 与 `release.yml`
+的第一行「Install frontend dependencies」就红,后面九步全跑不到——**本地因为
+`node_modules/` 早已存在、从不跑 `npm ci` 所以发现不了**。
+
+顺着查下去发现根目录那一整套依赖本来就是死重:React 工作台搬进
+`vendor/deepseek-harness/apps/starhub-window` 之后,`build:window` 走的是
+vendor 自己的 pnpm workspace,根 `scripts/` 与 `tests/` 只 import node 内置
+模块加 `typescript`(单测现编译 vendored TS 用)。所以不是「重新生成 lock」,
+而是**连依赖带 lock 一起清**:根 `package.json` 清空 `dependencies`、
+devDependencies 只留 `typescript`;顺带删掉同样已失效的 `test` / `test:watch`
+脚本(vitest 在仓库根既没有 config 也没有 `src/`,真跑起来会把 `vendor/` 一起
+glob)、死文件 `tests/linkage.test.ts`(mock `@tauri-apps/api`、import 早已不
+存在的 `@/services/linkage`)、v0.72.2 Vue 时代遗留的根 `pnpm-lock.yaml`。
+`package-lock.json` 3731 行 → 29 行。
+
+**教训**:lock 是与 package.json 同生共死的产物,删/提依赖的那一次就要一起
+重新生成;只改一边的后果是「本地永远绿、CI 第一步就红」。判断根目录还有没有
+死依赖的办法很土但可靠:grep 全部 `scripts/` 与 `tests/` 的 import,看有谁
+真的从根 `node_modules` 解析。
+
 ### 第 2 步落地细节(打包冒烟)
 
 不拉 Electron,直接 boot 宿主进程——上游 `apps/desktop/scripts/smoke-runtime.ts`
@@ -203,6 +229,8 @@ spawn 的两个 sidecar。
 - `src-tauri` 删除后:`npm run sidecar-rust:test` 全绿、`npm run smoke:dsh-desktop`
   全绿、`npm run test:provision` 全绿、`npm run test:migrate` 全绿、
   `verify:bridge-compat` 全绿;
+  **`npm ci` 本身可用**(lock 与 package.json 同步,见第 4 步补记——这道在
+  M4 之后一直是红的,CI 第一行就退);
   仓库里 `src-tauri` / `tauri` 引用只存在于历史文档(CHANGELOG / docs 踩坑记录);
 - `npm run test:migrate`:9 例全绿(资产/设置/告警/审计/known_hosts 五种线形状、
   密钥导出与裸字符串归一、双跑期校验抓「条数不一致」与「内容不一致」、重跑
