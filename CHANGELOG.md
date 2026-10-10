@@ -7,13 +7,15 @@
 
 ## [未发布]
 
+---
+
+## [0.132.0] - 2026-10-10
+
 ### 移除
 - 🗑️ **沙箱桌面功能整体退役**:工具面板「沙箱桌面」子类与工作面板、AI 侧 22 个 `desktop_*` 工具、`desktop_request_user_action` 请求介入横幅、Rust `starhub-domain-desktop` 域 crate 与 sidecar 的 `desktop_*` / `ui.desktop_ui_*` 方法面、`approval-bridge` 的沙箱风险分级一并删除(android 复用的 `FileSettingsStore` 抽到 `settings_store.rs` 保留);AI 可直接操控的 GUI 目标只剩 Android 真机。
 
 ### 变更
 - 🎨 **所有工具页面关闭一律回会话,不再回退工具列表**:工作台页簿清空、直播通道清空、SSH 执行记录视图「×」三处原先把主面板让回「工具」列表,现在统一让回会话视图(`selectPanel(null)`);工作台标签条的「返回工具列表」出口随之移除(回工具列表统一走侧栏常驻的「工具」行),执行记录视图的 × 与面板 × 语义一致。
-
----
 
 ## [0.131.1] - 2026-10-10
 
