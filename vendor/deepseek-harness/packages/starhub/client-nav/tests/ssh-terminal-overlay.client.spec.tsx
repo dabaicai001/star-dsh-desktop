@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 const xterm = vi.hoisted(() => ({
   dispose: vi.fn(),
@@ -77,6 +77,14 @@ const asset = {
   config: { host: '10.0.0.5', port: 22, username: 'deploy', password: 'secret' },
   key_id: null, tags: [], favorite: false, last_used_at: null, created_at: 0, updated_at: 0,
 }
+/**
+ * 终端实例会话 id:组件按 `asset.id + 6 位随机后缀` 生成(同资产多窗口互不串台)。
+ * 这里把 Math.random 钉死 → 后缀可预知(`ssh-1__c00000`),事件名与断言照旧写死。
+ */
+const SESSION_ID = 'ssh-1__c00000'
+beforeEach(() => {
+  vi.spyOn(Math, 'random').mockReturnValue(1 / 3)
+})
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -91,18 +99,46 @@ afterEach(() => {
   zmodemMock.saveToDisk.mockReset()
 })
 describe('SshTerminalOverlay', () => {
+  it('gives each window its own session id so two windows on one asset never share a shell', async () => {
+    // 用户实测:同一资产开第二个窗口后,两个窗口会互相串台(在 A 窗口显示 B 注入的
+    // OSC 7 回显、输入两边都出现)。根因是两个窗口都用 asset.id 当会话 id,第二个
+    // ssh_connect 覆盖了第一个的会话。本用例要求两窗口 id 必须不同。
+    // 本用例要真实随机(其余用例用 beforeEach 钉死的后缀),所以先还原 spy。
+    vi.restoreAllMocks()
+    const connectedIds: string[] = []
+    const invoke = vi.fn((command: string, args?: unknown) => {
+      if (command === 'ssh_connect') connectedIds.push((args as { id: string }).id)
+      return Promise.resolve(null)
+    })
+    stubInternals(invoke)
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = ResizeObserverMock
+    const first = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    const second = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() => { expect(connectedIds).toHaveLength(2) })
+    const [firstId, secondId] = connectedIds as [string, string]
+    expect(firstId).not.toBe(secondId)
+    // id 前缀仍是资产 id(便于从日志认领会话),后缀是实例区分位
+    expect(firstId.startsWith('ssh-1__')).toBe(true)
+    expect(secondId.startsWith('ssh-1__')).toBe(true)
+    // 每个窗口只监听自己那一路事件名
+    expect(hostEventListeners(`ssh:data:${firstId}`)).toBe(1)
+    expect(hostEventListeners(`ssh:data:${secondId}`)).toBe(1)
+    first.unmount()
+    second.unmount()
+  })
+
   it('subscribes before connecting, streams terminal bytes, and releases resources', async () => {
     // 订阅必须先于连接:连接发生时 data 事件监听已就位(共享 SSE 连接)。
     let dataListenerAtConnect = -1
     const invoke = vi.fn((command: string) => {
-      if (command === 'ssh_connect') dataListenerAtConnect = hostEventListeners('ssh:data:ssh-1')
+      if (command === 'ssh_connect') dataListenerAtConnect = hostEventListeners(`ssh:data:${SESSION_ID}`)
       return Promise.resolve(null)
     })
     stubInternals(invoke)
     ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver = ResizeObserverMock
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', {
-      id: 'ssh-1',
+      id: SESSION_ID,
       config: {
         host: '10.0.0.5',
         port: 22,
@@ -114,19 +150,19 @@ describe('SshTerminalOverlay', () => {
       },
     }) })
     expect(dataListenerAtConnect).toBe(1)
-    emitHostEvent('ssh:data:ssh-1', [104, 105])
+    emitHostEvent(`ssh:data:${SESSION_ID}`, [104, 105])
     expect(xterm.write).toHaveBeenCalledTimes(1)
     expect(xterm.write).toHaveBeenCalledWith('hi')
     xterm.input?.('ls\r')
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-1', data: 'ls\r' }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: SESSION_ID, data: 'ls\r' }) })
     unmount()
     expect(xterm.dispose).toHaveBeenCalledTimes(1)
-    expect(invoke).toHaveBeenCalledWith('ssh_disconnect', { id: 'ssh-1' })
+    expect(invoke).toHaveBeenCalledWith('ssh_disconnect', { id: SESSION_ID })
     // 卸载即退订:四个事件名的监听全部摘除(替代旧 plugin:event|unlisten 断言)。
-    expect(hostEventListeners('ssh:data:ssh-1')).toBe(0)
-    expect(hostEventListeners('ssh:close:ssh-1')).toBe(0)
-    expect(hostEventListeners('ssh:kb-interactive:ssh-1')).toBe(0)
-    expect(hostEventListeners('ssh:hostkey-confirm:ssh-1')).toBe(0)
+    expect(hostEventListeners(`ssh:data:${SESSION_ID}`)).toBe(0)
+    expect(hostEventListeners(`ssh:close:${SESSION_ID}`)).toBe(0)
+    expect(hostEventListeners(`ssh:kb-interactive:${SESSION_ID}`)).toBe(0)
+    expect(hostEventListeners(`ssh:hostkey-confirm:${SESSION_ID}`)).toBe(0)
   })
   it('calls onClose from the workspace close control', () => {
     const onClose = vi.fn()
@@ -160,8 +196,8 @@ describe('SshTerminalOverlay', () => {
     // click the SFTP tab
     fireEvent.click(getByRole('button', { name: /文件/ }))
     // SFTP panel connects on the same session id (never a separate session)
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: 'ssh-1' }) })
-    expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/home/deploy' })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: SESSION_ID }) })
+    expect(invoke).toHaveBeenCalledWith('sftp_list', { id: SESSION_ID, path: '/home/deploy' })
     await waitFor(() =>{  expect(getByText('docs')).toBeTruthy() })
     unmount()
   })
@@ -180,10 +216,10 @@ describe('SshTerminalOverlay', () => {
     }
     const { getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode('\u001b]7;/srv/app\u0007')))
+    emitHostEvent(`ssh:data:${SESSION_ID}`, Array.from(new TextEncoder().encode('\u001b]7;/srv/app\u0007')))
     fireEvent.click(getByRole('button', { name: /文件/ }))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/srv/app' }) })
-    expect(invoke).not.toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/home/deploy' })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: SESSION_ID, path: '/srv/app' }) })
+    expect(invoke).not.toHaveBeenCalledWith('sftp_list', { id: SESSION_ID, path: '/home/deploy' })
     unmount()
   })
   it('injects the OSC 7 hook on an ANSI-colored prompt and SFTP follows the extracted cwd', async () => {
@@ -205,20 +241,20 @@ describe('SshTerminalOverlay', () => {
     }
     const { getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_exec', expect.objectContaining({ id: 'ssh-1' })) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_exec', expect.objectContaining({ id: SESSION_ID })) })
     await act(async () => {}) // probe settles: home=/root and sshCwd=/root (login dir)
     fireEvent.click(getByRole('button', { name: /文件/ }))
     // SFTP opens directly at the already-tracked terminal cwd
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/root' }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: SESSION_ID, path: '/root' }) })
     // Ubuntu default PS1 (`\u@\h:\w\$` → deploy@server:~/src$): OSC-0 title + colors
     const ubuntuPrompt = '\u001b]0;deploy@server: ~/src\u0007\u001b[01;32mdeploy@server\u001b[00m:\u001b[01;34m~/src\u001b[00m$ '
     act(() => {
-      emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode(ubuntuPrompt)))
+      emitHostEvent(`ssh:data:${SESSION_ID}`, Array.from(new TextEncoder().encode(ubuntuPrompt)))
     })
     // prompt recognized through the control-stripped line → hook injected
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-1', data: expect.stringContaining('__starhub_osc7') }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: SESSION_ID, data: expect.stringContaining('__starhub_osc7') }) })
     // ~ expanded against the login home → cwd /root/src reported → SFTP panel follows
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/root/src' }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: SESSION_ID, path: '/root/src' }) })
     unmount()
   })
   it('injects the fish dialect hook for a fish login shell', async () => {
@@ -236,15 +272,15 @@ describe('SshTerminalOverlay', () => {
       disconnect() {}
     }
     const { getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_exec', expect.objectContaining({ id: 'ssh-1' })) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_exec', expect.objectContaining({ id: SESSION_ID })) })
     await act(async () => {}) // probe settles: loginShellRef = fish
     fireEvent.click(getByRole('button', { name: /文件/ }))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: 'ssh-1' }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: SESSION_ID }) })
     act(() => {
-      emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode('deploy@server:~>')))
+      emitHostEvent(`ssh:data:${SESSION_ID}`, Array.from(new TextEncoder().encode('deploy@server:~>')))
     })
     // the bash dialect would only print an error line in fish; the event hook runs
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-1', data: expect.stringContaining('--on-event fish_prompt') }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: SESSION_ID, data: expect.stringContaining('--on-event fish_prompt') }) })
     unmount()
   })
   it('skips injection for shells immune to it (tcsh) while prompt extraction still tracks cwd', async () => {
@@ -262,12 +298,12 @@ describe('SshTerminalOverlay', () => {
       disconnect() {}
     }
     const { getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_exec', expect.objectContaining({ id: 'ssh-1' })) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_exec', expect.objectContaining({ id: SESSION_ID })) })
     await act(async () => {}) // probe settles: loginShellRef = tcsh
     fireEvent.click(getByRole('button', { name: /文件/ }))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: 'ssh-1' }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_ensure_session', { id: SESSION_ID }) })
     act(() => {
-      emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode('[user@server /var/log]>')))
+      emitHostEvent(`ssh:data:${SESSION_ID}`, Array.from(new TextEncoder().encode('[user@server /var/log]>')))
     })
     await act(async () => {})
     // no hook ever written (it would only error in tcsh)…
@@ -275,14 +311,14 @@ describe('SshTerminalOverlay', () => {
       call[0] === 'ssh_write' && String((call[1] as { data?: string } | undefined)?.data ?? '').includes('__starhub_osc7'))
     expect(hookWrite).toBeUndefined()
     // …yet the prompt-carried path is extracted and the panel follows it
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: 'ssh-1', path: '/var/log' }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('sftp_list', { id: SESSION_ID, path: '/var/log' }) })
     unmount()
   })
   it('opens the broadcast dialog, lists connected sessions, sends a command, and reports success', async () => {
     const invoke = vi.fn((command: string) => {
       if (command === 'ssh_get_sessions') {
         return Promise.resolve([
-          { id: 'ssh-1', host: '10.0.0.5', port: 22, username: 'deploy', connected: true },
+          { id: SESSION_ID, host: '10.0.0.5', port: 22, username: 'deploy', connected: true },
           { id: 'ssh-2', host: '10.0.0.6', port: 22, username: 'root', connected: true },
           { id: 'ssh-3', host: '10.0.0.7', port: 22, username: 'deploy', connected: false },
         ])
@@ -302,14 +338,14 @@ describe('SshTerminalOverlay', () => {
     // 输入命令并提交 → 每个选中会话写 command\n。
     fireEvent.change(getByLabelText('广播命令'), { target: { value: 'uptime' } })
     fireEvent.click(getByText('广播 (2)'))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-1', data: 'uptime\n' }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: SESSION_ID, data: 'uptime\n' }) })
     expect(invoke).toHaveBeenCalledWith('ssh_write', { id: 'ssh-2', data: 'uptime\n' })
     await waitFor(() =>{  expect(screen.getByText('已广播到 2 个会话')).toBeTruthy() })
     unmount()
   })
   it('shows a notice when there are no connected sessions to broadcast to', async () => {
     const invoke = vi.fn((command: string) => {
-      if (command === 'ssh_get_sessions') return Promise.resolve([{ id: 'ssh-1', connected: false }])
+      if (command === 'ssh_get_sessions') return Promise.resolve([{ id: SESSION_ID, connected: false }])
       return Promise.resolve(null)
     })
     stubInternals(invoke)
@@ -354,14 +390,14 @@ describe('SshTerminalOverlay', () => {
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
     // 连接后点「网页」→ 打开独立 webview 窗口(内嵌 WebBrowser/网关由独立窗口承载)
     fireEvent.click(getByRole('button', { name: /网页/ }))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_open_web_window', { sessionId: 'ssh-1', assetName: 'server' }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_open_web_window', { sessionId: SESSION_ID, assetName: 'server' }) })
     unmount()
   })
   it('reports partial failure when some broadcast sends reject', async () => {
     const invoke = vi.fn((command: string, args?: Record<string, unknown>) => {
       if (command === 'ssh_get_sessions') {
         return Promise.resolve([
-          { id: 'ssh-1', connected: true },
+          { id: SESSION_ID, connected: true },
           { id: 'ssh-2', connected: true },
         ])
       }
@@ -406,7 +442,7 @@ describe('SshTerminalOverlay', () => {
     }
     const { unmount } = render(<SshTerminalOverlay asset={mfaAsset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', {
-      id: 'ssh-1',
+      id: SESSION_ID,
       config: expect.objectContaining({
         authMode: 'mfa',
         mfaEnabled: true,
@@ -429,8 +465,8 @@ describe('SshTerminalOverlay', () => {
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
     // kb-interactive 事件(SSE 事件名带 sessionId)
-    emitHostEvent('ssh:kb-interactive:ssh-1', {
-      sessionId: 'ssh-1',
+    emitHostEvent(`ssh:kb-interactive:${SESSION_ID}`, {
+      sessionId: SESSION_ID,
       instructions: '2FA required',
       prompts: [{ prompt: 'Verification code', echo: false }],
       autoFill: [null],
@@ -440,7 +476,7 @@ describe('SshTerminalOverlay', () => {
     expect(screen.getByText('Verification code')).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Verification code'), { target: { value: '123456' } })
     fireEvent.click(screen.getByText('提交验证码'))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_kb_response', { id: 'ssh-1', responses: ['123456'] }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_kb_response', { id: SESSION_ID, responses: ['123456'] }) })
     expect(screen.queryByLabelText('MFA 验证')).toBeNull()
     unmount()
   })
@@ -456,8 +492,8 @@ describe('SshTerminalOverlay', () => {
     }
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    emitHostEvent('ssh:kb-interactive:ssh-1', {
-      sessionId: 'ssh-1',
+    emitHostEvent(`ssh:kb-interactive:${SESSION_ID}`, {
+      sessionId: SESSION_ID,
       instructions: '',
       prompts: [{ prompt: 'OTP:', echo: false }],
       autoFill: [null],
@@ -466,7 +502,7 @@ describe('SshTerminalOverlay', () => {
     fireEvent.change(screen.getByLabelText('OTP:'), { target: { value: '654321' } })
     // Enter 在验证码输入框内提交(等价点击「提交验证码」)。
     fireEvent.keyDown(screen.getByLabelText('OTP:'), { key: 'Enter' })
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_kb_response', { id: 'ssh-1', responses: ['654321'] }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_kb_response', { id: SESSION_ID, responses: ['654321'] }) })
     expect(screen.queryByLabelText('MFA 验证')).toBeNull()
     unmount()
   })
@@ -482,8 +518,8 @@ describe('SshTerminalOverlay', () => {
     }
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    emitHostEvent('ssh:kb-interactive:ssh-1', {
-      sessionId: 'ssh-1',
+    emitHostEvent(`ssh:kb-interactive:${SESSION_ID}`, {
+      sessionId: SESSION_ID,
       instructions: '',
       prompts: [
         { prompt: 'Password', echo: false },
@@ -495,7 +531,7 @@ describe('SshTerminalOverlay', () => {
     expect((screen.getByLabelText('Password') as HTMLInputElement).value).toBe('pre-filled-pwd')
     expect((screen.getByLabelText('TOTP') as HTMLInputElement).value).toBe('')
     fireEvent.click(screen.getByText('提交验证码'))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_kb_response', { id: 'ssh-1', responses: ['pre-filled-pwd', ''] }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_kb_response', { id: SESSION_ID, responses: ['pre-filled-pwd', ''] }) })
     expect(screen.queryByLabelText('MFA 验证')).toBeNull()
     unmount()
   })
@@ -511,7 +547,7 @@ describe('SshTerminalOverlay', () => {
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
     // hostkey-confirm 事件(SSE 事件名带 sessionId)
-    emitHostEvent('ssh:hostkey-confirm:ssh-1', {
+    emitHostEvent(`ssh:hostkey-confirm:${SESSION_ID}`, {
       hostname: '10.0.0.5', port: 22, remote: '10.0.0.5:22',
       keyType: 'ssh-ed25519', sha256: 'SHA256:c3R1Yi1lZDI1NTE5LWZpbmdlcnByaW50',
     })
@@ -520,7 +556,7 @@ describe('SshTerminalOverlay', () => {
     expect(screen.getByText('ssh-ed25519')).toBeTruthy()
     expect(screen.getByText(/c3R1Yi1lZDI1NTE5LWZpbmdlcnByaW50/)).toBeTruthy()
     fireEvent.click(screen.getByText('信任并保存'))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_hostkey_response', { id: 'ssh-1', allowed: true, persist: true }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_hostkey_response', { id: SESSION_ID, allowed: true, persist: true }) })
     expect(screen.queryByLabelText('主机密钥确认')).toBeNull()
     unmount()
   })
@@ -537,14 +573,14 @@ describe('SshTerminalOverlay', () => {
     }
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={onClose} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    emitHostEvent('ssh:hostkey-confirm:ssh-1', {
+    emitHostEvent(`ssh:hostkey-confirm:${SESSION_ID}`, {
       hostname: '10.0.0.5', port: 22, remote: '10.0.0.5:22',
       keyType: 'ssh-rsa', sha256: 'SHA256:dW50cnVzdGVkLWZpbmdlcnByaW50',
     })
     await waitFor(() =>{  expect(screen.getByLabelText('主机密钥确认')).toBeTruthy() })
     fireEvent.click(screen.getByText('拒绝'))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_hostkey_response', { id: 'ssh-1', allowed: false, persist: false }) })
-    expect(invoke).toHaveBeenCalledWith('ssh_disconnect', { id: 'ssh-1' })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_hostkey_response', { id: SESSION_ID, allowed: false, persist: false }) })
+    expect(invoke).toHaveBeenCalledWith('ssh_disconnect', { id: SESSION_ID })
     // 拒绝后不再自动关窗:拒绝原因必须可见,状态进「已断开」并给重新连接入口
     // (此前先 setError 再 onClose,提示随 overlay 一起消失,用户看不到原因)。
     expect(onClose).not.toHaveBeenCalled()
@@ -568,7 +604,7 @@ describe('SshTerminalOverlay', () => {
     // 连接成功 → 「已连接」
     await waitFor(() =>{  expect(screen.getByText('已连接')).toBeTruthy() })
     // 远端关闭事件(第 2 个监听 = ssh:close)
-    emitHostEvent('ssh:close:ssh-1', 'Connection reset by peer')
+    emitHostEvent(`ssh:close:${SESSION_ID}`, 'Connection reset by peer')
     await waitFor(() =>{  expect(screen.getByText('已断开')).toBeTruthy() })
     // 断开后不再谎报「连接中」,并给出重新连接入口
     expect(screen.queryByText('连接中')).toBeNull()
@@ -608,7 +644,7 @@ describe('SshTerminalOverlay', () => {
     fireEvent.click(screen.getByText('选择文件'))
     // sender: 回写 ZMODEM 协议字节走 ssh_write_binary
     act(() => { zmodemMock.options!.sender!([1, 2, 3]) })
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write_binary', { id: 'ssh-1', data: [1, 2, 3] }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write_binary', { id: SESSION_ID, data: [1, 2, 3] }) })
     fireEvent.change(screen.getByLabelText('选择 ZMODEM 发送文件'), {
       target: { files: [{ name: 'a.txt', size: 10 }] },
     } as never)
@@ -737,10 +773,10 @@ describe('SshTerminalOverlay', () => {
     const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
     // data (non-zmodem) → sentry.consume → to_terminal → handleChunk
-    act(() => { emitHostEvent('ssh:data:ssh-1', []) }) // empty chunk → early return
-    act(() => { emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode('\u001b]7;/srv\u0007'))) }) // OSC 7 cwd
+    act(() => { emitHostEvent(`ssh:data:${SESSION_ID}`, []) }) // empty chunk → early return
+    act(() => { emitHostEvent(`ssh:data:${SESSION_ID}`, Array.from(new TextEncoder().encode('\u001b]7;/srv\u0007'))) }) // OSC 7 cwd
     // pwd output chunk → cwd fallback
-    act(() => { emitHostEvent('ssh:data:ssh-1', Array.from(new TextEncoder().encode('\n/opt/x\r\n'))) })
+    act(() => { emitHostEvent(`ssh:data:${SESSION_ID}`, Array.from(new TextEncoder().encode('\n/opt/x\r\n'))) })
     unmount()
   })
 
@@ -785,7 +821,7 @@ describe('SshTerminalOverlay', () => {
     expect((connectCall[1]! as { config: { kb_interactive: unknown } }).config.kb_interactive).toEqual({ enabled: true })
     // ssh_exec pwd → applyCwd(254) ; sender catch
     act(() => { zmodemMock.options!.sender!([1]) })
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write_binary', { id: 'ssh-1', data: [1] }) })
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write_binary', { id: SESSION_ID, data: [1] }) })
     // on_retract with a live session → finish; without → finish
     const session = { type: 'send', on: vi.fn(() => session), start: vi.fn(), close: vi.fn().mockResolvedValue(undefined), abort: vi.fn() }
     act(() => { zmodemMock.options!.on_detect!({ confirm: () => session as never, deny: () => {} }) })

@@ -145,8 +145,33 @@ function buildKbInteractive(config: Record<string, unknown>): Record<string, unk
 }
 
 /**
+ * 终端实例会话 id 的随机后缀长度(base36 位数:36^6 ≈ 2.2e9 种,同机撞号概率可忽略)。
+ */
+const SESSION_SUFFIX_CHARS = 6
+
+/**
+ * 生成一个终端实例独占的 SSH 会话 id(`<assetId>__<6 位 base36 随机>`)。
+ *
+ * 会话 id 既是 sidecar 会话表的键,也是 `ssh:data:<id>` 这类事件的事件名:两个窗口共用
+ * `asset.id` 时会命中同一个键——第二个 `ssh_connect` 覆盖第一个的会话,两个窗口读写
+ * 同一条 shell(输入互相串台、还能看到对方注入 OSC 7 的回显),关掉任一个窗口还会把
+ * 另一个的连接一起断掉。每次挂载取一个新后缀,同资产的多个窗口就彼此独立;同一个实例
+ * 内「重新连接」沿用同一个 id(只换连接代次)。
+ * @param assetId - 资产 id(保留在 id 前缀里,便于从日志看出会话属于哪个资产)。
+ * @returns 形如 `5fcb151b-ab1d-42df-b8ce-03a6c1f9b45c__k3f9a2` 的实例会话 id。
+ */
+export function terminalSessionId(assetId: string): string {
+  const suffix = Math.floor(Math.random() * 36 ** SESSION_SUFFIX_CHARS)
+    .toString(36)
+    .padStart(SESSION_SUFFIX_CHARS, '0')
+  return `${assetId}__${suffix}`
+}
+
+/**
  * Render one xterm instance backed by a StarHub interactive SSH session, with
- * cwd tracking for the SFTP follow-terminal flow.
+ * cwd tracking for the SFTP follow-terminal flow. Each overlay owns its own
+ * session id (see {@link terminalSessionId}), so two windows on the same asset
+ * never share a shell.
  * @param props - selected SSH asset and overlay close callback.
  * @returns the native SSH/SFTP terminal overlay.
  */
@@ -285,7 +310,8 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     finishZmodem()
   }
 
-  const sessionId = asset.id
+  // 每个终端实例一条独立会话(见 terminalSessionId):同资产开两个窗口时互不串台。
+  const [sessionId] = useState(() => terminalSessionId(asset.id))
   // cwd / injection state shared between the effect and the follow callback.
   const isConnectedRef = useRef(false)
   const osc7InjectPendingRef = useRef(false)
@@ -621,7 +647,9 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
         .filter(s => s.connected === true)
         .map((s) => {
           const endpoint = `${s.username ?? ''}@${s.host ?? ''}:${s.port ?? 22}`
-          return { sessionId: s.id, title: s.id, host: endpoint }
+          // 会话 id 现在是「资产 id__随机后缀」(同资产可开多窗口),不适合当标题:
+          // 自己的窗口显示资产名,别人的窗口显示主机(端点留在下一行)。
+          return { sessionId: s.id, title: s.id === sessionId ? asset.name : (s.host ?? s.id), host: endpoint }
         })
       if (sessions.length === 0) {
         setBroadcastNotice('没有已连接的会话可用于广播')
