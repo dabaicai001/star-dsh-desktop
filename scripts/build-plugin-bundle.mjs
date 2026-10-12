@@ -434,6 +434,28 @@ async function main() {
   }
   if (!existsSync(join(options.windowDist, 'index.html'))) {
     problems.push(`工作台 dist 缺失: ${options.windowDist}(先跑 npm run build:window)`)
+  } else {
+    // 工作台 dist 同样是 gitignore 的组装输入:它比源码旧时,包里的独立工作台页
+    // (/starhub-react/,每个资产页的 iframe 内容)会停在旧代码——2026-10-12 实测:
+    // 发出 0.133.x 时 dist 还是两天前的构建,新菜单/新图标在 iframe 页里根本不存在。
+    // 只扫 src/ 目录:packages/starhub/* 下的 node_modules 是 pnpm 符号链接,
+    // 递归进去会打转(listFilesRecursive 跟随链接)→ 栈溢出。
+    const windowSources = [join(vendorRoot, 'apps', 'starhub-window', 'src')]
+    for (const entry of await readdirSafe(join(vendorRoot, 'packages', 'starhub'))) {
+      windowSources.push(join(vendorRoot, 'packages', 'starhub', entry, 'src'))
+    }
+    let windowSrcNewest = 0
+    for (const root of windowSources) {
+      if (!existsSync(root)) continue
+      for (const file of await listFilesRecursive(root)) {
+        if (!['.ts', '.tsx', '.css'].includes(extname(file))) continue
+        windowSrcNewest = Math.max(windowSrcNewest, (await stat(file)).mtimeMs)
+      }
+    }
+    if (windowSrcNewest > (await stat(join(options.windowDist, 'index.html'))).mtimeMs) {
+      problems.push(
+        `工作台 dist 比源码旧(${options.windowDist}):先跑 npm run build:window`)
+    }
   }
   if (!existsSync(rustSidecar)) {
     problems.push(`Rust sidecar 缺失: ${rustSidecar}(先跑 npm run sidecar-rust:build)`)

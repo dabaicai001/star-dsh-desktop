@@ -55,19 +55,25 @@ function isAssetlessSubcategory(key: string): boolean {
  * 主路径是**宿主 sidecar**(`ui.open_external_url` → Windows
  * `rundll32 url.dll,FileProtocolHandler` / macOS `open` / Linux `xdg-open`):
  * 壳的 `window.open` 处理器虽会把 http/https 转 `shell.openExternal`,但那一环
- * 变异就会静默失败;sidecar 唤起系统浏览器与壳的弹窗/导航策略无关。旧 sidecar
- * 没有该方法、或浏览器预览(无宿主桥)时,回落到 `window.open`。
+ * 变异就会静默失败;sidecar 唤起系统浏览器与壳的弹窗/导航策略无关。
  * @param asset - 目标资产(取 id/type/config 组装 URL)。
+ * @returns 失败提示文本;`null` = 已交给宿主或浏览器(无需提示)。两条路都不通时
+ *   把链接落到剪贴板并回报提示——「点了没反应」这种静默失败不再可能。
  */
-async function openAssetInBrowser(asset: StarHubAsset): Promise<void> {
+async function openAssetInBrowser(asset: StarHubAsset): Promise<string | null> {
   const url = new URL(assetWindowUrl(asset), window.location.origin).href
   try {
     await tauriInvoke('open_external_url', { url })
-    return
+    return null
   } catch {
-    // 旧宿主 / 预览态:回落到 window.open(壳转 shell.openExternal,预览开新标签)。
+    // 旧宿主(无该方法)/ 浏览器预览:回落到 window.open(壳转 shell.openExternal)。
   }
-  window.open(url, '_blank', 'noopener')
+  if (window.open(url, '_blank', 'noopener') !== null) return null
+  // 两条路都没成:不再静默——复制链接并把提示交给面板展示。
+  const copied = await writeClipboard(url)
+  return copied
+    ? '未能唤起系统浏览器,链接已复制到剪贴板'
+    : `未能唤起系统浏览器,请手动访问:${url}`
 }
 
 /** Business face injected by the registration: the connection wire + bridge/asset writes. */
@@ -99,7 +105,7 @@ export type StarHubToolWorkspaceProps =
   & InjectFace<StarHubToolWorkspaceInjected>
 
 /** 单个资产行:主按钮(打开)+ 行尾编辑钮 + 右键菜单(打开/引用/编辑/复制/删除)。 */
-function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDelete }: {
+function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDelete, onNotice }: {
   asset: RustAsset
   badgeLabel: string
   /** 当前打开(选中)的资产行高亮。 */
@@ -110,6 +116,8 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
   onEdit: () => void
   /** 删除走连接对话框编辑模式(内含两步确认的 delete_asset 入口)。 */
   onDelete: () => void
+  /** 面板级瞬时提示(「在浏览器中打开」两条路都不通时给出可见反馈)。 */
+  onNotice: (text: string) => void
 }) {
   const menu = useContextMenu()
   const [copied, setCopied] = useState(false)
@@ -158,7 +166,9 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
         items={items}
         onSelect={(id) => {
           if (id === 'open') onOpen()
-          else if (id === 'browser') void openAssetInBrowser(asset)
+          else if (id === 'browser') {
+            void openAssetInBrowser(asset).then((message) => { if (message !== null) onNotice(message) })
+          }
           else if (id === 'reference') onReference()
           else if (id === 'edit') onEdit()
           else if (id === 'copy') {
@@ -207,6 +217,13 @@ export function StarHubToolWorkspace({
   // 执行记录视图(v0.100.0):hook 未提供时视为关闭 + 空列表(独立渲染兼容)。
   const execViewOpen = useExecRecords?.(s => s.viewOpen) ?? false
   const execRecords = useExecRecords?.(s => s.records) ?? []
+  // 面板级瞬时提示(「在浏览器中打开」失败时不再静默):6s 自动消失。
+  const [notice, setNotice] = useState<string | null>(null)
+  useEffect(() => {
+    if (notice === null) return
+    const timer = window.setTimeout(() => { setNotice(null) }, 6000)
+    return () => { window.clearTimeout(timer) }
+  }, [notice])
 
   // 挂载时(以及切换子类时)重新拉取(回调内部对并发拉取去重)。
   useEffect(() => { refreshAssets() }, [activeSubcategory, refreshAssets])
@@ -254,6 +271,7 @@ export function StarHubToolWorkspace({
               <IconCloseOutlineMedium size={14} />
             </button>
           </header>
+          {notice !== null && <div className={css.status} role="status">{notice}</div>}
           <div className={css.tree}>
             {activeSubcategory === null && (
               <div className={css.status}>点击展开一个子类(终端 / 数据库 / Docker / Android)查看内容。</div>
@@ -272,6 +290,7 @@ export function StarHubToolWorkspace({
                 refreshAssets,
                 selectSubcategory,
                 insertAssetReference,
+                onNotice: setNotice,
               },
             ))}
           </div>
@@ -296,6 +315,8 @@ function renderSubcategory(
     refreshAssets: () => void
     selectSubcategory: (key: string | null) => void
     insertAssetReference: (asset: RustAsset) => void
+    /** 面板级瞬时提示(setter 由面板持有)。 */
+    onNotice: (text: string) => void
   },
 ) {
   const expanded = subcategory.key === activeSubcategory
@@ -350,6 +371,7 @@ function renderSubcategory(
                   onReference={() =>{  handlers.insertAssetReference(asset) }}
                   onEdit={() =>{  handlers.openConnectionManager(asset) }}
                   onDelete={() =>{  handlers.openConnectionManager(asset) }}
+                  onNotice={handlers.onNotice}
                 />
               ))}
             </div>

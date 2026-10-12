@@ -383,6 +383,30 @@ describe('StarHubToolWorkspace', () => {
     }
   })
 
+  it('surfaces a visible notice and copies the link when neither path can open a browser', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const write = vi.fn(() => Promise.resolve(true))
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: write }, configurable: true })
+    stubHostBridge(() => { throw new Error('method not found: ui.open_external_url') })
+    try {
+      const props = workspaceProps()
+      props.bridge.selectSubcategory('terminal')
+      props.assets.update((d) => { d.assets = [{ ...sshAsset, config: {} }] })
+      render(<StarHubToolWorkspace {...props} />)
+      fireEvent.contextMenu(screen.getByText('prod-server'))
+      fireEvent.click(screen.getByText('在浏览器中打开'))
+      // 两条路都不通时不再静默:面板给出可见提示,并把链接落到剪贴板
+      await screen.findByText('未能唤起系统浏览器,链接已复制到剪贴板')
+      expect(write).toHaveBeenCalledWith(
+        `${window.location.origin}/starhub-react/index.html?asset=a1&workbench=ssh`,
+      )
+    } finally {
+      restoreHostBridge()
+      open.mockRestore()
+      delete (navigator as { clipboard?: unknown }).clipboard
+    }
+  })
+
   it('keeps the copy label when the clipboard write fails', async () => {
     const props = workspaceProps()
     props.bridge.selectSubcategory('terminal')
