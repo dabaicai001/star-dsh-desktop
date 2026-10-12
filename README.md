@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.133.4-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.133.5-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,9 +45,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.133.4 (2026-10-12)
-- 🐛 🐛 **SSH 终端一打开就并排出现两个提示符(用户实测:每次打开必现)**:真机 sidecar 会话抓到的原始字节流是「提示符 1 → 注入命令回显行(`…fi\r\n`)→ 提示符 2」——打开终端时 client-nav 会静默注入 OSC 7 钩子(SFTP「跟随终端」要用),而**隐藏回显过滤器把注入回显整行连同它的换行一起剔除**,光标停在提示符 1 末尾,shell 执行完重印的提示符 2 就紧贴上去(`[work@zhht-dev ~]$ [work@zhht-dev ~]$ `)。修复:丢弃回显行的位置**代入行复位**(`\r` + 擦除整行,`HIDDEN_ECHO_LINE_RESET`),重印的提示符落在同一行,视觉上只剩一个提示符;新增按真机字节流写的回归用例(旧实现下必然并排)。
-- 🗑️ 🗑️ **移除 AI 输入框的「截图」(区域截图)入口**:去 Tauri 化 M2 已把屏幕/窗口捕获判给 Electron 壳,sidecar 的 `ui.screenshot_begin_region` 只剩显式降级(恒答「区域截图暂不可用:屏幕/窗口捕获归 Electron 壳」),按钮点下去只有一句报错。删除 `conversation.input.left` 槽注册、`ScreenshotButton` 组件与其测试;能力缺口回到技术方案 G-18,等宿主侧真的提供捕获面再接入口。sidecar 的降级方法保留——它是 M2 契约里「该能力归 Electron 壳」的标记,`verify:bridge-compat` 仍在断言它。
+### v0.133.5 (2026-10-12)
+- 🔧 🎨 **工具面板资产行的默认动作换成「在系统浏览器打开」,壳内页面打开移到右键菜单**:侧栏「StarHub 工具」里的资产行原来是左键开壳内工作台面板、右键菜单里才藏一项「在浏览器中打开」;现在**左键直接交给系统默认浏览器**(`ui.open_external_url`,同一个独立工作台 URL,方便拖到第二块屏或与主壳并排),**右键菜单第一项是「在页面内打开」**(壳内工作台主面板页,也就是原来的默认动作)。菜单顺带去掉了与左键重复的「打开 / 在浏览器中打开」两项,行 title 改为「在浏览器中打开 <资产名>」;唤起失败仍是可见提示 + 宿主源链接落剪贴板。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
