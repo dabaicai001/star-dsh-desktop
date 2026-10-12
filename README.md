@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.133.3-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.133.4-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,9 +45,9 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.133.3 (2026-10-12)
-- 🐛 🐛 **「在浏览器中打开」拿到的是 `dsh-app://app/...` 无效链接**(用户实测:提示「未能唤起系统浏览器,链接已复制到剪贴板」,粘出来的是 `dsh-app://app/starhub-react/index.html?…`):桌面壳里 GUI 文档的 origin 是 `dsh-app://app/`(壳用 `protocol.handle` 把该源的请求反代到真正的宿主),前端**看不到**宿主的 `http://127.0.0.1:<port>`,拿 `location.origin` 拼绝对 URL 必然拼错——既过不了 sidecar 的 http/https 校验,也进不了 `shell.openExternal`。现在新增桥内命令 `host_origin`(用请求 Host 头还原宿主源,不下发 sidecar),前端据此拼绝对 URL 再交给 `ui.open_external_url`;预览 / 旧宿主取不到该命令时退回页面自身 origin,剪贴板兜底链接也变成可直接粘贴的宿主地址。
-- 🐛 🐛 **plugin:bundle 守卫补第四处:插件宿主产物 `lib/` 比 `src/` 旧**(改完 bridge / approval-bridge 的宿主代码若忘了 `build:lib`,包里还是旧宿主代码——本次改 `workbench.ts` 正是这类)。守卫现在覆盖:客户端 `client.js`、插件宿主 `lib/`、两个 sidecar 二进制、工作台 `dist`。
+### v0.133.4 (2026-10-12)
+- 🐛 🐛 **SSH 终端一打开就并排出现两个提示符(用户实测:每次打开必现)**:真机 sidecar 会话抓到的原始字节流是「提示符 1 → 注入命令回显行(`…fi\r\n`)→ 提示符 2」——打开终端时 client-nav 会静默注入 OSC 7 钩子(SFTP「跟随终端」要用),而**隐藏回显过滤器把注入回显整行连同它的换行一起剔除**,光标停在提示符 1 末尾,shell 执行完重印的提示符 2 就紧贴上去(`[work@zhht-dev ~]$ [work@zhht-dev ~]$ `)。修复:丢弃回显行的位置**代入行复位**(`\r` + 擦除整行,`HIDDEN_ECHO_LINE_RESET`),重印的提示符落在同一行,视觉上只剩一个提示符;新增按真机字节流写的回归用例(旧实现下必然并排)。
+- 🗑️ 🗑️ **移除 AI 输入框的「截图」(区域截图)入口**:去 Tauri 化 M2 已把屏幕/窗口捕获判给 Electron 壳,sidecar 的 `ui.screenshot_begin_region` 只剩显式降级(恒答「区域截图暂不可用:屏幕/窗口捕获归 Electron 壳」),按钮点下去只有一句报错。删除 `conversation.input.left` 槽注册、`ScreenshotButton` 组件与其测试;能力缺口回到技术方案 G-18,等宿主侧真的提供捕获面再接入口。sidecar 的降级方法保留——它是 M2 契约里「该能力归 Electron 壳」的标记,`verify:bridge-compat` 仍在断言它。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
