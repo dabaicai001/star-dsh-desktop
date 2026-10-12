@@ -5,18 +5,21 @@
  * 必须在 main 有同名注册),显示当前子类(终端 / 数据库 / Docker)的资产
  * (连接)列表;无资产概念的子类(Android)渲染各自的工作面板。
  * 子类行为手风琴:点行展开,再点一次收起(v0.130.0;null = 全部收起)。
- * 点资产行经注入的 openAsset 回调新开该实例的独立操作页窗口(桌面端 Tauri
- * webview 窗口,浏览器预览新标签页)。行尾 hover 出编辑钮,经
- * openConnectionManager(asset) 打开连接对话框的编辑模式;列头带资产数、
+ * 资产行交互(v0.133.5 起):**左键点行 = 在系统默认浏览器里打开**该实例的独立
+ * 操作页(与壳内面板同一个 URL,方便拖到第二块屏 / 与主壳并排);**右键菜单**里
+ * 才是「在页面内打开」(壳内工作台主面板页,即原来的默认动作)。行尾 hover 出编辑钮,
+ * 经 openConnectionManager(asset) 打开连接对话框的编辑模式;列头带资产数、
  * 刷新与「新建连接」入口,右上角 × 回会话视图(selectPanel(null))。
  *
- * 资产行右键菜单(与任务 3 的 dsh 右键菜单同款 Menu 原语):打开 / 在浏览器中
- * 打开(同一个独立工作台 URL,交给系统默认浏览器;壳的 window.open 处理器只把
- * http/https 交 shell.openExternal,内置浏览器的 guest 会话禁止请求宿主源,
- * 见 browser-guests.ts)/ 引用到当前对话框(插入 `@` 引用 chip 并轻绑定资产
- * 上下文,与 `@` pick 同语义)/ 编辑 / 复制连接信息(名称 + user@host 到剪贴板)/
- * 删除(删除复用连接对话框编辑模式内的两步确认删除入口,不在菜单里直接执行
- * 破坏性操作)。
+ * 资产行右键菜单(与任务 3 的 dsh 右键菜单同款 Menu 原语):在页面内打开(壳内工作台
+ * 面板页)/ 引用到当前对话框(插入 `@` 引用 chip 并轻绑定资产上下文,与 `@` pick
+ * 同语义)/ 编辑 / 复制连接信息(名称 + user@host 到剪贴板)/ 删除(删除复用连接
+ * 对话框编辑模式内的两步确认删除入口,不在菜单里直接执行破坏性操作)。
+ *
+ * 浏览器唤起走**宿主 sidecar**(`ui.open_external_url` → 平台默认浏览器):壳的
+ * `window.open` 处理器只把 http/https 交 `shell.openExternal`,而内置浏览器的 guest
+ * 会话禁止请求宿主源(见 browser-guests.ts);两条路都不通时把链接落到剪贴板并给出
+ * 可见提示。
  *
  * 浏览器预览(无 Tauri IPC)时 refresh 落入 preview 态,这里展示预览提示
  * 而不是红错;其他拉取失败给错误 + 重试。
@@ -31,7 +34,7 @@ import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  IconCloseOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium, IconGlobeOutlineMedium, IconLinkOutlineMedium,
+  IconCloseOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium, IconLinkOutlineMedium,
   IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconTrashOutlineMedium,
   writeClipboard, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -125,19 +128,20 @@ export type StarHubToolWorkspaceProps =
   & PropsRuntime<'main'>
   & InjectFace<StarHubToolWorkspaceInjected>
 
-/** 单个资产行:主按钮(打开)+ 行尾编辑钮 + 右键菜单(打开/引用/编辑/复制/删除)。 */
-function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDelete, onNotice }: {
+/** 单个资产行:主按钮(系统浏览器打开)+ 行尾编辑钮 + 右键菜单(在页面内打开/引用/编辑/复制/删除)。 */
+function AssetRow({ asset, badgeLabel, active, onOpenInPage, onReference, onEdit, onDelete, onNotice }: {
   asset: RustAsset
   badgeLabel: string
   /** 当前打开(选中)的资产行高亮。 */
   active: boolean
-  onOpen: () => void
+  /** 在页面内打开:壳内工作台主面板页(右键菜单入口,非默认动作)。 */
+  onOpenInPage: () => void
   /** 引用到当前对话框:插入 `@` 引用 chip 并轻绑定资产上下文。 */
   onReference: () => void
   onEdit: () => void
   /** 删除走连接对话框编辑模式(内含两步确认的 delete_asset 入口)。 */
   onDelete: () => void
-  /** 面板级瞬时提示(「在浏览器中打开」两条路都不通时给出可见反馈)。 */
+  /** 面板级瞬时提示(唤起系统浏览器两条路都不通时给出可见反馈)。 */
   onNotice: (text: string) => void
 }) {
   const menu = useContextMenu()
@@ -148,9 +152,11 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
     return () => { window.clearTimeout(timer) }
   }, [copied])
   const subtitle = assetSubtitle(asset)
+  const openInBrowser = (): void => {
+    void openAssetInBrowser(asset).then((message) => { if (message !== null) onNotice(message) })
+  }
   const items: MenuEntry[] = [
-    { id: 'open', label: '打开', icon: <IconRightUpOutlineMedium /> },
-    { id: 'browser', label: '在浏览器中打开', icon: <IconGlobeOutlineMedium /> },
+    { id: 'open-in-page', label: '在页面内打开', icon: <IconRightUpOutlineMedium /> },
     { id: 'reference', label: '引用到当前对话框', icon: <IconLinkOutlineMedium /> },
     { id: 'edit', label: '编辑', icon: <IconEditOutlineMedium /> },
     { id: 'copy', label: copied ? '已复制' : '复制连接信息', icon: <IconCopyOutlineMedium /> },
@@ -164,8 +170,8 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
       <button
         type="button"
         className={`${css.row} ${active ? css.active : ''}`}
-        title={`打开 ${asset.name}(新窗口)`}
-        onClick={onOpen}
+        title={`在浏览器中打开 ${asset.name}`}
+        onClick={openInBrowser}
       >
         <span className={css.badge}>{badgeLabel}</span>
         <span className={css.assetText}>
@@ -186,16 +192,13 @@ function AssetRow({ asset, badgeLabel, active, onOpen, onReference, onEdit, onDe
         menu={menu}
         items={items}
         onSelect={(id) => {
-          if (id === 'open') onOpen()
-          else if (id === 'browser') {
-            void openAssetInBrowser(asset).then((message) => { if (message !== null) onNotice(message) })
-          }
+          if (id === 'open-in-page') onOpenInPage()
           else if (id === 'reference') onReference()
           else if (id === 'edit') onEdit()
           else if (id === 'copy') {
             const text = subtitle === '' ? asset.name : `${asset.name} ${subtitle}`
             void writeClipboard(text).then((ok) => { if (ok) setCopied(true) })
-          /* v8 ignore start -- 菜单 id 枚举完备(open/browser/reference/edit/copy/delete),delete 条件的假分支不可达 */
+          /* v8 ignore start -- 菜单 id 枚举完备(open-in-page/reference/edit/copy/delete),delete 条件的假分支不可达 */
           } else if (id === 'delete') onDelete()
           /* v8 ignore stop */
         }}
@@ -388,7 +391,7 @@ function renderSubcategory(
                   asset={asset}
                   badgeLabel={assetRowBadge(asset, subcategory.label)}
                   active={activeAssetId === asset.id}
-                  onOpen={() =>{  handlers.openAsset(asset) }}
+                  onOpenInPage={() =>{  handlers.openAsset(asset) }}
                   onReference={() =>{  handlers.insertAssetReference(asset) }}
                   onEdit={() =>{  handlers.openConnectionManager(asset) }}
                   onDelete={() =>{  handlers.openConnectionManager(asset) }}
