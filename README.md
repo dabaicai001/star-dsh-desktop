@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.133.8-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.133.9-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,8 +45,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.133.8 (2026-10-12)
-- 🔧 🎨 **SSH 终端工作区界面重构(交互 / 动画 / 信息层次)**:头部新增按连接状态变色的资产头像徽章与「已连接 / 连接中 / 已断开」状态胶囊(连接中状态点带脉冲动画),断开后「重新连接」改为独立的描边按钮;工作区页签重构为分段控件(圆角容器内悬浮激活胶囊),「网页」页签换成地球图标,原页签条右侧的状态文字移除(状态并入头部胶囊,全屏仅一处「已连接」);快捷命令改为胶囊形 chip,悬停上浮 + 着色、按下轻微缩放;操作结果通知从内嵌横条改为工作区顶部悬浮 toast(滑入 + 淡入);MFA / 主机密钥 / ZMODEM / 快捷命令编辑器四类弹窗统一「遮罩模糊 + 卡片弹入」进场动画,ZMODEM(仅待选文件阶段)与快捷命令编辑器支持点遮罩 / Esc 关闭,输入框焦点带主色描边光环;SFTP 侧栏进场右滑入,拖拽把手悬停时中线染主色;终端区域键盘聚焦出现淡色聚焦环。新增窄屏断点(<840px 隐藏次要文字,<680px 面板铺满全屏),`prefers-reduced-motion` 下全部动画与过渡关闭。
+### v0.133.9 (2026-10-12)
+- 🐛 🐛 **修 CI / Release 构建在「Package dsh runtime」步骤的 TS2740 类型错误**(v0.133.5 起三个 tag 连续构建失败):client-nav 的 `tools-panel-icon.client.spec.tsx` 渲染 `ToolsPanelIcon` 时只传了 `size`/`active`,而根 `tsconfig.client.json` 聚合程序会加载全部 GlobalStandardProps 合并(ui-session 的 useSessions/useSessionStatus/useSessionRetainInfo、ui-workspace 的 useWorkspaces、resources 的 useResource、ui-layout 的 usePanelInfo),缺这 6 个全局 props 直接编译失败。测试按上游 client 测试的既有桩模式补齐 6 个全局 props 灯具(图标本身一个都不用,纯类型满足),本地 `tsc -b tsconfig.client.json` 与 vitest 均通过。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

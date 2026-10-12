@@ -9,6 +9,11 @@
 
 ---
 
+## [0.133.9] - 2026-10-12
+
+### 修复
+- 🐛 **修 CI / Release 构建在「Package dsh runtime」步骤的 TS2740 类型错误**(v0.133.5 起三个 tag 连续构建失败):client-nav 的 `tools-panel-icon.client.spec.tsx` 渲染 `ToolsPanelIcon` 时只传了 `size`/`active`,而根 `tsconfig.client.json` 聚合程序会加载全部 GlobalStandardProps 合并(ui-session 的 useSessions/useSessionStatus/useSessionRetainInfo、ui-workspace 的 useWorkspaces、resources 的 useResource、ui-layout 的 usePanelInfo),缺这 6 个全局 props 直接编译失败。测试按上游 client 测试的既有桩模式补齐 6 个全局 props 桩(图标本身一个都不用,纯类型满足),本地 `tsc -b tsconfig.client.json` 与 vitest 均通过。
+
 ## [0.133.8] - 2026-10-12
 
 ### 变更
