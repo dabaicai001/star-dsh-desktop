@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.133.5-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.133.6-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,8 +45,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.133.5 (2026-10-12)
-- 🔧 🎨 **工具面板资产行的默认动作换成「在系统浏览器打开」,壳内页面打开移到右键菜单**:侧栏「StarHub 工具」里的资产行原来是左键开壳内工作台面板、右键菜单里才藏一项「在浏览器中打开」;现在**左键直接交给系统默认浏览器**(`ui.open_external_url`,同一个独立工作台 URL,方便拖到第二块屏或与主壳并排),**右键菜单第一项是「在页面内打开」**(壳内工作台主面板页,也就是原来的默认动作)。菜单顺带去掉了与左键重复的「打开 / 在浏览器中打开」两项,行 title 改为「在浏览器中打开 <资产名>」;唤起失败仍是可见提示 + 宿主源链接落剪贴板。
+### v0.133.6 (2026-10-12)
+- 🐛 🐛 **同一个 SSH 资产开两个窗口会互相串台**(用户实测:打开第二个窗口时,第一个窗口的输入行里凭空出现 `__starhub_osc7() { … }` 这行注入命令;在任一个窗口敲字,两个窗口都有反应):会话 id 直接用了 `asset.id`,而它既是 sidecar 会话表的键、又是 `ssh:data:<id>` 这类事件的事件名——第二个窗口的 `ssh_connect` 覆盖了第一个窗口的会话,两个窗口读写同一条 shell(所以能看到对方注入 OSC 7 的回显、输入互相串台),关掉任一个窗口还会把另一个的连接一起断掉。现在**每个终端实例生成独立会话 id**(`<assetId>__<6 位 base36 随机>`,`terminalSessionId()`):同资产多窗口完全隔离,同一实例内「重新连接」仍沿用同一个 id(只换连接代次)。「命令广播」列表的标题相应改为「本窗口显示资产名 / 其它窗口显示主机」,不再拿带后缀的会话 id 当标题。真机验证:两条会话前缀相同、后缀不同时,一方的命令输出与 OSC 7 注入回显在另一方的流里都是 **0 字节**。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
