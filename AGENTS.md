@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.133.2(🐛 **「在浏览器中打开」失败不再静默**:sidecar 唤起与 `window.open` 两条路都不通时,面板给出可见提示(6s)并把链接复制到剪贴板——「点了没反应」这种没法排查的失败不再可能。) |
+| 当前版本 | v0.133.3(🐛 **「在浏览器中打开」拿到的是 `dsh-app://app/...` 无效链接**(用户实测:提示「未能唤起系统浏览器,链接已复制到剪贴板」,粘出来的是 `dsh-app://app/starhub-react/index.html?…`):桌面壳里 GUI 文档的 origin 是 `dsh-app://app/`(壳用 `protocol.handle` 把该源的请求反代到真正的宿主),前端**看不到**宿主的 `http://127.0.0.1:<port>`,拿 `location.origin` 拼绝对 URL 必然拼错——既过不了 sidecar 的 http/https 校验,也进不了 `shell.openExternal`。现在新增桥内命令 `host_origin`(用请求 Host 头还原宿主源,不下发 sidecar),前端据此拼绝对 URL 再交给 `ui.open_external_url`;预览 / 旧宿主取不到该命令时退回页面自身 origin,剪贴板兜底链接也变成可直接粘贴的宿主地址。) |
 
 ## 架构一句话
 
@@ -144,4 +144,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-12 (v0.133.2)*
+*最后更新: 2026-10-12 (v0.133.3)*
