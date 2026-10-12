@@ -16,7 +16,7 @@
  * @module StarHub SSH/SFTP overlay (client)
  */
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { IconCheckOutlineMedium, IconCloseFillMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconFolderOpenOutlineMedium, IconLinkOutlineMedium, IconPaperclipOutlineMedium, IconPlusOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, IconCloseFillMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconFolderOpenOutlineMedium, IconGlobeOutlineMedium, IconPaperclipOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconUsersOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -757,77 +757,90 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const toggleSidePanel = (panel: Exclude<SidePanel, null>): void => {
     setSidePanel(current => current === panel ? null : panel)
   }
+  // 头部头像徽标:取资产名首字符,颜色随连接状态变化。
+  const avatarInitial = (asset.name.trim().charAt(0) || '?').toUpperCase()
 
   return (
     <div className={css.backdrop}>
       <section className={css.panel} aria-label={`SSH 工作区 ${asset.name}`}>
         <header className={css.header}>
           <div className={css.headLeft}>
-            <span className={connected ? css.statusOnline : (closed ? css.statusOffline : css.statusPending)} aria-label={connected ? 'SSH 已连接' : (closed ? 'SSH 已断开' : 'SSH 连接中')} />
+            <span
+              className={`${css.avatar} ${connected ? css.avatarOnline : (closed ? css.avatarOffline : css.avatarPending)}`}
+              aria-hidden="true"
+            >{avatarInitial}</span>
             <div className={css.identity}>
               <span className={css.title}>{asset.name}</span>
-              <span className={css.endpoint}>{typeof asset.config.username === 'string' ? `${asset.config.username}@` : ''}{typeof asset.config.host === 'string' ? asset.config.host : '未配置主机'}</span>
+              <span className={css.endpoint}>{typeof asset.config.username === 'string' ? `${asset.config.username}@` : ''}{typeof asset.config.host === 'string' ? asset.config.host : '未配置主机'}{typeof asset.config.port === 'number' ? `:${asset.config.port}` : ''}</span>
             </div>
+            <span
+              className={`${css.statusPill} ${connected ? css.statusPillOnline : (closed ? css.statusPillOffline : css.statusPillPending)}`}
+              aria-label={connected ? 'SSH 已连接' : (closed ? 'SSH 已断开' : 'SSH 连接中')}
+            >
+              <span className={connected ? css.connectionOnline : (closed ? css.connectionOffline : css.connectionPending)} aria-hidden="true" />
+              <span className={css.statusPillText}>{connected ? '已连接' : (closed ? '已断开' : '连接中')}</span>
+            </span>
           </div>
           <div className={css.headRight}>
             {!connected && closed && (
-              <button type="button" className={css.reconnectAction} onClick={reconnect} title="重新建立 SSH 连接">重新连接</button>
+              <button type="button" className={css.reconnectAction} onClick={reconnect} title="重新建立 SSH 连接"><IconRefreshOutlineMedium size={13} />重新连接</button>
             )}
-            <button type="button" className={css.iconButton} onClick={onClose} title="关闭" aria-label="关闭 SSH 工作区"><IconCloseOutlineMedium size={16} /></button>
             <button
               type="button"
               className={css.broadcastAction}
               onClick={() => void openBroadcast()}
               title="命令广播:把同一命令发送到多个已连接 SSH 会话"
               aria-label="广播"
-            ><span>广播</span><span className={css.broadcastDetail}>命令</span></button>
+            ><IconUsersOutlineMedium size={14} /><span>广播</span><span className={css.broadcastDetail}>命令</span></button>
+            <span className={css.headerDivider} aria-hidden="true" />
+            <button type="button" className={css.iconButton} onClick={onClose} title="关闭" aria-label="关闭 SSH 工作区"><IconCloseOutlineMedium size={16} /></button>
           </div>
         </header>
         {error !== null && <div className={css.error} role="alert">{error}</div>}
         <input ref={quickImportRef} className={css.fileInput} type="file" accept=".qbl,.qblx" onChange={event => void importQuickCommandFile(event)} />
-        {broadcastNotice !== null && (
-          <div className={css.notice} role="status">
-            <span className={css.noticeMark} aria-hidden="true"><IconCheckOutlineMedium size={13} /></span>
-            <span>{broadcastNotice}</span>
-            <button type="button" className={css.noticeClose} onClick={() =>{  setBroadcastNotice(null) }} aria-label="关闭提示"><IconCloseFillMedium size={11} /></button>
-          </div>
-        )}
         <div className={css.workspace}>
+          {broadcastNotice !== null && (
+            <div className={css.notice} role="status">
+              <span className={css.noticeMark} aria-hidden="true"><IconCheckOutlineMedium size={13} /></span>
+              <span className={css.noticeText}>{broadcastNotice}</span>
+              <button type="button" className={css.noticeClose} onClick={() =>{  setBroadcastNotice(null) }} aria-label="关闭提示"><IconCloseFillMedium size={11} /></button>
+            </div>
+          )}
           <main className={css.terminalWorkspace} aria-label="SSH 终端">
             <div className={css.workspaceTabs} role="tablist" aria-label="SSH 工作区">
-              <span className={css.terminalTab} role="tab" aria-selected="true"><IconCodeOutlineMedium size={14} /> 终端</span>
-              <span className={css.spacer} />
-              <button
-                type="button"
-                className={sidePanel === 'sftp' ? css.workspaceTabActive : css.workspaceTab}
-                onClick={() =>{  toggleSidePanel('sftp') }}
-                title={connected ? '显示或隐藏 SFTP 文件面板' : '等待 SSH 连接后启用 SFTP'}
-                aria-pressed={sidePanel === 'sftp'}
-              >
-                <IconFolderOpenOutlineMedium size={15} /> 文件
-                {transferTasks.activeCount > 0 && (
-                  <span
-                    className={css.tabBadge}
-                    title={`${transferTasks.activeCount} 个传输任务进行中(点击查看)`}
-                    onClick={(event) => {
-                      // 徽标点击直接开传输弹框,不切换侧栏
-                      event.stopPropagation()
-                      setTransferDialogOpen(true)
-                    }}
-                  >{transferTasks.activeCount}</span>
-                )}
-              </button>
-              <button
-                type="button"
-                className={css.workspaceTab}
-                onClick={() => {
-                  if (!connected) return
-                  void tauriInvoke('ssh_open_web_window', { sessionId, assetName: asset.name }).catch((e) => setError(e instanceof Error ? e.message : String(e)))
-                }}
-                title={connected ? '在独立窗口打开网页访问(webview)' : '等待 SSH 连接后启用网页访问'}
-                aria-pressed={false}
-              ><IconLinkOutlineMedium size={15} /> 网页</button>
-              <span className={css.connectionState}><span className={connected ? css.connectionOnline : (closed ? css.connectionOffline : css.connectionPending)} />{connected ? '已连接' : (closed ? '已断开' : '连接中')}</span>
+              <div className={css.tabGroup}>
+                <span className={css.terminalTab} role="tab" aria-selected="true"><IconCodeOutlineMedium size={13} />终端</span>
+                <button
+                  type="button"
+                  className={sidePanel === 'sftp' ? css.workspaceTabActive : css.workspaceTab}
+                  onClick={() =>{  toggleSidePanel('sftp') }}
+                  title={connected ? '显示或隐藏 SFTP 文件面板' : '等待 SSH 连接后启用 SFTP'}
+                  aria-pressed={sidePanel === 'sftp'}
+                >
+                  <IconFolderOpenOutlineMedium size={13} />文件
+                  {transferTasks.activeCount > 0 && (
+                    <span
+                      className={css.tabBadge}
+                      title={`${transferTasks.activeCount} 个传输任务进行中(点击查看)`}
+                      onClick={(event) => {
+                        // 徽标点击直接开传输弹框,不切换侧栏
+                        event.stopPropagation()
+                        setTransferDialogOpen(true)
+                      }}
+                    >{transferTasks.activeCount}</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className={css.workspaceTab}
+                  onClick={() => {
+                    if (!connected) return
+                    void tauriInvoke('ssh_open_web_window', { sessionId, assetName: asset.name }).catch((e) => setError(e instanceof Error ? e.message : String(e)))
+                  }}
+                  title={connected ? '在独立窗口打开网页访问(webview)' : '等待 SSH 连接后启用网页访问'}
+                  aria-pressed={false}
+                ><IconGlobeOutlineMedium size={13} />网页</button>
+              </div>
             </div>
             <div className={css.quickBar} aria-label="快捷命令">
               <span className={css.quickLabel}>QUICK</span>
@@ -846,8 +859,14 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
               onChange={(event) => void onZmodemFilesSelected(event)}
             />
             {zmodemPromptVisible && (
-              <div className={css.zmodemBackdrop}>
-                <div className={css.zmodemDialog} role="dialog" aria-label="ZMODEM 传输">
+              <div
+                className={css.zmodemBackdrop}
+                onClick={() => {
+                  // 仅在等待选文件阶段把遮罩点击视为取消;传输进行中不误伤。
+                  if (zmodemType === 'send' && zmodemProgress === 0) cancelZmodem()
+                }}
+              >
+                <div className={css.zmodemDialog} role="dialog" aria-label="ZMODEM 传输" onClick={event => event.stopPropagation()}>
                   <div className={css.zmodemHead}>
                     <span className={css.zmodemLabel}>ZMODEM</span>
                     <span className={css.zmodemStatus}>{zmodemStatus}</span>
@@ -1045,8 +1064,20 @@ function QuickCommandEditor({ commands, onChange, onClose }: {
     onChange(commands.map(command => command.id === id ? { ...command, [key]: value } : command))
   }
   return (
-    <div className={css.quickEditorBackdrop} role="dialog" aria-modal="true" aria-label="管理快捷命令">
-      <section className={css.quickEditor}>
+    <div
+      className={css.quickEditorBackdrop}
+      role="dialog"
+      aria-modal="true"
+      aria-label="管理快捷命令"
+      onClick={onClose}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          onClose()
+        }
+      }}
+    >
+      <section className={css.quickEditor} onClick={event => event.stopPropagation()}>
         <header className={css.quickEditorHeader}>
           <div><span className={css.quickEditorTitle}>快捷命令</span><span className={css.quickEditorHint}>点击命令将发送到当前 SSH 会话</span></div>
           <button type="button" className={css.iconButton} onClick={onClose} title="关闭" aria-label="关闭"><IconCloseOutlineMedium size={15} /></button>
