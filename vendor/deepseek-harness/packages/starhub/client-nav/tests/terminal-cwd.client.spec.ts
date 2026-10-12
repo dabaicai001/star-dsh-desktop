@@ -6,8 +6,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   createCwdTracker, createHiddenEchoFilter, extractOsc7Cwd, extractPromptCwd, isShellPromptLine,
-  buildOsc7InjectCommand, normalizeTerminalText, parseLoginShell, OSC7_INJECT_COMMAND, OSC7_INJECT_ECHO_TEXT,
-  parsePwdOutput, stripTerminalControl,
+  buildOsc7InjectCommand, normalizeTerminalText, parseLoginShell, HIDDEN_ECHO_LINE_RESET,
+  OSC7_INJECT_COMMAND, OSC7_INJECT_ECHO_TEXT, parsePwdOutput, stripTerminalControl,
 } from '../src/client/terminal/terminal-cwd.ts'
 
 describe('extractOsc7Cwd', () => {
@@ -151,12 +151,27 @@ describe('createHiddenEchoFilter', () => {
     expect(filter.isArmed()).toBe(true)
     // 武装期间无换行的行整体扣留(窗口只持续到注入回显的 \n 到达)
     expect(filter('user@host:~$ ')).toBe('')
-    // 注入命令回显跨分片:第一段扣留,第二段收束整行 → 整行剔除 + 冲刷
+    // 注入命令回显跨分片:第一段扣留,第二段收束整行 → 整行剔除 + 行复位 + 冲刷
     expect(filter('__starhub_osc7() { printf')).toBe('')
-    expect(filter(" '\\033]7;%s\\007' \"$PWD\"; }; PROMPT_COMMAND=__starhub_osc7\nnext prompt")).toBe('next prompt')
+    expect(filter(" '\\033]7;%s\\007' \"$PWD\"; }; PROMPT_COMMAND=__starhub_osc7\nnext prompt")).toBe(`${HIDDEN_ECHO_LINE_RESET}next prompt`)
     expect(filter.isArmed()).toBe(false)
     // 解除后恢复透传(例如 history 里再出现 marker 行,是用户可见输出)
     expect(filter('history shows __starhub_osc7\n')).toBe('history shows __starhub_osc7\n')
+  })
+
+  it('resets the line where the echo was dropped so the reprinted prompt does not glue onto the previous one', () => {
+    // 真机字节流:提示符 1 → 注入回显行(`fi\r\n`)→ 提示符 2。剔除回显行时若
+    // 连换行一起吞掉,提示符 2 会紧贴提示符 1(屏幕上并排两个提示符,每次
+    // 打开终端必现);行复位(CR + 擦除整行)让重印的提示符落在同一行。
+    const filter = createHiddenEchoFilter([OSC7_INJECT_ECHO_TEXT])
+    const prompt1 = '\u001b[?1034h[work@zhht-dev ~]$ '
+    // 提示符 1 已渲染(注入由它触发,此时尚未武装),光标停在它末尾
+    expect(filter(prompt1)).toBe(prompt1)
+    filter.arm()
+    const stream = filter('__starhub_osc7() { :; }\r\n\u001b]7;/home/work\u0007[work@zhht-dev ~]$ ')
+    expect(stream).toBe(`${HIDDEN_ECHO_LINE_RESET}\u001b]7;/home/work\u0007[work@zhht-dev ~]$ `)
+    // 行复位必须擦掉提示符 1,不能留下任何提示符文本
+    expect(stream).not.toContain(prompt1)
   })
 
   it('holds only the incomplete tail while armed and never holds plain text after disarm', () => {
@@ -172,7 +187,7 @@ describe('createHiddenEchoFilter', () => {
   it('emits earlier complete lines and drops only the marker line while armed', () => {
     const filter = createHiddenEchoFilter([OSC7_INJECT_ECHO_TEXT])
     filter.arm()
-    expect(filter('keep1\n__starhub_osc7\nkeep2\n')).toBe('keep1\nkeep2\n')
+    expect(filter('keep1\n__starhub_osc7\nkeep2\n')).toBe(`keep1\n${HIDDEN_ECHO_LINE_RESET}keep2\n`)
     expect(filter.isArmed()).toBe(false)
   })
 
@@ -188,18 +203,18 @@ describe('createHiddenEchoFilter', () => {
   it('flushes and disarms when a marker line is consumed mid-stream, keeping later chunks live', () => {
     const filter = createHiddenEchoFilter([OSC7_INJECT_ECHO_TEXT])
     filter.arm()
-    expect(filter('echo __starhub_osc7 hook\nls ~/my_')).toBe('ls ~/my_')
+    expect(filter('echo __starhub_osc7 hook\nls ~/my_')).toBe(`${HIDDEN_ECHO_LINE_RESET}ls ~/my_`)
     expect(filter.isArmed()).toBe(false)
   })
 
   it('re-arms after auto-disarm (a later follow-toggle injection filters again)', () => {
     const filter = createHiddenEchoFilter([OSC7_INJECT_ECHO_TEXT])
     filter.arm()
-    expect(filter('__starhub_osc7\n')).toBe('')
+    expect(filter('__starhub_osc7\n')).toBe(HIDDEN_ECHO_LINE_RESET)
     expect(filter.isArmed()).toBe(false)
     filter.arm()
     expect(filter('held')).toBe('')
-    expect(filter('__starhub_osc7 tail\nrest')).toBe('rest')
+    expect(filter('__starhub_osc7 tail\nrest')).toBe(`${HIDDEN_ECHO_LINE_RESET}rest`)
   })
 
   it('treats empty literals as an armed window that only ends via cap or disarm', () => {
@@ -213,7 +228,7 @@ describe('createHiddenEchoFilter', () => {
   it('handles a single-character marker line while armed', () => {
     const filter = createHiddenEchoFilter(['a'])
     filter.arm()
-    expect(filter('b\na\nc\n')).toBe('b\nc\n')
+    expect(filter('b\na\nc\n')).toBe(`b\n${HIDDEN_ECHO_LINE_RESET}c\n`)
     expect(filter.isArmed()).toBe(false)
   })
 })

@@ -334,9 +334,10 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     }
     osc7InjectPendingRef.current = false
     osc7InjectedRef.current = true
-    // 抑制窗口只包住注入回显:含 __starhub_osc7 的回显行被整行剔除后自动解除。
-    // 窗口外零缓冲透传——常驻过滤会把行尾 `_`(marker 前缀)扣到下个 chunk,
-    // 表现为「终端里下划线丢失 / 下个字符到达时一次蹦出两个」。
+    // 抑制窗口只包住注入回显:含 __starhub_osc7 的回显行被整行剔除(原位代入
+    // 行复位,否则 shell 重印的提示符会紧贴上一个,屏幕上并排两个提示符)
+    // 后自动解除。窗口外零缓冲透传——常驻过滤会把行尾 `_`(marker 前缀)
+    // 扣到下个 chunk,表现为「终端里下划线丢失 / 下个字符到达时一次蹦出两个」。
     hiddenEcho.arm()
     void tauriInvoke('ssh_write', { id: sessionId, data: command }).catch(() => {
       const held = hiddenEcho.disarm()

@@ -21,6 +21,16 @@ export const OSC7_INJECT_COMMAND =
 /** Stable substring of the inject-command echo line (hidden by the render filter). */
 export const OSC7_INJECT_ECHO_TEXT = '__starhub_osc7'
 
+/**
+ * 丢弃注入回显行时代入的「行复位」(CR + 擦除整行)。
+ *
+ * 注入命令执行完后 shell 会重印提示符。回显行连同它的换行被整行剔除后,
+ * 光标停在**上一个提示符末尾**,重印的提示符就紧贴着它,屏幕上并排出现
+ * 两个提示符(每次打开终端必现)。丢弃处补一次行复位:光标回列首并清掉
+ * 那一行,重印的提示符落在同一行——视觉上只剩一个提示符。
+ */
+export const HIDDEN_ECHO_LINE_RESET = '\r\x1b[2K'
+
 /** Max tail length kept because OSC sequences may straddle TCP fragments. */
 const OSC7_TAIL_KEEP = 512
 
@@ -189,7 +199,8 @@ const ARMED_BUFFER_CAP = 8192
  * `disarm()` 供注入失败时立即解除并取回扣留文本。
  */
 export interface HiddenEchoFilter {
-  /** 处理一个输出 chunk,返回应渲染的文本(武装期间可能扣留未完成行)。 */
+  /** 处理一个输出 chunk,返回应渲染的文本(武装期间可能扣留未完成行,
+   *  命中的回显行位置代入 {@link HIDDEN_ECHO_LINE_RESET})。 */
   (chunk: string): string
   /** 进入抑制窗口(写入注入命令前调用)。 */
   arm(): void
@@ -201,8 +212,10 @@ export interface HiddenEchoFilter {
 
 /**
  * 创建跨 chunk 保持状态的一次性隐藏回显过滤器(回显行可能跨 TCP 分片)。
- * 武装期间:完整逻辑行含任一字面量则整行剔除并结束窗口(注入回显只有
- * 一行,以命令末尾的 `\n` 收束);无换行前缀不再做 marker 前缀重叠扣留。
+ * 武装期间:完整逻辑行含任一字面量则整行剔除(并以
+ * {@link HIDDEN_ECHO_LINE_RESET} 收尾,让 shell 重印的提示符不贴住上一个)
+ * 后结束窗口(注入回显只有一行,以命令末尾的 `\n` 收束);无换行前缀不再
+ * 做 marker 前缀重叠扣留。
  * @param literals - substrings of lines to drop.
  * @returns 过滤器(默认未武装,透传)。
  */
@@ -220,9 +233,9 @@ export function createHiddenEchoFilter(literals: string[]): HiddenEchoFilter {
       const line = pending.slice(0, nl + 1)
       pending = pending.slice(nl + 1)
       if (markers.some(lit => line.includes(lit))) {
-        // 注入回显已消费:窗口使命完成,冲刷剩余并解除武装。
+        // 注入回显已消费:窗口使命完成,补行复位后冲刷剩余并解除武装。
         armed = false
-        out += pending
+        out += HIDDEN_ECHO_LINE_RESET + pending
         pending = ''
         return out
       }
