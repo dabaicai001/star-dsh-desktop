@@ -50,7 +50,6 @@ import { createExecRecordsBridge, subscribeSshExecEvents } from './conn/exec-rec
 import { assetSubtitle, assetWindowUrl, type StarHubAsset } from './sections.ts'
 import { bindAssetContext } from './tool-context.ts'
 import { focusWindowByKey, installWorkbenchPageHost, openNewPage, tauriInvoke } from './tauri.ts'
-import { ScreenshotButton } from './screenshot/ScreenshotButton.tsx'
 import { StarHubOverlay } from './StarHubOverlay.tsx'
 import { ToolsPanelIcon } from './ToolsPanelIcon.tsx'
 import { StarHubToolWorkspace, type StarHubToolWorkspaceInjected } from './StarHubToolWorkspace.tsx'
@@ -365,37 +364,6 @@ export function apply(ctx: Context): void {
       hooks: { execRecords: execRecords.source },
     }),
   }, ExecDrawerButton))
-  // AI 对话输入框截图(2026-08-23):工具行「剪刀」按钮 → 区域截图(遮罩框选),
-  // 确认后结果作为图片附件进当前会话输入(与粘贴/拖拽同一管线)。
-  // 浏览器预览(无 Tauri IPC)下 invoke 拒绝,按钮点击打日志不弹窗。
-  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-    name: 'conversation.input.left',
-    id: 'starhub-screenshot',
-    order: 10,
-    label: 'StarHub 截图',
-    inject: () => ({
-      // 0.1.6 附件管线:createDrafts(sessionId, files) 注册草稿附件 →
-      // input shell addAttachments 挂进输入;失败回滚 releaseDraftAttachments。
-      // 无当前会话(session-maybe 空态)时 shell 不存在,addImages 置 undefined(按钮仍可截图,
-      // 结果无处挂载时静默丢弃)。
-      addImages: (files: readonly File[]): string | null => {
-        const current = currentSessionId(sessions.list.getSnapshot())
-        if (current === undefined) return null
-        const binding = sessions.binding(current)
-        if (binding === undefined) return null
-        try {
-          const attachments = conversation.createDrafts(current, files)
-          if (!conversation.input.for(binding.ctx).addAttachments(attachments.map(a => a.id))) {
-            conversation.releaseDraftAttachments(attachments)
-          }
-          return null
-        } catch (error: unknown) {
-          return error instanceof Error ? error.message : String(error)
-        }
-      },
-      startRegion: () => tauriInvoke<void>('screenshot_begin_region'),
-    }),
-  }, ScreenshotButton))
   // 契约 §6.2-6.3:监听 Tauri 宿主事件(open-asset / ask-ai);订阅经
   // ctx.effect 注册,dispose 卸载监听(HMR 安全)。
   ctx.effect(() => subscribeHostEvents({

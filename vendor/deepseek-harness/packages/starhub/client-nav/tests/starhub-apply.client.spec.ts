@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * client-nav 插件装配(apply,rc.2 适配后):各槽位注册的槽名、组件与注入面
- * (工具面板桥 / 连接对话框桥 / 执行记录抽屉 / 截图按钮附件 / 壳内工作台面板)
+ * (工具面板桥 / 连接对话框桥 / 执行记录抽屉 / 壳内工作台面板)
  * 与工具树子类选中语义(selectSubcategory 写选择桥,不再联动布局开关)。
  * rc.2 注册面(v0.100.0 起右下角 BastionExecPanel 浮层席位移除;
  * v0.121.8 起文件树/文件查看/@ 文件源随「文件功能」移除;v0.123.1 起
@@ -16,8 +16,9 @@
  * 横幅),且工作台/直播/执行记录三个页面关掉时一律回会话视图(不回工具列表):
  * `shell.overlay`×2(overlay / AI 连接卡)+ `sidebar.panellist`
  * ×1(工具行)+ `main`×3(工具面板 / 工作台面板 / 直播面板)+
- * `conversation.session.header.actions`×1(执行)+
- * `conversation.input.left`(截图)+ `settings.section`×2(Android / SSH)。
+ * `conversation.session.header.actions`×1(执行)+ `settings.section`×2
+ * (Android / SSH);v0.133.4 起 `conversation.input.left` 截图按钮移除
+ * (区域截图随去 Tauri 化 M2 降级,能力归 Electron 壳,按钮点了只会报错)。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
@@ -30,7 +31,6 @@ import { StarHubWorkbenchPanel } from '../src/client/StarHubWorkbenchPanel.tsx'
 import { StarHubLivePanel } from '../src/client/live/StarHubLivePanel.tsx'
 import { ExecDrawerButton } from '../src/client/conn/ExecDrawerButton.tsx'
 import { StarHubConnCard } from '../src/client/conn/StarHubConnCard.tsx'
-import { ScreenshotButton } from '../src/client/screenshot/ScreenshotButton.tsx'
 import { AndroidSettingsTab } from '../src/client/settings/android.tsx'
 import { SshSettingsTab } from '../src/client/settings/ssh.tsx'
 import { STARHUB_ASSET_SOURCE } from '../src/client/asset-source.ts'
@@ -129,7 +129,6 @@ describe('client-nav apply (rc.2)', () => {
       'shell.overlay', 'shell.overlay',
       'sidebar.panellist', 'main', 'main', 'main',
       'conversation.session.header.actions',
-      'conversation.input.left',
       'settings.section', 'settings.section',
     ])
     const components = register.mock.calls.map(c => c[1])
@@ -137,7 +136,6 @@ describe('client-nav apply (rc.2)', () => {
       StarHubOverlay, StarHubConnCard,
       ToolsPanelIcon, StarHubToolWorkspace, StarHubWorkbenchPanel, StarHubLivePanel,
       ExecDrawerButton,
-      ScreenshotButton,
       AndroidSettingsTab, SshSettingsTab,
     ])
   })
