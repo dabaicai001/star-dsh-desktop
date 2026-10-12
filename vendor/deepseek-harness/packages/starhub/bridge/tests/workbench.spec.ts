@@ -118,6 +118,39 @@ describe('POST /starhub/api/invoke', () => {
     expect(JSON.parse(body())).toEqual({ ok: false, error: 'method not found: ui.audit_list' })
   })
 
+  it('answers host_origin from the Host header without touching the sidecar', async () => {
+    const sidecar = fakeSidecar()
+    const { res, body } = fakeResponse()
+    const request = fakeRequest('POST', JSON.stringify({ cmd: 'host_origin', args: {} }))
+    ;(request as { headers?: Record<string, string> }).headers = { host: '127.0.0.1:19387' }
+    await invokeRoute(sidecar)(request, res)
+    expect(res.status).toBe(200)
+    // 桌面壳里页面 origin 是 dsh-app://app:真实宿主源只能由见过请求的宿主侧给出
+    expect(JSON.parse(body())).toEqual({ ok: true, result: { origin: 'http://127.0.0.1:19387' } })
+    expect(sidecar.requests).toEqual([])
+  })
+
+  it('honours x-forwarded-proto for host_origin and rejects a missing/illegal Host', async () => {
+    const sidecar = fakeSidecar()
+    const forwarded = fakeRequest('POST', JSON.stringify({ cmd: 'host_origin', args: {} }))
+    ;(forwarded as { headers?: Record<string, string> }).headers = {
+      host: 'dsh.example:8443',
+      'x-forwarded-proto': 'https',
+    }
+    const first = fakeResponse()
+    await invokeRoute(sidecar)(forwarded, first.res)
+    expect(JSON.parse(first.body())).toEqual({ ok: true, result: { origin: 'https://dsh.example:8443' } })
+
+    for (const headers of [{}, { host: 'evil host/x' }, { host: '../../../etc' }]) {
+      const bad = fakeRequest('POST', JSON.stringify({ cmd: 'host_origin', args: {} }))
+      ;(bad as { headers?: Record<string, string> }).headers = headers
+      const { res, body } = fakeResponse()
+      await invokeRoute(sidecar)(bad, res)
+      expect(JSON.parse(body())).toMatchObject({ ok: false })
+    }
+    expect(sidecar.requests).toEqual([])
+  })
+
   it('rejects a missing cmd with 400', async () => {
     const sidecar = fakeSidecar()
     const { res, body } = fakeResponse()

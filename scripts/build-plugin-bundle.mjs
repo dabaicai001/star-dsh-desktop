@@ -432,6 +432,25 @@ async function main() {
         'pnpm --dir vendor/deepseek-harness --filter @deepseek-ai/dsh-starhub-client-nav run bundle')
     }
   }
+  // 宿主半边(每个插件的 lib/)同样是组装输入:src 比 lib 新即 fail loud。
+  // 2026-10-12 起补:改完 bridge 的 workbench.ts 若忘了 build:lib:host,包里还是旧宿主代码。
+  for (const plugin of PLUGINS) {
+    const source = join(vendorRoot, 'packages', 'starhub', plugin.short)
+    const libDir = join(source, 'lib')
+    if (!existsSync(libDir) || !existsSync(join(source, 'src'))) continue
+    let pluginSrcNewest = 0
+    for (const file of await listFilesRecursive(join(source, 'src'))) {
+      pluginSrcNewest = Math.max(pluginSrcNewest, (await stat(file)).mtimeMs)
+    }
+    let libNewest = 0
+    for (const file of await listFilesRecursive(libDir)) {
+      libNewest = Math.max(libNewest, (await stat(file)).mtimeMs)
+    }
+    if (pluginSrcNewest > libNewest) {
+      problems.push(
+        `插件宿主产物比 src/ 旧(packages/starhub/${plugin.short}/lib):先跑 npm run build:lib(host + client)`)
+    }
+  }
   if (!existsSync(join(options.windowDist, 'index.html'))) {
     problems.push(`工作台 dist 缺失: ${options.windowDist}(先跑 npm run build:window)`)
   } else {

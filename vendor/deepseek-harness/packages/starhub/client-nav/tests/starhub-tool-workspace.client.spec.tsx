@@ -335,9 +335,14 @@ describe('StarHubToolWorkspace', () => {
     expect(props.openConnectionManager).toHaveBeenCalledWith(expect.objectContaining({ id: 'e1' }))
   })
 
-  it('opens the asset standalone page through the host sidecar (system browser)', async () => {
+  it('opens the asset standalone page through the host sidecar with the HOST origin (not dsh-app://)', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
-    const invoke = vi.fn((cmd: string) => (cmd === 'open_external_url' ? { ok: true } : {}))
+    // 桌面壳里页面 origin 是 dsh-app://app,真实宿主源要靠桥内 host_origin 问出来
+    const invoke = vi.fn((cmd: string) => {
+      if (cmd === 'host_origin') return { origin: 'http://127.0.0.1:19387' }
+      if (cmd === 'open_external_url') return { ok: true }
+      return {}
+    })
     stubHostBridge(invoke)
     try {
       const props = workspaceProps()
@@ -346,11 +351,11 @@ describe('StarHubToolWorkspace', () => {
       render(<StarHubToolWorkspace {...props} />)
       fireEvent.contextMenu(screen.getByText('prod-server'))
       fireEvent.click(screen.getByText('在浏览器中打开'))
-      await vi.waitFor(() => { expect(invoke).toHaveBeenCalledTimes(1) })
-      // 主路径:交给 sidecar 唤起系统浏览器(与壳的弹窗策略无关),URL 是绝对值
-      expect(invoke.mock.calls[0]?.[0]).toBe('open_external_url')
-      expect(hostBridgeCalls()[0]?.args).toEqual({
-        url: `${window.location.origin}/starhub-react/index.html?asset=a1&workbench=ssh`,
+      await vi.waitFor(() => { expect(invoke).toHaveBeenCalledWith('open_external_url', expect.anything()) })
+      // 交给 sidecar 唤起系统浏览器(与壳的弹窗策略无关),URL 用宿主源还原
+      expect(hostBridgeCalls().map(call => call.cmd)).toEqual(['host_origin', 'open_external_url'])
+      expect(hostBridgeCalls()[1]?.args).toEqual({
+        url: 'http://127.0.0.1:19387/starhub-react/index.html?asset=a1&workbench=ssh',
       })
       expect(open).not.toHaveBeenCalled()
       // 不开壳内页、不进连接对话框
@@ -364,8 +369,8 @@ describe('StarHubToolWorkspace', () => {
 
   it('falls back to window.open when the host has no open_external_url (旧宿主/预览)', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
-    // 旧 sidecar:方法不存在 → 宿主桥回 {ok:false} → tauriInvoke reject
-    stubHostBridge(() => { throw new Error('method not found: ui.open_external_url') })
+    // 旧宿主:两个桥内命令都不认 → tauriInvoke reject → 用页面自身 origin 回落
+    stubHostBridge(() => { throw new Error('method not found') })
     try {
       const props = workspaceProps()
       props.bridge.selectSubcategory('terminal')
@@ -383,11 +388,15 @@ describe('StarHubToolWorkspace', () => {
     }
   })
 
-  it('surfaces a visible notice and copies the link when neither path can open a browser', async () => {
+  it('surfaces a visible notice and copies the HOST link when the browser cannot be launched', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     const write = vi.fn(() => Promise.resolve(true))
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: write }, configurable: true })
-    stubHostBridge(() => { throw new Error('method not found: ui.open_external_url') })
+    // 宿主源问得到,但唤起系统浏览器失败(如 spawn 失败)+ 壳拦下 window.open
+    stubHostBridge((cmd: string) => {
+      if (cmd === 'host_origin') return { origin: 'http://127.0.0.1:19387' }
+      throw new Error('唤起系统浏览器失败(rundll32.exe): 拒绝访问')
+    })
     try {
       const props = workspaceProps()
       props.bridge.selectSubcategory('terminal')
@@ -395,10 +404,10 @@ describe('StarHubToolWorkspace', () => {
       render(<StarHubToolWorkspace {...props} />)
       fireEvent.contextMenu(screen.getByText('prod-server'))
       fireEvent.click(screen.getByText('在浏览器中打开'))
-      // 两条路都不通时不再静默:面板给出可见提示,并把链接落到剪贴板
+      // 两条路都不通时不再静默:面板给出可见提示,并把**宿主源**链接落到剪贴板
       await screen.findByText('未能唤起系统浏览器,链接已复制到剪贴板')
       expect(write).toHaveBeenCalledWith(
-        `${window.location.origin}/starhub-react/index.html?asset=a1&workbench=ssh`,
+        'http://127.0.0.1:19387/starhub-react/index.html?asset=a1&workbench=ssh',
       )
     } finally {
       restoreHostBridge()

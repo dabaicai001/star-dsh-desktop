@@ -50,6 +50,32 @@ export function uiMethod(cmd: string): string {
   return `${UI_METHOD_PREFIX}${cmd}`
 }
 
+/**
+ * 桥内命令(不下发 sidecar):问「宿主源」。
+ *
+ * 桌面壳里 GUI 文档的 origin 是 `dsh-app://app/`(壳用 `protocol.handle` 把
+ * `dsh-app://app/<path>` 反代到真正的宿主),前端因此**拿不到**宿主的
+ * `http://127.0.0.1:<port>`;而「把工作台相对路径交给系统浏览器」必须用宿主
+ * 绝对 URL。这里用请求的 Host 头还原宿主源,由见过请求的宿主侧给出答案。
+ */
+export const HOST_ORIGIN_COMMAND = 'host_origin'
+
+/** 合法的 Host 头形态(`host` / `host:port`);挡掉空白、斜杠等拼接材料。 */
+const HOST_HEADER = /^[A-Za-z0-9.-]+(:\d{1,5})?$/
+
+/**
+ * 由请求头还原宿主源;还原不出返回 null。
+ * @param req - 入站工作台请求。
+ * @returns 形如 `http://127.0.0.1:19387` 的源,或 null(无/非法 Host)。
+ */
+function hostOriginOf(req: IncomingMessage): string | null {
+  const host = req.headers.host
+  if (typeof host !== 'string' || !HOST_HEADER.test(host)) return null
+  const forwarded = req.headers['x-forwarded-proto']
+  const proto = forwarded === 'https' ? 'https' : 'http'
+  return `${proto}://${host}`
+}
+
 /** Maximum accepted request body for one invocation (bytes). */
 const MAX_INVOKE_BODY_BYTES = 1024 * 1024
 
@@ -105,6 +131,15 @@ export function invokeHandler(
       return
     }
     const args = (typeof body.args === 'object' && body.args !== null ? body.args : {}) as object
+    if (cmd === HOST_ORIGIN_COMMAND) {
+      const origin = hostOriginOf(req)
+      if (origin === null) {
+        sendJson(res, 200, { ok: false, error: 'host origin unavailable (missing Host header)' })
+        return
+      }
+      sendJson(res, 200, { ok: true, result: { origin } })
+      return
+    }
     try {
       const result = await sidecar.request(uiMethod(cmd), args)
       sendJson(res, 200, { ok: true, result })

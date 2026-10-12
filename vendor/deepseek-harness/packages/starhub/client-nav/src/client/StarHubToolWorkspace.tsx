@@ -50,6 +50,26 @@ function isAssetlessSubcategory(key: string): boolean {
 }
 
 /**
+ * 问宿主要真实源(桌面壳里页面 origin 是 `dsh-app://app`,不是宿主源)。
+ *
+ * 壳把 `dsh-app://app/<path>` 反代到真正的宿主,但页面自己看不到那个源:直接拿
+ * `window.location.origin` 拼绝对 URL 会得到 `dsh-app://app/...`,既过不了
+ * sidecar 的 http/https 校验,也进不了 `shell.openExternal`。宿主的 `host_origin`
+ * 桥内命令用请求 Host 头还原真实源;预览 / 旧宿主取不到时退回页面自身 origin。
+ * @returns 形如 `http://127.0.0.1:19387` 的源。
+ */
+async function hostOrigin(): Promise<string> {
+  try {
+    const result = await tauriInvoke<{ origin?: unknown }>('host_origin')
+    const origin = typeof result.origin === 'string' ? result.origin : ''
+    if (origin !== '') return origin
+  } catch {
+    // 旧宿主没有该命令 / 浏览器预览:按页面自身源处理。
+  }
+  return window.location.origin
+}
+
+/**
  * 在系统默认浏览器里打开该资产的独立工作台页(与壳内面板同一个 URL)。
  *
  * 主路径是**宿主 sidecar**(`ui.open_external_url` → Windows
@@ -61,7 +81,8 @@ function isAssetlessSubcategory(key: string): boolean {
  *   把链接落到剪贴板并回报提示——「点了没反应」这种静默失败不再可能。
  */
 async function openAssetInBrowser(asset: StarHubAsset): Promise<string | null> {
-  const url = new URL(assetWindowUrl(asset), window.location.origin).href
+  // 绝对 URL 必须用**宿主源**拼:桌面壳里 location.origin 是 dsh-app://app。
+  const url = new URL(assetWindowUrl(asset), await hostOrigin()).href
   try {
     await tauriInvoke('open_external_url', { url })
     return null
