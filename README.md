@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.133.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.133.2-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,8 +45,9 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.133.1 (2026-10-10)
-- 🐛 🐛 **「在浏览器中打开」没有反应**:v0.133.0 只走前端 `window.open`,依赖上游壳的 `setWindowOpenHandler` → `shell.openExternal` 这一环(且新代码漏了 `tauriInvoke` 的 import,异常被静默吞掉)。现在改为**宿主 sidecar 直接唤起系统浏览器**:新增 `ui.open_external_url`(Windows `rundll32 url.dll,FileProtocolHandler` / macOS `open` / Linux `xdg-open`,参数向量直达进程不经 shell),前端 `window.open` 仅作回落(旧宿主 / 浏览器预览)。只受理绝对 http/https、拒空白与控制字符、长度上限 2048。
+### v0.133.2 (2026-10-12)
+- 🐛 🐛 **「在浏览器中打开」失败不再静默**:sidecar 唤起与 `window.open` 两条路都不通时,面板给出可见提示(6s)并把链接复制到剪贴板——「点了没反应」这种没法排查的失败不再可能。
+- 🐛 🐛 **plugin:bundle 漏查工作台 dist 新旧:包里装了两天前的 `/starhub-react/` 独立工作台页**:前置校验此前只查 `client.js` / 两个 sidecar / dist 是否存在(2026-10-12 实测:发 0.133.x 时 `dist-starhub-react` 还是 10-10 13:58 的构建,新菜单、新侧栏图标在 iframe 页里根本不存在,与 §62/§63 同源)。现在 `apps/starhub-window/src` 与 `packages/starhub/**` 的 `.ts/.tsx/.css`(排除 lib/tests)比 `dist/index.html` 新即 fail loud,提示先跑 `npm run build:window`;本次同时把 dist 重新构建进包。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

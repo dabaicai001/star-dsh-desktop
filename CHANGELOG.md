@@ -9,6 +9,12 @@
 
 ---
 
+## [0.133.2] - 2026-10-12
+
+### 修复
+- 🐛 **「在浏览器中打开」失败不再静默**:sidecar 唤起与 `window.open` 两条路都不通时,面板给出可见提示(6s)并把链接复制到剪贴板——「点了没反应」这种没法排查的失败不再可能。
+- 🐛 **plugin:bundle 漏查工作台 dist 新旧:包里装了两天前的 `/starhub-react/` 独立工作台页**:前置校验此前只查 `client.js` / 两个 sidecar / dist 是否存在(2026-10-12 实测:发 0.133.x 时 `dist-starhub-react` 还是 10-10 13:58 的构建,新菜单、新侧栏图标在 iframe 页里根本不存在,与 §62/§63 同源)。现在 `apps/starhub-window/src` 与 `packages/starhub/**` 的 `.ts/.tsx/.css`(排除 lib/tests)比 `dist/index.html` 新即 fail loud,提示先跑 `npm run build:window`;本次同时把 dist 重新构建进包。
+
 ## [0.133.1] - 2026-10-10
 
 ### 修复

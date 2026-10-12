@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.133.1(🐛 **「在浏览器中打开」没有反应**:v0.133.0 只走前端 `window.open`,依赖上游壳的 `setWindowOpenHandler` → `shell.openExternal` 这一环(且新代码漏了 `tauriInvoke` 的 import,异常被静默吞掉)。现在改为**宿主 sidecar 直接唤起系统浏览器**:新增 `ui.open_external_url`(Windows `rundll32 url.dll,FileProtocolHandler` / macOS `open` / Linux `xdg-open`,参数向量直达进程不经 shell),前端 `window.open` 仅作回落(旧宿主 / 浏览器预览)。只受理绝对 http/https、拒空白与控制字符、长度上限 2048。) |
+| 当前版本 | v0.133.2(🐛 **「在浏览器中打开」失败不再静默**:sidecar 唤起与 `window.open` 两条路都不通时,面板给出可见提示(6s)并把链接复制到剪贴板——「点了没反应」这种没法排查的失败不再可能。) |
 
 ## 架构一句话
 
@@ -144,4 +144,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-10 (v0.133.1)*
+*最后更新: 2026-10-12 (v0.133.2)*
