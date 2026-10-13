@@ -16,7 +16,7 @@
  * @module StarHub SSH/SFTP overlay (client)
  */
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { IconCheckOutlineMedium, IconCloseFillMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconFolderOpenOutlineMedium, IconGlobeOutlineMedium, IconPaperclipOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconUsersOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, IconCloseFillMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconFolderOpenOutlineMedium, IconPaperclipOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconUsersOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -830,16 +830,6 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
                     >{transferTasks.activeCount}</span>
                   )}
                 </button>
-                <button
-                  type="button"
-                  className={css.workspaceTab}
-                  onClick={() => {
-                    if (!connected) return
-                    void tauriInvoke('ssh_open_web_window', { sessionId, assetName: asset.name }).catch((e) => setError(e instanceof Error ? e.message : String(e)))
-                  }}
-                  title={connected ? '在独立窗口打开网页访问(webview)' : '等待 SSH 连接后启用网页访问'}
-                  aria-pressed={false}
-                ><IconGlobeOutlineMedium size={13} />网页</button>
               </div>
             </div>
             <div className={css.quickBar} aria-label="快捷命令">

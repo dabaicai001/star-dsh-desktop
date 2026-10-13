@@ -377,22 +377,6 @@ describe('SshTerminalOverlay', () => {
     expect(queryByText('没有已连接的会话可用于广播')).toBeNull()
     unmount()
   })
-  it('opens the web browser in a standalone window from the 网页 button', async () => {
-    const invoke = vi.fn((_command: string) => {
-      return Promise.resolve(null)
-    })
-    stubInternals(invoke)
-    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      disconnect() {}
-    }
-    const { getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
-    // 连接后点「网页」→ 打开独立 webview 窗口(内嵌 WebBrowser/网关由独立窗口承载)
-    fireEvent.click(getByRole('button', { name: /网页/ }))
-    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_open_web_window', { sessionId: SESSION_ID, assetName: 'server' }) })
-    unmount()
-  })
   it('reports partial failure when some broadcast sends reject', async () => {
     const invoke = vi.fn((command: string, args?: Record<string, unknown>) => {
       if (command === 'ssh_get_sessions') {

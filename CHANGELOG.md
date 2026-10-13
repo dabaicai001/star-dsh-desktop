@@ -9,6 +9,11 @@
 
 ---
 
+## [0.133.10] - 2026-10-13
+
+### 移除
+- 🗑️ **移除 SSH 终端工具栏的「网页」按钮**:去 Tauri 化 M3 定稿后 sidecar 的 `ui.ssh_open_web_window` 已是终态降级(恒答「网页访问已不由 StarHub 提供:上游 dsh 原生提供 browser-use 及其可见面」),但终端页签条的「网页」按钮一直没拆——用户点完只收到一句报错(与 v0.133.4 拆 AI 输入框「截图」入口同一类死入口)。删除按钮、`IconGlobeOutlineMedium` import 与对应测试用例;网页访问由上游 dsh 原生 browser-use 承接。sidecar 的降级方法保留(它是 M3 契约里「该能力归上游」的标记,`verify:bridge-compat` 仍在断言),方法面与网关实现随 M4 删 `src-tauri` 一起退役。
+
 ## [0.133.9] - 2026-10-12
 
 ### 修复

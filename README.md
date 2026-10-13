@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.133.9-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.133.10-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,8 +45,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.133.9 (2026-10-12)
-- 🐛 🐛 **修 CI / Release 构建在「Package dsh runtime」步骤的 TS2740 类型错误**(v0.133.5 起三个 tag 连续构建失败):client-nav 的 `tools-panel-icon.client.spec.tsx` 渲染 `ToolsPanelIcon` 时只传了 `size`/`active`,而根 `tsconfig.client.json` 聚合程序会加载全部 GlobalStandardProps 合并(ui-session 的 useSessions/useSessionStatus/useSessionRetainInfo、ui-workspace 的 useWorkspaces、resources 的 useResource、ui-layout 的 usePanelInfo),缺这 6 个全局 props 直接编译失败。测试按上游 client 测试的既有桩模式补齐 6 个全局 props 灯具(图标本身一个都不用,纯类型满足),本地 `tsc -b tsconfig.client.json` 与 vitest 均通过。
+### v0.133.10 (2026-10-13)
+- 🗑️ 🗑️ **移除 SSH 终端工具栏的「网页」按钮**:去 Tauri 化 M3 定稿后 sidecar 的 `ui.ssh_open_web_window` 已是终态降级(恒答「网页访问已不由 StarHub 提供:上游 dsh 原生提供 browser-use 及其可见面」),但终端页签条的「网页」按钮一直没拆——用户点完只收到一句报错(与 v0.133.4 拆 AI 输入框「截图」入口同一类死入口)。删除按钮、`IconGlobeOutlineMedium` import 与对应测试用例;网页访问由上游 dsh 原生 browser-use 承接。sidecar 的降级方法保留(它是 M3 契约里「该能力归上游」的标记,`verify:bridge-compat` 仍在断言),方法面与网关实现随 M4 删 `src-tauri` 一起退役。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
