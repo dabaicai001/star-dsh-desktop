@@ -9,6 +9,11 @@
  * 桥 `starhub/bind.asset` 绑定资产(sidecar 的 `resolve_asset_id` 因此自动
  * 路由,`ensure_ssh_session` 复用该资产已有的 AI exec 连接)。
  *
+ * 会话打上 StarHub 自有的本地 cwd(Config `sessionCwd`):没有 cwd 的会话
+ * 拼不出系统提示的 {{cwd}} 段(回合在第 1 步静默失败、面板无响应),且被
+ * dsh 会话列表按 not-found 拒绝;打开后经 sessionTitle 服务把显示名钉成
+ * 服务器名(纯资产名,user 来源同时压住自动标题)。
+ *
  * 面板(壳内工作台 React 应用,无 dsh client runtime)经同源
  * `/starhub/api/assistant/*` 路由驱动:open/prompt/stop/close/model/approval
  * + SSE 流(`session/event` 按会话过滤转发,事件源渲染与 dsh GUI 同范式)。
@@ -21,8 +26,15 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { mkdirSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import z from '@deepseek-ai/schemastery'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
+import { SessionId } from '@deepseek-ai/dsh-session'
+// Type-only: declares the `sessionTitle` service on Context (assistant 标题钉名)。
+import type {} from '@deepseek-ai/dsh-session-title'
 // Type-only: declares the `webServer` service on Context (route registration)
 // and the `llm` service (model catalog for the panel picker).
 import type {} from '@deepseek-ai/dsh-host-webserver'
@@ -57,17 +69,58 @@ const BIND_ASSET_METHOD = 'starhub/bind.asset'
 const SDK_TRANSPORT_SERVICE = 'sdk-transport'
 const SDK_NOTIFICATIONS_SERVICE = 'sdk-notifications'
 const AGENT_DEFAULT_MODEL_SERVICE = 'agentDefaultModel'
+const SESSION_TITLE_SERVICE = 'sessionTitle'
+
+/** 助手会话的默认本地 cwd:StarHub 自有目录,不属于任何 workspace。 */
+const DEFAULT_SESSION_CWD = join(homedir(), '.starhub', 'ssh-assistant')
+
+/**
+ * 插件配置。sessionCwd 是助手会话打上的本地工作目录(部署变化项,按上游
+ * 「No hardcoded tunables」规约走 Config):没有 cwd 的会话拼不出系统提示的
+ * {{cwd}} 段——回合在第 1 步静默失败(面板无响应),且被会话列表按
+ * not-found 拒绝。
+ */
+export const Config: z<{ sessionCwd?: string }> = z.object({
+  sessionCwd: z.string().default(DEFAULT_SESSION_CWD),
+})
+
+/** apply 收到的已解析配置(可选字段,缺省见 DEFAULT_SESSION_CWD)。 */
+export interface AssistantConfig {
+  sessionCwd?: string
+}
 
 /**
  * 注册插件:建助手注册表、挂会话事件/状态/模型/审批四个监听,并注册
  * `/starhub/api/assistant/*` 路由;插件卸载时全部助手会话随之销毁。
  *
  * @param ctx - plugin context carrying the agent, webServer, and tools services.
+ * @param config - resolved plugin config (cordis.yml / defaults).
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: AssistantConfig = {}): void {
+  const sessionCwd = config.sessionCwd ?? DEFAULT_SESSION_CWD
+  // 目录必须真实存在(dsh-session 校验);建不出来是配置错误,启动期 fail loud。
+  mkdirSync(sessionCwd, { recursive: true })
   const registry = new AssistantRegistry({
+    sessionCwd,
     createAgent: options => ctx.agents.create(options),
     getAgent: sessionId => ctx.agents.get(sessionId),
+    renameSession: (sessionId, title) => {
+      // 标题只影响列表展示:缺 sessionTitle 服务或会话已释放时降级为 warn,
+      // 不打断助手打开(标题服务是 dsh-base 的常驻组成,正常组合不会缺)。
+      const titles = ctx.get(SESSION_TITLE_SERVICE)
+      const agent = ctx.agents.get(SessionId(sessionId))
+      if (titles === undefined || agent === undefined) {
+        ctx.logger(name).warn(`会话标题未设置(缺 sessionTitle 服务或会话已释放):${sessionId}`)
+        return
+      }
+      try {
+        titles.rename(agent.session, title)
+      } catch (error) {
+        ctx.logger(name).warn(
+          `会话标题设置失败(${sessionId}):${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    },
     bindAsset: async (assetId, sessionId) => {
       const transport = ctx.get(SDK_TRANSPORT_SERVICE) as JsonRpcTransportPeer | undefined
       if (transport === undefined) {

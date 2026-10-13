@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.134.1(✨ **SSH AI 助手的 MFA/堡垒机/主机密钥验证卡收进助手面板(不再跳壳内浮层)**:插件订阅 sidecar 对该资产 AI exec 连接(`dsh:<assetId>:ssh`)的精确事件(`ssh:kb-interactive` / `ssh:mfa-connected` / `ssh:bastion-select\|output\|done` / `ssh:hostkey-confirm`),以新帧类型推给面板原位渲染——MFA 表单(应答走 `ssh_kb_response`,多轮复用)、堡垒机实时终端(pty 字节进面板内 xterm,`ssh_write`/`ssh_resize` 回传,「执行 AI 命令」发 `__run__` 哨兵)、主机密钥三选(信任并保存/仅本次/拒绝)。晚到客户端重推挂起中的卡;面板有流客户端时新路由 `GET /starhub/api/assistant/active-conns` 上报该连接,壳内 StarHubConnCard 据此抑制双卡,无面板客户端时壳内卡照旧服务(含主壳 AI 自己的会话)。顺带修掉 StarHubConnCard 两个既有 lint 错误(prefer-const、no-unnecessary-condition)。) |
+| 当前版本 | v0.134.2(🐛 **修 SSH AI 助手「发消息没反应」+ 会话列表出现「未分组/未命名」幽灵会话 + 重开报 `session/not-found`**(三个症状同一根因):助手会话以 `ctx.agents.create()` 建根 Agent 时没打 `meta.cwd`,dsh 会话模型里无 cwd 的会话一是**拼不出系统提示的 `{{cwd}}` 段**(回合在第 1 步装配失败、`turn/end reason.kind=error`,面板又从不渲染这类事件——表现就是「发了没反应」),二是被历史/会话列表按 not-found 拒绝(落进 `_no-cwd/` 桶)。现在创建时恒打 `meta.cwd`(指向插件专属目录 `~/.starhub/ssh-assistant`,新插件 Config 字段 `sessionCwd` 可覆盖,apply 时 mkdir,建不了就 fail loud),并在会话建好后调 `sessionTitle` 服务把显示名钉成**纯服务器名**(user 来源,压住自动标题;服务缺席降级为告警不阻塞)。面板侧同时补上 `turn/end` 错误原因的渲染(按回合号去重,重放不叠加),这类失败从此在面板里可见。宿主侧 fake host 补 `sessionCwd`/`renames` 桩与 cwd/标题断言,组合测试走插件 Config 注入临时目录并断言会话头 cwd 与 rename 接线;客户端 fold 补 turn/end 用例(28 例全绿)。) |
 
 ## 架构一句话
 
@@ -145,4 +145,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-13 (v0.134.1)*
+*最后更新: 2026-10-13 (v0.134.2)*

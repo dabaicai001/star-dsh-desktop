@@ -87,10 +87,21 @@ export interface OpenAssistantResult {
 
 /** Cordis-facing operations the registry depends on. */
 export interface AssistantHost {
+  /**
+   * Absolute local cwd stamped on every assistant session. StarHub-owned and
+   * created by the host at plugin apply; sessions without one cannot assemble
+   * their prompt (`{{cwd}}` section) and are rejected by the session list.
+   */
+  readonly sessionCwd: string
   /** Create the agent-scoped session (dsh `ctx.agents.create`). */
   createAgent(options: CreateAgentOptions): Promise<AgentHandle>
   /** Live agent for a session id, or undefined when it is gone. */
   getAgent(sessionId: SessionId): Agent | undefined
+  /**
+   * Pin one live assistant session's display title (plain server name); a
+   * missing title service degrades to a warn — the assistant still works.
+   */
+  renameSession(sessionId: string, title: string): void
   /** Bind the assistant session to an asset (bridge `starhub/bind.asset`). */
   bindAsset(assetId: string, sessionId: string): Promise<void>
   /** Deployment default model route, or undefined when unconfigured. */
@@ -219,6 +230,9 @@ export class AssistantRegistry {
     const assistantId = `ssh-assistant-${randomUUID()}`
     const handle = await this.host.createAgent({
       sessionId: SessionId(assistantId),
+      // 打上 StarHub 自有 cwd:无 cwd 的会话拼不出 {{cwd}} 段(回合在第 1 步
+      // 静默失败、面板无响应),且被会话列表按 not-found 拒绝。
+      meta: { cwd: this.host.sessionCwd },
       agentOptions: { provider: selection.provider, model: selection.model },
       setup: (agentCtx) => {
         const tools = agentCtx.get('tools') as {
@@ -243,6 +257,8 @@ export class AssistantRegistry {
         })
       },
     })
+    // 钉住显示名:会话列表里显示纯服务器名(user 来源同时压住自动标题)。
+    this.host.renameSession(assistantId, request.assetName)
     await this.host.bindAsset(request.assetId, assistantId)
     const connId = aiConnId(request.assetId)
     const entry: AssistantEntry = {

@@ -9,6 +9,11 @@
 
 ---
 
+## [0.134.2] - 2026-10-13
+
+### 修复
+- 🐛 **修 SSH AI 助手「发消息没反应」+ 会话列表出现「未分组/未命名」幽灵会话 + 重开报 `session/not-found`**(三个症状同一根因):助手会话以 `ctx.agents.create()` 建根 Agent 时没打 `meta.cwd`,dsh 会话模型里无 cwd 的会话一是**拼不出系统提示的 `{{cwd}}` 段**(回合在第 1 步装配失败、`turn/end reason.kind=error`,面板又从不渲染这类事件——表现就是「发了没反应」),二是被历史/会话列表按 not-found 拒绝(落进 `_no-cwd/` 桶)。现在创建时恒打 `meta.cwd`(指向插件专属目录 `~/.starhub/ssh-assistant`,新插件 Config 字段 `sessionCwd` 可覆盖,apply 时 mkdir,建不了就 fail loud),并在会话建好后调 `sessionTitle` 服务把显示名钉成**纯服务器名**(user 来源,压住自动标题;服务缺席降级为告警不阻塞)。面板侧同时补上 `turn/end` 错误原因的渲染(按回合号去重,重放不叠加),这类失败从此在面板里可见。宿主侧 fake host 补 `sessionCwd`/`renames` 桩与 cwd/标题断言,组合测试走插件 Config 注入临时目录并断言会话头 cwd 与 rename 接线;客户端 fold 补 turn/end 用例(28 例全绿)。
+
 ## [0.134.1] - 2026-10-13
 
 ### 变更

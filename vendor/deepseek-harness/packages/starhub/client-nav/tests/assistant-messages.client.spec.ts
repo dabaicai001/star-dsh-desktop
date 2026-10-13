@@ -135,6 +135,24 @@ describe('assistant message fold', () => {
     expect(items).toEqual([{ kind: 'error', id: 'error-0', message: '模型调用失败' }])
   })
 
+  it('renders a failed turn as an error item, deduped by turn', () => {
+    // turn/end reason.kind='error':回合失败(如提示拼装抛错)不产生任何消息
+    // 事件,不渲染就是「发了没反应」;按 turn-N 去重(重放与实时帧各到一次)。
+    const failed: AssistantSessionEvent = {
+      type: 'turn/end',
+      data: {
+        turn: 1,
+        reason: { kind: 'error', error: { message: 'prompt variable "{{cwd}}" has no value', code: 'UNKNOWN' } },
+      },
+    }
+    const once = foldFrame([], { t: 'event', event: failed })
+    expect(once).toEqual([{ kind: 'error', id: 'turn-1', message: 'prompt variable "{{cwd}}" has no value' }])
+    expect(foldFrame(once, { t: 'event', event: failed })).toHaveLength(1)
+    // 正常结束的回合不产生错误项。
+    const completed: AssistantSessionEvent = { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } }
+    expect(foldFrame(once, { t: 'event', event: completed })).toBe(once)
+  })
+
   it('ignores status/model/closed frames in the message list', () => {
     const items: ChatItem[] = []
     expect(foldFrame(items, { t: 'status', status: 'running' })).toBe(items)

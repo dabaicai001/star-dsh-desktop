@@ -3,7 +3,8 @@
  *
  * 会话事件从助手会话的 durable log 原样转发,折叠按消息/call id 幂等——
  * 重放(晚到的客户端)与实时帧重复到达同一事件时不会产生第二份。
- * 非用户来源的 user 消息(工具上下文/活性上下文注入)不渲染。
+ * 非用户来源的 user 消息(工具上下文/活性上下文注入)不渲染;turn/end
+ * 的错误原因渲染为错误项,否则提示拼装这类失败在面板里完全不可见。
  *
  * @module StarHub SSH assistant message fold (client)
  */
@@ -133,6 +134,18 @@ export function foldSessionEvent(items: ChatItem[], event: AssistantSessionEvent
       const merged = [...items]
       merged[index] = { ...current, output, isError }
       return merged
+    }
+    case 'turn/end': {
+      // 回合失败(reason.kind='error')渲染成错误项:这类失败(如系统提示
+      // 拼装抛错)不产生任何消息/工具事件,不渲染就表现为「发了没反应」。
+      // 按回合号去重,重放与实时帧不会叠出第二条。
+      const reason = data.reason as Record<string, unknown> | undefined
+      if (reason?.kind !== 'error') return items
+      const failure = reason.error as Record<string, unknown> | undefined
+      const message = typeof failure?.message === 'string' && failure.message !== ''
+        ? failure.message
+        : '回合失败:未知错误'
+      return upsert(items, { kind: 'error', id: `turn-${String(data.turn)}`, message }, itemKey)
     }
     default:
       return items

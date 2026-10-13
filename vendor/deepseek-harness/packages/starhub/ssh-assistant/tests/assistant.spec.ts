@@ -11,8 +11,11 @@
  */
 
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { mkdtempSync, rmSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -52,21 +55,29 @@ function fakeHost(): AssistantHost & {
   agents: Map<string, FakeAgent>
   disposed: string[]
   bindings: Array<[string, string]>
+  created: CreateAgentOptions[]
+  renames: Array<[string, string]>
   notifications: Map<string, (params: object) => void>
 } {
   const agents = new Map<string, FakeAgent>()
   const disposed: string[] = []
   const bindings: Array<[string, string]> = []
+  const created: CreateAgentOptions[] = []
+  const renames: Array<[string, string]> = []
   const notifications = new Map<string, (params: object) => void>()
   return {
     agents,
     disposed,
     bindings,
+    created,
+    renames,
     notifications,
+    sessionCwd: '/tmp/starhub-ssh-assistant-test',
     createAgent(options: CreateAgentOptions): Promise<AgentHandle> {
       const id = String(options.sessionId)
       const agent = fakeAgent(id)
       agents.set(id, agent)
+      created.push(options)
       // 真理由 agent-loop 调用 setup;假 host 同步触发以覆盖注册路径。
       void options.setup?.({
         get: (name: string) => (name === 'tools'
@@ -79,6 +90,9 @@ function fakeHost(): AssistantHost & {
       })
     },
     getAgent(sessionId: SessionId) { return agents.get(String(sessionId)) as unknown as Agent | undefined },
+    renameSession(sessionId: string, title: string): void {
+      renames.push([sessionId, title])
+    },
     bindAsset(assetId: string, sessionId: string): Promise<void> {
       bindings.push([assetId, sessionId])
       return Promise.resolve()
@@ -104,6 +118,18 @@ describe('AssistantRegistry bookkeeping', () => {
     const second = await registry.open({ sshSessionId: 's1', assetId: 'a1', assetName: 'server' })
     expect(second).toMatchObject({ reused: true, assistantId: first.assistantId })
     expect(host.agents.size).toBe(1)
+  })
+
+  it('stamps the session cwd and pins the asset name as the session title', async () => {
+    const host = fakeHost()
+    const registry = new AssistantRegistry(host)
+    // 无 cwd 的助手会话拼不出系统提示 {{cwd}} 段(回合在第 1 步静默失败、
+    // 面板无响应),且被会话列表按 not-found 拒绝——这里钉死 meta.cwd 恒打上。
+    const { assistantId } = await registry.open({ sshSessionId: 's1', assetId: 'a1', assetName: 'server' })
+    expect(host.created).toHaveLength(1)
+    expect(host.created[0]?.meta?.cwd).toBe('/tmp/starhub-ssh-assistant-test')
+    // 显示名 = 纯服务器名(user 来源,压住自动标题)。
+    expect(host.renames).toEqual([[assistantId, 'server']])
   })
 
   it('rebuilds when the agent left the registry without a close', async () => {
@@ -366,6 +392,14 @@ async function mounted(options: { script: () => StreamChunk[][] }) {
     },
   })
   ctx.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'mock', model: 'mock-model' }) })
+  // 假 sessionTitle:记录 rename(真服务在 dsh-base;组合只验证插件接线)。
+  const renames: Array<[string, string]> = []
+  ctx.provide('sessionTitle', {
+    rename(session: { id: SessionId }, title: string) {
+      renames.push([String(session.id), title])
+      return { title, source: { kind: 'user' } }
+    },
+  })
   // 假 sdk-notifications:记录订阅,测试可手动派发精确事件。
   const notifications = new Map<string, (params: object) => void>()
   ctx.provide('sdk-notifications', {
@@ -374,7 +408,10 @@ async function mounted(options: { script: () => StreamChunk[][] }) {
       return () => { notifications.delete(method) }
     },
   })
-  await ctx.plugin(plugin)
+  // sessionCwd 走插件 Config 指到临时目录:缺省会 mkdir 到真实用户目录。
+  const sessionCwd = mkdtempSync(join(tmpdir(), 'starhub-ssh-assistant-'))
+  onTestFinished(() =>{  rmSync(sessionCwd, { recursive: true, force: true }) })
+  await ctx.plugin(plugin, { sessionCwd })
   onTestFinished(() =>{  adapter.release() })
   const post = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
     const handler = routes.get(path)
@@ -397,7 +434,7 @@ async function mounted(options: { script: () => StreamChunk[][] }) {
     await handler(fakeRequest('GET', `/starhub/api/assistant/stream?assistantId=${assistantId}`), res)
     return { frames: () => res.frames(), res }
   }
-  return { ctx, adapter, routes, bridgeCalls, ran, notifications, post, get, stream }
+  return { ctx, adapter, routes, bridgeCalls, ran, notifications, renames, sessionCwd, post, get, stream }
 }
 
 describe('starhub-ssh-assistant composition', () => {
@@ -425,6 +462,10 @@ describe('starhub-ssh-assistant composition', () => {
     })
     const assistantId = (opened as { assistantId: string }).assistantId
     expect(host.bridgeCalls).toEqual([{ method: 'starhub/bind.asset', params: { assetId: 'ssh-1', sessionId: assistantId } }])
+    // 会话头打上插件配置的 cwd(无 cwd 会话拼不出 {{cwd}} 段且被列表拒绝)。
+    expect(host.ctx.sessions.get(SessionId(assistantId))?.header.cwd).toBe(host.sessionCwd)
+    // 显示名钉成纯服务器名。
+    expect(host.renames).toEqual([[assistantId, 'server']])
 
     // 先挂流客户端(晚到客户端拿重放)。
     const { frames } = await host.stream(assistantId)
