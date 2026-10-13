@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.134.0(✨ **SSH 终端页 AI 助手(第十个 StarHub 插件 `starhub-ssh-assistant`)**:终端页新增第三个页签「AI」,右侧助手面板操作**这台已连接的服务器**。每个终端页一个 agent 作用域会话(`ctx.agents.create()` 根 Agent,按终端会话 id 幂等,关页面即销毁);模型连接复用 dsh 部署默认(`agentDefaultModel`——设置里配的 provider/key/model),面板顶部可临时切换(仅本助手后续请求生效)。creation window 里把工具面 `restrict` 到 8 个 SSH/SFTP 工具(ssh_exec / ssh_exec_background / ssh_wait_task / ssh_session_status / sftp_list / sftp_stat / sftp_upload / sftp_download)——本地 shell、数据库、浏览器对助手不可见;经桥 `starhub/bind.asset` 绑定资产,sidecar 自动路由并复用该资产的 AI exec 连接(与交互终端同机同凭证、不同 exec 通道)。驱动面是同源 `/starhub/api/assistant/*`(open/prompt/stop/close/model/approval/models + SSE 流):SSE 转发会话 durable log(user/assistant 消息、tool/call、tool/result)加 status/model/approval/closed 帧,晚到客户端先收历史重放;写/风险命令的审批卡落在助手面板内(允许一次/拒绝),面板不在流上时交回壳内审批 UI,风险分级仍归 approval-bridge 风险门。装配进 starhub-desktop 组合与 provisioning;客户端消息折叠、审批结算、模型切换、开合生命周期均有测试(宿主 12 例含真 AgentLoop 组合、客户端 25 例)。) |
+| 当前版本 | v0.134.1(✨ **SSH AI 助手的 MFA/堡垒机/主机密钥验证卡收进助手面板(不再跳壳内浮层)**:插件订阅 sidecar 对该资产 AI exec 连接(`dsh:<assetId>:ssh`)的精确事件(`ssh:kb-interactive` / `ssh:mfa-connected` / `ssh:bastion-select\|output\|done` / `ssh:hostkey-confirm`),以新帧类型推给面板原位渲染——MFA 表单(应答走 `ssh_kb_response`,多轮复用)、堡垒机实时终端(pty 字节进面板内 xterm,`ssh_write`/`ssh_resize` 回传,「执行 AI 命令」发 `__run__` 哨兵)、主机密钥三选(信任并保存/仅本次/拒绝)。晚到客户端重推挂起中的卡;面板有流客户端时新路由 `GET /starhub/api/assistant/active-conns` 上报该连接,壳内 StarHubConnCard 据此抑制双卡,无面板客户端时壳内卡照旧服务(含主壳 AI 自己的会话)。顺带修掉 StarHubConnCard 两个既有 lint 错误(prefer-const、no-unnecessary-condition)。) |
 
 ## 架构一句话
 
@@ -145,4 +145,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-13 (v0.134.0)*
+*最后更新: 2026-10-13 (v0.134.1)*

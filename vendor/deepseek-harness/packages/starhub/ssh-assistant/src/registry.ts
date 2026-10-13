@@ -62,6 +62,12 @@ export interface AssistantEntry {
   pendingApproval: AssistantFrame | null
   /** Bounded renderable-event window replayed to late-attaching clients. */
   readonly recent: SessionEvent[]
+  /** AI exec connection id of the bound asset (`dsh:<assetId>:ssh`). */
+  readonly connId: string
+  /** Connection-card frame still open (MFA/bastion/hostkey; re-pushed on attach). */
+  pendingConnCard: AssistantFrame | null
+  /** Disposers of this entry's sidecar notification subscriptions. */
+  readonly notificationOffs: Array<() => void>
 }
 
 /** Request to open (or reuse) the assistant of one terminal page. */
@@ -91,6 +97,88 @@ export interface AssistantHost {
   defaultSelection(): { provider: string; model: string } | undefined
   /** Whether a provider route currently lists this model. */
   modelExists(provider: string, model: string): Promise<boolean>
+  /** Subscribe to a sidecar notification by exact event name (bridge hub). */
+  subscribeNotification(method: string, handler: (params: object) => void): () => void
+}
+
+/**
+ * The AI exec connection id of one asset — mirrors the Rust side
+ * `starhub_domain_ssh::tools::ai_conn_id` (`dsh:{asset_id}:ssh`), the session
+ * `ensure_ssh_session` reuses for every tool call on this asset.
+ * @param assetId - bound asset id.
+ * @returns the AI exec connection id.
+ */
+export function aiConnId(assetId: string): string {
+  return `dsh:${assetId}:ssh`
+}
+
+/** sidecar 精确事件名:连接验证卡三类(MFA / 堡垒机 / 主机密钥)。 */
+const CONN_EVENT_METHODS: readonly string[] = [
+  'kb-interactive',
+  'mfa-connected',
+  'bastion-select',
+  'bastion-output',
+  'bastion-done',
+  'hostkey-confirm',
+]
+
+/**
+ * Translate one sidecar connection notification into a panel frame.
+ *
+ * Payload shapes mirror the sidecar emissions (`session.rs` / `auth.rs`):
+ * kb-interactive `{sessionId, instructions, prompts, autoFill}`, bastion-select
+ * `{sessionId}`, bastion-output the raw byte array, bastion-done unit,
+ * mfa-connected the session id string, hostkey-confirm
+ * `{hostname, port, remote, keyType, sha256}`.
+ * @param name - event kind without the `ssh:` prefix and `:<connId>` suffix.
+ * @param connId - AI exec connection id the event belongs to.
+ * @param params - raw notification payload.
+ * @returns the frame, or null for an unknown kind / unusable payload.
+ */
+export function connFrame(name: string, connId: string, params: object): AssistantFrame | null {
+  const record = params as Record<string, unknown>
+  switch (name) {
+    case 'kb-interactive': {
+      const prompts = Array.isArray(record.prompts) ? record.prompts : []
+      return {
+        t: 'kb-interactive',
+        connId,
+        instructions: typeof record.instructions === 'string' ? record.instructions : '',
+        prompts: prompts.flatMap((entry) => {
+          if (typeof entry !== 'object' || entry === null) return []
+          const prompt = entry as Record<string, unknown>
+          return typeof prompt.prompt === 'string' && typeof prompt.echo === 'boolean'
+            ? [{ prompt: prompt.prompt, echo: prompt.echo }]
+            : []
+        }),
+        autoFill: Array.isArray(record.autoFill)
+          ? record.autoFill.map(entry => (typeof entry === 'string' ? entry : null))
+          : [],
+      }
+    }
+    case 'mfa-connected':
+      return { t: 'mfa-connected', connId }
+    case 'bastion-select':
+      return { t: 'bastion-select', connId }
+    case 'bastion-output':
+      return { t: 'bastion-output', connId, bytes: Array.isArray(params) ? params as number[] : [] }
+    case 'bastion-done':
+      return { t: 'bastion-done', connId }
+    case 'hostkey-confirm':
+      return typeof record.hostname === 'string'
+        ? {
+          t: 'hostkey',
+          connId,
+          hostname: record.hostname,
+          port: typeof record.port === 'number' ? record.port : 22,
+          remote: typeof record.remote === 'string' ? record.remote : record.hostname,
+          keyType: typeof record.keyType === 'string' ? record.keyType : 'unknown',
+          sha256: typeof record.sha256 === 'string' ? record.sha256 : '',
+        }
+        : null
+    default:
+      return null
+  }
 }
 
 /**
@@ -156,6 +244,7 @@ export class AssistantRegistry {
       },
     })
     await this.host.bindAsset(request.assetId, assistantId)
+    const connId = aiConnId(request.assetId)
     const entry: AssistantEntry = {
       assistantId,
       sshSessionId: request.sshSessionId,
@@ -169,9 +258,13 @@ export class AssistantRegistry {
       approvals: new Map(),
       pendingApproval: null,
       recent: [],
+      connId,
+      pendingConnCard: null,
+      notificationOffs: [],
     }
     this.bySsh.set(request.sshSessionId, entry)
     this.byAssistant.set(assistantId, entry)
+    this.subscribeConnEvents(entry)
     return { assistantId, provider: selection.provider, model: selection.model, reused: false }
   }
 
@@ -215,6 +308,9 @@ export class AssistantRegistry {
     for (const settle of entry.approvals.values()) settle('cancelled')
     entry.approvals.clear()
     entry.pendingApproval = null
+    entry.pendingConnCard = null
+    for (const off of entry.notificationOffs) off()
+    entry.notificationOffs.length = 0
     for (const write of entry.clients) write({ t: 'closed' })
     entry.clients.clear()
     await entry.handle.dispose()
@@ -243,7 +339,7 @@ export class AssistantRegistry {
    * A late client (tab reopened, stream reconnected) first receives the
    * assistant's bounded event window — the same events the live listener
    * forwards, so folding stays idempotent by message/call id — then the live
-   * status, the model route, and any approval still awaiting a decision.
+   * status, the model route, and any approval or connection card still open.
    * @param assistantId - target assistant.
    * @param write - frame sink; the returned disposer detaches it.
    * @returns the disposer.
@@ -259,6 +355,7 @@ export class AssistantRegistry {
     write({ t: 'status', status: entry.status })
     write({ t: 'model', provider: entry.provider, model: entry.model })
     if (entry.pendingApproval !== null) write(entry.pendingApproval)
+    if (entry.pendingConnCard !== null) write(entry.pendingConnCard)
     return () => { entry.clients.delete(write) }
   }
 
@@ -328,6 +425,41 @@ export class AssistantRegistry {
     for (const write of entry.clients) write({ t: 'event', event })
   }
 
+  /**
+   * Subscribe the entry to its asset's AI-exec connection-card events.
+   *
+   * The sidecar emits both a generic and a precise event per verification
+   * step; the precise names carry the AI exec connection id, so one
+   * subscription set per assistant routes exactly this asset's MFA /
+   * bastion / hostkey prompts to this panel. The shell card keeps serving
+   * every other AI exec session.
+   * @param entry - the assistant entry to wire.
+   */
+  private subscribeConnEvents(entry: AssistantEntry): void {
+    for (const name of CONN_EVENT_METHODS) {
+      const off = this.host.subscribeNotification(`ssh:${name}:${entry.connId}`, (params) => {
+        this.onConnEvent(entry, name, params)
+      })
+      entry.notificationOffs.push(off)
+    }
+  }
+
+  /**
+   * Translate one sidecar connection event into a panel frame.
+   * @param entry - owning assistant entry.
+   * @param name - event kind (`kb-interactive` / `kb-connected` /
+   *   `bastion-select` / `bastion-output` / `bastion-done` / `hostkey`).
+   * @param params - raw notification payload.
+   */
+  private onConnEvent(entry: AssistantEntry, name: string, params: object): void {
+    const frame = connFrame(name, entry.connId, params)
+    if (frame === null) return
+    // 结束类事件清掉挂起的卡;请求类事件记为待重推(晚到客户端补发)。
+    if (frame.t === 'bastion-done' || frame.t === 'mfa-connected') entry.pendingConnCard = null
+    else entry.pendingConnCard = frame
+    for (const write of entry.clients) write(frame)
+  }
+
   /** Track and forward one agent status transition. */
   onStatus(sessionId: string, status: 'idle' | 'running'): void {
     const entry = this.byAssistant.get(sessionId)
@@ -368,6 +500,18 @@ export class AssistantRegistry {
     return entry !== undefined && entry.clients.size > 0
   }
 
+  /**
+   * AI exec connection ids whose assistant panel currently has live clients.
+   * The shell connection card consults this to suppress cards the assistant
+   * panel already owns (one verification, one card).
+   * @returns the connection ids with at least one attached panel client.
+   */
+  activeConns(): string[] {
+    return [...this.byAssistant.values()]
+      .filter(entry => entry.clients.size > 0)
+      .map(entry => entry.connId)
+  }
+
   /** Dispose every live assistant (plugin unload). */
   async disposeAll(): Promise<void> {
     const entries = [...this.byAssistant.values()]
@@ -376,6 +520,9 @@ export class AssistantRegistry {
       for (const settle of entry.approvals.values()) settle('cancelled')
       entry.approvals.clear()
       entry.pendingApproval = null
+      entry.pendingConnCard = null
+      for (const off of entry.notificationOffs) off()
+      entry.notificationOffs.length = 0
       for (const write of entry.clients) write({ t: 'closed' })
       entry.clients.clear()
       await entry.handle.dispose()

@@ -16,6 +16,12 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 /** One approval decision the panel can submit. */
 export type AssistantApprovalOutcome = 'allowed-once' | 'rejected'
 
+/** One keyboard-interactive prompt (MFA / 2FA / 堡垒机菜单)。 */
+export interface AssistantKbPrompt {
+  readonly prompt: string
+  readonly echo: boolean
+}
+
 /** One server → panel frame on the assistant SSE stream. */
 export type AssistantFrame =
   | { readonly t: 'status'; readonly status: 'idle' | 'running' }
@@ -30,6 +36,26 @@ export type AssistantFrame =
   | { readonly t: 'model'; readonly provider: string; readonly model: string }
   | { readonly t: 'closed' }
   | { readonly t: 'error'; readonly message: string }
+  // ── 连接验证卡(MFA / 堡垒机 / 主机密钥,sidecar 精确事件转发)──
+  | { readonly t: 'kb-interactive'
+    readonly connId: string
+    readonly instructions: string
+    readonly prompts: readonly AssistantKbPrompt[]
+    readonly autoFill: readonly (string | null)[]
+  }
+  | { readonly t: 'mfa-connected'; readonly connId: string }
+  | { readonly t: 'bastion-select'; readonly connId: string }
+  | { readonly t: 'bastion-output'; readonly connId: string; readonly bytes: readonly number[] }
+  | { readonly t: 'bastion-done'; readonly connId: string }
+  | {
+    readonly t: 'hostkey'
+    readonly connId: string
+    readonly hostname: string
+    readonly port: number
+    readonly remote: string
+    readonly keyType: string
+    readonly sha256: string
+  }
 
 /** SSE `event:` field shared by every assistant frame. */
 export const ASSISTANT_FRAME_EVENT = 'starhub-assistant'
@@ -57,6 +83,7 @@ export function decodeAssistantFrame(raw: string): AssistantFrame | null {
   }
   if (typeof value !== 'object' || value === null) return null
   const record = value as Record<string, unknown>
+  const connId = typeof record.connId === 'string' ? record.connId : ''
   switch (record.t) {
     case 'status':
       return record.status === 'idle' || record.status === 'running'
@@ -84,6 +111,46 @@ export function decodeAssistantFrame(raw: string): AssistantFrame | null {
       return { t: 'closed' }
     case 'error':
       return typeof record.message === 'string' ? { t: 'error', message: record.message } : null
+    case 'kb-interactive':
+      return connId !== '' && Array.isArray(record.prompts)
+        ? {
+          t: 'kb-interactive',
+          connId,
+          instructions: typeof record.instructions === 'string' ? record.instructions : '',
+          prompts: (record.prompts as unknown[]).flatMap((entry) => {
+            if (typeof entry !== 'object' || entry === null) return []
+            const prompt = entry as Record<string, unknown>
+            return typeof prompt.prompt === 'string' && typeof prompt.echo === 'boolean'
+              ? [{ prompt: prompt.prompt, echo: prompt.echo }]
+              : []
+          }),
+          autoFill: Array.isArray(record.autoFill)
+            ? (record.autoFill as unknown[]).map(entry => (typeof entry === 'string' ? entry : null))
+            : [],
+        }
+        : null
+    case 'mfa-connected':
+      return connId !== '' ? { t: 'mfa-connected', connId } : null
+    case 'bastion-select':
+      return connId !== '' ? { t: 'bastion-select', connId } : null
+    case 'bastion-output':
+      return connId !== '' && Array.isArray(record.bytes)
+        ? { t: 'bastion-output', connId, bytes: record.bytes as number[] }
+        : null
+    case 'bastion-done':
+      return connId !== '' ? { t: 'bastion-done', connId } : null
+    case 'hostkey':
+      return connId !== '' && typeof record.hostname === 'string'
+        ? {
+          t: 'hostkey',
+          connId,
+          hostname: record.hostname,
+          port: typeof record.port === 'number' ? record.port : 22,
+          remote: typeof record.remote === 'string' ? record.remote : record.hostname,
+          keyType: typeof record.keyType === 'string' ? record.keyType : 'unknown',
+          sha256: typeof record.sha256 === 'string' ? record.sha256 : '',
+        }
+        : null
     default:
       return null
   }

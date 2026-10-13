@@ -1,6 +1,24 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+// 堡垒机实时终端用 xterm;jsdom 下按 overlay spec 同款桩替换(只碰接线面)。
+vi.mock('@xterm/xterm', () => ({
+  Terminal: class {
+    cols = 80
+    rows = 24
+    loadAddon() {}
+    open() {}
+    focus() {}
+    dispose = vi.fn()
+    write = vi.fn()
+    onData() { return { dispose: vi.fn() } }
+  },
+}))
+vi.mock('@xterm/addon-fit', () => ({
+  FitAddon: class {
+    fit() {}
+  },
+}))
 import { SshAssistantPanel } from '../src/client/terminal/SshAssistantPanel.tsx'
 import { emitHostEvent, restoreHostEvents, stubHostEvents } from './host-bridge.ts'
 
@@ -10,7 +28,14 @@ interface AssistantCall {
   body: Record<string, unknown>
 }
 
+/** 记录到的 invoke 路由调用(连接卡应答走既有 invoke 面)。 */
+interface InvokeCall {
+  cmd: string
+  args: Record<string, unknown>
+}
+
 let calls: AssistantCall[] = []
+let invokeCalls: InvokeCall[] = []
 
 /** open 路由返回的助手身份。 */
 const OPEN_RESULT = {
@@ -29,11 +54,16 @@ function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => JSON.parse(text) as unknown } as unknown as Response
 }
 
-/** fetch 替身:按路径应答助手路由,其余 404。 */
+/** fetch 替身:按路径应答助手路由与 invoke 路由,其余 404。 */
 async function assistantFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
   const path = url.replace(/^https?:\/\/[^/]+/, '')
   const method = (init?.method ?? 'GET').toUpperCase()
+  if (path === '/starhub/api/invoke') {
+    const parsed = typeof init?.body === 'string' ? JSON.parse(init.body) as { cmd?: string; args?: unknown } : {}
+    invokeCalls.push({ cmd: parsed.cmd ?? '', args: (parsed.args ?? {}) as Record<string, unknown> })
+    return jsonResponse({ ok: true, result: null })
+  }
   if (!path.startsWith('/starhub/api/assistant/')) {
     return jsonResponse({ ok: false, error: `unmatched ${method} ${path}` }, 404)
   }
@@ -62,6 +92,27 @@ async function waitReady(): Promise<void> {
 
 beforeEach(() => {
   calls = []
+  invokeCalls = []
+  // 堡垒机终端:xterm 在 jsdom 下依赖 matchMedia(DPR 探测)与 ResizeObserver(fit)。
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  })
+  class MockResizeObserver {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  Object.defineProperty(window, 'ResizeObserver', { writable: true, value: MockResizeObserver })
   vi.stubGlobal('fetch', assistantFetch)
   stubHostEvents()
 })
@@ -171,5 +222,63 @@ describe('SshAssistantPanel', () => {
     act(() =>{  emitHostEvent('starhub-assistant', { t: 'closed' }) })
     expect(screen.getByText('会话已关闭')).toBeTruthy()
     expect(screen.getByLabelText<HTMLTextAreaElement>('AI 助手输入框').disabled).toBe(true)
+  })
+
+  it('renders the MFA card in the panel and submits answers', async () => {
+    render(
+      <SshAssistantPanel sshSessionId="s1" assetId="ssh-1" assetName="server" />,
+    )
+    await waitReady()
+    act(() => {
+      emitHostEvent('starhub-assistant', {
+        t: 'kb-interactive',
+        connId: 'dsh:ssh-1:ssh',
+        instructions: 'Enter 2FA code',
+        prompts: [{ prompt: 'Verification code', echo: false }],
+        autoFill: [null],
+      })
+    })
+    expect(screen.getByText('Enter 2FA code')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Verification code'), { target: { value: '987654' } })
+    fireEvent.click(screen.getByText('提交'))
+    await waitFor(() =>{  expect(invokeCalls.some(call => call.cmd === 'ssh_kb_response')).toBe(true) })
+    expect(invokeCalls.find(call => call.cmd === 'ssh_kb_response')?.args)
+      .toEqual({ id: 'dsh:ssh-1:ssh', responses: ['987654'] })
+  })
+
+  it('renders the host-key card and persists the trust decision', async () => {
+    render(
+      <SshAssistantPanel sshSessionId="s1" assetId="ssh-1" assetName="server" />,
+    )
+    await waitReady()
+    act(() => {
+      emitHostEvent('starhub-assistant', {
+        t: 'hostkey',
+        connId: 'dsh:ssh-1:ssh',
+        hostname: '10.0.0.5',
+        port: 22,
+        remote: '10.0.0.5:22',
+        keyType: 'ssh-ed25519',
+        sha256: 'SHA256:abc',
+      })
+    })
+    expect(screen.getByText(/是否信任此主机/)).toBeTruthy()
+    fireEvent.click(screen.getByText('信任并保存'))
+    await waitFor(() =>{  expect(invokeCalls.some(call => call.cmd === 'ssh_hostkey_response')).toBe(true) })
+    expect(invokeCalls.find(call => call.cmd === 'ssh_hostkey_response')?.args)
+      .toEqual({ id: 'dsh:ssh-1:ssh', allowed: true, persist: true })
+  })
+
+  it('runs the bastion stage-2 sentinel from the panel', async () => {
+    render(
+      <SshAssistantPanel sshSessionId="s1" assetId="ssh-1" assetName="server" />,
+    )
+    await waitReady()
+    act(() =>{  emitHostEvent('starhub-assistant', { t: 'bastion-select', connId: 'dsh:ssh-1:ssh' }) })
+    expect(screen.getByText('堡垒机选择机器')).toBeTruthy()
+    fireEvent.click(screen.getByText('执行 AI 命令'))
+    await waitFor(() =>{  expect(invokeCalls.some(call => call.cmd === 'ssh_bastion_response')).toBe(true) })
+    expect(invokeCalls.find(call => call.cmd === 'ssh_bastion_response')?.args)
+      .toEqual({ id: 'dsh:ssh-1:ssh', selection: '__run__' })
   })
 })

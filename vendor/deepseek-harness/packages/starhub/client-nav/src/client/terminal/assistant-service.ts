@@ -50,6 +50,12 @@ export interface AssistantSessionEvent {
   data: Record<string, unknown>
 }
 
+/** keyboard-interactive 的一条提示(MFA / 堡垒机菜单)。 */
+export interface AssistantKbPrompt {
+  prompt: string
+  echo: boolean
+}
+
 /** SSE 流上的一条帧(与宿主 frames.ts 逐字对齐)。 */
 export type AssistantFrame =
   | { t: 'status'; status: 'idle' | 'running' }
@@ -58,9 +64,36 @@ export type AssistantFrame =
   | { t: 'model'; provider: string; model: string }
   | { t: 'closed' }
   | { t: 'error'; message: string }
+  // ── 连接验证卡(MFA / 堡垒机 / 主机密钥)──
+  | {
+    t: 'kb-interactive'
+    connId: string
+    instructions: string
+    prompts: AssistantKbPrompt[]
+    autoFill: Array<string | null>
+  }
+  | { t: 'mfa-connected'; connId: string }
+  | { t: 'bastion-select'; connId: string }
+  | { t: 'bastion-output'; connId: string; bytes: number[] }
+  | { t: 'bastion-done'; connId: string }
+  | {
+    t: 'hostkey'
+    connId: string
+    hostname: string
+    port: number
+    remote: string
+    keyType: string
+    sha256: string
+  }
 
 /** 面板可提交的审批结论。 */
 export type AssistantApprovalOutcome = 'allowed-once' | 'rejected'
+
+/** 连接验证卡帧(需要面板渲染卡片的帧)。 */
+export type AssistantConnCardFrame = Extract<
+  AssistantFrame,
+  { t: 'kb-interactive' | 'mfa-connected' | 'bastion-select' | 'hostkey' }
+>
 
 /** 解析 invoke 信封:非 2xx 或 ok:false 一律 reject(与 tauriInvoke 同语义)。 */
 async function readEnvelope(response: Response): Promise<unknown> {
@@ -152,6 +185,21 @@ export async function submitAssistantApproval(
 export async function fetchAssistantCatalog(): Promise<AssistantCatalog> {
   const response = await fetch(`${ASSISTANT_API}/models`)
   return await readEnvelope(response) as AssistantCatalog
+}
+
+/**
+ * 拉取当前有面板客户端在线的 AI exec 连接 id(壳内连接卡据此抑制双卡)。
+ * @returns 连接 id 列表;助手插件不在组合内/请求失败时返回空数组(壳内卡
+ *   保持原有行为,不因本查询失败而丢卡)。
+ */
+export async function fetchActiveConns(): Promise<string[]> {
+  try {
+    const response = await fetch(`${ASSISTANT_API}/active-conns`)
+    const result = await readEnvelope(response) as { conns?: unknown }
+    return Array.isArray(result.conns) ? result.conns.filter((entry): entry is string => typeof entry === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 /** 解析一条 SSE data 帧;非法payload返回 null(心跳/注释帧忽略)。 */

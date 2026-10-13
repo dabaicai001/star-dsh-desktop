@@ -140,7 +140,7 @@ describe('StarHubConnCard', () => {
     fireEvent.click(screen.getByText('执行 AI 命令'))
     await waitFor(() =>{  expect(screen.getByText(/通知后端失败/)).toBeTruthy() })
     // 按钮复位,可再次点击。
-    expect((screen.getByText('执行 AI 命令') as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByText<HTMLButtonElement>('执行 AI 命令').disabled).toBe(false)
     unmount()
   })
 
@@ -169,6 +169,46 @@ describe('StarHubConnCard', () => {
     expect(queryByLabelText('MFA 验证')).toBeNull()
     expect(queryByLabelText('堡垒机选择机器')).toBeNull()
     unmount()
+  })
+
+  it('suppresses cards the assistant panel already owns', async () => {
+    // 助手面板接管的连接(MFA/堡垒机卡在面板内应答):壳内卡不重复弹。
+    // active-conns 查询走同源助手路由,invoke 仍走宿主桥。
+    const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(null))
+    const combinedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      const path = url.replace(/^https?:\/\/[^/]+/, '')
+      const envelope = (body: unknown, status = 200): Response => {
+        const text = JSON.stringify(body)
+        if (typeof Response === 'function') {
+          return new Response(text, { status, headers: { 'content-type': 'application/json' } })
+        }
+        return { ok: status >= 200 && status < 300, status, json: async () => JSON.parse(text) as unknown } as unknown as Response
+      }
+      if (path === '/starhub/api/invoke') {
+        const parsed = typeof init?.body === 'string' ? JSON.parse(init.body) as { cmd?: string } : {}
+        return envelope({ ok: true, result: await invoke(parsed.cmd ?? '') })
+      }
+      if (path === '/starhub/api/assistant/active-conns') {
+        return envelope({ ok: true, result: { conns: ['dsh:asset-1:ssh'] } })
+      }
+      return envelope({ ok: false, error: 'unmatched' }, 404)
+    }
+    stubHostEvents()
+    vi.stubGlobal('fetch', combinedFetch)
+    const { queryByLabelText, unmount } = render(<StarHubConnCard />)
+    await waitFor(() =>{  expect(hostEventListeners('ssh:kb-interactive')).toBe(1) })
+
+    emitHostEvent('ssh:kb-interactive', kbPayload)
+    // 抑制生效:壳内不弹卡(等一个宏任务让 active-conns 查询落定)。
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(queryByLabelText('MFA 验证')).toBeNull()
+
+    // 未被接管的会话照旧弹卡。
+    emitHostEvent('ssh:kb-interactive', { ...kbPayload, sessionId: 'dsh:asset-9:ssh' })
+    await waitFor(() =>{  expect(screen.getByLabelText('MFA 验证')).toBeTruthy() })
+    unmount()
+    vi.unstubAllGlobals()
   })
 
   it('returns null in preview mode where the host bridge is absent', () => {

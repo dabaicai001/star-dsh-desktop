@@ -34,6 +34,7 @@ export const ASSISTANT_ROUTES = {
   approval: `${ASSISTANT_API_PREFIX}/approval`,
   models: `${ASSISTANT_API_PREFIX}/models`,
   stream: `${ASSISTANT_API_PREFIX}/stream`,
+  activeConns: `${ASSISTANT_API_PREFIX}/active-conns`,
 } as const
 
 /** Maximum accepted request body for one assistant call (bytes). */
@@ -232,6 +233,23 @@ export function modelsHandler(deps: AssistantRouteDeps) {
     } catch (error) {
       sendJson(res, 200, { ok: false, error: error instanceof Error ? error.message : String(error) })
     }
+  }
+}
+
+/**
+ * `GET .../active-conns` — AI exec connection ids whose assistant panel is
+ * live. The shell connection card consults this so a verification prompt for
+ * an assistant-owned connection renders in the panel, not twice.
+ * @param deps - route dependencies.
+ * @returns the request handler.
+ */
+export function activeConnsHandler(deps: AssistantRouteDeps) {
+  return (req: IncomingMessage, res: ServerResponse): void => {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { ok: false, error: 'method not allowed' })
+      return
+    }
+    sendJson(res, 200, { ok: true, result: { conns: deps.registry.activeConns() } })
   }
 }
 

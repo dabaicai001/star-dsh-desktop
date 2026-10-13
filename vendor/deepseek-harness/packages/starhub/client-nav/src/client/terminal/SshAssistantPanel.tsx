@@ -16,13 +16,21 @@ import { IconSendOutlineMedium, IconSparkleMedium, IconStopFillMedium } from '@d
 import {
   closeAssistant, fetchAssistantCatalog, openAssistant, promptAssistant, setAssistantModel,
   stopAssistant, submitAssistantApproval, subscribeAssistant,
-  type AssistantApprovalOutcome, type AssistantCatalog, type AssistantFrame, type AssistantModelOption,
-  type AssistantProviderOption,
+  type AssistantApprovalOutcome, type AssistantCatalog, type AssistantConnCardFrame, type AssistantFrame,
+  type AssistantModelOption, type AssistantProviderOption,
 } from './assistant-service.ts'
 import {
   foldFrame, formatToolArgs, settleApprovalItem, type ChatItem,
 } from './assistant-messages.ts'
+import { AssistantBastionTerminal } from './AssistantBastionTerminal.tsx'
+import { tauriInvoke } from '../tauri.ts'
 import css from './SshAssistantPanel.module.css'
+
+/** 「执行 AI 命令」哨兵:非空即让后端继续执行,空串表示取消(与壳内连接卡同契约)。 */
+const RUN_SENTINEL = '__run__'
+
+/** 兜底超时(ms):点「执行 AI 命令」后后端未回 done 则复位按钮。 */
+const RUN_FALLBACK_TIMEOUT_MS = 45_000
 
 /** 面板属性:终端会话 id 与绑定资产身份。 */
 export interface SshAssistantPanelProps {
@@ -54,15 +62,54 @@ export function SshAssistantPanel({ sshSessionId, assetId, assetName, onOpened }
   const [draft, setDraft] = useState('')
   const [closed, setClosed] = useState(false)
   const [dropped, setDropped] = useState(false)
+  const [connCard, setConnCard] = useState<AssistantConnCardFrame | null>(null)
+  const [mfaAnswers, setMfaAnswers] = useState<string[]>([])
+  const [bastionRunning, setBastionRunning] = useState(false)
+  const [bastionError, setBastionError] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
+  const runTimerRef = useRef<number | null>(null)
 
-  // 帧回调:折叠消息 + 跟踪状态/模型/关闭。
-  const onFrame = useCallback((frame: AssistantFrame) => {
-    if (frame.t === 'status') setStatus(frame.status)
-    else if (frame.t === 'model') setModel({ provider: frame.provider, model: frame.model })
-    else if (frame.t === 'closed') setClosed(true)
-    else setItems(prev => foldFrame(prev, frame))
+  const clearRunTimer = useCallback((): void => {
+    if (runTimerRef.current !== null) {
+      window.clearTimeout(runTimerRef.current)
+      runTimerRef.current = null
+    }
   }, [])
+
+  // 帧回调:折叠消息 + 跟踪状态/模型/关闭/连接验证卡。
+  const onFrame = useCallback((frame: AssistantFrame) => {
+    switch (frame.t) {
+      case 'status':
+        setStatus(frame.status)
+        return
+      case 'model':
+        setModel({ provider: frame.provider, model: frame.model })
+        return
+      case 'closed':
+        setClosed(true)
+        return
+      case 'kb-interactive':
+        setConnCard(frame)
+        setMfaAnswers(frame.autoFill.map(value => value ?? ''))
+        return
+      case 'mfa-connected':
+      case 'bastion-select':
+      case 'hostkey':
+        setConnCard(frame)
+        return
+      case 'bastion-done':
+        clearRunTimer()
+        setBastionRunning(false)
+        setConnCard(null)
+        return
+      case 'bastion-output':
+        // 堡垒机终端自己订阅 ssh:bastion-output:<connId>(高频字节不走 React
+        // 状态),这里无需处理。
+        return
+      default:
+        setItems(prev => foldFrame(prev, frame))
+    }
+  }, [clearRunTimer])
 
   // 打开(或复用)助手并订阅流;卸载只退订,不销毁会话。
   useEffect(() => {
@@ -98,6 +145,7 @@ export function SshAssistantPanel({ sshSessionId, assetId, assetName, onOpened }
     return () => {
       disposed = true
       unsubscribe?.()
+      clearRunTimer()
     }
   }, [sshSessionId, assetId, assetName, onFrame])
 
@@ -131,6 +179,68 @@ export function SshAssistantPanel({ sshSessionId, assetId, assetName, onOpened }
     } catch {
       // 结算失败(请求已过期):状态由下一次重放/帧纠正,不额外报错。
     }
+  }
+
+  /** 提交 MFA 验证码(后端 360s 内等待;成功后由 mfa-connected 帧翻到「已连接」)。 */
+  const submitMfa = async (): Promise<void> => {
+    if (connCard?.t !== 'kb-interactive') return
+    try {
+      await tauriInvoke('ssh_kb_response', { id: connCard.connId, responses: mfaAnswers })
+    } catch {
+      // 提交失败(会话已断):关卡,让用户重发提问。
+      setConnCard(null)
+    }
+    setMfaAnswers([])
+  }
+
+  /** 关闭 MFA 卡(不打断后端等待,与壳内连接卡「取消」同语义)。 */
+  const closeMfa = (): void => {
+    setConnCard(null)
+    setMfaAnswers([])
+  }
+
+  /** 主机密钥决策:信任并保存 / 仅本次 / 拒绝。 */
+  const decideHostkey = async (allowed: boolean, persist: boolean): Promise<void> => {
+    if (connCard?.t !== 'hostkey') return
+    try {
+      await tauriInvoke('ssh_hostkey_response', { id: connCard.connId, allowed, persist })
+    } catch {
+      // 应答失败:关卡,错误会经助手回合返回。
+    }
+    setConnCard(null)
+  }
+
+  /** 堡垒机:用户已选好机器,放行进入阶段2。 */
+  const runBastion = async (): Promise<void> => {
+    if (connCard?.t !== 'bastion-select') return
+    setBastionRunning(true)
+    setBastionError(null)
+    // 兜底:后端超时未回 done 时复位按钮并提示(与壳内连接卡同口径)。
+    clearRunTimer()
+    runTimerRef.current = window.setTimeout(() => {
+      setBastionRunning(false)
+      setBastionError('后端未在限定时间内返回,可能已超时,请重试')
+    }, RUN_FALLBACK_TIMEOUT_MS)
+    try {
+      await tauriInvoke('ssh_bastion_response', { id: connCard.connId, selection: RUN_SENTINEL })
+    } catch {
+      clearRunTimer()
+      setBastionRunning(false)
+      setBastionError('通知后端失败,请重试')
+    }
+  }
+
+  /** 堡垒机:放弃选择(空串 = 取消)。 */
+  const cancelBastion = async (): Promise<void> => {
+    if (connCard?.t !== 'bastion-select') return
+    clearRunTimer()
+    setBastionRunning(false)
+    try {
+      await tauriInvoke('ssh_bastion_response', { id: connCard.connId, selection: '' })
+    } catch {
+      // 取消失败同样关卡:后端超时后自会断开。
+    }
+    setConnCard(null)
   }
 
   /** 切换模型路由。 */
@@ -291,6 +401,82 @@ export function SshAssistantPanel({ sshSessionId, assetId, assetName, onOpened }
         {closed && <div className={css.closed}>会话已关闭</div>}
         {dropped && !closed && <div className={css.dropped}>连接中断,重新打开本页签可恢复</div>}
       </div>
+      {connCard !== null && (
+        <div className={css.connCard} role="dialog" aria-modal="false">
+          {connCard.t === 'kb-interactive' && (
+            <>
+              <p className={css.connTitle}>MFA 验证</p>
+              <p className={css.connHint}>AI 连接 {assetName} 需要验证</p>
+              {connCard.instructions !== '' && <p className={css.connInstructions}>{connCard.instructions}</p>}
+              {connCard.prompts.map((prompt, index) => (
+                <div className={css.connField} key={`${index}-${prompt.prompt}`}>
+                  <label className={css.connLabel} htmlFor={`assistant-mfa-${index}`}>
+                    {prompt.prompt !== '' ? prompt.prompt : '一次性验证码'}
+                  </label>
+                  <input
+                    id={`assistant-mfa-${index}`}
+                    className={css.connInput}
+                    type={prompt.echo ? 'text' : 'password'}
+                    value={mfaAnswers[index] ?? ''}
+                    autoFocus={index === 0}
+                    onChange={(event) => {
+                      const next = [...mfaAnswers]
+                      next[index] = event.target.value
+                      setMfaAnswers(next)
+                    }}
+                  />
+                </div>
+              ))}
+              <span className={css.connTimeHint}>请在 360 秒内完成验证,超时连接将断开。</span>
+              <div className={css.connActions}>
+                <button type="button" className={css.connCancel} onClick={closeMfa}>取消</button>
+                <button type="button" className={css.connSubmit} onClick={() => void submitMfa()}>提交</button>
+              </div>
+            </>
+          )}
+          {connCard.t === 'mfa-connected' && (
+            <>
+              <p className={css.connTitle}>MFA 验证</p>
+              <p className={css.connHint}>连接成功,已登录目标机({assetName})。该会话可复用。</p>
+              <div className={css.connActions}>
+                <button type="button" className={css.connSubmit} onClick={closeMfa}>完成</button>
+              </div>
+            </>
+          )}
+          {connCard.t === 'hostkey' && (
+            <>
+              <p className={css.connTitle}>是否信任此主机?</p>
+              <p className={css.connHint}>
+                {connCard.remote} · {connCard.keyType} · SHA256:{connCard.sha256}
+              </p>
+              <div className={css.connActions}>
+                <button type="button" className={css.connCancel} onClick={() => void decideHostkey(false, false)}>拒绝</button>
+                <button type="button" className={css.connSecondary} onClick={() => void decideHostkey(true, false)}>仅本次</button>
+                <button type="button" className={css.connSubmit} onClick={() => void decideHostkey(true, true)}>信任并保存</button>
+              </div>
+            </>
+          )}
+          {connCard.t === 'bastion-select' && (
+            <>
+              <p className={css.connTitle}>堡垒机选择机器</p>
+              <p className={css.connHint}>这是堡垒机真实终端,请像平时一样输入序号选择目标机器;选好后点击「执行 AI 命令」。</p>
+              <AssistantBastionTerminal connId={connCard.connId} />
+              {bastionError !== null && <span className={css.connError} role="alert">{bastionError}</span>}
+              <div className={css.connActions}>
+                <button type="button" className={css.connCancel} onClick={() => void cancelBastion()}>取消</button>
+                <button
+                  type="button"
+                  className={css.connSubmit}
+                  disabled={bastionRunning}
+                  onClick={() => void runBastion()}
+                >
+                  {bastionRunning ? '执行中…' : '执行 AI 命令'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <form
         className={css.composer}
         onSubmit={(event) => {

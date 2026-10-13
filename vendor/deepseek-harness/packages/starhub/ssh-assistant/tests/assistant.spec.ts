@@ -24,7 +24,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import * as plugin from '../src/index.ts'
-import { AssistantRegistry, type AssistantHost } from '../src/registry.ts'
+import { AssistantRegistry, aiConnId, connFrame, type AssistantHost } from '../src/registry.ts'
 import { decodeAssistantFrame, type AssistantFrame } from '../src/frames.ts'
 
 // ── 假 host(注册表簿记单测)───────────────────────────────────────
@@ -48,14 +48,21 @@ function fakeAgent(id: string): FakeAgent {
   return agent
 }
 
-function fakeHost(): AssistantHost & { agents: Map<string, FakeAgent>; disposed: string[]; bindings: Array<[string, string]> } {
+function fakeHost(): AssistantHost & {
+  agents: Map<string, FakeAgent>
+  disposed: string[]
+  bindings: Array<[string, string]>
+  notifications: Map<string, (params: object) => void>
+} {
   const agents = new Map<string, FakeAgent>()
   const disposed: string[] = []
   const bindings: Array<[string, string]> = []
+  const notifications = new Map<string, (params: object) => void>()
   return {
     agents,
     disposed,
     bindings,
+    notifications,
     createAgent(options: CreateAgentOptions): Promise<AgentHandle> {
       const id = String(options.sessionId)
       const agent = fakeAgent(id)
@@ -79,6 +86,10 @@ function fakeHost(): AssistantHost & { agents: Map<string, FakeAgent>; disposed:
     defaultSelection() { return { provider: 'mock', model: 'mock-model' } },
     modelExists(provider: string, model: string): Promise<boolean> {
       return Promise.resolve(provider === 'mock' && model === 'mock-model')
+    },
+    subscribeNotification(method: string, handler: (params: object) => void): () => void {
+      notifications.set(method, handler)
+      return () => { notifications.delete(method) }
     },
   }
 }
@@ -162,6 +173,56 @@ describe('AssistantRegistry bookkeeping', () => {
     const same = registry.applyRequestConfig(assistantId, base)
     expect(same).toBe(base)
     await expect(registry.setModel(assistantId, 'mock', 'nope')).rejects.toThrow('当前不可用')
+  })
+
+  it('routes the asset AI-exec connection cards to the panel', async () => {
+    const host = fakeHost()
+    const registry = new AssistantRegistry(host)
+    const { assistantId } = await registry.open({ sshSessionId: 's1', assetId: 'a1', assetName: 'server' })
+    // 订阅精确事件(connId = dsh:a1:ssh,与 Rust ai_conn_id 对齐)。
+    expect(host.notifications.has('ssh:kb-interactive:dsh:a1:ssh')).toBe(true)
+    expect(host.notifications.has('ssh:hostkey-confirm:dsh:a1:ssh')).toBe(true)
+    const frames: AssistantFrame[] = []
+    registry.attach(assistantId, frame => frames.push(frame))
+
+    host.notifications.get('ssh:kb-interactive:dsh:a1:ssh')?.({
+      sessionId: 'dsh:a1:ssh',
+      instructions: 'Verification code',
+      prompts: [{ prompt: 'Password', echo: false }],
+      autoFill: [null],
+    })
+    const kb = frames.find(frame => frame.t === 'kb-interactive')
+    expect(kb).toMatchObject({ t: 'kb-interactive', connId: 'dsh:a1:ssh', instructions: 'Verification code' })
+
+    // 晚到客户端:重推挂起的 MFA 卡。
+    const late: AssistantFrame[] = []
+    registry.attach(assistantId, frame => late.push(frame))
+    expect(late.some(frame => frame.t === 'kb-interactive')).toBe(true)
+
+    // 连接成功 → 卡关闭;不再重推。
+    host.notifications.get('ssh:mfa-connected:dsh:a1:ssh')?.({})
+    const latest: AssistantFrame[] = []
+    registry.attach(assistantId, frame => latest.push(frame))
+    expect(latest.some(frame => frame.t === 'kb-interactive')).toBe(false)
+
+    // 堡垒机输出帧原样透传字节。
+    host.notifications.get('ssh:bastion-output:dsh:a1:ssh')?.([104, 105])
+    const out = frames.find(frame => frame.t === 'bastion-output')
+    expect(out).toMatchObject({ t: 'bastion-output', connId: 'dsh:a1:ssh', bytes: [104, 105] })
+
+    // active-conns 只报有面板客户端的连接。
+    expect(registry.activeConns()).toEqual(['dsh:a1:ssh'])
+    await registry.close(assistantId)
+    expect(registry.activeConns()).toEqual([])
+    expect(host.notifications.size).toBe(0)
+  })
+
+  it('drops notifications for unknown connection events', () => {
+    expect(aiConnId('a1')).toBe('dsh:a1:ssh')
+    expect(connFrame('nope', 'dsh:a1:ssh', {})).toBeNull()
+    expect(connFrame('hostkey', 'dsh:a1:ssh', {})).toBeNull()
+    expect(connFrame('bastion-output', 'dsh:a1:ssh', 'not-array' as unknown as object)).toMatchObject({ bytes: [] })
+    expect(connFrame('bastion-done', 'dsh:a1:ssh', {})).toEqual({ t: 'bastion-done', connId: 'dsh:a1:ssh' })
   })
 })
 
@@ -305,6 +366,14 @@ async function mounted(options: { script: () => StreamChunk[][] }) {
     },
   })
   ctx.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'mock', model: 'mock-model' }) })
+  // 假 sdk-notifications:记录订阅,测试可手动派发精确事件。
+  const notifications = new Map<string, (params: object) => void>()
+  ctx.provide('sdk-notifications', {
+    subscribe(method: string, handler: (params: object) => void) {
+      notifications.set(method, handler)
+      return () => { notifications.delete(method) }
+    },
+  })
   await ctx.plugin(plugin)
   onTestFinished(() =>{  adapter.release() })
   const post = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
@@ -328,7 +397,7 @@ async function mounted(options: { script: () => StreamChunk[][] }) {
     await handler(fakeRequest('GET', `/starhub/api/assistant/stream?assistantId=${assistantId}`), res)
     return { frames: () => res.frames(), res }
   }
-  return { ctx, adapter, routes, bridgeCalls, ran, post, get, stream }
+  return { ctx, adapter, routes, bridgeCalls, ran, notifications, post, get, stream }
 }
 
 describe('starhub-ssh-assistant composition', () => {
@@ -431,5 +500,29 @@ describe('starhub-ssh-assistant composition', () => {
     const host = await mounted({ script: () => [[...textResponse('done')]] })
     const res = await host.get('/starhub/api/assistant/models')
     expect((res as { providers: Array<{ provider: string; models: Array<{ id: string }> }> }).providers[0]?.models[0]?.id).toBe('mock-model')
+  })
+
+  it('forwards the asset connection card to the panel and reports active conns', async () => {
+    const host = await mounted({ script: () => [[...textResponse('done')]] })
+    const opened = await host.post('/starhub/api/assistant/open', {
+      sshSessionId: 's1', assetId: 'ssh-1', assetName: 'server',
+    })
+    const assistantId = (opened as { assistantId: string }).assistantId
+    const { frames } = await host.stream(assistantId)
+
+    // sidecar 精确事件(AI exec 连接 dsh:ssh-1:ssh)→ SSE 帧。
+    const kb = host.notifications.get('ssh:kb-interactive:dsh:ssh-1:ssh')
+    expect(kb).toBeDefined()
+    kb?.({
+      sessionId: 'dsh:ssh-1:ssh',
+      instructions: 'Verification code',
+      prompts: [{ prompt: 'Password', echo: false }],
+      autoFill: [null],
+    })
+    expect(frames().some(frame => frame.t === 'kb-interactive')).toBe(true)
+
+    // 壳内连接卡据此抑制:active-conns 只含有面板客户端的连接。
+    const active = await host.get('/starhub/api/assistant/active-conns')
+    expect(active).toEqual({ conns: ['dsh:ssh-1:ssh'] })
   })
 })

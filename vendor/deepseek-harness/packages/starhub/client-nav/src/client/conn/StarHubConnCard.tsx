@@ -25,6 +25,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { useTerminalTheme } from '../terminal/terminal-theme.ts'
 import '@xterm/xterm/css/xterm.css'
 import { tauriInvoke, tauriListen, type TauriUnlisten } from '../tauri.ts'
+import { fetchActiveConns } from '../terminal/assistant-service.ts'
 import css from './StarHubConnCard.module.css'
 
 /** 后端广播的 keyboard-interactive 请求(通用事件,带 sessionId)。 */
@@ -91,17 +92,26 @@ export function StarHubConnCard() {
       })
     }
 
-    watch(tauriListen<KbBroadcastEvent>('ssh:kb-interactive', (event) => {
+    // 助手面板接管的连接(AI exec 会话且助手流有客户端)不重复弹卡——
+    // MFA/堡垒机/主机密钥卡在面板内应答,这里只服务其它 AI 会话。
+    const ownedByAssistant = async (sessionId: string): Promise<boolean> =>
+      (await fetchActiveConns()).includes(sessionId)
+
+    const onKb = async (event: KbBroadcastEvent): Promise<void> => {
       if (disposed || !event.sessionId.startsWith(AI_CONN_PREFIX)) return
+      if (await ownedByAssistant(event.sessionId)) return
       setMfaAnswers(event.autoFill.map(value => value ?? ''))
       setState({ kind: 'mfa', sessionId: event.sessionId, prompt: event, connected: false })
-    }))
+    }
+    watch(tauriListen<KbBroadcastEvent>('ssh:kb-interactive', (event) => { void onKb(event) }))
 
-    watch(tauriListen<BastionSelectEvent>('ssh:bastion-select', (event) => {
+    const onBastionSelect = async (event: BastionSelectEvent): Promise<void> => {
       if (disposed || !event.sessionId.startsWith(AI_CONN_PREFIX)) return
+      if (await ownedByAssistant(event.sessionId)) return
       clearRunTimer()
       setState({ kind: 'bastion', sessionId: event.sessionId, running: false })
-    }))
+    }
+    watch(tauriListen<BastionSelectEvent>('ssh:bastion-select', (event) => { void onBastionSelect(event) }))
 
     // 阶段结束信号(成功/失败/超时都发):匹配当前卡即关闭。
     watch(tauriListen<BastionDoneEvent>('ssh:bastion-done', (event) => {
@@ -159,7 +169,6 @@ export function StarHubConnCard() {
 
     let disposed = false
     let unlistenOutput: TauriUnlisten | undefined
-    let resizeObserver: ResizeObserver | undefined
     const decoder = new TextDecoder()
 
     const input = term.onData((data) => {
@@ -183,13 +192,13 @@ export function StarHubConnCard() {
       else unlistenOutput = off
     })
 
-    resizeObserver = new ResizeObserver(resize)
+    const resizeObserver = new ResizeObserver(resize)
     if (hostRef.current !== null) resizeObserver.observe(hostRef.current)
 
     return () => {
       disposed = true
       input.dispose()
-      resizeObserver?.disconnect()
+      resizeObserver.disconnect()
       void unlistenOutput?.()
       const tail = decoder.decode()
       if (tail !== '') term.write(tail)

@@ -9,6 +9,11 @@
 
 ---
 
+## [0.134.1] - 2026-10-13
+
+### 变更
+- ✨ **SSH AI 助手的 MFA/堡垒机/主机密钥验证卡收进助手面板(不再跳壳内浮层)**:插件订阅 sidecar 对该资产 AI exec 连接(`dsh:<assetId>:ssh`)的精确事件(`ssh:kb-interactive` / `ssh:mfa-connected` / `ssh:bastion-select|output|done` / `ssh:hostkey-confirm`),以新帧类型推给面板原位渲染——MFA 表单(应答走 `ssh_kb_response`,多轮复用)、堡垒机实时终端(pty 字节进面板内 xterm,`ssh_write`/`ssh_resize` 回传,「执行 AI 命令」发 `__run__` 哨兵)、主机密钥三选(信任并保存/仅本次/拒绝)。晚到客户端重推挂起中的卡;面板有流客户端时新路由 `GET /starhub/api/assistant/active-conns` 上报该连接,壳内 StarHubConnCard 据此抑制双卡,无面板客户端时壳内卡照旧服务(含主壳 AI 自己的会话)。顺带修掉 StarHubConnCard 两个既有 lint 错误(prefer-const、no-unnecessary-condition)。
+
 ## [0.134.0] - 2026-10-13
 
 ### 新增

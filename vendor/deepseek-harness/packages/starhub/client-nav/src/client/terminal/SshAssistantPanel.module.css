@@ -415,6 +415,127 @@
   color: var(--dsw-alias-state-danger-primary);
 }
 
+/* ── 连接验证卡(MFA / 堡垒机 / 主机密钥)──────────────────────── */
+
+.connCard {
+  flex: none;
+  max-height: 46%;
+  overflow-y: auto;
+  border-top: 1px solid var(--dsw-alias-state-warning-primary);
+  padding: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.connTitle {
+  margin: 0 0 2px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.connHint {
+  margin: 0 0 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.connInstructions {
+  margin: 0 0 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
+.connField {
+  margin-bottom: 8px;
+}
+
+.connLabel {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.connInput {
+  width: 100%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+}
+
+.connInput:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+  outline: none;
+}
+
+.connTimeHint {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+}
+
+.connError {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--dsw-alias-state-danger-primary);
+  font-size: 11px;
+}
+
+.connActions {
+  display: flex;
+  gap: 6px;
+}
+
+.connCancel,
+.connSecondary,
+.connSubmit {
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 6px;
+  padding: 3px 12px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.connSubmit {
+  border-color: transparent;
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-inverted);
+}
+
+.connSubmit:disabled {
+  background: var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2));
+  color: var(--dsw-alias-label-tertiary);
+  cursor: not-allowed;
+}
+
+.connCancel,
+.connSecondary {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.connCancel:hover,
+.connSecondary:hover,
+.connSubmit:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* 堡垒机实时终端(组件自带 className,这里只给定高)。 */
+.connCard :global(.starhub-assistant-bastion) {
+  height: 180px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 4px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .statusRunning {
     animation: none;

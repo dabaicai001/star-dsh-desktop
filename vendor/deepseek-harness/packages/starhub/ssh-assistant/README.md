@@ -21,7 +21,30 @@ StarHub SSH AI assistant (StarHub-local package, not upstream): one agent-scoped
 | `POST /starhub/api/assistant/model` | `{assistantId, provider, model}` — per-assistant route override |
 | `POST /starhub/api/assistant/approval` | `{assistantId, requestId, outcome}` — settles a parked approval |
 | `GET /starhub/api/assistant/models` | provider/model catalog for the panel picker |
+| `GET /starhub/api/assistant/active-conns` | AI exec conns with live panel clients (shell card suppression) |
 | `GET /starhub/api/assistant/stream?assistantId=` | SSE frame stream |
+
+## Connection cards (MFA / bastion / host key)
+
+MFA/bastion assets need interactive verification before the AI exec connection
+(`dsh:<assetId>:ssh`) can authenticate. The plugin subscribes to the sidecar's
+precise events for that connection (`ssh:kb-interactive:<connId>`,
+`ssh:mfa-connected:<connId>`, `ssh:bastion-select/output/done:<connId>`,
+`ssh:hostkey-confirm:<connId>`) and forwards them as stream frames, so the
+panel renders the verification card in place:
+
+- **MFA / 2FA**: instructions plus one input per prompt; answers go back over
+  the workbench invoke route (`ssh_kb_response`). A later round reuses the card.
+- **Bastion**: the real bastion pty streams into an in-panel xterm
+  (`ssh:bastion-output:<connId>` in, `ssh_write`/`ssh_resize` out); "执行 AI
+  命令" sends the `__run__` sentinel (`ssh_bastion_response`) and stage 2
+  proceeds. Cancel sends the empty selection.
+- **Host key**: trust-and-persist / once / reject via `ssh_hostkey_response`.
+
+While the panel has live stream clients, `active-conns` reports the connection
+so the shell's own connection card suppresses its duplicate card; with no panel
+client attached (or without this plugin) the shell card serves those prompts
+exactly as before.
 
 ## Model Experience
 
@@ -37,6 +60,6 @@ Requires `agents`, `webServer`, `tools` (service names) and, at assistant-open t
 
 ## Known Limitations and Deferred Work
 
-- MFA/bastion assets surface their verification and machine-selection cards in the shell (the sidecar event has no in-panel card yet); the assistant turn waits for the user there.
 - The model picker lists registered provider routes only; routes configured but not registered (no credential) do not appear.
 - One assistant per terminal page: two pages on the same asset run two independent assistant sessions.
+- The panel's bastion terminal is a compact viewport (180px); a full-screen selection experience remains the shell card's strength for very tall menus.

@@ -30,6 +30,7 @@ import type {} from '@deepseek-ai/dsh-llm'
 import { AssistantRegistry } from './registry.ts'
 import {
   ASSISTANT_ROUTES,
+  activeConnsHandler,
   approvalHandler,
   closeHandler,
   modelHandler,
@@ -54,6 +55,7 @@ const BIND_ASSET_METHOD = 'starhub/bind.asset'
 
 /** Private host service names resolved through `ctx.get` (not declared merges). */
 const SDK_TRANSPORT_SERVICE = 'sdk-transport'
+const SDK_NOTIFICATIONS_SERVICE = 'sdk-notifications'
 const AGENT_DEFAULT_MODEL_SERVICE = 'agentDefaultModel'
 
 /**
@@ -90,6 +92,16 @@ export function apply(ctx: Context): void {
     modelExists: async (provider, model) => {
       const models = await ctx.llm.listModels(provider)
       return models.some(entry => entry.id === model)
+    },
+    subscribeNotification: (method, handler) => {
+      // 连接验证卡事件走 bridge 的通知 hub(sidecar 的 starhub/domain-event
+      // 按内层事件名分发);缺失时返回 no-op 退订——助手仍可用,只是 MFA/堡垒机
+      // 卡回落壳内连接卡(与插件未加载时同一体验)。
+      const hub = ctx.get(SDK_NOTIFICATIONS_SERVICE) as {
+        subscribe(method: string, handler: (params: object) => void): () => void
+      } | undefined
+      if (hub === undefined) return () => undefined
+      return hub.subscribe(method, handler)
     },
   })
 
@@ -147,6 +159,7 @@ export function apply(ctx: Context): void {
     { path: ASSISTANT_ROUTES.model, handler: modelHandler(deps) },
     { path: ASSISTANT_ROUTES.approval, handler: approvalHandler(deps) },
     { path: ASSISTANT_ROUTES.models, handler: modelsHandler(deps) },
+    { path: ASSISTANT_ROUTES.activeConns, handler: activeConnsHandler(deps) },
     { path: ASSISTANT_ROUTES.stream, handler: streamHandler(deps) },
   ]
   for (const route of routes) {
