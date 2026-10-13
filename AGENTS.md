@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/star-dsh-desktop |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.133.10(🗑️ **移除 SSH 终端工具栏的「网页」按钮**:去 Tauri 化 M3 定稿后 sidecar 的 `ui.ssh_open_web_window` 已是终态降级(恒答「网页访问已不由 StarHub 提供:上游 dsh 原生提供 browser-use 及其可见面」),但终端页签条的「网页」按钮一直没拆——用户点完只收到一句报错(与 v0.133.4 拆 AI 输入框「截图」入口同一类死入口)。删除按钮、`IconGlobeOutlineMedium` import 与对应测试用例;网页访问由上游 dsh 原生 browser-use 承接。sidecar 的降级方法保留(它是 M3 契约里「该能力归上游」的标记,`verify:bridge-compat` 仍在断言),方法面与网关实现随 M4 删 `src-tauri` 一起退役。) |
+| 当前版本 | v0.134.0(✨ **SSH 终端页 AI 助手(第十个 StarHub 插件 `starhub-ssh-assistant`)**:终端页新增第三个页签「AI」,右侧助手面板操作**这台已连接的服务器**。每个终端页一个 agent 作用域会话(`ctx.agents.create()` 根 Agent,按终端会话 id 幂等,关页面即销毁);模型连接复用 dsh 部署默认(`agentDefaultModel`——设置里配的 provider/key/model),面板顶部可临时切换(仅本助手后续请求生效)。creation window 里把工具面 `restrict` 到 8 个 SSH/SFTP 工具(ssh_exec / ssh_exec_background / ssh_wait_task / ssh_session_status / sftp_list / sftp_stat / sftp_upload / sftp_download)——本地 shell、数据库、浏览器对助手不可见;经桥 `starhub/bind.asset` 绑定资产,sidecar 自动路由并复用该资产的 AI exec 连接(与交互终端同机同凭证、不同 exec 通道)。驱动面是同源 `/starhub/api/assistant/*`(open/prompt/stop/close/model/approval/models + SSE 流):SSE 转发会话 durable log(user/assistant 消息、tool/call、tool/result)加 status/model/approval/closed 帧,晚到客户端先收历史重放;写/风险命令的审批卡落在助手面板内(允许一次/拒绝),面板不在流上时交回壳内审批 UI,风险分级仍归 approval-bridge 风险门。装配进 starhub-desktop 组合与 provisioning;客户端消息折叠、审批结算、模型切换、开合生命周期均有测试(宿主 12 例含真 AgentLoop 组合、客户端 25 例)。) |
 
 ## 架构一句话
 
@@ -47,9 +47,10 @@ starhub/
 │   ├── examples/
 │   │   ├── starhub-web/      # web 组合的 profile 模板(旧 Tauri 壳用)
 │   │   └── starhub-desktop/  # desktop 组合的 profile 模板(provisioning 用)
-│   └── packages/starhub/     # 9 个内置插件:approval-bridge / bridge / client-nav /
+│   └── packages/starhub/     # 10 个内置插件:approval-bridge / bridge / client-nav /
 │                             # domain-events / host-static / live-context /
-│                             # session-registry / tool-context / tools
+│                             # session-registry / ssh-assistant / tool-context /
+│                             # tools
 │
 ├── scripts/
 │   ├── provision-dsh.mjs     # M4:把 StarHub 组合装进 dsh profile
@@ -144,4 +145,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-13 (v0.133.10)*
+*最后更新: 2026-10-13 (v0.134.0)*

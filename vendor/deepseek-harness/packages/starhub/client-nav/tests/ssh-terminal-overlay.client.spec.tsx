@@ -201,6 +201,56 @@ describe('SshTerminalOverlay', () => {
     await waitFor(() =>{  expect(getByText('docs')).toBeTruthy() })
     unmount()
   })
+  it('opens the AI assistant tab and disposes the assistant when the page closes', async () => {
+    // AI 助手随终端页开合自动建/销毁:点「AI」页签 → open(带终端会话 id 与
+    // 资产身份);卸载 overlay(关页面)→ close。assistant 路由与 invoke 路由
+    // 走同一 fetch 替身的不同路径。
+    const assistantCalls: Array<{ path: string; body: Record<string, unknown> }> = []
+    const invoke = vi.fn((_command: string, _args?: Record<string, unknown>) => Promise.resolve(null))
+    const combinedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      const path = url.replace(/^https?:\/\/[^/]+/, '')
+      const envelope = (body: unknown, status = 200): Response => {
+        const text = JSON.stringify(body)
+        if (typeof Response === 'function') {
+          return new Response(text, { status, headers: { 'content-type': 'application/json' } })
+        }
+        return { ok: status >= 200 && status < 300, status, json: async () => JSON.parse(text) as unknown } as unknown as Response
+      }
+      if (!path.startsWith('/starhub/api/assistant/')) {
+        const parsed = typeof init?.body === 'string' ? JSON.parse(init.body) as { cmd?: string; args?: unknown } : {}
+        return envelope({ ok: true, result: await invoke(parsed.cmd ?? '', parsed.args as Record<string, unknown>) })
+      }
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {}
+      assistantCalls.push({ path, body })
+      if (path.endsWith('/open')) {
+        return envelope({ ok: true, result: { assistantId: 'ssh-assistant-1', provider: 'deepseek', model: 'deepseek-chat', reused: false } })
+      }
+      return envelope({ ok: true, result: {} })
+    }
+    vi.stubGlobal('fetch', combinedFetch)
+    stubHostEvents()
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    }
+    const { getByRole, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    fireEvent.click(getByRole('button', { name: /AI/ }))
+    await waitFor(() =>{  expect(assistantCalls.some(call => call.path.endsWith('/open'))).toBe(true) })
+    expect(assistantCalls.find(call => call.path.endsWith('/open'))?.body).toEqual({
+      sshSessionId: SESSION_ID,
+      assetId: 'ssh-1',
+      assetName: 'server',
+    })
+    // 面板就绪:空态文案可见。
+    await waitFor(() =>{  expect(getByRole('textbox', { name: 'AI 助手输入框' })).toBeTruthy() })
+    unmount()
+    // 关页面 = 销毁助手会话(不在后台常驻)。
+    await waitFor(() =>{  expect(assistantCalls.some(call => call.path.endsWith('/close'))).toBe(true) })
+    expect(assistantCalls.find(call => call.path.endsWith('/close'))?.body).toEqual({ assistantId: 'ssh-assistant-1' })
+    vi.unstubAllGlobals()
+  })
   it('opens SFTP at the current terminal directory when cwd tracking has reported one', async () => {
     const invoke = vi.fn((command: string) => {
       if (command === 'sftp_ensure_session') return Promise.resolve({ mode: 'subsystem' })

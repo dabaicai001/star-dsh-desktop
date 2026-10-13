@@ -1,0 +1,422 @@
+/*
+ * SSH AI 助手面板样式。
+ *
+ * 与终端工作区同一设计语言:--dsw-alias-* 令牌、1px 边框、小圆角、
+ * 蓝色仅作交互强调;动画 ≤160ms,prefers-reduced-motion 全部关闭。
+ */
+
+/* ── 骨架 ───────────────────────────────────────────────────── */
+
+.panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.centered {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.failedText {
+  margin: 0;
+  color: var(--dsw-alias-state-danger-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.failedDetail {
+  margin: 0;
+  max-width: 320px;
+  word-break: break-all;
+}
+
+.retryButton {
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 6px;
+  padding: 4px 14px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.retryButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* ── 头部 ───────────────────────────────────────────────────── */
+
+.head {
+  display: flex;
+  min-height: 34px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.headTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.headHint {
+  overflow: hidden;
+  max-width: 30%;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.modelPick {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.modelSelect {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 2px 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  max-width: 130px;
+  text-overflow: ellipsis;
+}
+
+.statusIdle,
+.statusRunning {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 999px;
+}
+
+.statusIdle {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.statusRunning {
+  background: var(--dsw-alias-state-business-primary);
+  animation: starhub-assistant-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes starhub-assistant-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ── 消息列表 ────────────────────────────────────────────────── */
+
+.list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.empty {
+  margin: auto;
+  max-width: 300px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.empty p {
+  margin: 0 0 6px;
+}
+
+.emptyHint {
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.user {
+  align-self: flex-end;
+  max-width: 85%;
+  border-radius: 10px 10px 2px 10px;
+  padding: 7px 10px;
+  background: var(--dsw-alias-interactive-bg-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+.userText {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.assistant {
+  align-self: flex-start;
+  max-width: 92%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px 10px 10px 2px;
+  padding: 7px 10px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.assistantText {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.interrupted {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.error {
+  align-self: stretch;
+}
+
+.errorText {
+  margin: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-state-danger-primary);
+  font-size: 11px;
+}
+
+.closed,
+.dropped {
+  align-self: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+/* ── 工具调用卡 ──────────────────────────────────────────────── */
+
+.tool {
+  align-self: stretch;
+}
+
+.toolCard {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.toolHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.toolName {
+  color: var(--dsw-alias-state-business-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+}
+
+.toolError {
+  border-radius: 4px;
+  padding: 0 5px;
+  background: var(--dsw-alias-state-danger-primary);
+  color: var(--dsw-alias-label-primary-inverted);
+  font-size: 9px;
+}
+
+.toolArgs {
+  padding: 4px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.toolArgs summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.toolArgs pre {
+  margin: 4px 0 0;
+  overflow-x: auto;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--ds-font-family-code);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.toolOutput {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding: 6px 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--ds-font-family-code);
+  font-size: 10.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── 审批卡 ──────────────────────────────────────────────────── */
+
+.approval {
+  align-self: stretch;
+}
+
+.approvalCard {
+  border: 1px solid var(--dsw-alias-state-warning-primary);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.approvalTitle {
+  margin: 0 0 4px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.approvalTitle code {
+  font-family: var(--ds-font-family-code);
+}
+
+.approvalReason {
+  margin: 0 0 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.approvalActions {
+  display: flex;
+  gap: 6px;
+}
+
+.approvalAllow,
+.approvalReject {
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 6px;
+  padding: 3px 12px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.approvalAllow {
+  border-color: transparent;
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-inverted);
+}
+
+.approvalReject {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.approvalAllow:hover,
+.approvalReject:hover {
+  filter: brightness(1.08);
+}
+
+.approvalSettled {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+/* ── 输入区 ──────────────────────────────────────────────────── */
+
+.composer {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.input {
+  flex: 1;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: none;
+}
+
+.input:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.sendButton,
+.stopButton {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sendButton {
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-inverted);
+}
+
+.sendButton:disabled {
+  background: var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2));
+  color: var(--dsw-alias-label-tertiary);
+  cursor: not-allowed;
+}
+
+.stopButton {
+  border: 1px solid var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-state-danger-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .statusRunning {
+    animation: none;
+  }
+}

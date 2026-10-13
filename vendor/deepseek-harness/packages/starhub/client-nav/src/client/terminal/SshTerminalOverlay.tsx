@@ -16,7 +16,7 @@
  * @module StarHub SSH/SFTP overlay (client)
  */
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { IconCheckOutlineMedium, IconCloseFillMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconFolderOpenOutlineMedium, IconPaperclipOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconUsersOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, IconCloseFillMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconFolderOpenOutlineMedium, IconPaperclipOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconUsersOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -24,6 +24,8 @@ import ZmodemModule from 'zmodem.js/src/zmodem_browser.js'
 import { tauriInvoke, tauriListen, type TauriUnlisten } from '../tauri.ts'
 import type { RustAsset } from '../store.ts'
 import { SftpPanel } from './SftpPanel.tsx'
+import { SshAssistantPanel } from './SshAssistantPanel.tsx'
+import { closeAssistant } from './assistant-service.ts'
 import { TransferDialog } from './TransferDialog.tsx'
 import { useTransferTasks } from './use-transfer-tasks.ts'
 import { formatSize } from './sftp-service.ts'
@@ -103,7 +105,7 @@ export interface HostKeyConfirmEvent {
   sha256: string
 }
 
-type SidePanel = 'sftp' | null
+type SidePanel = 'sftp' | 'ai' | null
 
 /**
  * Build the Rust `SshAuth` variant from an asset config, mirroring the Vue
@@ -288,7 +290,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
           setZmodemTransferred(prior + sent)
           setZmodemProgress(totalBytes > 0 ? Math.min(99, (prior + sent) / totalBytes * 100) : 0)
         },
-        on_file_complete: file => {
+        on_file_complete: (file) => {
           // 当前文件完成:把该文件偏移计入前序,下一文件从累计值继续。
           cumulative.set(file, file.size)
           setZmodemStatus(`已发送 ${file.name}`)
@@ -389,7 +391,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   // v8 ignore stop --
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- theme/settings 在挂载时按当时的显示设置创建终端;主题后续由 useTerminalTheme 动态重刷,字体/字号/编码在下次打开终端时生效。
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- theme/settings 在挂载时创建终端;主题由 useTerminalTheme 动态重刷,字体/字号/编码下次打开生效。
     const term = new Terminal({
       ...terminalOptions(terminalSettings),
       theme,
@@ -753,10 +755,20 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const transferTasks = useTransferTasks(sessionId)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
 
-  const sidePanelLabel = '文件传输'
+  const sidePanelLabel = sidePanel === 'ai' ? 'AI 助手' : '文件传输'
   const toggleSidePanel = (panel: Exclude<SidePanel, null>): void => {
     setSidePanel(current => current === panel ? null : panel)
   }
+  // 助手会话 id:面板打开时回传,overlay 卸载(关页面)时销毁——助手随终端
+  // 页开合自动建/销毁,不在后台常驻。
+  const assistantIdRef = useRef<string | null>(null)
+  useEffect(() => () => {
+    const opened = assistantIdRef.current
+    if (opened !== null) {
+      assistantIdRef.current = null
+      void closeAssistant(opened).catch(() => undefined)
+    }
+  }, [])
   // 头部头像徽标:取资产名首字符,颜色随连接状态变化。
   const avatarInitial = (asset.name.trim().charAt(0) || '?').toUpperCase()
 
@@ -830,6 +842,13 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
                     >{transferTasks.activeCount}</span>
                   )}
                 </button>
+                <button
+                  type="button"
+                  className={sidePanel === 'ai' ? css.workspaceTabActive : css.workspaceTab}
+                  onClick={() =>{  toggleSidePanel('ai') }}
+                  title="AI 助手:操作这台已连接的服务器(复用 dsh 模型连接)"
+                  aria-pressed={sidePanel === 'ai'}
+                ><IconSparkleMedium size={13} />AI</button>
               </div>
             </div>
             <div className={css.quickBar} aria-label="快捷命令">
@@ -846,7 +865,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
             <input
               ref={zmodemInputRef} className={css.fileInput} type="file" multiple
               aria-label="选择 ZMODEM 发送文件"
-              onChange={(event) => void onZmodemFilesSelected(event)}
+              onChange={event => void onZmodemFilesSelected(event)}
             />
             {zmodemPromptVisible && (
               <div
@@ -856,7 +875,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
                   if (zmodemType === 'send' && zmodemProgress === 0) cancelZmodem()
                 }}
               >
-                <div className={css.zmodemDialog} role="dialog" aria-label="ZMODEM 传输" onClick={event => event.stopPropagation()}>
+                <div className={css.zmodemDialog} role="dialog" aria-label="ZMODEM 传输" onClick={(event) => { event.stopPropagation() }}>
                   <div className={css.zmodemHead}>
                     <span className={css.zmodemLabel}>ZMODEM</span>
                     <span className={css.zmodemStatus}>{zmodemStatus}</span>
@@ -897,20 +916,31 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
               <header className={css.sidePanelHeader}>
                 <div>
                   <span className={css.sidePanelTitle}>{sidePanelLabel}</span>
-                  <span className={css.sidePanelDetail}>与当前 SSH 会话共享连接</span>
+                  <span className={css.sidePanelDetail}>{sidePanel === 'ai' ? '复用 dsh 模型连接' : '与当前 SSH 会话共享连接'}</span>
                 </div>
               </header>
               <div className={css.sidePanelBody}>
-                <SftpPanel
-                  asset={asset}
-                  sessionId={sessionId}
-                  sshConnected={connected}
-                  sshCwd={sshCwd}
-                  onFollowTerminal={onFollowTerminal}
-                  transferActiveCount={transferTasks.activeCount}
-                  onOpenTransfers={() => { setTransferDialogOpen(true) }}
-                  uploadDoneNonce={transferTasks.uploadDoneNonce}
-                />
+                {sidePanel === 'ai'
+                  ? (
+                    <SshAssistantPanel
+                      sshSessionId={sessionId}
+                      assetId={asset.id}
+                      assetName={asset.name}
+                      onOpened={(id) =>{  assistantIdRef.current = id }}
+                    />
+                  )
+                  : (
+                    <SftpPanel
+                      asset={asset}
+                      sessionId={sessionId}
+                      sshConnected={connected}
+                      sshCwd={sshCwd}
+                      onFollowTerminal={onFollowTerminal}
+                      transferActiveCount={transferTasks.activeCount}
+                      onOpenTransfers={() => { setTransferDialogOpen(true) }}
+                      uploadDoneNonce={transferTasks.uploadDoneNonce}
+                    />
+                  )}
               </div>
             </aside>
           )}
@@ -1067,7 +1097,7 @@ function QuickCommandEditor({ commands, onChange, onClose }: {
         }
       }}
     >
-      <section className={css.quickEditor} onClick={event => event.stopPropagation()}>
+      <section className={css.quickEditor} onClick={(event) => { event.stopPropagation() }}>
         <header className={css.quickEditorHeader}>
           <div><span className={css.quickEditorTitle}>快捷命令</span><span className={css.quickEditorHint}>点击命令将发送到当前 SSH 会话</span></div>
           <button type="button" className={css.iconButton} onClick={onClose} title="关闭" aria-label="关闭"><IconCloseOutlineMedium size={15} /></button>

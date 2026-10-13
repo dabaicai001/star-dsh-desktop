@@ -490,6 +490,7 @@
     { "path": "./packages/starhub/host-static" },
     { "path": "./packages/starhub/live-context" },
     { "path": "./packages/starhub/session-registry" },
+    { "path": "./packages/starhub/ssh-assistant" },
     { "path": "./packages/starhub/tool-context" },
     { "path": "./packages/starhub/tools" },
     { "path": "./packages/starhub/client-nav" },

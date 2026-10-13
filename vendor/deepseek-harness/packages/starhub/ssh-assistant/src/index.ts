@@ -1,0 +1,165 @@
+/**
+ * StarHub SSH AI assistant (去 Tauri 化 M4 之后的新宿主插件;StarHub-local,
+ * 不在上游)。
+ *
+ * 每个 SSH 终端页对应一个 **agent 作用域会话**:`ctx.agents.create()` 建根
+ * Agent,模型路由取部署默认(`agentDefaultModel`——用户在 dsh 设置里配的
+ * provider/key/model,助手 therefore 复用同一套模型连接,面板可临时切换),
+ * creation window 里把工具面 `restrict` 到本资产的 SSH/SFTP 8 个工具并经
+ * 桥 `starhub/bind.asset` 绑定资产(sidecar 的 `resolve_asset_id` 因此自动
+ * 路由,`ensure_ssh_session` 复用该资产已有的 AI exec 连接)。
+ *
+ * 面板(壳内工作台 React 应用,无 dsh client runtime)经同源
+ * `/starhub/api/assistant/*` 路由驱动:open/prompt/stop/close/model/approval
+ * + SSE 流(`session/event` 按会话过滤转发,事件源渲染与 dsh GUI 同范式)。
+ *
+ * 审批:助手会话的 `approval/request` 由本插件 prepend 承接——经 SSE 推给
+ * 面板、面板 POST 决策;面板没在流上时交回链尾(壳内审批 UI 不受影响)。
+ * 风险分级仍归 starhub-approval-bridge 的风险门(只读放行、写/风险 ask)。
+ *
+ * @module @deepseek-ai/dsh-starhub-ssh-assistant
+ */
+
+import type { Context } from '@deepseek-ai/cordis'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
+// Type-only: declares the `webServer` service on Context (route registration)
+// and the `llm` service (model catalog for the panel picker).
+import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-llm'
+import { AssistantRegistry } from './registry.ts'
+import {
+  ASSISTANT_ROUTES,
+  approvalHandler,
+  closeHandler,
+  modelHandler,
+  modelsHandler,
+  openHandler,
+  promptHandler,
+  stopHandler,
+  streamHandler,
+  type AssistantRouteDeps,
+  type ModelCatalog,
+  type ModelCatalogProvider,
+} from './routes.ts'
+
+/** Cordis plugin name used by loader diagnostics. */
+export const name = 'starhub-ssh-assistant'
+
+/** Declared dependencies: agent registry, web server routes, tool registry, LLM catalog. */
+export const inject = ['agents', 'webServer', 'tools', 'llm']
+
+/** Bridge method that binds an agent session to a StarHub asset. */
+const BIND_ASSET_METHOD = 'starhub/bind.asset'
+
+/** Private host service names resolved through `ctx.get` (not declared merges). */
+const SDK_TRANSPORT_SERVICE = 'sdk-transport'
+const AGENT_DEFAULT_MODEL_SERVICE = 'agentDefaultModel'
+
+/**
+ * 注册插件:建助手注册表、挂会话事件/状态/模型/审批四个监听,并注册
+ * `/starhub/api/assistant/*` 路由;插件卸载时全部助手会话随之销毁。
+ *
+ * @param ctx - plugin context carrying the agent, webServer, and tools services.
+ */
+export function apply(ctx: Context): void {
+  const registry = new AssistantRegistry({
+    createAgent: options => ctx.agents.create(options),
+    getAgent: sessionId => ctx.agents.get(sessionId),
+    bindAsset: async (assetId, sessionId) => {
+      const transport = ctx.get(SDK_TRANSPORT_SERVICE) as JsonRpcTransportPeer | undefined
+      if (transport === undefined) {
+        throw new Error('starhub-ssh-assistant 需要 starhub-bridge(sdk-transport 服务)')
+      }
+      const result: unknown = await transport.request(BIND_ASSET_METHOD, { assetId, sessionId })
+      const record = typeof result === 'object' && result !== null
+        ? result as Record<string, unknown>
+        : undefined
+      if (record?.ok !== true || record.action !== 'bound') {
+        throw new Error(`资产绑定失败:${assetId}`)
+      }
+    },
+    defaultSelection: () => {
+      const service = ctx.get(AGENT_DEFAULT_MODEL_SERVICE) as {
+        currentSelection(): { provider: string; model: string }
+      } | undefined
+      if (service === undefined) return undefined
+      const selection = service.currentSelection()
+      return { provider: selection.provider, model: selection.model }
+    },
+    modelExists: async (provider, model) => {
+      const models = await ctx.llm.listModels(provider)
+      return models.some(entry => entry.id === model)
+    },
+  })
+
+  // 会话事件流:助手会话的 durable log 原样转发给面板(用户/助手消息、
+  // tool/call、tool/result、turn/step 边界),与 dsh GUI 的事件源渲染同范式。
+  ctx.on('session/event', (session, event) => {
+    registry.onSessionEvent(String(session.id), event)
+  })
+  ctx.on('agent/status', ({ agent, status }) => {
+    registry.onStatus(String(agent.session.id), status)
+  })
+  // 面板切换模型:替换本请求冻结的 call config(路由变更时丢掉过期的
+  // reasoningEffort,让新模型解析自己的默认值)。
+  ctx.on('agent/request', async ({ agent }, next) => {
+    const config = await next()
+    return registry.applyRequestConfig(String(agent.session.id), config)
+  })
+  // 审批:助手会话的 ask 先在面板里落卡;面板没在看(流已断)时交回链尾,
+  // 壳内审批 UI 的行为不变。
+  ctx.on('approval/request', async (req, next) => {
+    const sessionId = String(req.agent.session.id)
+    if (!registry.isAssistant(sessionId) || !registry.hasClients(sessionId)) return next()
+    return registry.parkApproval(sessionId, {
+      toolName: req.toolName,
+      ...(req.callId === undefined ? {} : { callId: String(req.callId) }),
+      ...(req.reason === undefined ? {} : { reason: req.reason }),
+      ...(req.signal === undefined ? {} : { signal: req.signal }),
+    })
+  }, { prepend: true })
+
+  const listModels = async (): Promise<ModelCatalog> => {
+    const providers: ModelCatalogProvider[] = []
+    for (const info of ctx.llm.listProviders()) {
+      let models: { id: string; name: string }[] = []
+      try {
+        models = (await ctx.llm.listModels(info.id)).map(model => ({ id: model.id, name: model.name }))
+      } catch {
+        // 路由列出了但模型目录读不到(适配器未就绪):给空列表,面板禁用该行。
+        models = []
+      }
+      providers.push({ provider: info.id, displayName: info.name, models })
+    }
+    return { providers }
+  }
+  const deps: AssistantRouteDeps = { registry, listModels }
+
+  const routes: ReadonlyArray<{
+    path: string
+    handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
+  }> = [
+    { path: ASSISTANT_ROUTES.open, handler: openHandler(deps) },
+    { path: ASSISTANT_ROUTES.prompt, handler: promptHandler(deps) },
+    { path: ASSISTANT_ROUTES.stop, handler: stopHandler(deps) },
+    { path: ASSISTANT_ROUTES.close, handler: closeHandler(deps) },
+    { path: ASSISTANT_ROUTES.model, handler: modelHandler(deps) },
+    { path: ASSISTANT_ROUTES.approval, handler: approvalHandler(deps) },
+    { path: ASSISTANT_ROUTES.models, handler: modelsHandler(deps) },
+    { path: ASSISTANT_ROUTES.stream, handler: streamHandler(deps) },
+  ]
+  for (const route of routes) {
+    ctx.effect(
+      () => ctx.webServer.register({
+        kind: 'exact',
+        path: route.path,
+        handler: route.handler,
+      }),
+      `starhub-ssh-assistant: ${route.path} route`,
+    )
+  }
+  ctx.effect(() => async () => {
+    await registry.disposeAll()
+  }, 'starhub-ssh-assistant: dispose assistants')
+}

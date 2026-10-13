@@ -124,3 +124,10 @@
       name: '@deepseek-ai/dsh-starhub-domain-events'
     - id: starhub-live-context
       name: '@deepseek-ai/dsh-starhub-live-context'
+    # SSH 终端页 AI 助手:每终端页一个 agent 作用域会话(模型复用
+    # agentDefaultModel,面板可切换),工具面 restrict 到本资产 SSH/SFTP,
+    # 经 starhub/bind.asset 绑定资产;审批在助手面板内应答(answerer 走
+    # 本插件自己的 approval/request 监听,prepend,不影响壳内审批 UI)。
+    # 面板经同源 /starhub/api/assistant/* 路由驱动(无 dsh client runtime)。
+    - id: starhub-ssh-assistant
+      name: '@deepseek-ai/dsh-starhub-ssh-assistant'

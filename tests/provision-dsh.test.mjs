@@ -6,7 +6,7 @@
  *    目标,整体覆盖会把用户设置全重置(v0.122.0 回归),所以必须按 id 合并且
  *    保留 `!!js` 表达式与用户行;
  * 2. 端到端:假 vendor 树 + 假 sidecar + 假 dist 跑真脚本,断言 profile 三件套、
- *    十个包、资源落地、patch 受管行,以及**重跑幂等**(含用户行不被冲掉)。
+ *    十一个包、资源落地、patch 受管行,以及**重跑幂等**(含用户行不被冲掉)。
  *
  * 另加一条**渲染出的 patch 必须是合法 YAML**:行级合并是字符串操作,拼出非法
  * YAML 只会在壳启动时炸「failed to parse overlay」——那时用户已经在装机界面
@@ -32,7 +32,7 @@ const templatePath = join(repoRoot, 'vendor', 'deepseek-harness', 'examples', 's
 
 const STARHUB_PACKAGES = [
   'client-nav', 'host-static', 'tool-context', 'bridge', 'tools',
-  'approval-bridge', 'session-registry', 'domain-events', 'live-context',
+  'approval-bridge', 'session-registry', 'domain-events', 'live-context', 'ssh-assistant',
 ]
 
 /** 受管行:provisioning 负责维护的 patch 行 id。 */
@@ -178,7 +178,7 @@ test('provisioning materializes the profile, the packages and the resources', (t
   assert.deepEqual(manifest.dsh.profile.bundles, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
   assert.ok(existsSync(join(profile, 'pnpm-workspace.yaml')), 'pnpm-workspace.yaml 落地')
 
-  // 2. 十个包(只搬运行时段)
+  // 2. 十一个包(只搬运行时段)
   for (const name of STARHUB_PACKAGES) {
     const pkg = join(profile, 'node_modules', '@deepseek-ai', `dsh-starhub-${name}`)
     assert.ok(existsSync(join(pkg, 'package.json')), `${name} manifest`)
