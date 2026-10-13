@@ -118,6 +118,14 @@ const PLUGINS = [
       en: 'Injects live and takeover snapshots into agent context.',
     },
   },
+  {
+    short: 'ssh-assistant', row: 'starhub-ssh-assistant',
+    entry: 'lib/types/index.js', title: { zh: 'StarHub SSH AI 助手', en: 'StarHub SSH AI assistant' },
+    description: {
+      zh: 'SSH 终端页 AI 助手:每终端页一个 agent 作用域会话,复用 dsh 模型连接,审批与 MFA/堡垒机验证卡都在面板内完成。',
+      en: 'SSH terminal AI assistant: one agent-scoped session per terminal page, reusing the dsh model route, with approvals and MFA/bastion cards inside the panel.',
+    },
+  },
 ]
 
 /** 客户端半边所在的行(唯一一个 `dsh.client` 声明者)。 */
