@@ -9,6 +9,11 @@
 
 ---
 
+## [0.136.1] - 2026-10-15
+
+### 修复
+- 🐛 **修 v0.136.0 的 CI / Release 全红**:给 `TerminalSettings` 新增必填字段 `scrollback` 后,漏改 `tests/ssh-settings.client.spec.tsx` 里三处完整字面量——而 CI 的 `tsc -b tsconfig.client.json` 连 `packages/*/*/tests/**/*.client.spec.tsx` 一起 typecheck(本地 `tsc -p` 只含 `src`,所以本地全绿、CI 全红),`package-dsh-runtime` 的 build 步直接 exit 1。补上 `scrollback` 并新增默认值(5000)与夹取区间(200..100000)断言;同时把上一个提交(a556f7381c)带进来的同类错误一并修掉——`tests/assistant-messages.client.spec.ts` 给 `AssistantStreamChunk` 塞了类型里不存在、主机也从不发送的 `id` / `argumentsDelta` 字段,改为只保留 `type` / `index`(测试意图「非 text-delta 一律被忽略」不变)。顺带把「回滚行数」下拉加进设置页 SSH tab(与终端设置浮层共用 `TERMINAL_SCROLLBACKS` 预设),新字段不再只能从终端浮层改。
+
 ## [0.136.0] - 2026-10-15
 
 ### 新增

@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.136.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.136.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,8 +45,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.136.0 (2026-10-15)
-- ✨ ✨ **SSH 终端工作台整页改版**(更美观 / 更好交互 / 终端功能补全):版面从「居中浮窗 + 头部 + 页签条 + 快捷命令条」四段堆叠,改成**全幅四段式工作台**——头部(资产身份 + 连接状态胶囊 + 连接时长秒针 + 广播/监控/设置/全屏/关闭)、工具条(页签 + 快捷命令 + 终端工具三合一,省掉一整行 chrome 且不再大片空白)、终端区(侧栏可拖宽)、底部状态栏(cwd 一点即开文件面板、会话 id 可复制、网格尺寸、编码、字号、传输徽标)。终端侧新增:**命令面板**(Ctrl/⌘+K,可搜索快捷命令 / 最近命令 / 终端操作 / 工作区动作,↑↓ + Enter 键盘主导)、**输出查找**(Ctrl/⌘+F,扫 xterm 缓冲区、命中计数、循环跳转、选中高亮)、字号 A+/A−、清屏、复制选中、粘贴、全屏(Esc 逐层退出)、**终端设置浮层**(字体 / 字号 / 光标闪烁 / 编码 / 回滚行数,改动即时应用到实例并持久化)、**主机监控页签**(同一条会话上只读采集 uptime / 负载 / 内存 / 磁盘 / CPU / 进程 / 网络,5s 自动刷新,不在终端留输出)。快捷命令空态改为可点的「添加常用 SSH 命令」,管理弹窗补筛选框与计数;「最近命令」按用户实际提交的行记录(单字符与批量输入同一条还原路径,方向键/控制字符不污染),上限 60 条。客户端新模块 `command-history` / `host-monitor` / `terminal-find` / `CommandPalette` / `HostMonitorPanel` / `TerminalSettingsMenu` / `TerminalFindBar`;既有 OSC 7 cwd 跟踪、ZMODEM rz/sz、MFA、主机密钥确认、命令广播、传输任务投影全部原样保留。测试:overlay 用例 27 → 34(新增面板/查找/监控/工具/状态栏/快捷命令筛选),新纯逻辑套件 command-history / host-monitor / terminal-find 共 26 例,client-nav 52 个套件 898 例全绿。
+### v0.136.1 (2026-10-15)
+- 🐛 🐛 **修 v0.136.0 的 CI / Release 全红**:给 `TerminalSettings` 新增必填字段 `scrollback` 后,漏改 `tests/ssh-settings.client.spec.tsx` 里三处完整字面量——而 CI 的 `tsc -b tsconfig.client.json` 连 `packages/*/*/tests/**/*.client.spec.tsx` 一起 typecheck(本地 `tsc -p` 只含 `src`,所以本地全绿、CI 全红),`package-dsh-runtime` 的 build 步直接 exit 1。补上 `scrollback` 并新增默认值(5000)与夹取区间(200..100000)断言;同时把上一个提交(a556f7381c)带进来的同类错误一并修掉——`tests/assistant-messages.client.spec.ts` 给 `AssistantStreamChunk` 塞了类型里不存在、主机也从不发送的 `id` / `argumentsDelta` 字段,改为只保留 `type` / `index`(测试意图「非 text-delta 一律被忽略」不变)。顺带把「回滚行数」下拉加进设置页 SSH tab(与终端设置浮层共用 `TERMINAL_SCROLLBACKS` 预设),新字段不再只能从终端浮层改。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

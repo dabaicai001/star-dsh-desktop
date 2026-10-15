@@ -1,12 +1,12 @@
 /**
- * Settings SSH tab:终端显示设置(字体 / 字号 / 编码 / 光标闪烁)。
+ * Settings SSH tab:终端显示设置(字体 / 字号 / 编码 / 光标闪烁 / 回滚行数)。
  *
  * 供 SSH 终端与 Docker exec 终端共同消费。保存经 `updateTerminalSettings`
  * 写 localStorage 并同步给已挂载终端,下一次打开(或已打开)的终端即按新值生效。
  */
 import { useState } from 'react'
 import {
-  TERMINAL_ENCODINGS, TERMINAL_FONTS, isTerminalFontPreset,
+  TERMINAL_ENCODINGS, TERMINAL_FONTS, TERMINAL_SCROLLBACKS, isTerminalFontPreset,
   updateTerminalSettings, useTerminalSettings,
   type TerminalEncoding, type TerminalSettings,
 } from '../terminal/terminal-settings.ts'
@@ -75,6 +75,19 @@ export function SshSettingsTab() {
               <option key={enc} value={enc}>{enc}</option>
             ))}
           </select>
+        </label>
+        <label className={s.formField}>
+          <span className={s.fieldLabel}>回滚行数</span>
+          <select
+            className={s.select}
+            value={draft.scrollback}
+            onChange={event => patch({ scrollback: Number(event.target.value) })}
+          >
+            {TERMINAL_SCROLLBACKS.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <span className={s.fieldHint}>终端向上可回看的行数;越大越占内存。</span>
         </label>
         <label className={s.checkboxRow}>
           <input

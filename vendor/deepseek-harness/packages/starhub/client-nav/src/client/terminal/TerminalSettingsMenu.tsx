@@ -8,18 +8,10 @@
 import { useEffect, useRef } from 'react'
 import { IconCloseOutlineMedium, IconSlidersTwoOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  isTerminalFontPreset, TERMINAL_ENCODINGS, TERMINAL_FONTS, updateTerminalSettings,
-  type TerminalSettings,
+  isTerminalFontPreset, TERMINAL_ENCODINGS, TERMINAL_FONTS, TERMINAL_SCROLLBACKS,
+  updateTerminalSettings, type TerminalSettings,
 } from './terminal-settings.ts'
 import css from './TerminalSettingsMenu.module.css'
-
-/** 回滚行数可选值。 */
-const SCROLLBACK_OPTIONS: ReadonlyArray<{ label: string; value: number }> = [
-  { label: '1,000 行', value: 1000 },
-  { label: '5,000 行(默认)', value: 5000 },
-  { label: '20,000 行', value: 20000 },
-  { label: '50,000 行', value: 50000 },
-]
 
 /** 设置浮层属性。 */
 export interface TerminalSettingsMenuProps {
@@ -114,7 +106,7 @@ export function TerminalSettingsMenu({ settings, onClose }: TerminalSettingsMenu
             value={settings.scrollback}
             onChange={(event) => { updateTerminalSettings({ scrollback: Number(event.target.value) }) }}
           >
-            {SCROLLBACK_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            {TERMINAL_SCROLLBACKS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
       </div>

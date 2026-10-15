@@ -217,7 +217,9 @@ describe('assistant stream fold', () => {
     }))).toBe(items)
     expect(foldFrame(items, streamFrame({
       type: 'chunk', attemptId: 'a1', revision: 3, index: 0, time: 1,
-      chunk: { type: 'tool-call-delta', index: 0, id: 'c1', argumentsDelta: '{"a":1}' },
+      // 非文本 chunk(工具调用增量):客户端类型只建模 type/index/text,
+      // 主机也从不发这种 chunk——只验证「非 text-delta 一律被忽略」。
+      chunk: { type: 'tool-call-delta', index: 0 },
     }))).toBe(items)
   })
 })

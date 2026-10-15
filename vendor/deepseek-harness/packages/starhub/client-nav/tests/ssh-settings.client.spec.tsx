@@ -19,6 +19,7 @@ describe('terminal settings module', () => {
     expect(s.fontSize).toBe(13)
     expect(s.encoding).toBe('utf-8')
     expect(s.cursorBlink).toBe(true)
+    expect(s.scrollback).toBe(5000)
   })
 
   it('normalizes missing/illegal fields back to defaults', () => {
@@ -34,13 +35,20 @@ describe('terminal settings module', () => {
     expect(normalizeTerminalSettings({ fontSize: 128 }).fontSize).toBe(64)
   })
 
+  it('clamps scrollback to the legal buffer range', () => {
+    expect(normalizeTerminalSettings({ scrollback: 10 }).scrollback).toBe(200)
+    expect(normalizeTerminalSettings({ scrollback: 999999 }).scrollback).toBe(100000)
+    expect(normalizeTerminalSettings({ scrollback: Number.NaN }).scrollback).toBe(5000)
+  })
+
   it('round-trips a saved settings object', () => {
-    saveTerminalSettings({ fontFamily: 'Fira Code', fontSize: 15, encoding: 'gbk', cursorBlink: false })
+    saveTerminalSettings({ fontFamily: 'Fira Code', fontSize: 15, encoding: 'gbk', cursorBlink: false, scrollback: 2000 })
     const s = loadTerminalSettings()
     expect(s.fontFamily).toBe('Fira Code')
     expect(s.fontSize).toBe(15)
     expect(s.encoding).toBe('gbk')
     expect(s.cursorBlink).toBe(false)
+    expect(s.scrollback).toBe(2000)
   })
 
   it('exposes every supported encoding, font presets, and builds terminal options', () => {
@@ -50,15 +58,15 @@ describe('terminal settings module', () => {
     expect(TERMINAL_FONTS.some(option => option.value === DEFAULT_TERMINAL_FONT)).toBe(true)
     expect(isTerminalFontPreset(DEFAULT_TERMINAL_FONT)).toBe(true)
     expect(isTerminalFontPreset('Some Custom Mono')).toBe(false)
-    const opts = terminalOptions({ fontFamily: 'Mono', fontSize: 14, encoding: 'utf-8', cursorBlink: false })
-    expect(opts).toEqual({ fontFamily: 'Mono', fontSize: 14, cursorBlink: false })
+    const opts = terminalOptions({ fontFamily: 'Mono', fontSize: 14, encoding: 'utf-8', cursorBlink: false, scrollback: 3000 })
+    expect(opts).toEqual({ fontFamily: 'Mono', fontSize: 14, cursorBlink: false, scrollback: 3000 })
   })
 })
 
 describe('SshSettingsTab', () => {
   it('renders the current settings into the form', () => {
     const jetbrains = TERMINAL_FONTS.find(option => option.label.includes('JetBrains Mono'))?.value ?? ''
-    saveTerminalSettings({ fontFamily: jetbrains, fontSize: 16, encoding: 'big5', cursorBlink: false })
+    saveTerminalSettings({ fontFamily: jetbrains, fontSize: 16, encoding: 'big5', cursorBlink: false, scrollback: 5000 })
     render(<SshSettingsTab />)
     const combo = screen.getAllByRole('combobox')
     const font = combo[0] as HTMLSelectElement

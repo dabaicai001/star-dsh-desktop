@@ -44,6 +44,17 @@ export const TERMINAL_ENCODINGS = ['utf-8', 'gbk', 'gb18030', 'big5', 'shift_jis
 
 export type TerminalEncoding = (typeof TERMINAL_ENCODINGS)[number]
 
+/**
+ * 回滚行数预设(设置页下拉与终端设置浮层共用)。
+ * 展示名 → xterm scrollback 值。
+ */
+export const TERMINAL_SCROLLBACKS: ReadonlyArray<{ label: string; value: number }> = [
+  { label: '1,000 行', value: 1000 },
+  { label: '5,000 行(默认)', value: 5000 },
+  { label: '20,000 行', value: 20000 },
+  { label: '50,000 行', value: 50000 },
+]
+
 /** SSH 终端显示设置。 */
 export interface TerminalSettings {
   /** 字体栈(逗号分隔,含 fallback)。 */
