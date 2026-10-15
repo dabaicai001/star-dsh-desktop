@@ -54,6 +54,8 @@ export interface TerminalSettings {
   encoding: TerminalEncoding
   /** 光标闪烁。 */
   cursorBlink: boolean
+  /** 回滚缓冲行数(xterm scrollback)。 */
+  scrollback: number
 }
 
 function defaults(): TerminalSettings {
@@ -62,6 +64,7 @@ function defaults(): TerminalSettings {
     fontSize: 13,
     encoding: 'utf-8',
     cursorBlink: true,
+    scrollback: 5000,
   }
 }
 
@@ -75,6 +78,9 @@ export function normalizeTerminalSettings(raw: Partial<TerminalSettings> | null 
   next.fontSize = Math.max(6, Math.min(64, Math.round(next.fontSize)))
   if (!(TERMINAL_ENCODINGS as readonly string[]).includes(next.encoding)) next.encoding = base.encoding
   if (typeof next.cursorBlink !== 'boolean') next.cursorBlink = base.cursorBlink
+  // 回滚行数夹在合法区间(200..100000)。
+  if (typeof next.scrollback !== 'number' || !Number.isFinite(next.scrollback)) next.scrollback = base.scrollback
+  next.scrollback = Math.max(200, Math.min(100000, Math.round(next.scrollback)))
   return next
 }
 
@@ -146,10 +152,12 @@ export function terminalOptions(settings: TerminalSettings): {
   fontFamily: string
   fontSize: number
   cursorBlink: boolean
+  scrollback: number
 } {
   return {
     fontFamily: settings.fontFamily,
     fontSize: settings.fontSize,
     cursorBlink: settings.cursorBlink,
+    scrollback: settings.scrollback,
   }
 }

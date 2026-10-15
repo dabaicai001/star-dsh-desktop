@@ -1,11 +1,11 @@
 /**
- * Shell-native SSH/SFTP terminal overlay.
+ * Shell-native SSH/SFTP terminal workspace.
  *
  * Opened in-page (no new window) when an SSH asset is clicked. Owns one xterm
- * instance connected via the StarHub interactive SSH session, and exposes a
- * second tab with the native SFTP file-transfer panel that reuses the same live
- * session. SSH terminal and SFTP inherently share one connection, so they ride
- * the same overlay.
+ * instance connected via the StarHub interactive SSH session, and exposes
+ * side panels that reuse the same live session: SFTP file transfer, the SSH AI
+ * assistant, and host monitoring. SSH terminal and SFTP inherently share one
+ * connection, so they ride the same workspace.
  *
  * cwd tracking (SFTP「跟随终端」): the terminal tracks the remote cwd from the
  * PTY stream (OSC 7 + prompt-path extraction + `pwd` fallback) and lazily
@@ -13,10 +13,21 @@
  * enabled, the shell probe settled, and a prompt is seen, so `cd` reports cwd
  * live. The tracked `sshCwd` is handed to the SFTP panel for follow-nav.
  *
- * @module StarHub SSH/SFTP overlay (client)
+ * Workspace chrome (top → bottom): header (identity + status + session-level
+ * actions) → toolbar (view tabs, quick commands, terminal tools) → terminal
+ * with optional side panel → status bar (cwd, session id, grid, encoding,
+ * duration, transfers). Keyboard: Ctrl/⌘+K command palette, Ctrl/⌘+F find.
+ *
+ * @module StarHub SSH/SFTP terminal workspace (client)
  */
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { IconCheckOutlineMedium, IconCloseFillMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconFolderOpenOutlineMedium, IconPaperclipOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconUsersOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import {
+  IconCheckOutlineMedium, IconChevronsUpDownOutlineMedium, IconCloseCircleFillMedium, IconCloseFillMedium,
+  IconCloseOutlineMedium, IconClockOutlineMedium, IconCodeOutlineMedium, IconCopyOutlineMedium,
+  IconFolderOpenOutlineMedium, IconFullscreenOutlineMedium, IconGaugeOutlineMedium, IconPaperclipOutlineMedium,
+  IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSearchOutlineMedium, IconSlidersTwoOutlineMedium,
+  IconSparkleMedium, IconUsersOutlineMedium, IconWarningTriangleOutlineMedium,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -31,8 +42,14 @@ import { useTransferTasks } from './use-transfer-tasks.ts'
 import { formatSize } from './sftp-service.ts'
 import { BroadcastDialog, type BroadcastSession } from './BroadcastDialog.tsx'
 import { createQuickCommand, importQuickCommands, loadQuickCommands, saveQuickCommands, type QuickCommand } from './quick-commands.ts'
+import { loadCommandHistory, pushCommandHistory, reduceInputLine, type CommandHistoryEntry } from './command-history.ts'
+import { findMatches, stepMatchIndex, type FindMatch } from './terminal-find.ts'
+import { CommandPalette, type PaletteAction } from './CommandPalette.tsx'
+import { TerminalFindBar } from './TerminalFindBar.tsx'
+import { TerminalSettingsMenu } from './TerminalSettingsMenu.tsx'
+import { HostMonitorPanel } from './HostMonitorPanel.tsx'
 import { useTerminalTheme } from './terminal-theme.ts'
-import { terminalOptions, useTerminalSettings } from './terminal-settings.ts'
+import { terminalOptions, updateTerminalSettings, useTerminalSettings } from './terminal-settings.ts'
 import {
   OSC7_INJECT_ECHO_TEXT, buildOsc7InjectCommand, createCwdTracker, createHiddenEchoFilter,
   extractPromptCwd, isShellPromptLine, parseLoginShell, parsePwdOutput, stripTerminalControl,
@@ -82,7 +99,7 @@ interface ZmodemApi {
 
 const Zmodem = ZmodemModule as ZmodemApi
 
-/** Props for one native SSH/SFTP terminal overlay. */
+/** Props for one native SSH/SFTP terminal workspace. */
 export interface SshTerminalOverlayProps {
   asset: RustAsset
   onClose: () => void
@@ -105,7 +122,23 @@ export interface HostKeyConfirmEvent {
   sha256: string
 }
 
-type SidePanel = 'sftp' | 'ai' | null
+type SidePanel = 'sftp' | 'ai' | 'monitor' | null
+
+/** 工具条字号按钮的调节范围(与设置浮层滑块一致)。 */
+const FONT_SIZE_MIN = 10
+const FONT_SIZE_MAX = 22
+
+/** 提示自动消失时长(ms)。 */
+const TOAST_TIMEOUT_MS = 6000
+
+/** 提示语气:成功 / 失败 / 中性。 */
+type ToastTone = 'success' | 'error' | 'info'
+
+/** 一条悬浮提示。 */
+interface Toast {
+  text: string
+  tone: ToastTone
+}
 
 /**
  * Build the Rust `SshAuth` variant from an asset config, mirroring the Vue
@@ -170,12 +203,31 @@ export function terminalSessionId(assetId: string): string {
 }
 
 /**
+ * 毫秒时长转 `mm:ss` / `h:mm:ss`(头部连接时长用)。
+ * @param ms - 毫秒数。
+ * @returns 时钟格式时长。
+ */
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = total % 60
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`
+}
+
+/** 夹在字号按钮的合法区间内。 */
+function clampFontSize(value: number): number {
+  return Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, value))
+}
+
+/**
  * Render one xterm instance backed by a StarHub interactive SSH session, with
- * cwd tracking for the SFTP follow-terminal flow. Each overlay owns its own
+ * cwd tracking for the SFTP follow-terminal flow. Each workspace owns its own
  * session id (see {@link terminalSessionId}), so two windows on the same asset
  * never share a shell.
- * @param props - selected SSH asset and overlay close callback.
- * @returns the native SSH/SFTP terminal overlay.
+ * @param props - selected SSH asset and workspace close callback.
+ * @returns the native SSH/SFTP terminal workspace.
  */
 export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) {
   const host = useRef<HTMLDivElement>(null)
@@ -213,6 +265,8 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const [sshCwd, setSshCwd] = useState('')
   const [quickCommands, setQuickCommands] = useState<QuickCommand[]>(loadQuickCommands)
   const [quickEditorOpen, setQuickEditorOpen] = useState(false)
+  // 客户端记录的「最近命令」(onData 还原输入行,回车时入账)。
+  const [commandHistory, setCommandHistory] = useState<CommandHistoryEntry[]>(loadCommandHistory)
   // MFA/2FA:服务器 keyboard-interactive 请求(非空时渲染验证码输入弹窗)。
   const [kbPrompt, setKbPrompt] = useState<KbInteractiveEvent | null>(null)
   const [kbAnswers, setKbAnswers] = useState<string[]>([])
@@ -222,7 +276,22 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const quickImportRef = useRef<HTMLInputElement>(null)
   // 命令广播(需求 6 broadcast 子集):弹层会话列表 + 发送结果提示。
   const [broadcastSessions, setBroadcastSessions] = useState<BroadcastSession[] | null>(null)
-  const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null)
+  // 悬浮提示(广播结果 / 快捷命令发送 / 复制粘贴反馈)。
+  const [toast, setToast] = useState<Toast | null>(null)
+  /** 弹一条悬浮提示。 */
+  const notify = useCallback((text: string, tone: ToastTone = 'success') => { setToast({ text, tone }) }, [])
+  // 工作台展示态:全屏 / 命令面板 / 终端设置浮层 / 查找条。
+  const [fullscreen, setFullscreen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [findHits, setFindHits] = useState<FindMatch[]>([])
+  const [findIndex, setFindIndex] = useState(-1)
+  // 状态栏:终端网格尺寸 + 连接时刻(连接时长)。
+  const [grid, setGrid] = useState({ cols: 0, rows: 0 })
+  const [connectedAt, setConnectedAt] = useState<number | null>(null)
+  const [now, setNow] = useState(() => Date.now())
   // ZMODEM(rz/sz):远端执行 rz(我们发送)或 sz(我们接收)时弹出传输弹窗。
   const zmodemInputRef = useRef<HTMLInputElement>(null)
   const [zmodemPromptVisible, setZmodemPromptVisible] = useState(false)
@@ -320,6 +389,12 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const osc7InjectedRef = useRef(false)
   const shellPromptSeenRef = useRef(false)
   const cwdRef = useRef('')
+  // 当前输入行(用于还原「最近命令」)。
+  const inputLineRef = useRef('')
+  // FitAddon 句柄:字号/字体变化后重新适配网格。
+  const fitRef = useRef<FitAddon | null>(null)
+  // PTY 解码器:编码设置变化时换新(流式状态随之重置)。
+  const decoderRef = useRef<TextDecoder | null>(null)
   // Login-shell name from the connect-time silent exec; picks the OSC 7 inject
   // command per shell (null = undetected → conservative bash/zsh command).
   const loginShellRef = useRef<string | null>(null)
@@ -390,6 +465,27 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
 
   // v8 ignore stop --
 
+  // 编码设置变化 → 换解码器(下一次 chunk 起生效)。
+  useEffect(() => {
+    decoderRef.current = new TextDecoder(terminalSettings.encoding)
+  }, [terminalSettings.encoding])
+
+  // 终端显示设置实时生效:字体 / 字号 / 光标 / 回滚行数改了立刻应用到实例,
+  // 并按新网格重新 resize PTY。主题由 useTerminalTheme 另路刷新。
+  useEffect(() => {
+    const term = termRef.current
+    const options = term?.options
+    if (term === null || options === undefined) return
+    options.fontFamily = terminalSettings.fontFamily
+    options.fontSize = terminalSettings.fontSize
+    options.cursorBlink = terminalSettings.cursorBlink
+    options.scrollback = terminalSettings.scrollback
+    fitRef.current?.fit()
+    if (isConnectedRef.current) {
+      void tauriInvoke('ssh_resize', { id: sessionId, cols: term.cols, rows: term.rows }).catch(() => {})
+    }
+  }, [sessionId, terminalSettings, termRef])
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- theme/settings 在挂载时创建终端;主题由 useTerminalTheme 动态重刷,字体/字号/编码下次打开生效。
     const term = new Terminal({
@@ -398,6 +494,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     })
     termRef.current = term
     const addon = new FitAddon()
+    fitRef.current = addon
     term.loadAddon(addon)
     if (host.current !== null) {
       term.open(host.current)
@@ -413,7 +510,6 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     let unlistenHostkey: TauriUnlisten | undefined
 
     const cwdTracker = createCwdTracker()
-    const decoder = new TextDecoder(terminalSettings.encoding)
 
     const input = term.onData((data) => {
       // ZMODEM 传输进行中:Ctrl+C(0x03)应中止会话,而不是把原始字节写到 shell。
@@ -422,11 +518,18 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
         cancelZmodem()
         return
       }
+      // 还原输入行:回车时作为一条「最近命令」入账(供命令面板复用)。
+      const reduced = reduceInputLine(inputLineRef.current, data)
+      inputLineRef.current = reduced.line
+      if (reduced.submitted !== null) {
+        setCommandHistory(current => pushCommandHistory(current, reduced.submitted as string))
+      }
       if (isConnectedRef.current) void tauriInvoke('ssh_write', { id: sessionId, data }).catch(() => {})
     })
 
     const resize = () => {
       addon.fit()
+      setGrid({ cols: term.cols, rows: term.rows })
       if (isConnectedRef.current) void tauriInvoke('ssh_resize', { id: sessionId, cols: term.cols, rows: term.rows }).catch(() => {})
     }
 
@@ -453,6 +556,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
 
     /** Sentry `to_terminal`: decode non-ZMODEM octets into the terminal render path. */
     const handleTerminalOctets = (octets: number[]) => {
+      const decoder = decoderRef.current ?? new TextDecoder(terminalSettings.encoding)
       handleChunk(decoder.decode(new Uint8Array(octets), { stream: true }))
     }
 
@@ -507,7 +611,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
           session.start()
         },
         on_retract: () => {
-          if (!zmodemSessionRef.current) finishZmodem()
+          if (zmodemSessionRef.current === null) finishZmodem()
         },
       })
     }
@@ -604,6 +708,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
         isConnectedRef.current = true
         setConnected(true)
         setClosed(false)
+        setConnectedAt(Date.now())
         resizeObserver = new ResizeObserver(resize)
         if (host.current !== null) resizeObserver.observe(host.current)
         resize()
@@ -632,17 +737,19 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
       void unlistenKb?.()
       void unlistenHostkey?.()
       setHostKeyPrompt(null)
-      const tail = decoder.decode()
+      const decoder = decoderRef.current
+      const tail = decoder === null ? '' : decoder.decode()
       if (tail) handleChunk(tail)
       void tauriInvoke('ssh_disconnect', { id: sessionId }).catch(() => {})
       term.dispose()
+      fitRef.current = null
     }
     // connectNonce:「重新连接」按下后重建会话与终端(asset 在窗口生命周期内恒定)。
   }, [asset, connectNonce])
 
   /** 打开广播弹层:拉取所有已连接的 SSH 会话作为目标列表。 */
   const openBroadcast = async (): Promise<void> => {
-    setBroadcastNotice(null)
+    setToast(null)
     try {
       const infos = await tauriInvoke<Array<{ id: string; host?: string; port?: number; username?: string; connected?: boolean }>>('ssh_get_sessions')
       const sessions: BroadcastSession[] = infos
@@ -654,12 +761,12 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
           return { sessionId: s.id, title: s.id === sessionId ? asset.name : (s.host ?? s.id), host: endpoint }
         })
       if (sessions.length === 0) {
-        setBroadcastNotice('没有已连接的会话可用于广播')
+        notify('没有已连接的会话可用于广播', 'info')
         return
       }
       setBroadcastSessions(sessions)
     } catch (e) {
-      setBroadcastNotice(e instanceof Error ? e.message : String(e))
+      notify(e instanceof Error ? e.message : String(e), 'error')
     }
   }
 
@@ -667,11 +774,22 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     if (!connected) return
     try {
       await tauriInvoke('ssh_write', { id: sessionId, data: `${command.cmd}\n` })
-      setBroadcastNotice(`已发送: ${command.label}`)
+      notify(`已发送: ${command.label}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
   }
+
+  /** 把一条命令写入当前会话(命令面板 / 最近命令共用)。 */
+  const runCommand = useCallback(async (command: string): Promise<void> => {
+    if (!connected || command.trim() === '') return
+    try {
+      await tauriInvoke('ssh_write', { id: sessionId, data: `${command}\n` })
+      notify(`已发送: ${command}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [connected, notify, sessionId])
 
   const updateQuickCommands = (next: QuickCommand[]): void => {
     setQuickCommands(next)
@@ -685,7 +803,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     try {
       const result = await importQuickCommands(file)
       updateQuickCommands([...quickCommands, ...result.commands])
-      setBroadcastNotice(`已导入 ${result.commands.length} 条快捷命令${result.skippedScripts > 0 ? `，跳过 ${result.skippedScripts} 条本地脚本` : ''}`)
+      notify(`已导入 ${result.commands.length} 条快捷命令${result.skippedScripts > 0 ? `，跳过 ${result.skippedScripts} 条本地脚本` : ''}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -705,7 +823,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
       }
     }
     closeBroadcast()
-    setBroadcastNotice(failed === 0
+    notify(failed === 0
       ? `已广播到 ${sessionIds.length} 个会话`
       : `广播完成,${failed} 个会话发送失败`)
   }
@@ -747,6 +865,116 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     setConnectNonce(n => n + 1)
   }
 
+  // ── 终端工具动作 ────────────────────────────────────────────────
+
+  /** 清空终端缓冲。 */
+  const clearTerminal = useCallback(() => { termRef.current?.clear() }, [termRef])
+
+  /** 复制终端选中内容到剪贴板。 */
+  const copySelection = useCallback(async (): Promise<void> => {
+    const selection = termRef.current?.getSelection()
+    if (selection === undefined || selection === '') {
+      notify('终端里没有选中内容', 'info')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(selection)
+      notify('已复制选中内容')
+    } catch {
+      notify('复制失败:浏览器拒绝了剪贴板访问', 'error')
+    }
+  }, [notify, termRef])
+
+  /** 把剪贴板内容粘贴进终端。 */
+  const pasteClipboard = useCallback(async (): Promise<void> => {
+    const term = termRef.current
+    if (term === null) return
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text !== '') term.paste(text)
+    } catch {
+      notify('粘贴失败:浏览器拒绝了剪贴板访问', 'error')
+    }
+  }, [notify, termRef])
+
+  /** 增减字号(夹在按钮区间内)。 */
+  const bumpFontSize = useCallback((delta: number) => {
+    updateTerminalSettings({ fontSize: clampFontSize(terminalSettings.fontSize + delta) })
+  }, [terminalSettings.fontSize])
+
+  /** 打开查找条。 */
+  const openFind = useCallback(() => { setFindOpen(true) }, [])
+
+  /** 跳到上一个 / 下一个命中。 */
+  const stepFind = useCallback((forward: boolean) => {
+    setFindIndex(current => stepMatchIndex(findHits.length, current, forward))
+  }, [findHits.length])
+
+  // 查找关键字变化 → 重扫缓冲区并跳到第一个命中。
+  // connected 也列入依赖:重连会重建终端实例,扫的是新缓冲区。
+  useEffect(() => {
+    if (!findOpen) return
+    const term = termRef.current
+    if (term === null) return
+    const buffer = term.buffer.active
+    const lines: string[] = []
+    for (let row = 0; row < buffer.length; row += 1) {
+      const line = buffer.getLine(row)
+      lines.push(line === undefined ? '' : line.translateToString(true))
+    }
+    const hits = findMatches(lines, findQuery)
+    setFindHits(hits)
+    setFindIndex(hits.length > 0 ? 0 : -1)
+  }, [connected, findOpen, findQuery, termRef])
+
+  // 当前命中变化 → 高亮并滚到可见区。
+  useEffect(() => {
+    const term = termRef.current
+    const hit = findHits[findIndex]
+    if (term === null || hit === undefined) return
+    term.select(hit.row, hit.col, hit.length)
+    term.scrollToLine(hit.row)
+  }, [findHits, findIndex, termRef])
+
+  // 全局快捷键:Ctrl/⌘+K 命令面板、Ctrl/⌘+F 查找、Esc 逐层关闭。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const mod = event.metaKey || event.ctrlKey
+      if (mod && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen(open => !open)
+        return
+      }
+      if (mod && event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        setFindOpen(true)
+        return
+      }
+      if (event.key !== 'Escape') return
+      if (paletteOpen) setPaletteOpen(false)
+      else if (findOpen) setFindOpen(false)
+      else if (settingsOpen) setSettingsOpen(false)
+      else if (fullscreen) setFullscreen(false)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => { window.removeEventListener('keydown', onKeyDown, true) }
+  }, [findOpen, fullscreen, paletteOpen, settingsOpen])
+
+  // 连接时长:仅已连接时走秒针,避免空转重渲。
+  useEffect(() => {
+    if (!connected) return
+    setNow(Date.now())
+    const timer = window.setInterval(() => { setNow(Date.now()) }, 1000)
+    return () => { window.clearInterval(timer) }
+  }, [connected])
+
+  // 悬浮提示自动消失。
+  useEffect(() => {
+    if (toast === null) return
+    const timer = window.setTimeout(() => { setToast(null) }, TOAST_TIMEOUT_MS)
+    return () => { window.clearTimeout(timer) }
+  }, [toast])
+
   // SFTP 传输任务投影(会话级,2026-09-11 弹框化):监听与 SftpPanel 生命周期
   // 解耦——关掉「文件」页签后传输在后台继续,徽标仍在;弹框由本层承载。
   // 注意:本 hook 必须保持在组件末尾、所有 useEffect 之后调用——其 effect 的
@@ -755,7 +983,10 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   const transferTasks = useTransferTasks(sessionId)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
 
-  const sidePanelLabel = sidePanel === 'ai' ? 'AI 助手' : '文件传输'
+  const sidePanelLabel = sidePanel === 'ai' ? 'AI 助手' : sidePanel === 'monitor' ? '主机监控' : '文件传输'
+  const sidePanelDetail = sidePanel === 'ai'
+    ? '复用 dsh 模型连接'
+    : sidePanel === 'monitor' ? '只读采集,不干扰终端会话' : '与当前 SSH 会话共享连接'
   const toggleSidePanel = (panel: Exclude<SidePanel, null>): void => {
     setSidePanel(current => current === panel ? null : panel)
   }
@@ -771,10 +1002,54 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   }, [])
   // 头部头像徽标:取资产名首字符,颜色随连接状态变化。
   const avatarInitial = (asset.name.trim().charAt(0) || '?').toUpperCase()
+  const endpoint = `${typeof asset.config.username === 'string' ? `${asset.config.username}@` : ''}${typeof asset.config.host === 'string' ? asset.config.host : '未配置主机'}${typeof asset.config.port === 'number' ? `:${asset.config.port}` : ''}`
+
+  /** 命令面板动作清单(快捷命令 / 最近命令 / 终端操作 / 工作区)。 */
+  const paletteActions = useMemo<PaletteAction[]>(() => {
+    const actions: PaletteAction[] = []
+    for (const command of quickCommands) {
+      actions.push({
+        id: `quick-${command.id}`,
+        label: command.label === '' ? command.cmd : command.label,
+        hint: command.cmd,
+        group: '快捷命令',
+        disabled: !connected,
+        run: () => { void runQuickCommand(command) },
+      })
+    }
+    for (const entry of commandHistory.slice(0, 12)) {
+      actions.push({
+        id: `history-${entry.at}-${entry.cmd}`,
+        label: entry.cmd,
+        group: '最近命令',
+        disabled: !connected,
+        run: () => { void runCommand(entry.cmd) },
+      })
+    }
+    actions.push(
+      { id: 'act-clear', label: '清空终端', hint: 'Ctrl+L', group: '终端操作', run: clearTerminal },
+      { id: 'act-copy', label: '复制选中内容', group: '终端操作', run: () => void copySelection() },
+      { id: 'act-paste', label: '粘贴到终端', group: '终端操作', run: () => void pasteClipboard() },
+      { id: 'act-find', label: '查找终端输出', hint: 'Ctrl+F', group: '终端操作', run: openFind },
+      { id: 'act-font-inc', label: '增大字号', group: '终端操作', run: () => { bumpFontSize(1) } },
+      { id: 'act-font-dec', label: '减小字号', group: '终端操作', run: () => { bumpFontSize(-1) } },
+      { id: 'act-fullscreen', label: fullscreen ? '退出全屏' : '全屏显示', group: '终端操作', run: () => { setFullscreen(value => !value) } },
+      { id: 'act-sftp', label: '打开文件面板', group: '工作区', run: () => { setSidePanel('sftp') } },
+      { id: 'act-ai', label: '打开 AI 助手', group: '工作区', run: () => { setSidePanel('ai') } },
+      { id: 'act-monitor', label: '打开主机监控', group: '工作区', run: () => { setSidePanel('monitor') } },
+      { id: 'act-broadcast', label: '广播命令到多个会话', group: '工作区', run: () => void openBroadcast() },
+      { id: 'act-quick', label: '管理快捷命令', group: '工作区', run: () => { setQuickEditorOpen(true) } },
+      { id: 'act-settings', label: '终端设置', group: '工作区', run: () => { setSettingsOpen(true) } },
+      { id: 'act-reconnect', label: '重新连接', group: '工作区', disabled: connected, run: reconnect },
+    )
+    return actions
+    // openBroadcast / runQuickCommand / reconnect 等每次渲染都是新闭包,但它们只被
+    // 面板调用一次;列入依赖会让 useMemo 每拍重算,失去意义。
+  }, [bumpFontSize, clearTerminal, commandHistory, connected, copySelection, fullscreen, openFind, pasteClipboard, quickCommands, runCommand])
 
   return (
     <div className={css.backdrop}>
-      <section className={css.panel} aria-label={`SSH 工作区 ${asset.name}`}>
+      <section className={`${css.panel} ${fullscreen ? css.panelFullscreen : ''}`} aria-label={`SSH 工作区 ${asset.name}`}>
         <header className={css.header}>
           <div className={css.headLeft}>
             <span
@@ -783,7 +1058,7 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
             >{avatarInitial}</span>
             <div className={css.identity}>
               <span className={css.title}>{asset.name}</span>
-              <span className={css.endpoint}>{typeof asset.config.username === 'string' ? `${asset.config.username}@` : ''}{typeof asset.config.host === 'string' ? asset.config.host : '未配置主机'}{typeof asset.config.port === 'number' ? `:${asset.config.port}` : ''}</span>
+              <span className={css.endpoint}>{endpoint}</span>
             </div>
             <span
               className={`${css.statusPill} ${connected ? css.statusPillOnline : (closed ? css.statusPillOffline : css.statusPillPending)}`}
@@ -792,6 +1067,11 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
               <span className={connected ? css.connectionOnline : (closed ? css.connectionOffline : css.connectionPending)} aria-hidden="true" />
               <span className={css.statusPillText}>{connected ? '已连接' : (closed ? '已断开' : '连接中')}</span>
             </span>
+            {connected && connectedAt !== null && (
+              <span className={css.duration} title="本次连接已持续">
+                <IconClockOutlineMedium size={12} />{formatDuration(now - connectedAt)}
+              </span>
+            )}
           </div>
           <div className={css.headRight}>
             {!connected && closed && (
@@ -804,6 +1084,33 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
               title="命令广播:把同一命令发送到多个已连接 SSH 会话"
               aria-label="广播"
             ><IconUsersOutlineMedium size={14} /><span>广播</span><span className={css.broadcastDetail}>命令</span></button>
+            <button
+              type="button"
+              className={sidePanel === 'monitor' ? css.headerActionActive : css.headerAction}
+              onClick={() =>{  toggleSidePanel('monitor') }}
+              title="主机监控:负载 / 内存 / 磁盘 / 网络"
+              aria-label="主机监控"
+              aria-pressed={sidePanel === 'monitor'}
+            ><IconGaugeOutlineMedium size={15} /></button>
+            <span className={css.settingsAnchor}>
+              <button
+                type="button"
+                className={settingsOpen ? css.headerActionActive : css.headerAction}
+                onClick={() =>{  setSettingsOpen(open => !open) }}
+                title="终端设置:字体 / 字号 / 编码 / 回滚行数"
+                aria-label="终端设置"
+                aria-expanded={settingsOpen}
+              ><IconSlidersTwoOutlineMedium size={15} /></button>
+              {settingsOpen && <TerminalSettingsMenu settings={terminalSettings} onClose={() =>{  setSettingsOpen(false) }} />}
+            </span>
+            <button
+              type="button"
+              className={fullscreen ? css.headerActionActive : css.headerAction}
+              onClick={() =>{  setFullscreen(value => !value) }}
+              title={fullscreen ? '退出全屏 (Esc)' : '全屏显示'}
+              aria-label="全屏显示"
+              aria-pressed={fullscreen}
+            ><IconFullscreenOutlineMedium size={15} /></button>
             <span className={css.headerDivider} aria-hidden="true" />
             <button type="button" className={css.iconButton} onClick={onClose} title="关闭" aria-label="关闭 SSH 工作区"><IconCloseOutlineMedium size={16} /></button>
           </div>
@@ -811,16 +1118,20 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
         {error !== null && <div className={css.error} role="alert">{error}</div>}
         <input ref={quickImportRef} className={css.fileInput} type="file" accept=".qbl,.qblx" onChange={event => void importQuickCommandFile(event)} />
         <div className={css.workspace}>
-          {broadcastNotice !== null && (
-            <div className={css.notice} role="status">
-              <span className={css.noticeMark} aria-hidden="true"><IconCheckOutlineMedium size={13} /></span>
-              <span className={css.noticeText}>{broadcastNotice}</span>
-              <button type="button" className={css.noticeClose} onClick={() =>{  setBroadcastNotice(null) }} aria-label="关闭提示"><IconCloseFillMedium size={11} /></button>
+          {toast !== null && (
+            <div className={`${css.notice} ${css[`notice_${toast.tone}`]}`} role="status">
+              <span className={css.noticeMark} aria-hidden="true">
+                {toast.tone === 'error'
+                  ? <IconWarningTriangleOutlineMedium size={12} />
+                  : toast.tone === 'info' ? <IconChevronsUpDownOutlineMedium size={12} /> : <IconCheckOutlineMedium size={13} />}
+              </span>
+              <span className={css.noticeText}>{toast.text}</span>
+              <button type="button" className={css.noticeClose} onClick={() =>{  setToast(null) }} aria-label="关闭提示"><IconCloseFillMedium size={11} /></button>
             </div>
           )}
           <main className={css.terminalWorkspace} aria-label="SSH 终端">
-            <div className={css.workspaceTabs} role="tablist" aria-label="SSH 工作区">
-              <div className={css.tabGroup}>
+            <div className={css.toolbar}>
+              <div className={css.tabGroup} role="tablist" aria-label="SSH 工作区">
                 <span className={css.terminalTab} role="tab" aria-selected="true"><IconCodeOutlineMedium size={13} />终端</span>
                 <button
                   type="button"
@@ -849,18 +1160,38 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
                   title="AI 助手:操作这台已连接的服务器(复用 dsh 模型连接)"
                   aria-pressed={sidePanel === 'ai'}
                 ><IconSparkleMedium size={13} />AI</button>
+                <button
+                  type="button"
+                  className={sidePanel === 'monitor' ? css.workspaceTabActive : css.workspaceTab}
+                  onClick={() =>{  toggleSidePanel('monitor') }}
+                  title="主机监控:负载 / 内存 / 磁盘 / 网络"
+                  aria-pressed={sidePanel === 'monitor'}
+                ><IconGaugeOutlineMedium size={13} />监控</button>
               </div>
-            </div>
-            <div className={css.quickBar} aria-label="快捷命令">
-              <span className={css.quickLabel}>QUICK</span>
-              <div className={css.quickList}>
+              <div className={css.quickList} aria-label="快捷命令">
                 {quickCommands.map(command => (
                   <button key={command.id} type="button" className={css.quickCommand} onClick={() => void runQuickCommand(command)} disabled={!connected} title={command.cmd}>{command.label}</button>
                 ))}
-                {quickCommands.length === 0 && <span className={css.quickEmpty}>添加常用 SSH 命令</span>}
+                {quickCommands.length === 0 && (
+                  <button type="button" className={css.quickEmpty} onClick={() =>{  setQuickEditorOpen(true) }} title="管理快捷命令">
+                    添加常用 SSH 命令
+                  </button>
+                )}
               </div>
-              <button type="button" className={css.quickIconButton} onClick={() => quickImportRef.current?.click()} title="导入 Xshell .qbl / .qblx" aria-label="导入 Xshell 快捷命令"><IconPaperclipOutlineMedium size={14} /></button>
-              <button type="button" className={css.quickIconButton} onClick={() =>{  setQuickEditorOpen(true) }} title="管理快捷命令" aria-label="管理快捷命令"><IconPlusOutlineMedium size={14} /></button>
+              <div className={css.quickTools}>
+                <button type="button" className={css.quickIconButton} onClick={() => quickImportRef.current?.click()} title="导入 Xshell .qbl / .qblx" aria-label="导入 Xshell 快捷命令"><IconPaperclipOutlineMedium size={14} /></button>
+                <button type="button" className={css.quickIconButton} onClick={() =>{  setQuickEditorOpen(true) }} title={`管理快捷命令(已保存 ${quickCommands.length} 条)`} aria-label="管理快捷命令"><IconPlusOutlineMedium size={14} /></button>
+              </div>
+              <span className={css.toolDivider} aria-hidden="true" />
+              <div className={css.toolGroup}>
+                <button type="button" className={css.fontButton} onClick={() =>{  bumpFontSize(-1) }} title="减小字号" aria-label="减小字号">A−</button>
+                <button type="button" className={css.fontButton} onClick={() =>{  bumpFontSize(1) }} title="增大字号" aria-label="增大字号">A+</button>
+                <button type="button" className={css.toolButton} onClick={clearTerminal} title="清空终端" aria-label="清空终端"><IconCloseCircleFillMedium size={14} /></button>
+                <button type="button" className={css.toolButton} onClick={() => void copySelection()} title="复制选中内容" aria-label="复制选中内容"><IconCopyOutlineMedium size={14} /></button>
+                <button type="button" className={css.toolButton} onClick={() => void pasteClipboard()} title="粘贴剪贴板内容到终端" aria-label="粘贴到终端">粘贴</button>
+                <button type="button" className={css.toolButton} onClick={openFind} title="在终端输出中查找 (Ctrl+F)" aria-label="查找终端输出"><IconSearchOutlineMedium size={14} /></button>
+                <button type="button" className={css.toolButton} onClick={() =>{  setPaletteOpen(true) }} title="命令面板 (Ctrl+K)" aria-label="打开命令面板"><IconChevronsUpDownOutlineMedium size={14} /></button>
+              </div>
             </div>
             <input
               ref={zmodemInputRef} className={css.fileInput} type="file" multiple
@@ -897,7 +1228,19 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
                 </div>
               </div>
             )}
-            <div ref={host} className={css.terminal} />
+            <div className={css.terminalLayer}>
+              <div ref={host} className={css.terminal} />
+              {findOpen && (
+                <TerminalFindBar
+                  query={findQuery}
+                  onQueryChange={setFindQuery}
+                  matchCount={findHits.length}
+                  activeIndex={findIndex}
+                  onStep={stepFind}
+                  onClose={() =>{  setFindOpen(false) }}
+                />
+              )}
+            </div>
           </main>
           {sidePanel !== null && (
             <div
@@ -916,8 +1259,11 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
               <header className={css.sidePanelHeader}>
                 <div>
                   <span className={css.sidePanelTitle}>{sidePanelLabel}</span>
-                  <span className={css.sidePanelDetail}>{sidePanel === 'ai' ? '复用 dsh 模型连接' : '与当前 SSH 会话共享连接'}</span>
+                  <span className={css.sidePanelDetail}>{sidePanelDetail}</span>
                 </div>
+                <button type="button" className={css.sidePanelClose} onClick={() =>{  setSidePanel(null) }} title="收起面板" aria-label="收起侧边面板">
+                  <IconCloseOutlineMedium size={14} />
+                </button>
               </header>
               <div className={css.sidePanelBody}>
                 {sidePanel === 'ai'
@@ -929,23 +1275,58 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
                       onOpened={(id) =>{  assistantIdRef.current = id }}
                     />
                   )
-                  : (
-                    <SftpPanel
-                      asset={asset}
-                      sessionId={sessionId}
-                      sshConnected={connected}
-                      sshCwd={sshCwd}
-                      onFollowTerminal={onFollowTerminal}
-                      transferActiveCount={transferTasks.activeCount}
-                      onOpenTransfers={() => { setTransferDialogOpen(true) }}
-                      uploadDoneNonce={transferTasks.uploadDoneNonce}
-                    />
-                  )}
+                  : sidePanel === 'monitor'
+                    ? <HostMonitorPanel sessionId={sessionId} sshConnected={connected} />
+                    : (
+                      <SftpPanel
+                        asset={asset}
+                        sessionId={sessionId}
+                        sshConnected={connected}
+                        sshCwd={sshCwd}
+                        onFollowTerminal={onFollowTerminal}
+                        transferActiveCount={transferTasks.activeCount}
+                        onOpenTransfers={() => { setTransferDialogOpen(true) }}
+                        uploadDoneNonce={transferTasks.uploadDoneNonce}
+                      />
+                    )}
               </div>
             </aside>
           )}
         </div>
+        <footer className={css.statusBar} aria-label="会话状态">
+          <button
+            type="button"
+            className={css.statusCwd}
+            onClick={() =>{  if (sshCwd !== '') toggleSidePanel('sftp') }}
+            title={sshCwd === '' ? '等待终端报告当前目录' : `在文件面板中打开 ${sshCwd}`}
+          >
+            <IconFolderOpenOutlineMedium size={12} />
+            <span className={css.statusCwdText}>{sshCwd === '' ? '等待目录…' : sshCwd}</span>
+          </button>
+          <button
+            type="button"
+            className={css.statusSession}
+            onClick={() => void navigator.clipboard.writeText(sessionId).then(
+              () => { notify('已复制会话 id') },
+              () => { notify('复制失败:浏览器拒绝了剪贴板访问', 'error') },
+            )}
+            title="复制会话 id(排障时贴给日志)"
+          >
+            <IconCopyOutlineMedium size={11} />
+            <span className={css.statusSessionText}>{sessionId}</span>
+          </button>
+          <span className={css.statusSpacer} />
+          <span className={css.statusItem} title="终端网格">{grid.cols > 0 ? `${grid.cols}×${grid.rows}` : '—'}</span>
+          <span className={css.statusItem} title="PTY 解码编码">{terminalSettings.encoding}</span>
+          <span className={css.statusItem} title="字号">{terminalSettings.fontSize}px</span>
+          {transferTasks.activeCount > 0 && (
+            <button type="button" className={css.statusTransfer} onClick={() =>{  setTransferDialogOpen(true) }} title="查看传输任务">
+              传输 {transferTasks.activeCount}
+            </button>
+          )}
+        </footer>
       </section>
+      {paletteOpen && <CommandPalette actions={paletteActions} onClose={() =>{  setPaletteOpen(false) }} />}
       {quickEditorOpen && (
         <QuickCommandEditor
           commands={quickCommands}
@@ -1080,9 +1461,14 @@ function QuickCommandEditor({ commands, onChange, onClose }: {
   onChange: (commands: QuickCommand[]) => void
   onClose: () => void
 }) {
+  const [filter, setFilter] = useState('')
   const update = (id: string, key: 'label' | 'cmd', value: string): void => {
     onChange(commands.map(command => command.id === id ? { ...command, [key]: value } : command))
   }
+  const needle = filter.trim().toLowerCase()
+  const visible = needle === ''
+    ? commands
+    : commands.filter(command => `${command.label} ${command.cmd}`.toLowerCase().includes(needle))
   return (
     <div
       className={css.quickEditorBackdrop}
@@ -1102,15 +1488,26 @@ function QuickCommandEditor({ commands, onChange, onClose }: {
           <div><span className={css.quickEditorTitle}>快捷命令</span><span className={css.quickEditorHint}>点击命令将发送到当前 SSH 会话</span></div>
           <button type="button" className={css.iconButton} onClick={onClose} title="关闭" aria-label="关闭"><IconCloseOutlineMedium size={15} /></button>
         </header>
+        <div className={css.quickEditorFilter}>
+          <IconSearchOutlineMedium size={13} />
+          <input
+            className={css.quickEditorFilterInput}
+            value={filter}
+            placeholder="筛选命令(名称或内容)"
+            aria-label="筛选快捷命令"
+            onChange={(event) => { setFilter(event.target.value) }}
+          />
+          <span className={css.quickEditorCount}>{visible.length}/{commands.length}</span>
+        </div>
         <div className={css.quickEditorList}>
-          {commands.map(command => (
+          {visible.map(command => (
             <div className={css.quickEditorRow} key={command.id}>
               <input value={command.label} placeholder="名称" aria-label="快捷命令名称" onChange={(event) =>{  update(command.id, 'label', event.target.value) }} />
               <textarea value={command.cmd} placeholder="SSH 命令" aria-label="快捷命令内容" onChange={(event) =>{  update(command.id, 'cmd', event.target.value) }} />
               <button type="button" className={css.quickDelete} onClick={() =>{  onChange(commands.filter(item => item.id !== command.id)) }} title="删除快捷命令" aria-label={`删除 ${command.label || '快捷命令'}`}><IconCloseFillMedium size={12} /></button>
             </div>
           ))}
-          {commands.length === 0 && <div className={css.quickEditorEmpty}>暂无快捷命令。可新增一条，或从 Xshell 导入 `.qbl` / `.qblx`。</div>}
+          {visible.length === 0 && <div className={css.quickEditorEmpty}>{commands.length === 0 ? '暂无快捷命令。可新增一条，或从 Xshell 导入 `.qbl` / `.qblx`。' : '没有匹配的快捷命令。'}</div>}
         </div>
         <footer className={css.quickEditorFooter}>
           <button type="button" className={css.quickAdd} onClick={() =>{  onChange([...commands, createQuickCommand()]) }}><IconPlusOutlineMedium size={14} /> 添加命令</button>

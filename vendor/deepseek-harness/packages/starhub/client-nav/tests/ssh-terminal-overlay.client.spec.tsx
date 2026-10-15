@@ -6,6 +6,18 @@ const xterm = vi.hoisted(() => ({
   input: undefined as ((data: string) => void) | undefined,
   write: vi.fn(),
   writeln: vi.fn(),
+  clear: vi.fn(),
+  getSelection: vi.fn(() => ''),
+  paste: vi.fn(),
+  select: vi.fn(),
+  scrollToLine: vi.fn(),
+  options: { fontSize: 13, fontFamily: 'SF Mono', cursorBlink: true, scrollback: 5000, theme: {} } as Record<string, unknown>,
+  buffer: {
+    active: {
+      length: 2,
+      getLine: (row: number) => ({ translateToString: () => ['hello world', 'second hello line'][row] ?? '' }),
+    },
+  },
 }))
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
@@ -17,6 +29,13 @@ vi.mock('@xterm/xterm', () => ({
     dispose = xterm.dispose
     write = xterm.write
     writeln = xterm.writeln
+    clear = xterm.clear
+    getSelection = xterm.getSelection
+    paste = xterm.paste
+    select = xterm.select
+    scrollToLine = xterm.scrollToLine
+    options = xterm.options
+    buffer = xterm.buffer
     onData(handler: (data: string) => void) {
       xterm.input = handler
       return { dispose: vi.fn() }
@@ -84,6 +103,7 @@ const asset = {
 const SESSION_ID = 'ssh-1__c00000'
 beforeEach(() => {
   vi.spyOn(Math, 'random').mockReturnValue(1 / 3)
+  localStorage.clear()
 })
 afterEach(() => {
   cleanup()
@@ -94,6 +114,12 @@ afterEach(() => {
   xterm.dispose.mockReset()
   xterm.input = undefined
   xterm.write.mockReset()
+  xterm.clear.mockReset()
+  xterm.paste.mockReset()
+  xterm.select.mockReset()
+  xterm.scrollToLine.mockReset()
+  xterm.getSelection.mockReset()
+  xterm.getSelection.mockReturnValue('')
   zmodemMock.options = null
   zmodemMock.sendFiles.mockReset()
   zmodemMock.saveToDisk.mockReset()
@@ -860,6 +886,168 @@ describe('SshTerminalOverlay', () => {
     const session = { type: 'send', on: vi.fn(() => session), start: vi.fn(), close: vi.fn().mockResolvedValue(undefined), abort: vi.fn() }
     act(() => { zmodemMock.options!.on_detect!({ confirm: () => session as never, deny: () => {} }) })
     act(() => { zmodemMock.options!.on_retract!() })
+    unmount()
+  })
+
+  // ── 改版新增:命令面板 / 查找 / 监控 / 终端工具 / 状态栏 ──────────────
+
+  it('opens the command palette with Ctrl+K, filters, and runs the action', async () => {
+    const invoke = vi.fn((_command: string) => Promise.resolve(null))
+    stubInternals(invoke)
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
+    const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    // Ctrl+K 打开命令面板
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    expect(screen.getByLabelText('终端命令面板')).toBeTruthy()
+    // 分组标题与动作都在
+    expect(screen.getByText('终端操作')).toBeTruthy()
+    expect(screen.getByText('工作区')).toBeTruthy()
+    // 搜索过滤后 Enter 执行「清空终端」
+    fireEvent.change(screen.getByLabelText('搜索命令或终端操作'), { target: { value: '清空' } })
+    fireEvent.keyDown(screen.getByLabelText('搜索命令或终端操作'), { key: 'Enter' })
+    expect(xterm.clear).toHaveBeenCalledTimes(1)
+    // 执行后面板关闭
+    expect(screen.queryByLabelText('终端命令面板')).toBeNull()
+    unmount()
+  })
+
+  it('records submitted lines as recent commands and replays them from the palette', async () => {
+    const invoke = vi.fn((_command: string) => Promise.resolve(null))
+    stubInternals(invoke)
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
+    const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    // 敲入一行并回车 → 记为「最近命令」(持久化到 localStorage)
+    act(() => { xterm.input?.('uptime\r') })
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem('starhub:ssh:command-history') ?? '[]') as Array<{ cmd: string }>
+      expect(stored.map(entry => entry.cmd)).toEqual(['uptime'])
+    })
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    await waitFor(() =>{  expect(screen.getByText('最近命令')).toBeTruthy() })
+    fireEvent.click(screen.getByText('uptime'))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_write', { id: SESSION_ID, data: 'uptime\n' }) })
+    unmount()
+  })
+
+  it('finds text in the terminal buffer with Ctrl+F and steps through matches', async () => {
+    const invoke = vi.fn((_command: string) => Promise.resolve(null))
+    stubInternals(invoke)
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
+    const { unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    expect(screen.getByLabelText('终端查找')).toBeTruthy()
+    // 两行都含 hello → 2 处命中,首处高亮
+    fireEvent.change(screen.getByLabelText('查找内容'), { target: { value: 'hello' } })
+    await waitFor(() =>{  expect(screen.getByText('1/2')).toBeTruthy() })
+    expect(xterm.select).toHaveBeenCalledWith(0, 0, 5)
+    expect(xterm.scrollToLine).toHaveBeenCalledWith(0)
+    // 下一个 → 第二行第 8 列
+    fireEvent.click(screen.getByLabelText('下一个匹配'))
+    await waitFor(() =>{  expect(screen.getByText('2/2')).toBeTruthy() })
+    expect(xterm.select).toHaveBeenCalledWith(1, 7, 5)
+    unmount()
+  })
+
+  it('shows host metrics in the monitor tab collected over the live session', async () => {
+    const invoke = vi.fn((command: string, args?: Record<string, unknown>) => {
+      if (command === 'ssh_exec') {
+        const cmd = String(args?.command ?? '')
+        if (cmd.includes('@@HOST')) {
+          return Promise.resolve([
+            '@@HOST', 'web-01', 'Linux 5.15.0',
+            '@@UPTIME', ' 09:00:00 up 5 days,  3:12,  2 users,  load average: 0.20, 0.15, 0.05',
+            '@@LOAD', '0.20 0.15 0.05 1/234 5678',
+            '@@MEM', 'Mem:  8000  2000  4000  100  2000  6000',
+            '@@DISK', '/dev/vda1  50G  20G  30G  40% /',
+            '@@CPU', '8',
+            '@@NET', '  eth0: 1024 10 0 0 0 0 0 0 2048 20 0 0 0 0 0 0',
+            '@@PS', '128',
+          ].join('\n'))
+        }
+        return Promise.resolve('/root\nbash\nbash')
+      }
+      return Promise.resolve(null)
+    })
+    stubInternals(invoke)
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
+    const { getByText, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    fireEvent.click(getByText('监控'))
+    // 采集走同一条会话(不新开连接),输出解析成指标
+    await waitFor(() =>{  expect(getByText('运行时长')).toBeTruthy() })
+    expect(getByText('5天3小时12分')).toBeTruthy()
+    expect(getByText('0.20 / 0.15 / 0.05')).toBeTruthy()
+    expect(getByText('2000 / 8000 MB (25%)')).toBeTruthy()
+    expect(getByText('8')).toBeTruthy()
+    expect(getByText('128')).toBeTruthy()
+    expect(getByText('1.0 KB ↓')).toBeTruthy()
+    expect(getByText('web-01 · Linux 5.15.0')).toBeTruthy()
+    // 磁盘表:挂载点与使用率
+    expect(getByText('/')).toBeTruthy()
+    expect(getByText('40%')).toBeTruthy()
+    unmount()
+  })
+
+  it('applies terminal tool buttons: font size, clear, copy and paste', async () => {
+    const invoke = vi.fn((_command: string) => Promise.resolve(null))
+    stubInternals(invoke)
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
+    const { getByLabelText, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    // 字号按钮 → 写回设置并实时应用到 xterm 实例
+    fireEvent.click(getByLabelText('增大字号'))
+    await waitFor(() =>{  expect(xterm.options.fontSize).toBe(14) })
+    fireEvent.click(getByLabelText('减小字号'))
+    await waitFor(() =>{  expect(xterm.options.fontSize).toBe(13) })
+    // 清屏
+    fireEvent.click(getByLabelText('清空终端'))
+    expect(xterm.clear).toHaveBeenCalledTimes(1)
+    // 复制:无选中内容给中性提示
+    fireEvent.click(getByLabelText('复制选中内容'))
+    expect(screen.getByText('终端里没有选中内容')).toBeTruthy()
+    unmount()
+  })
+
+  it('renders the status bar with cwd, session id and grid size', async () => {
+    const invoke = vi.fn((command: string) => {
+      if (command === 'ssh_exec') return Promise.resolve('/srv/app\nbash\nbash')
+      return Promise.resolve(null)
+    })
+    stubInternals(invoke)
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
+    const { getByText, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    await waitFor(() =>{  expect(getByText('/srv/app')).toBeTruthy() })
+    // 会话 id + 网格 + 编码都在状态栏
+    expect(getByText(SESSION_ID)).toBeTruthy()
+    expect(getByText('80×24')).toBeTruthy()
+    expect(getByText('utf-8')).toBeTruthy()
+    unmount()
+  })
+
+  it('filters quick commands in the editor and opens it from the empty state', async () => {
+    localStorage.setItem('starhub:ssh:quick-commands', JSON.stringify([
+      { id: 'q1', label: '看日志', cmd: 'tail -f /var/log/syslog' },
+      { id: 'q2', label: '看负载', cmd: 'uptime' },
+    ]))
+    const invoke = vi.fn((_command: string) => Promise.resolve(null))
+    stubInternals(invoke)
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
+    const { getByText, getByLabelText, getByRole, queryByText, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    // 工具条上的快捷命令胶囊
+    expect(getByText('看日志')).toBeTruthy()
+    fireEvent.click(getByLabelText('管理快捷命令'))
+    const editor = getByRole('dialog', { name: '管理快捷命令' })
+    // 编辑器内筛选(只影响编辑器列表,不影响工具条胶囊)
+    fireEvent.change(getByLabelText('筛选快捷命令'), { target: { value: '负载' } })
+    expect(queryByText('看日志', { selector: 'textarea, input' })).toBeNull()
+    expect(getByText('看负载')).toBeTruthy()
+    expect(getByText('1/2')).toBeTruthy()
+    expect(editor).toBeTruthy()
     unmount()
   })
 })

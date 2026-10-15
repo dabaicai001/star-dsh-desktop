@@ -1,7 +1,9 @@
 /*
- * SSH 终端工作区浮层样式。
+ * SSH 终端工作台样式。
  *
  * 设计语言:
+ * - 全幅工作台(不再是居中浮窗):头部 + 工具栏 + 终端 + 状态栏四段式,窄屏
+ *   自动回落为居中卡片;
  * - 扁平 + 轻量层次(1px 边框、小圆角、浅色阴影),所有颜色走 --dsw-alias-* 令牌;
  * - 绿=在线,黄=连接中,红=离线;蓝色仅用于交互强调(激活页签/焦点环/主按钮);
  * - 动画:进场 180–240ms ease-out,微交互 ≤160ms;prefers-reduced-motion 全部关闭;
@@ -40,6 +42,11 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes starhub-menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* ── Backdrop & panel ──────────────────────────────────────────── */
 
 .backdrop {
@@ -47,7 +54,7 @@
   inset: 0;
   z-index: 70;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   padding: 16px;
   background: var(--dsw-alias-bg-mask-3);
@@ -56,8 +63,9 @@
 
 .panel {
   display: flex;
-  width: min(1200px, 100%);
-  height: min(820px, 100%);
+  width: min(1440px, 100%);
+  height: 100%;
+  min-width: 0;
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
@@ -68,16 +76,23 @@
   animation: starhub-dialog-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* 全屏:铺满视口、去掉圆角与投影(像真正的终端应用)。 */
+.panelFullscreen {
+  width: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 /* ── Header ────────────────────────────────────────────────────── */
 
 .header {
   display: flex;
-  min-height: 56px;
+  min-height: 52px;
   flex: none;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 12px 0 14px;
+  padding: 0 10px 0 14px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
 }
@@ -199,21 +214,36 @@
   background: var(--dsw-alias-state-error-primary);
 }
 
+/* 连接时长:秒针只在中段刷新,弱化处理避免抢标题。 */
+.duration {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .headRight {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .headerDivider {
   width: 1px;
   height: 20px;
   flex: none;
+  margin: 0 2px;
   background: var(--dsw-alias-border-l2);
 }
 
-.iconButton {
+.iconButton,
+.headerAction,
+.headerActionActive {
   display: inline-flex;
   width: 30px;
   height: 30px;
@@ -228,13 +258,26 @@
   transition: background 140ms ease, color 140ms ease, transform 100ms ease;
 }
 
+.headerAction:hover,
 .iconButton:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-.iconButton:active {
+.headerActionActive {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.iconButton:active,
+.headerAction:active {
   transform: scale(0.92);
+}
+
+.settingsAnchor {
+  position: relative;
+  display: inline-flex;
+  flex: none;
 }
 
 .reconnectAction {
@@ -317,6 +360,16 @@
   animation: starhub-toast-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+.notice_error {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 40%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* 语气决定标记颜色:成功(默认)/ 失败 / 中性。 */
+.notice_success .noticeMark {
+  background: var(--dsw-alias-state-success-primary);
+}
+
 .noticeMark {
   display: inline-flex;
   width: 16px;
@@ -328,6 +381,14 @@
   background: var(--dsw-alias-state-success-primary);
   color: var(--dsw-alias-label-primary-inverted);
   font-size: 10px;
+}
+
+.notice_error .noticeMark {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.notice_info .noticeMark {
+  background: var(--dsw-alias-state-business-primary);
 }
 
 .noticeText {
@@ -376,13 +437,15 @@
   flex-direction: column;
 }
 
-/* ── Workspace tabs(分段控件)──────────────────────────────────── */
+/* ── Toolbar(tabs + quick commands + terminal tools)────────────── */
 
-.workspaceTabs {
+.toolbar {
   display: flex;
+  min-height: 38px;
   flex: none;
   align-items: center;
-  padding: 6px 10px;
+  gap: 8px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
   animation: starhub-bar-in 180ms ease-out;
@@ -390,11 +453,12 @@
 
 .tabGroup {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 2px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 9px;
-  padding: 3px;
+  padding: 2px;
   background: var(--dsw-alias-bg-layer-1);
 }
 
@@ -406,7 +470,7 @@
   gap: 5px;
   border: 0;
   border-radius: 6px;
-  padding: 4px 12px;
+  padding: 4px 10px;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
@@ -439,10 +503,6 @@
   font-weight: 600;
 }
 
-.spacer {
-  flex: 1;
-}
-
 .tabBadge {
   display: inline-flex;
   min-width: 15px;
@@ -450,37 +510,14 @@
   align-items: center;
   justify-content: center;
   border-radius: 999px;
+  padding: 0 4px;
   background: var(--dsw-alias-state-business-primary);
   color: var(--dsw-alias-label-primary-inverted);
   font-size: 9px;
   line-height: 1;
-  padding: 0 4px;
 }
 
-/* ── Quick command bar ─────────────────────────────────────────── */
-
-.quickBar {
-  display: flex;
-  min-height: 42px;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-1);
-  animation: starhub-bar-in 200ms ease-out 40ms backwards;
-}
-
-.quickLabel {
-  flex: none;
-  border-radius: 4px;
-  padding: 2px 5px;
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-}
+/* ── Quick command strip ───────────────────────────────────────── */
 
 .quickList {
   display: flex;
@@ -502,7 +539,7 @@
   overflow: hidden;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
-  padding: 4px 12px;
+  padding: 3px 11px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
@@ -530,10 +567,29 @@
 }
 
 .quickEmpty {
-  color: var(--dsw-alias-label-quaternary, var(--dsw-alias-label-tertiary));
+  flex: none;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  padding: 3px 11px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
   font-size: 12px;
-  font-style: italic;
-  opacity: 0.8;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+
+.quickEmpty:hover {
+  border-color: var(--dsw-alias-state-business-primary);
+  border-style: solid;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 6%, transparent);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.quickTools {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
 }
 
 .quickIconButton {
@@ -562,7 +618,63 @@
   transform: scale(0.92);
 }
 
+/* ── Terminal tool group ───────────────────────────────────────── */
+
+.toolDivider {
+  width: 1px;
+  height: 18px;
+  flex: none;
+  background: var(--dsw-alias-border-l2);
+}
+
+.toolGroup {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.fontButton,
+.toolButton {
+  display: inline-flex;
+  height: 26px;
+  min-width: 26px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 140ms ease, color 140ms ease, transform 100ms ease;
+}
+
+.toolButton {
+  font-size: 11.5px;
+}
+
+.fontButton:hover,
+.toolButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.fontButton:active,
+.toolButton:active {
+  transform: scale(0.92);
+}
+
 /* ── Terminal host ─────────────────────────────────────────────── */
+
+.terminalLayer {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
 
 .terminal {
   position: relative;
@@ -576,6 +688,85 @@
 /* 键盘焦点进入终端时给一圈淡色描边,提示「输入将发往 SSH」。 */
 .terminal:focus-within {
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent);
+}
+
+/* ── Status bar ────────────────────────────────────────────────── */
+
+.statusBar {
+  display: flex;
+  min-height: 26px;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.statusCwd,
+.statusSession {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 40%;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 5px;
+  padding: 2px 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.statusCwd:hover,
+.statusSession:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.statusCwdText {
+  overflow: hidden;
+  font-family: var(--ds-font-family-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusSessionText {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusSpacer {
+  flex: 1;
+}
+
+.statusItem {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.statusTransfer {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-inverted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
 }
 
 /* ── Error bar ─────────────────────────────────────────────────── */
@@ -594,7 +785,7 @@
   display: none;
 }
 
-/* ── Side panel(SFTP)──────────────────────────────────────────── */
+/* ── Side panel(SFTP / AI / monitor)────────────────────────────── */
 
 .sidePanel {
   display: flex;
@@ -644,7 +835,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 0 10px 0 14px;
+  padding: 0 8px 0 14px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -667,6 +858,26 @@
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidePanelClose {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.sidePanelClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 .sidePanelBody {
@@ -1075,6 +1286,37 @@
   font-size: 11px;
 }
 
+.quickEditorFilter {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 16px 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  padding: 6px 9px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.quickEditorFilterInput {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.quickEditorCount {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .quickEditorList {
   display: flex;
   min-height: 0;
@@ -1195,13 +1437,34 @@
   transform: scale(0.97);
 }
 
+.spacer {
+  flex: 1;
+}
+
 /* ── Responsive ────────────────────────────────────────────────── */
+
+@media (max-width: 1080px) {
+  .duration,
+  .statusSessionText,
+  .statusItem {
+    display: none;
+  }
+}
 
 @media (max-width: 840px) {
   .statusPillText,
   .broadcastDetail,
   .endpoint {
     display: none;
+  }
+
+  .toolbar {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .quickList {
+    flex: none;
   }
 }
 
@@ -1217,7 +1480,9 @@
     border-radius: 0;
   }
 
-  .quickLabel {
+  .quickTools,
+  .toolDivider,
+  .toolGroup {
     display: none;
   }
 }
@@ -1228,8 +1493,7 @@
   .backdrop,
   .panel,
   .notice,
-  .workspaceTabs,
-  .quickBar,
+  .toolbar,
   .error,
   .sidePanel,
   .kbBackdrop,
@@ -1248,15 +1512,22 @@
   }
 
   .iconButton,
+  .headerAction,
+  .headerActionActive,
   .reconnectAction,
   .broadcastAction,
   .quickCommand,
+  .quickEmpty,
   .quickIconButton,
+  .fontButton,
+  .toolButton,
   .terminal,
   .terminalTab,
   .workspaceTab,
   .workspaceTabActive,
-  .sidePanelResize::after {
+  .sidePanelResize::after,
+  .statusCwd,
+  .statusSession {
     transition: none;
   }
 }
