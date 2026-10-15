@@ -3,6 +3,13 @@
 /* ─── 信息条(类型徽标 + key 名 + TTL) ─── */
 .infoBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); flex-shrink: 0; }
 .infoLeft { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.infoRight { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+/* key 名旁的复制钮:默认隐显,hover/聚焦时出现,避免信息条常驻噪音。 */
+.copyKey { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-dimmed); cursor: pointer; opacity: 0; transition: opacity 0.12s; flex-shrink: 0; }
+.infoBar:hover .copyKey, .copyKey:focus-visible { opacity: 1; }
+.copyKey:hover { color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-interactive-bg-hover); }
+/* 服务端 TTL 的人类可读描述(输入框只承载待写入值)。 */
+.ttlText { color: var(--dsw-alias-label-tertiary); font-size: 11px; white-space: nowrap; }
 .typeBadge { font-size: 10px; font-weight: 650; letter-spacing: 0.06em; color: var(--dsw-alias-state-business-primary); border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, transparent); border-radius: 4px; padding: 1px 6px; }
 /* 按类型着色(值缺失时回退默认 accent)。 */
 .type_string { color: var(--dsw-alias-state-success-primary); border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 40%, transparent); }
@@ -53,7 +60,13 @@
 /* ─── 底部操作条 ─── */
 .footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--dsw-alias-border-l2); flex-shrink: 0; background: var(--dsw-alias-bg-layer-2); min-height: 40px; }
 .spacer { flex: 1; }
+/* 快捷键提示:低对比常驻,不抢焦点。 */
+.hint { color: var(--dsw-alias-label-dimmed); font-size: 10px; white-space: nowrap; }
 .footerError { font-size: 11px; color: var(--dsw-alias-state-error-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 集合将空的警示(非阻塞):告知 Redis 会连带删 key。 */
+.footerWarn { font-size: 11px; color: var(--dsw-alias-state-warn-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 保存完成后的补充说明(如 key 已被移除)。 */
+.footerNote { font-size: 11px; color: var(--dsw-alias-state-business-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .secondaryButton { background: transparent; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; }
 .secondaryButton:disabled { opacity: 0.4; cursor: default; }
 .primaryButton { background: var(--dsw-alias-state-business-primary); border: 1px solid transparent; color: var(--dsw-alias-label-primary-inverted); border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; }

@@ -13,7 +13,7 @@ StarHub 是 DevOps 桌面应用,单一窗口整合:数据库客户端(MySQL / Po
 | 仓库 | https://github.com/dabaicai001/starhub |
 | 主分支 | `main` |
 | 协议 | MIT |
-| 当前版本 | v0.136.4(🎨 **DB 工作台整页改版**(更美观 / 更好交互 / 修 bug):左侧库表树——业务库在前、MySQL/PG/MSSQL/ClickHouse 的**系统库收进可折叠组**(默认收起,不再把业务库淹在 information_schema 里),库行加重 + 当前库左色条高亮 + 表数徽章,搜索态自动平铺展开( Esc 清空),加载改骨架屏,树宽可拖拽(200–420px)并记忆进 localStorage;头部改**连接状态胶囊**(已连接 / 连接中…),副标题带端口,「刷新」去重(只剩树工具栏一个),监控改头部chip;SQL 工具栏重排——SQL 徽章 + 带图标的库选择器(未选库时警告色 + title 指路)、快捷键说明从常驻噪音改为空态引导、执行按钮从「小蓝块图标」改为「▶ 执行」主按钮、历史面板改绝对定位浮层(不再挤压编辑区);结果区空态改为图标 + 主文案 + 快捷键 + 未选库提醒,结果表格**表头吸顶**、数字右对齐、NULL 灰显斜体;编辑器 placeholder 从「SELECT * FROM users WHERE …」(长得像已输入的 SQL)改为「在此输入 SQL,Mod-Enter 执行」;DDL 弹层加复制按钮。) |
+| 当前版本 | v0.136.5(🐛 **Redis「保存即删 key」P0 + 三处数据正确性 bug**:① **根因**——值编辑器保存时若 TTL 输入为 `0`,会下发 `EXPIRE key 0`,而 Redis 的 `EXPIRE key 0` 语义是「立即删除该 key」;校验此前只拦了负数(`expiration < 0`)漏了 0,于是一保存 key 就消失,且 string(走 SET 不带 EX)与结构类型(走 EXPIRE)行为不一致。现在 `0` 与空串一律归一为「持久化」,结构类型显式下发 `PERSIST`,绝不再出现 `EXPIRE key 0`;② **zset 解析完全错位**——sidecar 的 `GetValue` 对 zset 返回 `[{value, score}]` 对象数组(`ZRangeWithScores` 的结构化结果),前端却按 `[[member, score]]` 数组成员解析,导致成员列渲染成 JSON 串、分数列空白、保存时 `ZADD` 出一个垃圾成员(既有单测用 `[['mem','5']]` 假数据把 bug 掩盖了);`rowsFromValue` 现在同时兼容对象与数对两种形状;③ **list 按值删错元素**——删除走 `LREM key 1 <originalValue>`,按**值**删除,list 允许重复值,删索引 0 时若值重复会删到别的实例;改为哨兵值方案:先 `LSET` 把待删索引改写成唯一哨兵,再 `LREM key 0 <哨兵>` 一次清掉,删除精确落在标记的索引上,`LSET` 目标索引按已删行数重算的逻辑不变;④ **`SET k v EX 60` 的 `EX 60` 被静默丢弃**——Go 侧 `Execute` 的 SET 分支只取 `parts[1..2]`,key 被写成永不过期,TTL 语义与用户意图相反;新增纯函数 `parseSetOptions` 支持 `EX/PX/EXAT/PXAT/KEEPTTL/NX/XX`(含参数缺失、零/负/非数字、冲突组合的完整错误路径),`NX`/`XX`/`KEEPTTL` 分别走 `SetNX`/`SetXX`/`SetXX(KeepTTL)`;⑤ **`revertRows` 空串原值还原不干净**——旧版用 `originalValue \|\| value`,`''`(falsy)会回退到编辑中的值。) |
 
 ## 架构一句话
 
@@ -145,4 +145,4 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 ---
 
-*最后更新: 2026-10-15 (v0.136.4)*
+*最后更新: 2026-10-15 (v0.136.5)*

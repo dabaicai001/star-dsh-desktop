@@ -8,7 +8,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { RedisValueEditor, delVerb, fieldPlaceholders, ttlToInput } from '../src/client/redis/RedisValueEditor.tsx'
+import { RedisValueEditor, delVerb, fieldPlaceholders, humanizeTtl, parseTtlInput, rowsFromValue, ttlToInput } from '../src/client/redis/RedisValueEditor.tsx'
 import type { RedisValueResult } from '../src/client/redis/redis-service.ts'
 import { restoreHostBridge, stubHostBridge } from './host-bridge.ts'
 
@@ -68,6 +68,60 @@ describe('RedisValueEditor exports', () => {
     expect(fieldPlaceholders('zset')).toEqual({ field: '成员', value: '分数', single: false })
     expect(fieldPlaceholders('list')).toEqual({ field: '索引', value: '值', single: false })
     expect(fieldPlaceholders('hash')).toEqual({ field: '字段', value: '值', single: false })
+  })
+
+  it('parseTtlInput maps empty and 0 to persistent, rejects negatives and fractions', () => {
+    // P0 回归:Redis 的 `EXPIRE key 0` 会立即删除 key,0 必须归一为持久化。
+    expect(parseTtlInput('')).toBe(null)
+    expect(parseTtlInput('0')).toBe(null)
+    expect(parseTtlInput('  ')).toBe(null)
+    expect(parseTtlInput('60')).toBe(60)
+    expect(parseTtlInput(' 30 ')).toBe(30)
+    expect(parseTtlInput('-1')).toBe('invalid')
+    expect(parseTtlInput('1.5')).toBe('invalid')
+    expect(parseTtlInput('abc')).toBe('invalid')
+  })
+
+  it('humanizeTtl renders seconds/minutes/hours/days and persistent', () => {
+    expect(humanizeTtl(-1)).toBe('持久化')
+    expect(humanizeTtl(0)).toBe('0 秒')
+    expect(humanizeTtl(45)).toBe('45 秒')
+    expect(humanizeTtl(90)).toBe('1 分 30 秒')
+    expect(humanizeTtl(3660)).toBe('1 时 1 分')
+    expect(humanizeTtl(90000)).toBe('1 天 1 时')
+  })
+})
+
+describe('rowsFromValue payload shapes', () => {
+  it('parses the sidecar zset payload (array of {value, score} objects)', () => {
+    // P0 回归:Go 侧 GetValue 对 zset 返回对象数组,旧版按数对解析会把成员
+    // 渲染成 JSON 串、分数留空。
+    const rows = rowsFromValue('zset', [{ value: 'mem', score: 5 }, { value: 'm2', score: 1.5 }])
+    expect(rows).toEqual([
+      { field: 'mem', value: '5', originalField: 'mem', originalValue: '5', deleted: false },
+      { field: 'm2', value: '1.5', originalField: 'm2', originalValue: '1.5', deleted: false },
+    ])
+  })
+
+  it('still parses the legacy zset pair shape ([member, score])', () => {
+    const rows = rowsFromValue('zset', [['mem', '5']])
+    expect(rows).toEqual([
+      { field: 'mem', value: '5', originalField: 'mem', originalValue: '5', deleted: false },
+    ])
+  })
+
+  it('falls back to the member key when the object omits value', () => {
+    const rows = rowsFromValue('zset', [{ member: 'm', score: 2 }])
+    expect(rows[0]?.field).toBe('m')
+    expect(rows[0]?.value).toBe('2')
+  })
+
+  it('parses list by index and hash by entry', () => {
+    expect(rowsFromValue('list', ['a', 'b']).map(r => [r.field, r.value])).toEqual([['0', 'a'], ['1', 'b']])
+    expect(rowsFromValue('hash', { a: '1' }).map(r => [r.field, r.value])).toEqual([['a', '1']])
+    expect(rowsFromValue('set', ['m1', 'm2']).map(r => [r.field, r.value])).toEqual([['m1', ''], ['m2', '']])
+    expect(rowsFromValue('string', 'x')).toEqual([])
+    expect(rowsFromValue('hash', null)).toEqual([])
   })
 })
 
@@ -157,6 +211,40 @@ describe('RedisValueEditor string save & revert', () => {
     fireEvent.change(screen.getByPlaceholderText('值…'), { target: { value: 'v' } })
     fireEvent.click(screen.getByText('保存'))
     await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_set', { connId: 'c1', key: 'foo', value: 'v', expiration: undefined }) })
+  })
+
+  it('P0: never issues EXPIRE key 0 — TTL 0 saves as persistent', async () => {
+    const invoke = installInvoke({ h: { key: 'h', type: 'hash', value: { a: '1' }, ttl: 30 } })
+    renderEditor('h', 'hash')
+    await waitFor(() =>{  expect(screen.getAllByPlaceholderText('字段').length).toBe(1) })
+    fireEvent.change(screen.getByLabelText('TTL 秒数'), { target: { value: '0' } })
+    fireEvent.click(screen.getByText('保存'))
+    // 0 归一为持久化:下发 PERSIST,绝不下发 `EXPIRE h 0`(那会立即删 key)。
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_execute', { connId: 'c1', command: 'PERSIST h' }) })
+    const commands = invoke.mock.calls.filter(c => c[0] === 'db_redis_execute').map(c => (c[1] as { command: string }).command)
+    expect(commands.some(c => c.startsWith('EXPIRE'))).toBe(false)
+  })
+
+  it('P0: a fractional or negative TTL is rejected with a message, no command issued', async () => {
+    const invoke = installInvoke({ foo: { key: 'foo', type: 'string', value: 'hello', ttl: -1 } })
+    renderEditor('foo', 'string')
+    await waitFor(() =>{  expect((screen.getByPlaceholderText<HTMLTextAreaElement>('值…')).value).toBe('hello') })
+    fireEvent.change(screen.getByLabelText('TTL 秒数'), { target: { value: '1.5' } })
+    fireEvent.change(screen.getByPlaceholderText('值…'), { target: { value: 'x' } })
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() =>{  expect(screen.getAllByText(/TTL 必须是 ≥ 0 的整数/).length).toBeGreaterThan(0) })
+    expect(invoke).not.toHaveBeenCalledWith('db_redis_set', expect.anything())
+  })
+
+  it('P0: saving a structural key whose TTL input is 0 does not call db_redis_set', async () => {
+    // 结构类型只走 EXPIRE/PERSIST;确认 0 不会退化成 SET(那会丢掉整个结构)。
+    const invoke = installInvoke({ h: { key: 'h', type: 'hash', value: { a: '1' }, ttl: 30 } })
+    renderEditor('h', 'hash')
+    await waitFor(() =>{  expect(screen.getAllByPlaceholderText('字段').length).toBe(1) })
+    fireEvent.change(screen.getByLabelText('TTL 秒数'), { target: { value: '0' } })
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_execute', { connId: 'c1', command: 'PERSIST h' }) })
+    expect(invoke).not.toHaveBeenCalledWith('db_redis_set', expect.anything())
   })
 
   it('reverts an edited string back to its original text', async () => {
@@ -286,6 +374,77 @@ describe('RedisValueEditor structural (list/set/zset) rows', () => {
     fireEvent.click(screen.getAllByTitle('删除')[0]!)
     fireEvent.click(screen.getByText('保存'))
     expect(invoke).not.toHaveBeenCalledWith('db_redis_execute', expect.anything())
+  })
+
+  it('P1: deletes a list element by index via sentinel + LREM 0, not by value', async () => {
+    // 旧版 `LREM l 1 <originalValue>` 按值删:重复值时会删到别的实例。
+    const invoke = installInvoke({ l: { key: 'l', type: 'list', value: ['a', 'b', 'a'], ttl: -1 } })
+    renderEditor('l', 'list')
+    await waitFor(() =>{  expect(screen.getAllByPlaceholderText('索引').length).toBe(3) })
+    // 删索引 0(值 'a'):必须落在索引 0,不能删到索引 2 的那个 'a'。
+    fireEvent.click(screen.getAllByTitle('删除')[0]!)
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_execute', expect.objectContaining({ command: expect.stringMatching(/^LSET l 0 __starthub_list_del_/) })) })
+    const commands = invoke.mock.calls.filter(c => c[0] === 'db_redis_execute').map(c => (c[1] as { command: string }).command)
+    // 恰好一条 LSET 哨兵 + 一条 LREM 0,且没有按值删除的 `LREM l 1 a`。
+    expect(commands.filter(c => c.startsWith('LSET l 0 ')).length).toBe(1)
+    expect(commands.filter(c => /^LREM l 0 __starthub_list_del_/.test(c)).length).toBe(1)
+    expect(commands.some(c => c === 'LREM l 1 a')).toBe(false)
+  })
+
+  it('P1: recomputes LSET indices after a list deletion shifts later elements', async () => {
+    const invoke = installInvoke({ l: { key: 'l', type: 'list', value: ['a', 'b', 'c'], ttl: -1 } })
+    renderEditor('l', 'list')
+    await waitFor(() =>{  expect(screen.getAllByPlaceholderText('索引').length).toBe(3) })
+    // 删索引 0,同时改索引 2 的值:LSET 目标应从 2 前移到 1。
+    fireEvent.click(screen.getAllByTitle('删除')[0]!)
+    fireEvent.change(screen.getAllByPlaceholderText('值')[2]!, { target: { value: 'C' } })
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_execute', { connId: 'c1', command: 'LSET l 1 C' }) })
+  })
+
+  it('P0: parses the real sidecar zset payload and saves ZADD score-first', async () => {
+    // Go 侧 GetValue 对 zset 返回 [{value, score}] 对象数组。
+    const invoke = installInvoke({ z: { key: 'z', type: 'zset', value: [{ value: 'mem', score: 5 }], ttl: -1 } })
+    renderEditor('z', 'zset')
+    await waitFor(() =>{  expect((screen.getByPlaceholderText<HTMLInputElement>('成员')).value).toBe('mem') })
+    expect((screen.getByPlaceholderText<HTMLInputElement>('分数')).value).toBe('5')
+    fireEvent.change(screen.getByPlaceholderText('分数'), { target: { value: '9' } })
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_execute', { connId: 'c1', command: 'ZADD z 9 mem' }) })
+  })
+
+  it('P1: revert restores an empty-string original value (no || fallback)', async () => {
+    const invoke = installInvoke({ h: { key: 'h', type: 'hash', value: { a: '' }, ttl: -1 } })
+    renderEditor('h', 'hash')
+    await waitFor(() =>{  expect((screen.getByPlaceholderText<HTMLInputElement>('字段')).value).toBe('a') })
+    fireEvent.change(screen.getByPlaceholderText('值'), { target: { value: 'typed' } })
+    fireEvent.click(screen.getByText('还原'))
+    // 旧版 `originalValue || value` 会把 '' 当成 falsy 回退到编辑值。
+    await waitFor(() =>{  expect((screen.getByPlaceholderText<HTMLInputElement>('值')).value).toBe('') })
+    expect(invoke).not.toHaveBeenCalledWith('db_redis_execute', expect.anything())
+  })
+
+  it('warns before saving a structural key down to an empty collection', async () => {
+    const invoke = installInvoke({ h: { key: 'h', type: 'hash', value: { a: '1' }, ttl: -1 } })
+    renderEditor('h', 'hash')
+    await waitFor(() =>{  expect(screen.getAllByPlaceholderText('字段').length).toBe(1) })
+    fireEvent.click(screen.getAllByTitle('删除')[0]!)
+    // 保存前给出非阻塞警示(Redis 会连带删 key)。
+    await waitFor(() =>{  expect(screen.getByText(/保存后集合为空/)).toBeTruthy() })
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('db_redis_execute', { connId: 'c1', command: 'HDEL h a' }) })
+    await waitFor(() =>{  expect(screen.getByText(/Redis 已自动移除该 key/)).toBeTruthy() })
+  })
+
+  it('notifies the workbench via onSaved after a successful save', async () => {
+    installInvoke({ foo: { key: 'foo', type: 'string', value: 'hello', ttl: -1 } })
+    const onSaved = vi.fn()
+    render(<RedisValueEditor connId="c1" redisKey="foo" keyType="string" onSaved={onSaved} />)
+    await waitFor(() =>{  expect((screen.getByPlaceholderText<HTMLTextAreaElement>('值…')).value).toBe('hello') })
+    fireEvent.change(screen.getByPlaceholderText('值…'), { target: { value: 'x' } })
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() =>{  expect(onSaved).toHaveBeenCalledTimes(1) })
   })
 
   it('disables the add button when the new member/value is blank', async () => {

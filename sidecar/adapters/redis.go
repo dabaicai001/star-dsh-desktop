@@ -508,8 +508,40 @@ func (a *RedisAdapter) Execute(command string) (*RedisCommandResult, error) {
 		if len(parts) < 3 {
 			return &RedisCommandResult{Error: "SET requires key and value"}, nil
 		}
-		err = a.client.Set(a.ctx, parts[1], parts[2], 0).Err()
-		result = "OK"
+		// 解析可选选项:EX/PX 秒|毫秒、EXAT/PXAT 时间戳、NX/XX、KEEPTTL。
+		// 旧版只取 parts[1..2],把 `SET k v EX 60` 的 EX 60 静默丢掉——
+		// key 被写成永不过期,TTL 语义与用户意图相反。
+		opts, optErr := parseSetOptions(parts[3:])
+		if optErr != "" {
+			return &RedisCommandResult{Error: optErr}, nil
+		}
+		expiration := opts.expiration
+		switch {
+		case opts.nx:
+			ok, nerr := a.client.SetNX(a.ctx, parts[1], parts[2], expiration).Result()
+			if nerr != nil {
+				err = nerr
+				break
+			}
+			result = ok
+		case opts.xx:
+			ok, xerr := a.client.SetXX(a.ctx, parts[1], parts[2], expiration).Result()
+			if xerr != nil {
+				err = xerr
+				break
+			}
+			result = ok
+		case opts.keepTTL:
+			kerr := a.client.SetXX(a.ctx, parts[1], parts[2], redis.KeepTTL).Err()
+			if kerr != nil {
+				err = kerr
+				break
+			}
+			result = "OK"
+		default:
+			err = a.client.Set(a.ctx, parts[1], parts[2], expiration).Err()
+			result = "OK"
+		}
 
 	case "DEL":
 		if len(parts) < 2 {
@@ -798,6 +830,79 @@ func parseRedisCommand(command string) []string {
 	}
 
 	return parts
+}
+
+// setOptions 承载 SET 命令 key/value 之后的可选选项。
+type setOptions struct {
+	/** expiration 为 0 表示不带过期时间。 */
+	expiration time.Duration
+	keepTTL    bool
+	nx         bool
+	xx         bool
+}
+
+// parseSetOptions 解析 SET 命令 key/value 之后的选项 token。
+//
+// 支持 EX/PX(秒|毫秒)、EXAT/PXAT(时间戳)、KEEPTTL、NX、XX。旧版 Execute 的
+// SET 分支只取 parts[1..2],把 `SET k v EX 60` 的 EX 60 静默丢掉——key 被写成
+// 永不过期,TTL 语义与用户意图相反。
+// @param tokens - key/value 之后的全部 token(不含 SET/key/value)。
+// @returns 解析结果;出错时第二个返回值为非空错误消息。
+func parseSetOptions(tokens []string) (setOptions, string) {
+	var opts setOptions
+	for i := 0; i < len(tokens); i++ {
+		switch strings.ToUpper(tokens[i]) {
+		case "EX", "PX", "EXAT", "PXAT":
+			if i+1 >= len(tokens) {
+				return opts, "SET " + strings.ToUpper(tokens[i]) + " requires an argument"
+			}
+			raw := tokens[i+1]
+			i++
+			var d time.Duration
+			switch strings.ToUpper(tokens[i-1]) {
+			case "EX":
+				sec, perr := strconv.ParseInt(raw, 10, 64)
+				if perr != nil || sec <= 0 {
+					return opts, "invalid EX seconds: " + raw
+				}
+				d = time.Duration(sec) * time.Second
+			case "PX":
+				ms, perr := strconv.ParseInt(raw, 10, 64)
+				if perr != nil || ms <= 0 {
+					return opts, "invalid PX milliseconds: " + raw
+				}
+				d = time.Duration(ms) * time.Millisecond
+			case "EXAT":
+				ts, perr := strconv.ParseInt(raw, 10, 64)
+				if perr != nil {
+					return opts, "invalid EXAT timestamp: " + raw
+				}
+				d = time.Until(time.Unix(ts, 0))
+			case "PXAT":
+				ts, perr := strconv.ParseInt(raw, 10, 64)
+				if perr != nil {
+					return opts, "invalid PXAT timestamp: " + raw
+				}
+				d = time.Until(time.UnixMilli(ts))
+			}
+			opts.expiration = d
+		case "KEEPTTL":
+			opts.keepTTL = true
+		case "NX":
+			opts.nx = true
+		case "XX":
+			opts.xx = true
+		default:
+			return opts, "unsupported SET option: " + tokens[i]
+		}
+	}
+	if opts.expiration > 0 && opts.keepTTL {
+		return opts, "SET cannot use both EX/PX and KEEPTTL"
+	}
+	if opts.nx && opts.xx {
+		return opts, "SET cannot use both NX and XX"
+	}
+	return opts, ""
 }
 
 // SlowlogEntry 慢查询条目

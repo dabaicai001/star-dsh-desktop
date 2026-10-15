@@ -17,10 +17,15 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);}
 .center { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
 .error { border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 36%, transparent); border-radius: 6px; padding: 10px 14px; background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, transparent); color: var(--dsw-alias-state-error-primary); font-size: 12px; }
-.indicesHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.indicesHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.summary { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+/* 概览索引筛选框(窄,不抢标题空间)。 */
+.filterInput { width: 180px; min-width: 0; }
 .sectionTitle { margin: 0; color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 650; }
 .subTitle { margin: 16px 0 8px; color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 650; }
-.smallBtn { border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 4px 10px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font-family: inherit; font-size: 11px; }
+/* 索引详情元信息行(分片 / 文档数)。 */
+.indexMeta { display: flex; gap: 16px; padding: 2px 0 8px; font-size: 11px; }
+.smallBtn { border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 4px 10px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font-family: inherit; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
 .smallBtn:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
 .smallBtn:disabled, .primaryBtn:disabled { opacity: 0.4; cursor: default; }
 .table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -39,6 +44,14 @@
 .input { border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 6px 8px; outline: none; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-family: inherit; font-size: 12px; }
 .input:focus, .dslEditor:focus { border-color: var(--dsw-alias-state-business-primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 35%, transparent); }
 .dslEditor { min-height: 220px; flex: 1; resize: none; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 10px; outline: none; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-family: var(--ds-font-family-code); font-size: 12px; line-height: 1.5; }
+/* 检索面板底部:每页条数 + 执行按钮。 */
+.searchFoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sizeLabel { display: inline-flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-tertiary); font-size: 11px; white-space: nowrap; }
+.sizeLabel .input { padding: 4px 6px; font-size: 11px; }
+/* 聚合结果(存在时展示在结果工具栏与表格之间)。 */
+.aggView { flex: none; max-height: 180px; margin: 0; overflow: auto; border: 1px solid var(--dsw-alias-border-l2); border-top: 0; padding: 10px 12px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-family: var(--ds-font-family-code); font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
+/* 新建索引对话框里的 mappings 输入(可选)。 */
+.mappingsInput { min-height: 120px; resize: vertical; font-family: var(--ds-font-family-code); font-size: 11px; line-height: 1.5; }
 .primaryBtn { border: 1px solid var(--dsw-alias-state-business-primary); border-radius: 5px; padding: 6px 12px; background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-label-primary-inverted); cursor: pointer; font-family: inherit; font-weight: 650; }
 .primaryBtn:not(:disabled):hover { filter: brightness(1.08); }
 .resultPanel { display: flex; min-width: 0; flex: 1; flex-direction: column; overflow: hidden; }

@@ -27,11 +27,21 @@
  * UI 状态不跟随,后续 FLUSHDB/删除会作用在看不见的库上),改为走 redisSelect RPC
  * 并同步 activeDb/expandedDb 与键列表;FLUSHDB 执行前先显式 select 目标库,且确认
  * 弹窗要求输入 db 序号二次确认(替代 window.confirm)。
+ *
+ * v0.137.0 交互重构:
+ * - **键行补 TTL 徽标**:SCAN 已带回 ttl,旧版丢弃不用,用户无法分辨哪些 key
+ *   即将过期;现在 -1 显示「∞」、其余显示剩余秒数(超 1 小时折算为小时)。
+ * - **键行补复制钮**:hover 出现,点击复制完整 key 名(此前只能手动选中文本)。
+ * - **CLI 补历史**:上下方向键翻阅本次会话执行过的命令(旧版无历史,重复命令
+ *   只能重打)。
+ * - **值编辑器保存后回调刷新**:编辑器经 onSaved 通知,工作台重拉该 db 的键与
+ *   键数,避免「保存成功但左侧树/头部计数还是旧值」的漂移。
+ * - **空态/错误态文案明确化**:区分「暂无 key」「加载失败」「搜索无结果」。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseFillMedium, IconCloseOutlineMedium,
-  IconCodeOutlineMedium, IconEditOutlineMedium, IconPlusOutlineMedium, IconTrashOutlineMedium,
+  IconCodeOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium, IconPlusOutlineMedium, IconTrashOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RustAsset } from '../store.ts'
 import { redisConnect, redisDBSize, redisDel, redisDisconnect, redisExecute, redisFlushDB, redisQuote, redisRename, redisScan, redisScanAccumulate, redisSelect, type RedisKeyInfo } from './redis-service.ts'
@@ -47,6 +57,9 @@ const SCAN_BATCH_LIMIT = 10_000
 
 /** 搜索输入防抖:停敲 350ms 后自动按新匹配重扫展开的 db。 */
 const SEARCH_DEBOUNCE_MS = 350
+
+/** CLI 历史上限(防无界增长)。 */
+const CLI_HISTORY_LIMIT = 100
 
 /**
  * 搜索词 → SCAN MATCH 模式:含 glob 字符(* ? [ ])原样透传(用户自定义模式),
@@ -73,6 +86,19 @@ export function parseCliSelect(command: string): number | 'invalid' | null {
   const db = Number(tokens[1])
   if (!Number.isInteger(db) || db < 0 || db > 15) return 'invalid'
   return db
+}
+
+/**
+ * key 剩余 TTL → 键行徽标文本。-1(持久化)显示「∞」,超 1 小时折算小时,
+ * 否则原样秒数。ttl 缺省(SCAN 未带回)时返回空串,不渲染徽标。
+ * @param ttl - key 剩余秒数。
+ * @returns 徽标文本;无需展示时返回 ''。
+ */
+export function ttlBadge(ttl: number | undefined): string {
+  if (ttl === undefined) return ''
+  if (ttl < 0) return '∞'
+  if (ttl >= 3600) return `${Math.floor(ttl / 3600)}h`
+  return String(ttl)
 }
 
 /** 单个 db 的懒加载缓存:展开时取一次,收起保留。 */
@@ -146,27 +172,32 @@ interface KeyTreeRowProps {
   expanded: ReadonlySet<string>
   onToggle: (path: string) => void
   onOpen: (key: string, type: string) => void
+  onCopy: (key: string) => void
   onRename: (key: string) => void
   onDelete: (key: string) => void
 }
 
 /**
  * 渲染一行键树节点:文件夹行(箭头 + 段名 + 叶子计数,点击折叠/展开,子级递归)
- * 或叶子行(类型徽标 + 最后一段,操作沿用完整 key)。
+ * 或叶子行(类型徽标 + 最后一段 + TTL 徽标,操作沿用完整 key)。
  * @param props - 节点与回调。
  * @returns 该行(及展开时的子级行)。
  */
-function KeyTreeRow({ node, depth, expanded, onToggle, onOpen, onRename, onDelete }: KeyTreeRowProps) {
+function KeyTreeRow({ node, depth, expanded, onToggle, onOpen, onCopy, onRename, onDelete }: KeyTreeRowProps) {
   const indent = { paddingLeft: 5 + depth * 14 }
   if (node.keyInfo !== null) {
     const k = node.keyInfo
+    const ttl = ttlBadge(k.ttl)
     return (
       <div className={css.keyRow} style={indent}>
         <button type="button" className={css.keyMain} onClick={() =>{  onOpen(k.key, k.type) }}>
           <span className={css.keyType}>{k.type}</span>
           <span className={css.keyName} title={k.key}>{node.name}</span>
+          {ttl !== '' && <span className={css.ttlBadge} title={`剩余 ${k.ttl} 秒`}>{ttl}</span>}
         </button>
         <div className={css.keyActions}>
+          <button type="button" className={css.miniButton} title="复制 key 名" aria-label={`复制 ${k.key}`}
+            onClick={() =>{  onCopy(k.key) }}><IconCopyOutlineMedium size={12} /></button>
           <button type="button" className={css.miniButton} title="重命名" aria-label={`重命名 ${k.key}`}
             onClick={() =>{  onRename(k.key) }}><IconEditOutlineMedium size={13} /></button>
           <button type="button" className={css.miniDanger} title="删除" aria-label={`删除 ${k.key}`}
@@ -190,7 +221,7 @@ function KeyTreeRow({ node, depth, expanded, onToggle, onOpen, onRename, onDelet
       </div>
       {open && node.children.map(child => (
         <KeyTreeRow key={child.path} node={child} depth={depth + 1} expanded={expanded}
-          onToggle={onToggle} onOpen={onOpen} onRename={onRename} onDelete={onDelete} />
+          onToggle={onToggle} onOpen={onOpen} onCopy={onCopy} onRename={onRename} onDelete={onDelete} />
       ))}
     </>
   )
@@ -223,6 +254,9 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
   const [cliOpen, setCliOpen] = useState(false)
   const [cliInput, setCliInput] = useState('')
   const [cliOutput, setCliOutput] = useState<string>('')
+  /** CLI 命令历史(本次会话);historyIdx 为 null 表示正在编辑新行。 */
+  const [cliHistory, setCliHistory] = useState<readonly string[]>([])
+  const [cliHistoryIdx, setCliHistoryIdx] = useState<number | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameTo, setRenameTo] = useState('')
   const [newKeyOpen, setNewKeyOpen] = useState(false)
@@ -242,6 +276,16 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
     window.setTimeout(() =>{  setToast(cur => (cur === msg ? null : cur)) }, 2500)
     /* v8 ignore stop */
   }, [])
+
+  /** 复制文本到剪贴板;不可用时(非安全上下文/权限拒绝)回退提示,不静默失败。 */
+  const copyText = useCallback(async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      notify(`已复制${label}`)
+    } catch {
+      notify(`复制失败,请手动选中${label}`)
+    }
+  }, [notify])
 
   /** 合并写入某个 db 的加载记录(不存在的 db 以 EMPTY 为基底)。 */
   const patchDbList = useCallback((db: number, patch: Partial<DbLoadable>) => {
@@ -545,15 +589,55 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
       } catch (e: unknown) {
         setCliOutput(`切换 DB 失败:${e instanceof Error ? e.message : String(e)}`)
       }
+      // SELECT 也入历史,便于复查切库轨迹。
+      pushCliHistory(command)
       return
     }
     try {
       const res = await redisExecute(connId, command)
       setCliOutput(res.error ?? toCliText(res.result))
       await syncAfterMutation(connId)
+      pushCliHistory(command)
     } catch (e: unknown) {
       setCliOutput(e instanceof Error ? e.message : String(e))
     }
+  }
+
+  /** 把一条命令压入 CLI 历史(去重连续重复,超上限丢最旧)。 */
+  const pushCliHistory = (command: string) => {
+    setCliHistory(prev => {
+      const last = prev[prev.length - 1]
+      const base = last === command ? prev.slice(0, -1) : prev
+      const next = [...base, command]
+      return next.length > CLI_HISTORY_LIMIT ? next.slice(next.length - CLI_HISTORY_LIMIT) : next
+    })
+    setCliHistoryIdx(null)
+  }
+
+  /**
+   * CLI 输入框方向键:↑ 翻上一条历史,↓ 翻下一条(到最新一条之后回到空行)。
+   * @param key - 按下的键名。
+   * @returns 命中历史翻阅时 true(调用方阻止默认行为)。
+   */
+  const handleCliKeyDown = (key: string): boolean => {
+    if (key !== 'ArrowUp' && key !== 'ArrowDown') return false
+    if (cliHistory.length === 0) return false
+    if (key === 'ArrowUp') {
+      const nextIdx = cliHistoryIdx === null ? cliHistory.length - 1 : Math.max(0, cliHistoryIdx - 1)
+      setCliHistoryIdx(nextIdx)
+      setCliInput(cliHistory[nextIdx] ?? '')
+      return true
+    }
+    if (cliHistoryIdx === null) return false
+    const nextIdx = cliHistoryIdx + 1
+    if (nextIdx >= cliHistory.length) {
+      setCliHistoryIdx(null)
+      setCliInput('')
+      return true
+    }
+    setCliHistoryIdx(nextIdx)
+    setCliInput(cliHistory[nextIdx] ?? '')
+    return true
   }
 
   const openKey = useCallback((key: string, type: string) =>{  setOpenValue({ key, type }) }, [])
@@ -668,14 +752,15 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                             </div>
                           )}
                           {entry !== undefined && !entry.loading && entry.error === null && entry.keys.length === 0 && (
-                            <div className={css.dbStatus}>暂无 key。</div>
+                            <div className={css.dbStatus}>{entry.match !== null && entry.match !== '' ? '搜索无匹配 key。' : '暂无 key。'}</div>
                           )}
                           {entry !== undefined && entry.error === null && entry.keys.length > 0 && (
                             <>
                               <div className={css.keyList}>
                                 {keyTree.map(node => (
                                   <KeyTreeRow key={node.path} node={node} depth={0} expanded={expandedFolders}
-                                    onToggle={(path) => toggleKeyFolder(db, path)} onOpen={openKey}
+                                    onToggle={path => void toggleKeyFolder(db, path)} onOpen={openKey}
+                                    onCopy={key => void copyText(key, 'key 名')}
                                     onRename={(key) => { setRenaming(key); setRenameTo(key) }}
                                     onDelete={key => void deleteKey(key)} />
                                 ))}
@@ -710,9 +795,12 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
               )}
               {cliOpen && (
                 <div className={css.cliBar}>
-                  <input className={css.searchInput} placeholder="redis 命令,如 GET foo" value={cliInput} aria-label="命令输入"
-                    onChange={(e) =>{  setCliInput(e.target.value) }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') void runCli() }} />
+                  <input className={css.searchInput} placeholder="redis 命令,如 GET foo(↑↓ 翻历史)" value={cliInput} aria-label="命令输入"
+                    onChange={(e) =>{  setCliInput(e.target.value); setCliHistoryIdx(null) }}
+                    onKeyDown={(e) => {
+                      if (handleCliKeyDown(e.key)) { e.preventDefault(); return }
+                      if (e.key === 'Enter') void runCli()
+                    }} />
                   <button type="button" className={css.primaryButton} onClick={() => void runCli()}>执行</button>
                 </div>
               )}
@@ -723,6 +811,7 @@ export function RedisWorkbench({ asset, onClose }: { asset: RustAsset; onClose: 
                   connId={id}
                   redisKey={openValue.key}
                   keyType={openValue.type}
+                  onSaved={() => { const c = connRef.current; if (c !== null) void refreshExpanded(c) }}
                 />
               ) : (
                 <div className={css.placeholder}>

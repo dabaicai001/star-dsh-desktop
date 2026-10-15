@@ -273,9 +273,65 @@ describe('ElasticsearchWorkbench edge coverage', () => {
       render(<ElasticsearchWorkbench asset={esAsset} onClose={vi.fn()} />)
       await screen.findByText(/logs/)
       fireEvent.click(screen.getByRole('button', { name: '检索' }))
-      const select = screen.getByRole<HTMLSelectElement>('combobox')
+      // 检索面板有两个下拉(目标索引 / 每页条数),按 aria-label 定位目标索引。
+      const select = screen.getByLabelText<HTMLSelectElement>('目标索引')
       fireEvent.change(select, { target: { value: 'metrics' } })
       expect(select.value).toBe('metrics')
+    } finally {
+      restore()
+    }
+  })
+
+  it('remembers the DSL per index when switching the search target', async () => {
+    const { invoke } = okInvoke()
+    const restore = stubInvoke(invoke)
+    try {
+      render(<ElasticsearchWorkbench asset={esAsset} onClose={vi.fn()} />)
+      await screen.findByText(/logs/)
+      fireEvent.click(screen.getByRole('button', { name: '检索' }))
+      const editor = screen.getByLabelText<HTMLTextAreaElement>('DSL 查询')
+      // 在「所有索引」下写一段 DSL。
+      fireEvent.change(editor, { target: { value: '{"query":{"match_all":{}}}' } })
+      // 切到 logs:DSL 被存回;再切回「所有索引」时应恢复。
+      fireEvent.change(screen.getByLabelText('目标索引'), { target: { value: 'logs' } })
+      fireEvent.change(editor, { target: { value: '{"query":{"term":{"msg":"hi"}}}' } })
+      fireEvent.change(screen.getByLabelText('目标索引'), { target: { value: '' } })
+      expect(editor.value).toBe('{"query":{"match_all":{}}}')
+      // 再切到 logs,恢复它自己那段。
+      fireEvent.change(screen.getByLabelText('目标索引'), { target: { value: 'logs' } })
+      expect(editor.value).toBe('{"query":{"term":{"msg":"hi"}}}')
+    } finally {
+      restore()
+    }
+  })
+
+  it('re-runs the search from page 0 when the page size changes', async () => {
+    const calls: Array<Record<string, unknown>> = []
+    const restore = stubInvoke((cmd, args) => {
+      if (cmd === 'db_es_connect') return Promise.resolve({ connId: 'c1' })
+      if (cmd === 'db_es_list_indices') return Promise.resolve([])
+      if (cmd === 'db_es_cluster_health') return Promise.resolve({ status: 'green', numberOfNodes: 1 })
+      if (cmd === 'db_es_search') {
+        calls.push(args ?? {})
+        return Promise.resolve({ took: 1, timedOut: false, totalHits: 50, maxScore: null, hits: [], aggregations: {} })
+      }
+      if (cmd === 'db_es_disconnect') return Promise.resolve(null)
+      return Promise.resolve(null)
+    })
+    try {
+      render(<ElasticsearchWorkbench asset={esAsset} onClose={vi.fn()} />)
+      await screen.findByText(/nodes/)
+      fireEvent.click(screen.getByRole('button', { name: '检索' }))
+      // 先翻到第二页。
+      fireEvent.click(screen.getByRole('button', { name: '执行查询' }))
+      await waitFor(() =>{  expect(calls.length).toBe(1) })
+      fireEvent.click(screen.getByText('下一页'))
+      await waitFor(() =>{  expect(calls.length).toBe(2) })
+      expect(calls[1]?.from).toBe(20)
+      // 改每页条数:必须从第 0 页重查,否则 from=20 + size=10 会跳过一整页。
+      fireEvent.change(screen.getByLabelText('每页条数'), { target: { value: '10' } })
+      await waitFor(() =>{  expect(calls.length).toBe(3) })
+      expect(calls[2]).toMatchObject({ from: 0, size: 10 })
     } finally {
       restore()
     }
@@ -427,6 +483,62 @@ describe('ElasticsearchWorkbench edge coverage', () => {
       // The malformed child (non-string name/type) renders with empty strings.
       expect(await screen.findByText('obj')).toBeTruthy()
       expect(screen.getAllByText('object').length).toBeGreaterThanOrEqual(1)
+    } finally {
+      restore()
+    }
+  })
+
+  it('renders nested mapping fields recursively (deeper than two levels)', async () => {
+    const restore = stubInvoke((cmd) => {
+      if (cmd === 'db_es_connect') return Promise.resolve({ connId: 'c1' })
+      if (cmd === 'db_es_list_indices') return Promise.resolve([{ name: 'idx', docsCount: 1, storeSize: '1b', health: 'green', status: 'open', primaryShards: 2, replicaShards: 1 }])
+      if (cmd === 'db_es_cluster_health') return Promise.resolve({ status: 'green', numberOfNodes: 1 })
+      // 三层嵌套:obj → inner → leaf,旧版只渲染两层会丢掉 leaf。
+      if (cmd === 'db_es_get_index_mapping') return Promise.resolve({
+        indexName: 'idx',
+        fields: [{ name: 'obj', type: 'object', children: [{ name: 'inner', type: 'object', children: [{ name: 'leaf', type: 'keyword' }] }] }],
+      })
+      if (cmd === 'db_es_get_index_settings') return Promise.resolve({})
+      if (cmd === 'db_es_disconnect') return Promise.resolve(null)
+      return Promise.resolve(null)
+    })
+    try {
+      render(<ElasticsearchWorkbench asset={esAsset} onClose={vi.fn()} />)
+      await screen.findByText(/idx/)
+      fireEvent.click(screen.getByText('idx'))
+      expect(await screen.findByText('obj')).toBeTruthy()
+      // 三层嵌套全部渲染(旧版只渲染两层,leaf 会丢)。前缀与字段名、类型徽标
+      // 各自是独立文本节点,按容器文本断言。
+      const tree = document.querySelector('[class*="mappingTree"]')
+      expect(tree?.textContent).toContain('↳ inner')
+      expect(tree?.textContent).toContain('↳ leaf')
+      expect(tree?.textContent).toContain('keyword')
+      // 索引元信息(分片 / 文档数)一并展示。
+      expect(screen.getByText(/2 主 \/ 1 副/)).toBeTruthy()
+    } finally {
+      restore()
+    }
+  })
+
+  it('shows aggregations when the search response carries them', async () => {
+    const restore = stubInvoke((cmd) => {
+      if (cmd === 'db_es_connect') return Promise.resolve({ connId: 'c1' })
+      if (cmd === 'db_es_list_indices') return Promise.resolve([])
+      if (cmd === 'db_es_cluster_health') return Promise.resolve({ status: 'green', numberOfNodes: 1 })
+      if (cmd === 'db_es_search') return Promise.resolve({
+        took: 3, timedOut: false, totalHits: 1, maxScore: null,
+        hits: [{ index: 'i', id: '1', score: null, source: { msg: 'x' } }],
+        aggregations: { by_status: { buckets: [{ key: 'ok', doc_count: 1 }] } },
+      })
+      if (cmd === 'db_es_disconnect') return Promise.resolve(null)
+      return Promise.resolve(null)
+    })
+    try {
+      render(<ElasticsearchWorkbench asset={esAsset} onClose={vi.fn()} />)
+      await screen.findByText(/nodes/)
+      fireEvent.click(screen.getByRole('button', { name: '检索' }))
+      fireEvent.click(screen.getByRole('button', { name: '执行查询' }))
+      expect(await screen.findByText(/by_status/)).toBeTruthy()
     } finally {
       restore()
     }

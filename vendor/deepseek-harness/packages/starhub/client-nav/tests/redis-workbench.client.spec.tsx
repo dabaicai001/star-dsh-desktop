@@ -1194,4 +1194,92 @@ describe('RedisWorkbench failure variants', () => {
       restore()
     }
   })
+
+  it('renders a per-key TTL badge from the SCAN payload (∞ when persistent)', async () => {
+    const invoke = vi.fn((cmd: string) => {
+      if (cmd === 'db_redis_connect') return Promise.resolve({ connId: 'c1', host: 'h', port: 6379 })
+      if (cmd === 'db_redis_db_size') return Promise.resolve({ size: 2 })
+      if (cmd === 'db_redis_scan') return Promise.resolve({
+        keys: [
+          { key: 'user:1', type: 'string', ttl: -1 },
+          { key: 'user:2', type: 'string', ttl: 30 },
+          { key: 'user:3', type: 'string', ttl: 7200 },
+        ],
+        cursor: 0, total: 3,
+      })
+      return Promise.resolve(null)
+    })
+    const restore = stubInvoke(invoke)
+    try {
+      renderWorkbench()
+      await waitConnected()
+      clickDb(0)
+      const userFolder = await waitFor(() =>{  return screen.getByLabelText('文件夹 user') })
+      fireEvent.click(userFolder)
+      await waitFor(() =>{  expect(screen.getByTitle('user:1')).toBeTruthy() })
+      // -1 → ∞;30 → 30;7200(≥1h)→ 2h
+      expect(screen.getByTitle('user:1').parentElement?.querySelector('[class*="ttlBadge"]')?.textContent).toBe('∞')
+      expect(screen.getByTitle('user:2').parentElement?.querySelector('[class*="ttlBadge"]')?.textContent).toBe('30')
+      expect(screen.getByTitle('user:3').parentElement?.querySelector('[class*="ttlBadge"]')?.textContent).toBe('2h')
+    } finally {
+      restore()
+    }
+  })
+
+  it('walks CLI history with ArrowUp/ArrowDown and dedupes consecutive repeats', async () => {
+    const invoke = installTauri()
+    const restore = stubInvoke(invoke)
+    try {
+      renderWorkbench()
+      await expandDb0WithKeys()
+      fireEvent.click(screen.getByRole('button', { name: 'CLI' }))
+      const input = screen.getByLabelText('命令输入')
+      // 执行两条命令(第二条与第一条重复 → 历史只留一条)。
+      fireEvent.change(input, { target: { value: 'GET a' } })
+      fireEvent.click(screen.getByText('执行'))
+      await waitFor(() =>{  expect(screen.getByText('OK')).toBeTruthy() })
+      fireEvent.change(input, { target: { value: 'GET a' } })
+      fireEvent.click(screen.getByText('执行'))
+      await waitFor(() =>{  expect(invoke.mock.calls.filter(c => c[0] === 'db_redis_execute').length).toBe(2) })
+      fireEvent.change(input, { target: { value: 'GET b' } })
+      fireEvent.click(screen.getByText('执行'))
+      await waitFor(() =>{  expect(invoke.mock.calls.filter(c => c[0] === 'db_redis_execute').length).toBe(3) })
+      // ↑ → 最近一条(GET b);再 ↑ → GET a;再 ↑ 仍在最早一条。
+      fireEvent.keyDown(input, { key: 'ArrowUp' })
+      await waitFor(() =>{  expect((input as HTMLInputElement).value).toBe('GET b') })
+      fireEvent.keyDown(input, { key: 'ArrowUp' })
+      await waitFor(() =>{  expect((input as HTMLInputElement).value).toBe('GET a') })
+      fireEvent.keyDown(input, { key: 'ArrowUp' })
+      expect((input as HTMLInputElement).value).toBe('GET a')
+      // ↓ → 回到 GET b;再 ↓ → 越过最新一条,回到空行。
+      fireEvent.keyDown(input, { key: 'ArrowDown' })
+      await waitFor(() =>{  expect((input as HTMLInputElement).value).toBe('GET b') })
+      fireEvent.keyDown(input, { key: 'ArrowDown' })
+      await waitFor(() =>{  expect((input as HTMLInputElement).value).toBe('') })
+    } finally {
+      restore()
+    }
+  })
+
+  it('distinguishes "no keys" from "search matched nothing" in the db block', async () => {
+    // 默认 stub 会返回 user:1 / sess:2,这里改用空 SCAN 才能看到空态文案。
+    const invoke = vi.fn((cmd: string) => {
+      if (cmd === 'db_redis_connect') return Promise.resolve({ connId: 'c1', host: 'h', port: 6379 })
+      if (cmd === 'db_redis_db_size') return Promise.resolve({ size: 0 })
+      if (cmd === 'db_redis_scan') return Promise.resolve({ keys: [], cursor: 0, total: 0 })
+      return Promise.resolve(null)
+    })
+    const restore = stubInvoke(invoke)
+    try {
+      renderWorkbench()
+      await waitConnected()
+      clickDb(0)
+      await waitFor(() =>{  expect(screen.getByText('暂无 key。')).toBeTruthy() })
+      // 有匹配词但扫不到 key → 搜索无匹配文案。
+      fireEvent.change(screen.getByLabelText('搜索 key'), { target: { value: 'zzz' } })
+      await waitFor(() =>{  expect(screen.getByText('搜索无匹配 key。')).toBeTruthy() })
+    } finally {
+      restore()
+    }
+  })
 })

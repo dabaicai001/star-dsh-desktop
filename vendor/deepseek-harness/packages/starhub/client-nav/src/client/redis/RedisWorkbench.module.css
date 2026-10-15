@@ -56,6 +56,8 @@
 .keyMain { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; border: 0; padding: 4px 2px; background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; text-align: left; }
 .keyType { flex: none; min-width: 40px; text-align: center; border: 1px solid var(--dsw-alias-border-l2); border-radius: 3px; padding: 1px 4px; color: var(--dsw-alias-state-business-primary); font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .keyName { overflow: hidden; font-family: var(--ds-font-family-code); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+/* key 剩余 TTL 徽标:∞ = 持久化,其余为秒数(超 1 小时折算小时)。 */
+.ttlBadge { flex: none; border-radius: 3px; padding: 0 4px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-dimmed); font-family: var(--ds-font-family-code); font-size: 9px; line-height: 14px; }
 .keyActions { display: flex; flex: none; gap: 2px; opacity: 0; transition: opacity 0.12s; }
 .keyRow:hover .keyActions, .keyRow:focus-within .keyActions { opacity: 1; }
 .folderChevron { flex: none; width: 12px; color: var(--dsw-alias-label-tertiary); font-size: 10px; text-align: center; }
