@@ -7,7 +7,8 @@
  * - 扁平 + 轻量层次(1px 边框、小圆角、浅色阴影),所有颜色走 --dsw-alias-* 令牌;
  * - 绿=在线,黄=连接中,红=离线;蓝色仅用于交互强调(激活页签/焦点环/主按钮);
  * - 动画:进场 180–240ms ease-out,微交互 ≤160ms;prefers-reduced-motion 全部关闭;
- * - 侧栏宽度由拖拽即时写入 style,不做 CSS 宽度过渡(避免与拖拽打架),仅进场滑入。
+ * - 侧栏宽度由拖拽即时写入 style,不做 CSS 宽度过渡(避免与拖拽打架);侧栏本身
+ *   瞬时进出,无滑入动画——布局瞬移是「有意为之」的一个动作,不搞半吊子 motion。
  */
 
 /* ── Keyframes ─────────────────────────────────────────────────── */
@@ -25,11 +26,6 @@
 @keyframes starhub-backdrop-in {
   from { opacity: 0; }
   to { opacity: 1; }
-}
-
-@keyframes starhub-panel-in {
-  from { opacity: 0; transform: translateX(28px); }
-  to { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes starhub-dot-pulse {
@@ -795,7 +791,6 @@
   flex-direction: column;
   border-left: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
-  animation: starhub-panel-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /* 拖拽把手:视觉上是 1px 中线,命中区 7px;悬停/拖拽时中线染主题色。 */
@@ -1495,7 +1490,6 @@
   .notice,
   .toolbar,
   .error,
-  .sidePanel,
   .kbBackdrop,
   .hkBackdrop,
   .zmodemBackdrop,
