@@ -6,32 +6,37 @@
 
 **All-in-One DevOps Desktop Command Center**
 
+*数据库 · 终端 · 文件 · 容器 · 真机 · AI —— 收进同一个窗口*
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Version](https://img.shields.io/badge/version-v0.136.1-cyan)]()
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
+[![Platform](https://img.shields.io/badge/platform-Windows%20首发%20%7C%20macOS%20%2F%20Linux%20规划中-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
 
 </div>
 
-StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同一个窗口:数据库客户端、SSH 终端、SFTP 文件传输、Docker 面板、Android 真机、AI 助手。不用再在 Navicat、Xshell、Portainer 和 AI 对话框之间来回切换。
+你的桌面上一半是"生产力工具":Navicat 连库、Xshell 开终端、WinSCP 传文件、Portainer 看容器、网页里挂着个 AI 对话框——每天在五六个窗口之间来回切,复制粘贴当"集成"。StarHub 把这些收进**同一个窗口**:左边是资产,中间是工作台,AI 在侧栏待命——`@` 一下把服务器交给它,`#` 一下把日志贴给它;它每一次动手,都要先弹一张确认卡问你。
+
+不是把五个图标摆进一个启动器,而是让它们共享同一套资产、同一条连接、同一份 AI 上下文。
 
 官网:[starthub.waouzzz.cc](https://starthub.waouzzz.cc/)
 
-## 架构
+## 为什么是 StarHub
 
-三层进程模型:
-
-- **上游 Electron 桌面壳** — DeepSeek Harness 自家的 Electron 壳,**零改动**原样使用;品牌、签名、自动更新都是它的。StarHub 不做自己的桌面项目。
-- **dsh Host + starhub-bridge 插件** — Host(Node)进程里的 bridge 插件 spawn 两个 sidecar,把 sidecar 的方法面暴露成模型工具与工作台命令面。
-- **两个 sidecar** — **Rust sidecar**(`sidecar-rust/`)承载 SSH/SFTP、Android 真机与直播帧枢纽;**Go Sidecar**(`sidecar/`)承载 MySQL / PostgreSQL / SQLite / Redis / ClickHouse / SQL Server / Elasticsearch / Docker / Kafka 等适配器和连接池。均经 stdio 换行分帧 JSON-RPC 通信。
-- **前端** — DeepSeek Harness(dsh)主壳,StarHub 的工作台和插件住在 `vendor/deepseek-harness` 里:`apps/starhub-window` 是资产工作台构建入口,`packages/starhub/*` 是 10 个内置插件(导航、工具桥、直播、审批、领域事件等),经 dsh 的槽位系统接入,不改上游内核。
+| 痛点 | 别人的做法 | StarHub 的做法 |
+|---|---|---|
+| 工具多 | Navicat + Xshell + Portainer + 资源管理器同时开 | 一个窗口:数据库 / SSH / SFTP / Docker / Android / AI |
+| 连接碎 | 终端连一次、SFTP 再连一次、Docker 又配一套 | SFTP 与终端共用同一条 SSH 连接;Docker 可经 SSH 通道连远程主机 |
+| 上下文丢 | 操作 A 时被 B 打断,错误信息靠人肉搬运 | 同屏三栏、命令广播;`@` 绑资产、`#` 绑上下文直接喂给 AI |
+| AI 只会聊天 | 问答归问答,执行归执行 | Function Calling 直连真实资产,自然语言 → 自动拆解 → 跨工具执行 |
+| 操作不可追溯 | 出了事翻聊天记录 | 写操作必经确认卡(超时按拒绝),全程落审计日志;真机直播可回放 |
 
 ## 功能
 
 **数据库**:MySQL、PostgreSQL、SQLite、Redis、ClickHouse、SQL Server、Elasticsearch。表结构浏览、SQL 编辑器(CodeMirror 6,补全/格式化/历史)、虚拟滚动结果网格(可编辑、按主键批量保存)、DDL 生成、监控 Dashboard、Excel 导入导出、备份恢复、审计与告警。Oracle / MongoDB / 国产库 ODBC 在规划中。
 
-**SSH 终端**:xterm.js 6,跳板机、端口转发、分屏、命令广播、危险命令拦截、ZMODEM(rz/sz)、Xshell 快捷命令导入、MFA/2FA、cwd 跟踪、断线重连。
+**SSH 终端**:xterm.js 6,跳板机、端口转发、分屏、命令广播、危险命令拦截、ZMODEM(rz/sz)、Xshell 快捷命令导入、MFA/2FA、cwd 跟踪、断线重连。命令面板(Ctrl/⌘+K)、输出查找、主机监控页签、终端设置浮层一应俱全。
 
 **SFTP**:与终端共用同一条连接,三栏浏览、拖拽传输、断点续传、暂停/继续、全局传输任务条。
 
@@ -43,10 +48,19 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 **其他**:Kafka/NSQ 元数据、深浅双主题、自动更新。
 
+## 架构
+
+三层进程模型:
+
+- **上游 Electron 桌面壳** — DeepSeek Harness 自家的 Electron 壳,**零改动**原样使用;品牌、签名、自动更新都是它的。StarHub 不做自己的桌面项目。
+- **dsh Host + starhub-bridge 插件** — Host(Node)进程里的 bridge 插件 spawn 两个 sidecar,把 sidecar 的方法面暴露成模型工具与工作台命令面。
+- **两个 sidecar** — **Rust sidecar**(`sidecar-rust/`)承载 SSH/SFTP、Android 真机与直播帧枢纽;**Go Sidecar**(`sidecar/`)承载 MySQL / PostgreSQL / SQLite / Redis / ClickHouse / SQL Server / Elasticsearch / Docker / Kafka 等适配器和连接池。均经 stdio 换行分帧 JSON-RPC 通信。
+- **前端** — DeepSeek Harness(dsh)主壳,StarHub 的工作台和插件住在 `vendor/deepseek-harness` 里:`apps/starhub-window` 是资产工作台构建入口,`packages/starhub/*` 是 10 个内置插件(导航、工具桥、直播、审批、领域事件等),经 dsh 的槽位系统接入,不改上游内核。
+
 ## 当前版本
 
 ### v0.136.1 (2026-10-15)
-- 🐛 🐛 **修 v0.136.0 的 CI / Release 全红**:给 `TerminalSettings` 新增必填字段 `scrollback` 后,漏改 `tests/ssh-settings.client.spec.tsx` 里三处完整字面量——而 CI 的 `tsc -b tsconfig.client.json` 连 `packages/*/*/tests/**/*.client.spec.tsx` 一起 typecheck(本地 `tsc -p` 只含 `src`,所以本地全绿、CI 全红),`package-dsh-runtime` 的 build 步直接 exit 1。补上 `scrollback` 并新增默认值(5000)与夹取区间(200..100000)断言;同时把上一个提交(a556f7381c)带进来的同类错误一并修掉——`tests/assistant-messages.client.spec.ts` 给 `AssistantStreamChunk` 塞了类型里不存在、主机也从不发送的 `id` / `argumentsDelta` 字段,改为只保留 `type` / `index`(测试意图「非 text-delta 一律被忽略」不变)。顺带把「回滚行数」下拉加进设置页 SSH tab(与终端设置浮层共用 `TERMINAL_SCROLLBACKS` 预设),新字段不再只能从终端浮层改。
+- 🐛 **修 v0.136.0 的 CI / Release 全红**:给 `TerminalSettings` 新增必填字段 `scrollback` 后,漏改 `tests/ssh-settings.client.spec.tsx` 里三处完整字面量——而 CI 的 `tsc -b tsconfig.client.json` 连 `packages/*/*/tests/**/*.client.spec.tsx` 一起 typecheck(本地 `tsc -p` 只含 `src`,所以本地全绿、CI 全红),`package-dsh-runtime` 的 build 步直接 exit 1。补上 `scrollback` 并新增默认值(5000)与夹取区间(200..100000)断言;同时把上一个提交(a556f7381c)带进来的同类错误一并修掉——`tests/assistant-messages.client.spec.ts` 给 `AssistantStreamChunk` 塞了类型里不存在、主机也从不发送的 `id` / `argumentsDelta` 字段,改为只保留 `type` / `index`(测试意图「非 text-delta 一律被忽略」不变)。顺带把「回滚行数」下拉加进设置页 SSH tab(与终端设置浮层共用 `TERMINAL_SCROLLBACKS` 预设),新字段不再只能从终端浮层改。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
@@ -113,9 +127,15 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 
 **StarHub** — All-in-One DevOps Desktop Command Center。把开发运维每天要用到的工具收进同一个窗口:数据库客户端 · SSH 终端 · SFTP · Docker · Android 真机 · AI 助手。
 
+**三条产品原则:**
+
+1. **一个窗口,而不是一个启动器。** 工具切换是纯损耗。StarHub 让数据库、终端、SFTP、Docker、Android 真机共享同一套资产、同一条连接,AI 共享同一份上下文——不是把五个图标摆进一个格子。
+2. **AI 是操作面,不是聊天框。** 助手通过 Function Calling 直接驱动真实资产;每一次写操作(SSH 命令、SQL、文件删除、传输)都弹确认卡,超时按拒绝处理,全程落审计日志。
+3. **每一步都有据可查。** 密码与私钥只进 sidecar 密钥存储,hostkey 自动接受不持久化,直播/接管的帧通道只绑 127.0.0.1——真实设备上的每个动作都自动截屏留档、可回放。
+
 | 项 | 值 |
 |---|---|
-| 当前版本 | v0.127.0 |
+| 当前版本 | v0.136.1 |
 | 官网 | [starthub.waouzzz.cc](https://starthub.waouzzz.cc/) |
 | 仓库 | [github.com/dabaicai001/star-dsh-desktop](https://github.com/dabaicai001/star-dsh-desktop) |
 | 问题反馈 | [GitHub Issues](https://github.com/dabaicai001/star-dsh-desktop/issues) |
