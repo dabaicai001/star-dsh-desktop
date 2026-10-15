@@ -11,7 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Version](https://img.shields.io/badge/version-v0.136.1-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20首发%20%7C%20macOS%20%2F%20Linux%20规划中-blue)]()
-[![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
+[![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
 
 </div>
@@ -66,7 +66,7 @@
 
 ## 下载
 
-[GitHub Releases](https://github.com/dabaicai001/star-dsh-desktop/releases) 提供:
+[GitHub Releases](https://github.com/dabaicai001/starhub/releases) 提供:
 
 | 平台 | 产物 |
 |---|---|
@@ -79,7 +79,7 @@
 前置:Node 20 LTS、Rust 1.96+、Go 1.25+、pnpm 11+。Windows 需要 MSVC 构建环境。
 
 ```bash
-git clone https://github.com/dabaicai001/star-dsh-desktop.git
+git clone https://github.com/dabaicai001/starhub.git
 cd starhub
 npm install
 pnpm --dir vendor/deepseek-harness install
@@ -137,8 +137,8 @@ pnpm --dir vendor/deepseek-harness/apps/desktop run package:win:x64:unsigned
 |---|---|
 | 当前版本 | v0.136.1 |
 | 官网 | [starthub.waouzzz.cc](https://starthub.waouzzz.cc/) |
-| 仓库 | [github.com/dabaicai001/star-dsh-desktop](https://github.com/dabaicai001/star-dsh-desktop) |
-| 问题反馈 | [GitHub Issues](https://github.com/dabaicai001/star-dsh-desktop/issues) |
+| 仓库 | [github.com/dabaicai001/starhub](https://github.com/dabaicai001/starhub) |
+| 问题反馈 | [GitHub Issues](https://github.com/dabaicai001/starhub/issues) |
 | 协议 | MIT · Copyright © 2026 StarHub Authors |
 
 **致谢与依赖**:
