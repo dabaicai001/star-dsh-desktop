@@ -15,7 +15,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, AssistantStreamFrame, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -439,6 +439,24 @@ export class AssistantRegistry {
       }
     }
     for (const write of entry.clients) write({ t: 'event', event })
+  }
+
+  /**
+   * Forward one live assistant-stream publication to the owning assistant's
+   * clients.
+   *
+   * Stream frames are transient by contract (`agent/assistant-stream`): they
+   * never enter the replay window, because a late client is served by the
+   * durable events instead — the loop commits the final `assistant/message`
+   * before the terminal `end` frame, so live text deltas and the durable
+   * message converge on the same rendered bubble.
+   * @param sessionId - the assistant's session id.
+   * @param frame - one start / chunk / end publication.
+   */
+  onStreamFrame(sessionId: string, frame: AssistantStreamFrame): void {
+    const entry = this.byAssistant.get(sessionId)
+    if (entry === undefined) return
+    for (const write of entry.clients) write({ t: 'stream', frame })
   }
 
   /**

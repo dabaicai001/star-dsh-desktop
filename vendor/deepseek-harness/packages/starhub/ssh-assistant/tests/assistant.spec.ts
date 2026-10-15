@@ -523,6 +523,45 @@ describe('starhub-ssh-assistant composition', () => {
     expect(events.some(event => event.type === 'assistant/message')).toBe(true)
   })
 
+  it('streams assistant text deltas to the panel before the durable message', async () => {
+    // 流式:模型输出按 chunk 实时推面板(agent/assistant-stream 转发),回合
+    // 末尾的 durable assistant/message 后到并替换流式气泡——面板先看到增量。
+    const host = await mounted({
+      script: () => [[
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: '你' },
+        { type: 'text-delta', index: 0, text: '好' },
+        { type: 'block-end', index: 0, block: { type: 'text', text: '你好' } },
+        { type: 'usage', usage: { inputTokens: 5, outputTokens: 2 } },
+        { type: 'finish', reason: { kind: 'stop' } },
+      ]],
+    })
+    const opened = await host.post('/starhub/api/assistant/open', {
+      sshSessionId: 's1', assetId: 'ssh-1', assetName: 'server',
+    })
+    const assistantId = (opened as { assistantId: string }).assistantId
+    const { frames } = await host.stream(assistantId)
+    const prompt = await host.post('/starhub/api/assistant/prompt', { assistantId, text: '你好' })
+    expect(prompt).toEqual({ accepted: true })
+
+    await vi.waitFor(() => {
+      expect(frames().some(frame =>
+        frame.t === 'event' && frame.event.type === 'assistant/message')).toBe(true)
+    }, { timeout: 5000 })
+
+    const all = frames()
+    const deltas = all.flatMap(frame =>
+      frame.t === 'stream' && frame.frame.type === 'chunk' && frame.frame.chunk.type === 'text-delta'
+        ? [frame.frame.chunk.text]
+        : [])
+    expect(deltas).toEqual(['你', '好'])
+    // 流式帧必须早于 durable 消息(面板先累积增量,再被完整消息原位替换)。
+    const firstStream = all.findIndex(frame => frame.t === 'stream')
+    const durable = all.findIndex(frame => frame.t === 'event' && frame.event.type === 'assistant/message')
+    expect(firstStream).toBeGreaterThanOrEqual(0)
+    expect(firstStream).toBeLessThan(durable)
+  })
+
   it('parks an assistant approval on the stream and settles it from the panel', async () => {
     // 模型流挂起(无 finish),回合保持 open——与真实回合里 tools/pre-execute
     // 升级 ask 的时序一致。

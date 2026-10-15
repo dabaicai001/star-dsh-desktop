@@ -9,12 +9,12 @@
  * @module StarHub SSH assistant message fold (client)
  */
 
-import type { AssistantApprovalOutcome, AssistantFrame, AssistantSessionEvent } from './assistant-service.ts'
+import type { AssistantApprovalOutcome, AssistantFrame, AssistantSessionEvent, AssistantStreamFrame } from './assistant-service.ts'
 
 /** 一条可渲染的聊天项。 */
 export type ChatItem =
   | { kind: 'user'; id: string; text: string }
-  | { kind: 'assistant'; id: string; text: string; interrupted: boolean }
+  | { kind: 'assistant'; id: string; text: string; interrupted: boolean; streaming?: boolean }
   | { kind: 'tool'; id: string; name: string; args: string; output: string | null; isError: boolean }
   | {
     kind: 'approval'
@@ -80,6 +80,16 @@ function itemKey(item: ChatItem): string | null {
   }
 }
 
+/** 最后一个仍在流式中的助手气泡下标(无则 -1)。 */
+function lastStreamingIndex(items: ChatItem[]): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index]
+    if (item === undefined) continue
+    if (item.kind === 'assistant' && item.streaming === true) return index
+  }
+  return -1
+}
+
 /**
  * 折叠一条会话事件。
  * @param items - 当前聊天项列表。
@@ -102,16 +112,21 @@ export function foldSessionEvent(items: ChatItem[], event: AssistantSessionEvent
       if (message === undefined) return items
       const text = textOfBlocks(message.content)
       if (text === '') return items
-      return upsert(
-        items,
-        {
-          kind: 'assistant',
-          id: String(message.id),
-          text,
-          interrupted: data.interrupted === true,
-        },
-        itemKey,
-      )
+      const final: ChatItem = {
+        kind: 'assistant',
+        id: String(message.id),
+        text,
+        interrupted: data.interrupted === true,
+      }
+      // 流式气泡就地替换:同一次尝试的 text-delta 先堆出 streaming 项,
+      // durable 消息(完整文本)到达时换掉它——位置不变、不叠第二条。
+      const open = lastStreamingIndex(items)
+      if (open >= 0) {
+        const merged = [...items]
+        merged[open] = final
+        return merged
+      }
+      return upsert(items, final, itemKey)
     }
     case 'tool/call': {
       const name = typeof data.name === 'string' ? data.name : 'tool'
@@ -176,9 +191,49 @@ export function foldFrame(items: ChatItem[], frame: AssistantFrame): ChatItem[] 
       )
     case 'error':
       return [...items, { kind: 'error', id: `error-${String(items.length)}`, message: frame.message }]
+    case 'stream':
+      return foldStreamFrame(items, frame.frame)
     default:
       return items
   }
+}
+
+/**
+ * 折叠一条实时流式帧。
+ *
+ * 只有文本增量参与渲染:`text-delta` 按 attemptId 堆出(或追加)流式气泡;
+ * `end` 收尾(durable 消息通常已把它替换掉,此处兜底清标记);`start` 与
+ * 其余 chunk 种类(reasoning/tool-call/usage/finish/block-*)不产生气泡——
+ * 工具调用由 durable tool/call 事件渲染卡片。
+ * @param items - 当前聊天项列表。
+ * @param frame - 宿主转发的流式帧。
+ * @returns 新列表(无变化时原引用)。
+ */
+function foldStreamFrame(items: ChatItem[], frame: AssistantStreamFrame): ChatItem[] {
+  if (frame.type === 'chunk' && frame.chunk.type === 'text-delta' && typeof frame.chunk.text === 'string') {
+    const delta = frame.chunk.text
+    if (delta === '') return items
+    const id = `stream-${frame.attemptId}`
+    const index = items.findIndex(item => item.kind === 'assistant' && item.id === id)
+    if (index >= 0) {
+      const current = items[index]
+      if (current === undefined || current.kind !== 'assistant') return items
+      const merged = [...items]
+      merged[index] = { ...current, text: current.text + delta, streaming: true }
+      return merged
+    }
+    return [...items, { kind: 'assistant', id, text: delta, interrupted: false, streaming: true }]
+  }
+  if (frame.type === 'end') {
+    const index = lastStreamingIndex(items)
+    if (index < 0) return items
+    const current = items[index]
+    if (current === undefined || current.kind !== 'assistant') return items
+    const merged = [...items]
+    merged[index] = { ...current, streaming: false }
+    return merged
+  }
+  return items
 }
 
 /** 把一条审批项标记为已结算。 */

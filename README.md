@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.134.3-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.135.0-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,9 +45,8 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.134.3 (2026-10-15)
-- 🐛 🐛 **修 SSH AI 助手面板「连接中断、永远空白」**(消息发得出、主界面会话里也有回复,唯独终端页 AI 面板什么都不显示):SSE 路由 `GET /starhub/api/assistant/stream` 把 `res.writeHead(200, {content-type: text/event-stream, ...})` 排在了 `registry.attach()` **之后**——而 attach 的重放循环在第一帧就同步 `res.write()`,Node 此刻已冲刷隐式响应头(只有 Date/Connection/Transfer-Encoding,**没有 content-type**),随后的 writeHead 既丢头又抛 `ERR_HTTP_HEADERS_SENT`,webserver 兜底只能 destroy 连接。浏览器 EventSource 收到没有 `text/event-stream` 的 200 直接判**致命错误**(不重试)→ 面板 `onDrop` → 「连接中断,重新打开本页签可恢复」+ 空白;POST 路由不走 EventSource 所以照常能发。现在响应头先于任何一帧写出;attach 失败(助手已关闭)时头已发出、状态码改不了,改用 SSE `error` 帧告知面板(折叠成错误项)而不是回 200 JSON。测试侧的假 res 同步升级为 **Node 忠实头语义**(首次 write 冲刷隐式头、其后 writeHead 抛 ERR_HTTP_HEADERS_SENT)——原宽容桩只记录不抛,正是这个 bug 从 28 个测试眼皮下溜过的原因;新增「未知助手 id → SSE 错误帧」与主流程的 content-type 断言(38 例全绿)。
-- 🐛 🐛 **修助手面板快速切走页签时的会话自毁**:boot 竞态路径(面板已卸载而 `openAssistant` 还在飞)在 resolve 后调了 `closeAssistant`——把刚建好、正要被下次挂载按 sshSessionId 复用的助手会话直接销毁,逼下次挂载重建新会话(对话丢失、agent 泄漏)。该路径尚未订阅流,改为直接返回,助手保持可复用。
+### v0.135.0 (2026-10-15)
+- ✨ ✨ **SSH AI 助手面板流式输出**:助手的回复从此逐字显现,不再等整条消息一次性跳出。宿主侧订阅 agent loop 的实时流式通道 `agent/assistant-stream`(start/chunk/end),按助手会话 id 过滤后以新帧类型 `stream` 推给面板;面板把 `text-delta` 增量累积成一个流式气泡(带闪烁光标),回合末尾的 durable `assistant/message` 到达时**原位替换**该气泡(位置不变、不叠第二条、光标消失)。流式帧是瞬态的——不进重放窗口,晚到的客户端由 durable 事件兜底,两条通道在同一帧序里收敛;`start` 与 reasoning/tool-call/usage 等非文本 chunk 不产生气泡(工具调用仍由 durable tool/call 事件渲染卡片)。组合测试用脚本化 adapter 的多段 text-delta 验证「增量先到、durable 后到并替换」,客户端 fold 补 4 例(累积/替换/attempt 中断兜底/非文本忽略),43 例全绿。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

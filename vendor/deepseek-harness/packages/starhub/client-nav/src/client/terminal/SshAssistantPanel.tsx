@@ -345,6 +345,7 @@ export function SshAssistantPanel({ sshSessionId, assetId, assetName, onOpened }
             {item.kind === 'assistant' && (
               <p className={css.assistantText}>
                 {item.text}
+                {item.streaming === true && <span className={css.streamCaret}>▍</span>}
                 {item.interrupted && <span className={css.interrupted}>（已中断）</span>}
               </p>
             )}

@@ -56,6 +56,32 @@ export interface AssistantKbPrompt {
   echo: boolean
 }
 
+/** 流式 chunk 的窄形状(折叠端只读文本增量,其余种类原样忽略)。 */
+export interface AssistantStreamChunk {
+  type: string
+  index?: number
+  text?: string
+}
+
+/** 宿主转发的实时流式帧(与宿主 frames.ts 的 AssistantStreamFrame 对齐)。 */
+export type AssistantStreamFrame =
+  | { type: 'start'; attemptId: string; revision: number; turn: number; step: number }
+  | {
+    type: 'chunk'
+    attemptId: string
+    revision: number
+    index: number
+    time: number
+    chunk: AssistantStreamChunk
+  }
+  | {
+    type: 'end'
+    attemptId: string
+    revision: number
+    index: number
+    outcome: { kind: string; eventType?: string; seq?: number }
+  }
+
 /** SSE 流上的一条帧(与宿主 frames.ts 逐字对齐)。 */
 export type AssistantFrame =
   | { t: 'status'; status: 'idle' | 'running' }
@@ -64,6 +90,8 @@ export type AssistantFrame =
   | { t: 'model'; provider: string; model: string }
   | { t: 'closed' }
   | { t: 'error'; message: string }
+  /** 实时流式帧(瞬态:迟到客户端由 durable 事件兜底,不重放)。 */
+  | { t: 'stream'; frame: AssistantStreamFrame }
   // ── 连接验证卡(MFA / 堡垒机 / 主机密钥)──
   | {
     t: 'kb-interactive'

@@ -11,6 +11,7 @@
  * @module @deepseek-ai/dsh-starhub-ssh-assistant/frames
  */
 
+import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
 /** One approval decision the panel can submit. */
@@ -36,6 +37,13 @@ export type AssistantFrame =
   | { readonly t: 'model'; readonly provider: string; readonly model: string }
   | { readonly t: 'closed' }
   | { readonly t: 'error'; readonly message: string }
+  /**
+   * One live assistant-stream publication (`agent/assistant-stream`), forwarded
+   * verbatim for token-level rendering. Transient by contract: never replayed —
+   * a late client receives the durable events (the final `assistant/message`)
+   * instead, and the loop commits that event before the terminal `end` frame.
+   */
+  | { readonly t: 'stream'; readonly frame: AssistantStreamFrame }
   // ── 连接验证卡(MFA / 堡垒机 / 主机密钥,sidecar 精确事件转发)──
   | { readonly t: 'kb-interactive'
     readonly connId: string
@@ -109,6 +117,14 @@ export function decodeAssistantFrame(raw: string): AssistantFrame | null {
         : null
     case 'closed':
       return { t: 'closed' }
+    case 'stream': {
+      // 流式帧原样透传(折叠端只读 type 与 chunk);宽松校验帧对象与类型。
+      if (typeof record.frame !== 'object' || record.frame === null) return null
+      const frame = record.frame as Record<string, unknown>
+      const kind = frame.type
+      if (kind !== 'start' && kind !== 'chunk' && kind !== 'end') return null
+      return { t: 'stream', frame: record.frame as AssistantStreamFrame }
+    }
     case 'error':
       return typeof record.message === 'string' ? { t: 'error', message: record.message } : null
     case 'kb-interactive':

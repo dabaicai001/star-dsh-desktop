@@ -9,6 +9,11 @@
 
 ---
 
+## [0.135.0] - 2026-10-15
+
+### 新增
+- ✨ **SSH AI 助手面板流式输出**:助手的回复从此逐字显现,不再等整条消息一次性跳出。宿主侧订阅 agent loop 的实时流式通道 `agent/assistant-stream`(start/chunk/end),按助手会话 id 过滤后以新帧类型 `stream` 推给面板;面板把 `text-delta` 增量累积成一个流式气泡(带闪烁光标),回合末尾的 durable `assistant/message` 到达时**原位替换**该气泡(位置不变、不叠第二条、光标消失)。流式帧是瞬态的——不进重放窗口,晚到的客户端由 durable 事件兜底,两条通道在同一帧序里收敛;`start` 与 reasoning/tool-call/usage 等非文本 chunk 不产生气泡(工具调用仍由 durable tool/call 事件渲染卡片)。组合测试用脚本化 adapter 的多段 text-delta 验证「增量先到、durable 后到并替换」,客户端 fold 补 4 例(累积/替换/attempt 中断兜底/非文本忽略),43 例全绿。
+
 ## [0.134.3] - 2026-10-15
 
 ### 修复

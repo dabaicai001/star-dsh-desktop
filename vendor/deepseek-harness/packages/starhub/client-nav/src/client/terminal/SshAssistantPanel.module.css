@@ -196,6 +196,19 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* 流式输出中的光标(文本增量到达时闪烁,durable 消息替换后消失)。 */
+.streamCaret {
+  margin-left: 2px;
+  color: var(--dsw-alias-label-tertiary);
+  animation: streamCaretBlink 1s steps(2, start) infinite;
+}
+
+@keyframes streamCaretBlink {
+  to {
+    visibility: hidden;
+  }
+}
+
 .error {
   align-self: stretch;
 }

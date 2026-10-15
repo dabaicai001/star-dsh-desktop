@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   foldFrame, formatToolArgs, settleApprovalItem, type ChatItem,
 } from '../src/client/terminal/assistant-messages.ts'
-import type { AssistantFrame, AssistantSessionEvent } from '../src/client/terminal/assistant-service.ts'
+import type { AssistantFrame, AssistantSessionEvent, AssistantStreamFrame } from '../src/client/terminal/assistant-service.ts'
 
 /** 构造一条 user/message 会话事件。 */
 function userEvent(id: string, text: string, kind = 'user'): AssistantSessionEvent {
@@ -158,6 +158,67 @@ describe('assistant message fold', () => {
     expect(foldFrame(items, { t: 'status', status: 'running' })).toBe(items)
     expect(foldFrame(items, { t: 'model', provider: 'deepseek', model: 'x' })).toBe(items)
     expect(foldFrame(items, { t: 'closed' })).toBe(items)
+  })
+})
+
+/** 构造一条流式帧。 */
+function streamFrame(frame: AssistantStreamFrame): AssistantFrame {
+  return { t: 'stream', frame }
+}
+
+/** 一条文本增量 chunk 帧。 */
+function textDelta(attemptId: string, text: string): AssistantFrame {
+  return streamFrame({
+    type: 'chunk',
+    attemptId,
+    revision: 1,
+    index: 0,
+    time: 1,
+    chunk: { type: 'text-delta', index: 0, text },
+  })
+}
+
+describe('assistant stream fold', () => {
+  it('accumulates text deltas into one streaming bubble', () => {
+    let items = foldFrame([], textDelta('a1', '你'))
+    expect(items).toEqual([{ kind: 'assistant', id: 'stream-a1', text: '你', interrupted: false, streaming: true }])
+    items = foldFrame(items, textDelta('a1', '好'))
+    expect(items).toEqual([{ kind: 'assistant', id: 'stream-a1', text: '你好', interrupted: false, streaming: true }])
+    // 不同 attempt(工具回合后的第二次尝试)各起一个气泡。
+    items = foldFrame(items, textDelta('a2', '再见'))
+    expect(items).toHaveLength(2)
+    expect(items[1]).toMatchObject({ id: 'stream-a2', text: '再见', streaming: true })
+  })
+
+  it('replaces the streaming bubble in place with the durable message', () => {
+    let items = foldFrame([], { t: 'event', event: userEvent('m1', '看看磁盘') })
+    items = foldFrame(items, textDelta('a1', '磁盘'))
+    items = foldFrame(items, textDelta('a1', '还剩 50%'))
+    // durable 消息(完整文本)到达:原位替换,不叠第二条、清流式标记。
+    items = foldFrame(items, { t: 'event', event: assistantEvent('m9', '磁盘还剩 50%。') })
+    expect(items).toEqual([
+      { kind: 'user', id: 'm1', text: '看看磁盘' },
+      { kind: 'assistant', id: 'm9', text: '磁盘还剩 50%。', interrupted: false },
+    ])
+  })
+
+  it('keeps streamed text when the attempt ends without a durable message', () => {
+    let items = foldFrame([], textDelta('a1', '半句话'))
+    items = foldFrame(items, streamFrame({ type: 'end', attemptId: 'a1', revision: 9, index: 1, outcome: { kind: 'abandoned' } }))
+    expect(items).toEqual([{ kind: 'assistant', id: 'stream-a1', text: '半句话', interrupted: false, streaming: false }])
+  })
+
+  it('ignores start frames and non-text chunks', () => {
+    const items: ChatItem[] = []
+    expect(foldFrame(items, streamFrame({ type: 'start', attemptId: 'a1', revision: 1, turn: 1, step: 1 }))).toBe(items)
+    expect(foldFrame(items, streamFrame({
+      type: 'chunk', attemptId: 'a1', revision: 2, index: 0, time: 1,
+      chunk: { type: 'reasoning-delta', index: 0, text: '内心独白' },
+    }))).toBe(items)
+    expect(foldFrame(items, streamFrame({
+      type: 'chunk', attemptId: 'a1', revision: 3, index: 0, time: 1,
+      chunk: { type: 'tool-call-delta', index: 0, id: 'c1', argumentsDelta: '{"a":1}' },
+    }))).toBe(items)
   })
 })
 

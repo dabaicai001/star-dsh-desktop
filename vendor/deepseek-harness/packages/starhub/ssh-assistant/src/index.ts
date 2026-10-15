@@ -166,6 +166,12 @@ export function apply(ctx: Context, config: AssistantConfig = {}): void {
   ctx.on('agent/status', ({ agent, status }) => {
     registry.onStatus(String(agent.session.id), status)
   })
+  // 流式转发:模型输出按 chunk 实时推给面板(瞬态帧,不进重放窗口);
+  // 回合末尾的 durable assistant/message 仍由 session/event 通道送达并
+  // 替换流式气泡,两条通道在同一帧序里收敛。
+  ctx.on('agent/assistant-stream', ({ agent, frame }) => {
+    registry.onStreamFrame(String(agent.session.id), frame)
+  })
   // 面板切换模型:替换本请求冻结的 call config(路由变更时丢掉过期的
   // reasoningEffort,让新模型解析自己的默认值)。
   ctx.on('agent/request', async ({ agent }, next) => {
