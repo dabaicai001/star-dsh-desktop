@@ -9,7 +9,7 @@
 *数据库 · 终端 · 文件 · 容器 · 真机 · AI —— 收进同一个窗口*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.136.3-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.136.4-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20首发%20%7C%20macOS%20%2F%20Linux%20规划中-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -59,8 +59,9 @@
 
 ## 当前版本
 
-### v0.136.3 (2026-10-15)
-- 🐛 🐛 **SSH 侧栏入口去重 + 宽度记忆**:头部右上角的「监控」图标按钮与工具栏「监控」页签功能完全重复(而「文件」「AI」都只有工具栏一个入口),删掉头部那个——三个侧栏(文件 / AI / 监控)入口统一收在工具栏页签组,不再让人以为弹出了两层。侧栏宽度改存 localStorage(新模块 `side-panel-width.ts`,key `starhub:ssh:side-panel-width`,夹取 340–560px,加载 / 落盘都过夹取):拖好后重开侧栏、重开 SSH 工作区都沿用上次宽度,不再每次重置回默认 500px;拖拽松手即落盘,存储被禁(隐私模式等)时静默降级为仅本次有效。测试:新纯逻辑套件 `side-panel-width` 10 例,overlay 套件补 2 个回归(记忆加载 / 拖拽落盘)共 36 例全绿。
+### v0.136.4 (2026-10-15)
+- 🔧 🎨 **DB 工作台整页改版**(更美观 / 更好交互 / 修 bug):左侧库表树——业务库在前、MySQL/PG/MSSQL/ClickHouse 的**系统库收进可折叠组**(默认收起,不再把业务库淹在 information_schema 里),库行加重 + 当前库左色条高亮 + 表数徽章,搜索态自动平铺展开( Esc 清空),加载改骨架屏,树宽可拖拽(200–420px)并记忆进 localStorage;头部改**连接状态胶囊**(已连接 / 连接中…),副标题带端口,「刷新」去重(只剩树工具栏一个),监控改头部chip;SQL 工具栏重排——SQL 徽章 + 带图标的库选择器(未选库时警告色 + title 指路)、快捷键说明从常驻噪音改为空态引导、执行按钮从「小蓝块图标」改为「▶ 执行」主按钮、历史面板改绝对定位浮层(不再挤压编辑区);结果区空态改为图标 + 主文案 + 快捷键 + 未选库提醒,结果表格**表头吸顶**、数字右对齐、NULL 灰显斜体;编辑器 placeholder 从「SELECT * FROM users WHERE …」(长得像已输入的 SQL)改为「在此输入 SQL,Mod-Enter 执行」;DDL 弹层加复制按钮。
+- 🐛 🐛 **DB 工作台三处交互 bug**:① 未选库直接执行 SQL 只会拿到后端 cryptic 的 "No database selected"——现在关系型库未选库时执行 / EXPLAIN 禁用(按钮 + 选择器 + 空态三处指路),Mod-Enter 直达路径也有友好拦截;② 连接错误此前显示在左侧树顶部、且与删表/清空失败混用同一 state——现在连接错误走头部下方全宽横幅(可关闭),树操作失败走内容区顶部独立横幅(6s 自动消失);③ 结果区「返回表数据」按钮名不副实(其实是关闭结果回空态)——改名「关闭结果」。顺带修掉 CSS 里 `.treeRow` / `.tableRow` 各定义两次(后者整块覆盖前者)的重复规则。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

@@ -20,18 +20,18 @@ import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo
 import type { ReactNode } from 'react'
 import type { RustAsset } from './store.ts'
 import { tauriInvoke } from './tauri.ts'
-import { DbDataGrid, cellText } from './DbDataGrid.tsx'
+import { DbDataGrid, cellText, isNumericCell } from './DbDataGrid.tsx'
 import { SqlEditor, type SqlCompletionSchema } from './SqlEditor.tsx'
 import { ContextMenu, useContextMenu } from './ContextMenu.tsx'
 import {
-  IconBrowseOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseFillMedium,
-  IconCloseOutlineMedium, IconCodeOutlineMedium, IconDataOutlineMedium, IconInspectOutlineMedium,
-  IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium,
+  IconBrowseOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconClockOutlineMedium,
+  IconCloseFillMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconCopyOutlineMedium, IconDatabaseOutlineMedium,
+  IconDataOutlineMedium, IconInspectOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium,
+  IconSearchOutlineMedium, IconWarningOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { NewTableDialog, ColumnListDialog, IndexListDialog } from './DbTableDialogs.tsx'
 import { DbDashboard } from './dashboard/DbDashboard.tsx'
-import { MetricIcon } from './dashboard/metric-icons.tsx'
 import type { CreateTableDbType } from './ddlGenerator.ts'
 import { formatSql, splitStatements } from './sqlFormat.ts'
 import { addHistory, clearHistory, loadHistory, type SqlHistoryEntry } from './sqlHistory.ts'
@@ -166,7 +166,7 @@ function TableRow({ table, selected, database, supportsAlter, expanded, columns,
     { id: 'drop', label: '删除表', danger: true },
   ]
   return (
-    <li key={table}>
+    <li>
       <div className={css.tableRowWrap}>
         <div
           className={`${css.treeRow} ${css.tableRow} ${selected ? css.selected : ''}`}
@@ -189,7 +189,6 @@ function TableRow({ table, selected, database, supportsAlter, expanded, columns,
           </button>
           <span className={css.nodeIcon} aria-hidden="true"><IconBrowseOutlineMedium size={13} /></span>
           <span>{table}</span>
-          {loading && <span className={css.hint}>…</span>}
         </div>
         <ContextMenu
           menu={menu}
@@ -207,12 +206,12 @@ function TableRow({ table, selected, database, supportsAlter, expanded, columns,
       {expanded && (
         <ul className={css.treeList}>
           {loading ? (
-            <li className={`${css.columnRow} ${css.hint}`}>加载列…</li>
+            <li className={css.columnRow}>加载列…</li>
           ) : (
             columns.map(col => (
               <li key={col.name} className={css.columnRow}>
                 <span className={css.columnType} title={col.type ?? ''}>{col.type ?? '?'}</span>
-                <span className={css.columnName}>{col.name}{col.key === 'PRI' ? <span className={css.columnPk}>·PK</span> : ''}</span>
+                <span className={css.columnName}>{col.name}{col.key === 'PRI' ? <span className={css.columnPk}>PK</span> : ''}</span>
               </li>
             ))
           )}
@@ -230,8 +229,12 @@ interface DbRowActions {
 }
 
 /** 单个库行:点击=展开/收起,右键=菜单(新建表 / 刷新表列表)。 */
-function DatabaseRow({ node, children, actions }: {
+function DatabaseRow({ node, isCurrent, tableCount, children, actions }: {
   node: Extract<TreeNode, { kind: 'database' }>
+  /** 是否为当前执行库(SQL 工具栏选中项):高亮 + 左色条。 */
+  isCurrent: boolean
+  /** 已加载表数(未展开/未加载时不显示)。 */
+  tableCount?: number
   /** 展开时渲染的已有表列表(由父组件注入,避免在模块级闭包引用组件状态)。 */
   children?: ReactNode
   actions: DbRowActions
@@ -245,7 +248,7 @@ function DatabaseRow({ node, children, actions }: {
     <div className={css.treeNode}>
       <button
         type="button"
-        className={css.treeRow}
+        className={`${css.treeRow} ${isCurrent ? css.dbRowActive : ''}`}
         onClick={actions.onToggle}
         onContextMenu={menu.onContextMenu}
         title={node.name}
@@ -253,9 +256,11 @@ function DatabaseRow({ node, children, actions }: {
         <span className={css.chevron} aria-hidden="true">
           {node.expanded ? <IconChevronDownOutlineMedium size={12} /> : <IconChevronRightOutlineMedium size={12} />}
         </span>
-        <span className={css.nodeIcon} aria-hidden="true"><IconDataOutlineMedium size={14} /></span>
+        <span className={css.nodeIcon} aria-hidden="true"><IconDatabaseOutlineMedium size={14} /></span>
         <span>{node.name}</span>
-        {node.loading && <span className={css.hint}>…</span>}
+        {node.loading
+          ? <span className={css.treeSpin} aria-label="加载中"><IconRefreshOutlineMedium size={11} /></span>
+          : tableCount !== undefined && <span className={css.tableCount}>{tableCount}</span>}
       </button>
       <ContextMenu
         menu={menu}
@@ -306,11 +311,45 @@ type TreeNode =
 interface SelectedTable { table: string; database?: string }
 
 /** 左侧树记忆持久化形态(localStorage JSON)。 */
-interface TreeMemory { expanded?: string[]; selected?: SelectedTable | null; currentDb?: string; monitor?: boolean }
+interface TreeMemory { expanded?: string[]; selected?: SelectedTable | null; currentDb?: string; monitor?: boolean; width?: number }
 
 /** 监控右栏可拖拽宽度边界(px)。 */
 const MONITOR_MIN_WIDTH = 280
 const MONITOR_MAX_WIDTH = 420
+
+/** 左侧库表树宽度边界与默认值(px)。 */
+const TREE_DEFAULT_WIDTH = 260
+const TREE_MIN_WIDTH = 200
+const TREE_MAX_WIDTH = 420
+
+/** 库树里归入「系统库」折叠组的库名(按 dbType;业务库不被系统库淹没)。 */
+const SYSTEM_DBS: Record<string, ReadonlySet<string>> = {
+  mysql: new Set(['information_schema', 'mysql', 'performance_schema', 'sys']),
+  postgresql: new Set(['template0', 'template1']),
+  mssql: new Set(['master', 'model', 'msdb', 'tempdb']),
+  clickhouse: new Set(['system']),
+}
+
+/** 库节点按 业务库 / 系统库 分组(该 dbType 无系统库概念时全部算业务库)。 */
+function groupDatabases(dbs: readonly TreeNode[], dbType: string): {
+  business: Array<Extract<TreeNode, { kind: 'database' }>>
+  system: Array<Extract<TreeNode, { kind: 'database' }>>
+} {
+  const systemNames = SYSTEM_DBS[dbType]
+  const business: Array<Extract<TreeNode, { kind: 'database' }>> = []
+  const system: Array<Extract<TreeNode, { kind: 'database' }>> = []
+  for (const node of dbs) {
+    if (node.kind !== 'database') continue
+    if (systemNames !== undefined && systemNames.has(node.name)) system.push(node)
+    else business.push(node)
+  }
+  return { business, system }
+}
+
+/** 执行 SQL 是否必须显式选库(多库关系型;SQLite 单文件库不要求)。 */
+function requiresCurrentDb(dbType: string): boolean {
+  return dbType !== 'sqlite'
+}
 
 /** DB 类型 → connect 命令名(与 Vue services/db.ts 对齐;各型有独立 connect)。 */
 function connectCommand(dbType: string): string {
@@ -449,6 +488,8 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
   const [historyEntries, setHistoryEntries] = useState<SqlHistoryEntry[]>([])
   // 表操作弹层(批次 4a):查看 DDL / 确认删除 / 清空。
   const [ddl, setDdl] = useState<{ table: string; content: string; loading?: boolean } | null>(null)
+  // DDL 弹层复制反馈(1.5s 后自动熄灭)。
+  const [ddlCopied, setDdlCopied] = useState(false)
   // 批次 4b 对话框:新建表(按库) / 编辑列 / 索引(按表)。
   const [dialog, setDialog] = useState<
     | { kind: 'new-table'; database: string }
@@ -487,6 +528,37 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     monitorResizeRef.current = false
     event.currentTarget.releasePointerCapture(event.pointerId)
   }, [])
+  // 左侧库表树宽度(px):拖拽右边框调整,夹在 min/max 之间;持久化进树记忆。
+  const [treeWidth, setTreeWidth] = useState(TREE_DEFAULT_WIDTH)
+  const treeResizeRef = useRef(false)
+  const onTreeResizeStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    treeResizeRef.current = true
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }, [])
+  const onTreeResizeMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!treeResizeRef.current) return
+    // 拖动右边框:以 body 左缘为基准反推宽度。
+    const container = event.currentTarget.parentElement
+    if (container === null) return
+    const rect = container.getBoundingClientRect()
+    const next = Math.round(event.clientX - rect.left)
+    setTreeWidth(Math.max(TREE_MIN_WIDTH, Math.min(TREE_MAX_WIDTH, next)))
+  }, [])
+  const onTreeResizeEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!treeResizeRef.current) return
+    treeResizeRef.current = false
+    event.currentTarget.releasePointerCapture(event.pointerId)
+  }, [])
+  // 系统库折叠组(MySQL 等):默认收起让业务库靠前;搜索时强制展开。
+  const [systemDbCollapsed, setSystemDbCollapsed] = useState(true)
+  // 操作错误条(删表/清空/刷新表列表等树操作失败;与连接错误分开,6s 自动消失)。
+  const [opError, setOpError] = useState<string | null>(null)
+  useEffect(() => {
+    if (opError === null) return
+    const timer = window.setTimeout(() =>{  setOpError(null) }, 6000)
+    return () =>{  window.clearTimeout(timer) }
+  }, [opError])
   // 执行 SQL 的当前库:默认取资产配置的 database,点表/手选后跟随;参与持久化记忆。
   const [currentDb, setCurrentDb] = useState<string>(() =>
     typeof asset.config.database === 'string' ? asset.config.database : '')
@@ -591,7 +663,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
       )))
     } catch (e) {
       setDbs(prev => prev.map(d => (d.kind === 'database' && d.name === name ? { ...d, loading: false } : d)))
-      setConnectError(e instanceof Error ? e.message : String(e))
+      setOpError(e instanceof Error ? e.message : String(e))
     }
   }, [cmdPrefix])
 
@@ -622,6 +694,9 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     if (saved === null) return
     if (typeof saved.currentDb === 'string' && saved.currentDb !== '') setCurrentDb(saved.currentDb)
     if (typeof saved.monitor === 'boolean') setShowMonitor(saved.monitor)
+    if (typeof saved.width === 'number') {
+      setTreeWidth(Math.max(TREE_MIN_WIDTH, Math.min(TREE_MAX_WIDTH, Math.round(saved.width))))
+    }
     if (saved.selected !== null && saved.selected !== undefined && typeof saved.selected.table === 'string') {
       setSelected(saved.selected)
       const tab = makeTableTab(saved.selected.table, saved.selected.database)
@@ -630,16 +705,18 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     }
     // 默认展开上次展开的库;选中表所在库即使不在 expanded 里也一并展开。
     const selectedDb = typeof saved.selected?.database === 'string' && saved.selected.database !== '' ? [saved.selected.database] : []
+    // 选中表落在系统库组时,组要跟着展开(否则树里看不到选中项)。
+    if (selectedDb.some(name => SYSTEM_DBS[dbType]?.has(name) === true)) setSystemDbCollapsed(false)
     for (const name of new Set([...(saved.expanded ?? []), ...selectedDb])) void expandDb(name)
-  }, [dbs, treeStoreKey, expandDb])
+  }, [dbs, treeStoreKey, expandDb, dbType])
 
   useEffect(() => {
     if (!restoredRef.current) return
     const expanded = dbs.filter(d => d.kind === 'database' && d.expanded).map(d => d.name)
     try {
-      localStorage.setItem(treeStoreKey, JSON.stringify({ expanded, selected, currentDb, monitor: showMonitor }))
+      localStorage.setItem(treeStoreKey, JSON.stringify({ expanded, selected, currentDb, monitor: showMonitor, width: treeWidth }))
     } catch { /* 存储不可用(隐私模式等)时静默降级 */ }
-  }, [dbs, selected, currentDb, showMonitor, treeStoreKey])
+  }, [dbs, selected, currentDb, showMonitor, treeWidth, treeStoreKey])
 
   // ─── 查询标签页操作(新建 / 关闭 / 修改) ───
   // 不变式:queryTabs 恒非空(单标签时关闭钮隐藏),activeTab 恒存在(兜底空标签)。
@@ -736,6 +813,11 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
       return
     }
     if (statement.trim() === '') return
+    // 未选库时后端只会抛 cryptic 的 "No database selected",这里前置拦截并指路。
+    if (requiresCurrentDb(dbType) && currentDb === '') {
+      patchTab(tabId, { error: '请先选择要执行的数据库(编辑区上方左侧下拉框)' })
+      return
+    }
     setSqlLoading(true)
     patchTab(tabId, { error: null })
     try {
@@ -759,7 +841,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     } finally {
       setSqlLoading(false)
     }
-  }, [activeQueryId, currentDb, cmdPrefix, patchTab])
+  }, [activeQueryId, currentDb, cmdPrefix, dbType, patchTab])
 
   /** 查询历史弹层:打开时刷新条目;再次点击关闭。 */
   const toggleHistory = (): void => {
@@ -812,7 +894,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
       }))
       if (selected !== null && selected.table === table) setSelected(null)
     } catch (e) {
-      setConnectError(`删除失败: ${e instanceof Error ? e.message : String(e)}`)
+      setOpError(`删除失败: ${e instanceof Error ? e.message : String(e)}`)
     }
   }, [selected, cmdPrefix])
 
@@ -824,7 +906,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     try {
       await tauriInvoke(`${cmdPrefix}_truncate_table`, { connId: id, table, ...(database !== undefined ? { database } : {}) })
     } catch (e) {
-      setConnectError(`清空失败: ${e instanceof Error ? e.message : String(e)}`)
+      setOpError(`清空失败: ${e instanceof Error ? e.message : String(e)}`)
     }
   }, [cmdPrefix])
 
@@ -842,7 +924,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
       )))
     } catch (e) {
       setDbs(prev => prev.map(d => (d.kind === 'database' && d.name === database ? { ...d, loading: false } : d)))
-      setConnectError(e instanceof Error ? e.message : String(e))
+      setOpError(e instanceof Error ? e.message : String(e))
     }
   }, [cmdPrefix])
 
@@ -890,85 +972,169 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
     // 仅随 dbs 变化重跑;列 state 更新不重跑(避免重复请求)。
   }, [dbs, cmdPrefix])
 
+  // ─── 渲染派生量 ───
+  // 搜索态:匹配库平铺(不打组、全展开),让结果一眼看完;非搜索态:业务库在前,
+  // 系统库收折叠组。未选库(关系型)时执行/EXPLAIN 禁用并指路,避免后端 cryptic 报错。
+  const groups = groupDatabases(visibleDbs, dbType)
+  const searching = normalizedTreeSearch !== ''
+  const missingDb = requiresCurrentDb(dbType) && currentDb === ''
+  const runDisabled = sqlLoading || activeTab.sql.trim() === '' || missingDb
+  const hostLabel = typeof asset.config.host === 'string' && asset.config.host !== ''
+    ? asset.config.host
+    : typeof asset.config.filePath === 'string' && asset.config.filePath !== ''
+      ? asset.config.filePath
+      : '未配置主机'
+  const portSuffix = typeof asset.config.port === 'number' && asset.config.port > 0 ? `:${asset.config.port}` : ''
+  /** 渲染一个库节点(搜索态平铺 / 非搜索态分组共用)。 */
+  const renderDbNode = (node: TreeNode) => {
+    if (node.kind !== 'database') return null
+    const databaseMatches = node.name.toLocaleLowerCase().includes(normalizedTreeSearch)
+    const visibleTables = !searching || databaseMatches
+      ? node.tables
+      : node.tables.filter(table => table.toLocaleLowerCase().includes(normalizedTreeSearch))
+    return (
+      <li key={node.name}>
+        <DatabaseRow
+          node={{ ...node, expanded: searching || node.expanded }}
+          isCurrent={node.name === currentDb}
+          {...(node.tables.length > 0 ? { tableCount: node.tables.length } : {})}
+          actions={{
+            onToggle: () => void toggleDb(node),
+            onNewTable: () =>{  setDialog({ kind: 'new-table', database: node.name }) },
+            onRefresh: () => void refreshDbTables(node.name),
+          }}
+        >
+          <ul className={css.treeList}>
+            {visibleTables.map(t => (
+              <TableRow
+                key={t}
+                table={t}
+                database={node.name}
+                supportsAlter={supportsAlter}
+                selected={activeTableKey === makeTableTab(t, node.name).key}
+                expanded={expandedTables.has(t)}
+                columns={tableColumns[t] ?? []}
+                loading={tableColumnsLoading[t] === true}
+                actions={{
+                  onSelect: () =>{  openTableTab(t, node.name) },
+                  onToggleColumns: () => void toggleTableColumns(t, node.name),
+                  onShowDdl: () => void showTableDdl(t, node.name),
+                  onColumns: () =>{  setDialog({ kind: 'columns', database: node.name, table: t }) },
+                  onIndexes: () =>{  setDialog({ kind: 'indexes', database: node.name, table: t }) },
+                  onDrop: () => void dropTable(t, node.name),
+                  onTruncate: () => void truncateTable(t, node.name),
+                }}
+              />
+            ))}
+          </ul>
+        </DatabaseRow>
+      </li>
+    )
+  }
+
   return (
     <div className={css.backdrop}>
       <div className={css.panel}>
         <header className={css.header}>
-          <span className={connected ? css.statusOnline : css.statusPending} aria-label={connected ? '数据库已连接' : '数据库连接中'} />
+          <span className={`${css.headerStatus} ${connected ? css.statusOnline : css.statusPending}`} aria-label={connected ? '数据库已连接' : '数据库连接中'}>
+            <span className={css.statusDot} aria-hidden="true" />
+            {connected ? '已连接' : '连接中…'}
+          </span>
           <div className={css.identity}>
             <span className={css.title}>{asset.name}</span>
-            <span className={css.sub}>{dbTypeLabel} · {typeof asset.config.host === 'string' ? asset.config.host : '未配置主机'}</span>
+            <span className={css.sub}>{dbTypeLabel} · {hostLabel}{portSuffix}</span>
           </div>
           <span className={css.spacer} />
-          <button type="button" className={css.iconButton} onClick={() => { const id = connRef.current; if (id !== null) void loadDatabases(id) }} title="刷新数据库" aria-label="刷新数据库"><IconRefreshOutlineMedium size={15} /></button>
-          <button type="button" className={css.iconButton} onClick={onClose} title="关闭工作区" aria-label="关闭工作区"><IconCloseOutlineMedium size={15} /></button>
+          <div className={css.headerActions}>
+            {monitorSupported && (
+              <button
+                type="button"
+                className={`${css.iconChip} ${showMonitor ? css.monitorActive : ''}`}
+                onClick={() =>{  setShowMonitor(v => !v) }}
+                title={showMonitor ? '收起监控面板' : '展开监控面板'}
+                aria-label="监控面板"
+                aria-pressed={showMonitor}
+              ><IconDataOutlineMedium size={13} /> 监控</button>
+            )}
+            <button type="button" className={css.iconButton} onClick={onClose} title="关闭工作区" aria-label="关闭工作区"><IconCloseOutlineMedium size={15} /></button>
+          </div>
         </header>
+        {connectError !== null && (
+          <div className={css.errorBanner} role="alert">
+            <IconWarningOutlineMedium size={14} />
+            <span className={css.errorBannerText}>{connectError}</span>
+            <button type="button" className={css.errorBannerClose} onClick={() =>{  setConnectError(null) }} title="关闭错误提示" aria-label="关闭错误提示"><IconCloseOutlineMedium size={12} /></button>
+          </div>
+        )}
         <div className={css.body}>
-          <aside className={css.tree}>
+          <aside className={css.tree} style={{ width: treeWidth }}>
             <div className={css.treeToolbar}>
               <span className={css.treeTitle}>数据库对象</span>
-              <button type="button" className={css.treeRefresh} onClick={refreshDatabases} title="刷新数据库列表" aria-label="刷新数据库列表"><IconRefreshOutlineMedium size={14} /></button>
+              {dbs.length > 0 && <span className={css.treeMeta}>{dbs.length} 个库</span>}
+              <button type="button" className={css.treeRefresh} onClick={refreshDatabases} title="刷新数据库列表" aria-label="刷新数据库列表"><IconRefreshOutlineMedium size={13} /></button>
             </div>
-            <input
-              type="search"
-              className={css.treeSearch}
-              value={treeSearch}
-              onChange={(event) =>{  setTreeSearch(event.target.value) }}
-              placeholder="搜索数据库或表"
-              aria-label="搜索数据库或表"
-            />
-            {connectError !== null && <div className={css.error}>{connectError}</div>}
-            {dbsLoading && <div className={css.hint}>加载数据库…</div>}
-            {!dbsLoading && dbs.length === 0 && !connectError && <div className={css.hint}>无数据库</div>}
-            {normalizedTreeSearch !== '' && visibleDbs.length === 0 && !dbsLoading && (
-              <div className={css.hint}>没有匹配的已加载表</div>
-            )}
-            <ul className={css.treeList}>
-              {visibleDbs.map((node) => {
-                if (node.kind !== 'database') return null
-                const databaseMatches = node.name.toLocaleLowerCase().includes(normalizedTreeSearch)
-                const visibleTables = normalizedTreeSearch === '' || databaseMatches
-                  ? node.tables
-                  : node.tables.filter(table => table.toLocaleLowerCase().includes(normalizedTreeSearch))
-                return (
-                  <li key={node.name}>
-                    <DatabaseRow
-                      node={{ ...node, expanded: normalizedTreeSearch !== '' || node.expanded }}
-                      actions={{
-                        onToggle: () => void toggleDb(node),
-                        onNewTable: () =>{  setDialog({ kind: 'new-table', database: node.name }) },
-                        onRefresh: () => void refreshDbTables(node.name),
-                      }}
-                    >
-                      <ul className={css.treeList}>
-                        {visibleTables.map(t => (
-                          <TableRow
-                            key={t}
-                            table={t}
-                            database={node.name}
-                            supportsAlter={supportsAlter}
-                            selected={activeTableKey === makeTableTab(t, node.name).key}
-                            expanded={expandedTables.has(t)}
-                            columns={tableColumns[t] ?? []}
-                            loading={tableColumnsLoading[t] === true}
-                            actions={{
-                              onSelect: () =>{  openTableTab(t, node.name) },
-                              onToggleColumns: () => void toggleTableColumns(t, node.name),
-                              onShowDdl: () => void showTableDdl(t, node.name),
-                              onColumns: () =>{  setDialog({ kind: 'columns', database: node.name, table: t }) },
-                              onIndexes: () =>{  setDialog({ kind: 'indexes', database: node.name, table: t }) },
-                              onDrop: () => void dropTable(t, node.name),
-                              onTruncate: () => void truncateTable(t, node.name),
-                            }}
-                          />
-                        ))}
-                      </ul>
-                    </DatabaseRow>
-                  </li>
-                )
-              })}
-            </ul>
+            <div className={css.treeSearchBox}>
+              <span className={css.treeSearchIcon} aria-hidden="true"><IconSearchOutlineMedium size={12} /></span>
+              <input
+                type="search"
+                className={css.treeSearch}
+                value={treeSearch}
+                onChange={(event) =>{  setTreeSearch(event.target.value) }}
+                onKeyDown={(event) =>{  if (event.key === 'Escape') setTreeSearch('') }}
+                placeholder="搜索数据库或表"
+                aria-label="搜索数据库或表"
+              />
+            </div>
+            <div className={css.treeScroll}>
+              {dbsLoading && (
+                <div className={css.skeleton} aria-label="加载数据库">
+                  <div className={css.skeletonBar} style={{ width: '82%' }} />
+                  <div className={css.skeletonBar} style={{ width: '64%' }} />
+                  <div className={css.skeletonBar} style={{ width: '74%' }} />
+                </div>
+              )}
+              {!dbsLoading && dbs.length === 0 && !connectError && <div className={css.treeEmpty}>无数据库</div>}
+              {searching && visibleDbs.length === 0 && !dbsLoading && (
+                <div className={css.treeEmpty}>没有匹配的数据库或表</div>
+              )}
+              {searching && (
+                <ul className={css.treeList}>{visibleDbs.map(renderDbNode)}</ul>
+              )}
+              {!searching && (
+                <>
+                  <ul className={css.treeList}>{groups.business.map(renderDbNode)}</ul>
+                  {groups.system.length > 0 && (
+                    <div className={css.treeGroup}>
+                      <button
+                        type="button"
+                        className={css.treeGroupHead}
+                        onClick={() =>{  setSystemDbCollapsed(v => !v) }}
+                        title={systemDbCollapsed ? '展开系统库' : '收起系统库'}
+                        aria-expanded={!systemDbCollapsed}
+                      >
+                        <span className={css.treeGroupChevron} aria-hidden="true">
+                          {systemDbCollapsed ? <IconChevronRightOutlineMedium size={11} /> : <IconChevronDownOutlineMedium size={11} />}
+                        </span>
+                        <span className={css.treeGroupLabel}>系统库</span>
+                        <span className={css.treeGroupCount}>{groups.system.length}</span>
+                      </button>
+                      {!systemDbCollapsed && <ul className={css.treeList}>{groups.system.map(renderDbNode)}</ul>}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </aside>
+          <div
+            className={css.treeResize}
+            onPointerDown={onTreeResizeStart}
+            onPointerMove={onTreeResizeMove}
+            onPointerUp={onTreeResizeEnd}
+            onPointerCancel={onTreeResizeEnd}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整侧边栏宽度"
+          />
           <section className={css.contentGrid}>
             <div className={css.contentHeader}>
               {/* 统一 tab 条:查询标签 + 表数据标签混排;点表在左侧树开一个表标签。 */}
@@ -980,6 +1146,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                     ref={(el) =>{  if (el !== null) tabNodeRefs.current.set(`q-${tab.id}`, el); else tabNodeRefs.current.delete(`q-${tab.id}`) }}
                     className={`${css.queryTab} ${activeTableKey === null && tab.id === activeQueryId ? css.queryTabActive : ''}`}
                   >
+                    <span className={css.queryTabIcon} aria-hidden="true"><IconCodeOutlineMedium size={12} /></span>
                     <button
                       type="button"
                       role="tab"
@@ -988,8 +1155,9 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                       onClick={() =>{  setActiveQueryId(tab.id); setActiveTableKey(null) }}
                       title={tab.sql !== '' ? tab.sql : tab.name}
                     >
-                      {tab.name}{tab.results.length > 0 ? ' ●' : ''}
+                      {tab.name}
                     </button>
+                    {tab.results.length > 0 && <span className={css.queryTabDot} title="已有执行结果" aria-hidden="true" />}
                     {queryTabs.length > 1 && (
                       <button
                         type="button"
@@ -1007,6 +1175,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                     ref={(el) =>{  if (el !== null) tabNodeRefs.current.set(`t-${tab.key}`, el); else tabNodeRefs.current.delete(`t-${tab.key}`) }}
                     className={`${css.queryTab} ${activeTableKey === tab.key ? css.queryTabActive : ''}`}
                   >
+                    <span className={css.queryTabIcon} aria-hidden="true"><IconBrowseOutlineMedium size={12} /></span>
                     <button
                       type="button"
                       role="tab"
@@ -1029,51 +1198,53 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                 </div>
                 <button type="button" className={css.queryTabNew} onClick={newQuery} title="新建查询标签" aria-label="新建查询"><IconPlusOutlineMedium size={12} /> 新建查询</button>
               </div>
-              <span className={css.spacer} />
-              {monitorSupported && (
-                <button
-                  type="button"
-                  className={`${css.iconButton} ${showMonitor ? css.monitorActive : ''}`}
-                  onClick={() =>{  setShowMonitor(v => !v) }}
-                  title={showMonitor ? '收起监控面板' : '展开监控面板'}
-                  aria-label="监控面板"
-                  aria-pressed={showMonitor}
-                ><IconDataOutlineMedium size={15} /></button>
-              )}
             </div>
+            {opError !== null && (
+              <div className={css.opError} role="alert">
+                <IconWarningOutlineMedium size={13} />
+                <span className={css.opErrorText}>{opError}</span>
+                <button type="button" className={css.errorBannerClose} onClick={() =>{  setOpError(null) }} title="关闭错误提示" aria-label="关闭错误提示"><IconCloseOutlineMedium size={12} /></button>
+              </div>
+            )}
             {connected ? (
               activeTableKey === null ? (
                 <div className={css.sqlMode}>
                   <div className={css.sqlPane} style={{ height: sqlPaneHeight }}>
                     <div className={css.sqlBar}>
-                      <span className={css.sqlLabel}>SQL</span>
-                      <select
-                        className={css.dbSelect}
-                        value={currentDb}
-                        onChange={(event) =>{  setCurrentDb(event.target.value) }}
-                        title="执行 SQL 的当前数据库"
-                        aria-label="当前数据库"
-                      >
-                        <option value="">(未选库)</option>
-                        {dbs.map(d => d.kind === 'database' && (
-                          <option key={d.name} value={d.name}>{d.name}</option>
-                        ))}
-                      </select>
-                      <span className={css.hint}>Mod-Enter 执行 · Shift-Mod-e EXPLAIN · Tab 缩进</span>
-                      {sqlLoading && <span className={css.hint}>执行中…</span>}
+                      <span className={css.sqlBadge}>SQL</span>
+                      {requiresCurrentDb(dbType) && (
+                        <span className={css.dbSelectWrap}>
+                          <span className={css.dbSelectIcon} aria-hidden="true"><IconDatabaseOutlineMedium size={12} /></span>
+                          <select
+                            className={`${css.dbSelect} ${missingDb ? css.dbSelectWarn : ''}`}
+                            value={currentDb}
+                            onChange={(event) =>{  setCurrentDb(event.target.value) }}
+                            title={missingDb ? '未选择数据库:执行 SQL 前请先选择(点左侧树里的库也会自动选中)' : '执行 SQL 的当前数据库'}
+                            aria-label="当前数据库"
+                          >
+                            <option value="">(未选库)</option>
+                            {dbs.map(d => d.kind === 'database' && (
+                              <option key={d.name} value={d.name}>{d.name}</option>
+                            ))}
+                          </select>
+                        </span>
+                      )}
                       <span className={css.spacer} />
-                      <button type="button" className={css.sqlRunBtn} onClick={() => void executeSql(activeTab.sql, false)} disabled={sqlLoading || activeTab.sql.trim() === ''} title={activeTab.sql.trim() === '' ? '输入 SQL 后可执行' : '执行 SQL (Mod-Enter)'} aria-label="执行 SQL"><IconPlayOutlineMedium size={13} /></button>
-                      <button type="button" className={css.sqlBarBtn} onClick={() => void executeSql(activeTab.sql, true)} disabled={sqlLoading || activeTab.sql.trim() === ''} title={activeTab.sql.trim() === '' ? '输入 SQL 后可执行 EXPLAIN' : '执行 EXPLAIN (Shift-Mod-e)'} aria-label="执行 EXPLAIN"><IconInspectOutlineMedium size={13} /></button>
-                      <button type="button" className={css.sqlBarBtn} onClick={formatCurrentSql} title="格式化 SQL" aria-label="格式化 SQL"><IconCodeOutlineMedium size={13} /></button>
-                      <button type="button" className={`${css.sqlBarBtn} ${historyOpen ? css.sqlBarBtnActive : ''}`} onClick={toggleHistory} title="查询历史" aria-label="查询历史"><MetricIcon name="clock" size={13} /></button>
+                      {sqlLoading && <span className={css.sqlExecuting}>执行中…</span>}
+                      <div className={css.sqlBarGroup}>
+                        <button type="button" className={css.sqlBarBtn} onClick={formatCurrentSql} title="格式化 SQL" aria-label="格式化 SQL"><IconCodeOutlineMedium size={13} /></button>
+                        <button type="button" className={`${css.sqlBarBtn} ${historyOpen ? css.sqlBarBtnActive : ''}`} onClick={toggleHistory} title="查询历史" aria-label="查询历史"><IconClockOutlineMedium size={13} /></button>
+                        <button type="button" className={css.sqlBarBtn} onClick={() => void executeSql(activeTab.sql, true)} disabled={runDisabled} title={missingDb ? '请先选择数据库' : activeTab.sql.trim() === '' ? '输入 SQL 后可执行 EXPLAIN' : '执行 EXPLAIN (Shift-Mod-e)'} aria-label="执行 EXPLAIN"><IconInspectOutlineMedium size={13} /></button>
+                        <button type="button" className={css.sqlRunBtn} onClick={() => void executeSql(activeTab.sql, false)} disabled={runDisabled} title={missingDb ? '请先选择数据库' : activeTab.sql.trim() === '' ? '输入 SQL 后可执行' : '执行 SQL (Mod-Enter)'} aria-label="执行 SQL"><IconPlayOutlineMedium size={12} /> 执行</button>
+                      </div>
                     </div>
                     {/* 查询/表标签条已上移到内容区头部(统一 tab 条)。 */}
                     {historyOpen && (
                       <div className={css.historyPanel}>
                         <div className={css.historyHeader}>
-                          <span className={css.hint}>查询历史</span>
+                          <span>查询历史</span>
                           <span className={css.spacer} />
-                          <button type="button" className={css.sqlBarBtn} onClick={clearSqlHistory}>清除</button>
+                          <button type="button" className={css.historyClear} onClick={clearSqlHistory}>清除</button>
                         </div>
                         <div className={css.historyList}>
                           {historyEntries.length === 0 ? (
@@ -1088,7 +1259,7 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                                 title={`${entry.db !== '' ? `[${entry.db}] ` : ''}${entry.sql}`}
                               >
                                 <span className={css.historySql}>{entry.sql}</span>
-                                <span className={css.hint}>{(new Date(entry.time)).toLocaleTimeString()}</span>
+                                <span className={css.historyTime}>{(new Date(entry.time)).toLocaleTimeString()}</span>
                               </button>
                             ))
                           )}
@@ -1101,9 +1272,14 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                       dialect={dialect === 'postgresql' ? 'postgresql' : 'mysql'}
                       onExecute={(statement, explain) => void executeSql(statement, explain)}
                       schema={sqlSchema}
-                      placeholder="SELECT * FROM users WHERE …"
+                      placeholder="在此输入 SQL,Mod-Enter 执行"
                     />
-                    {activeTab.error !== null && <div className={css.error}>{activeTab.error}</div>}
+                    {activeTab.error !== null && (
+                      <div className={css.sqlError} role="alert">
+                        <IconWarningOutlineMedium size={13} />
+                        <span className={css.sqlErrorText}>{activeTab.error}</span>
+                      </div>
+                    )}
                   </div>
                   {/* SQL 编辑区与结果区之间的可拖拽横向分隔条。 */}
                   <div
@@ -1119,7 +1295,14 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                   {/* 结果区:当前活动标签的执行结果(多语句时逐个结果集可切换),或空态占位。 */}
                   <div className={css.sqlResultArea}>
                     {activeTab.results.length === 0 ? (
-                      <div className={css.placeholder}>运行查询后将在此显示结果(执行 / EXPLAIN)</div>
+                      <div className={css.placeholder}>
+                        <span className={css.placeholderIcon} aria-hidden="true"><IconInspectOutlineMedium size={30} /></span>
+                        <span className={css.placeholderTitle}>运行查询后在此显示结果</span>
+                        <span className={css.placeholderHint}>Mod-Enter 执行 · Shift-Mod-e EXPLAIN · Tab 缩进</span>
+                        {missingDb && (
+                          <span className={css.placeholderWarn}><IconWarningOutlineMedium size={12} /> 请先在上方选择要执行的数据库</span>
+                        )}
+                      </div>
                     ) : (
                       <>
                         {activeTab.results.length > 1 && (
@@ -1141,7 +1324,12 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                           const shown = activeTab.results[Math.min(activeTab.resultIndex, activeTab.results.length - 1)]
                           /* v8 ignore next -- 下标已夹在数组范围内,取不到为不可达防御 */
                           if (shown === undefined) return null
-                          if (shown.error !== null) return <div className={css.error} role="alert">{shown.error}</div>
+                          if (shown.error !== null) return (
+                            <div className={css.sqlError} role="alert">
+                              <IconWarningOutlineMedium size={13} />
+                              <span className={css.sqlErrorText}>{shown.error}</span>
+                            </div>
+                          )
                           if (shown.result === null) return null
                           return <SqlQueryResultView result={shown.result} onClose={() =>{  patchTab(activeQueryId, { results: [], resultIndex: 0 }) }} />
                         })()}
@@ -1166,7 +1354,10 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
                 })()
               )
             ) : (
-              <div className={css.placeholder}>连接数据库后将在此显示 SQL 编辑器</div>
+              <div className={css.placeholder}>
+                <span className={css.placeholderIcon} aria-hidden="true"><IconDatabaseOutlineMedium size={30} /></span>
+                <span className={css.placeholderTitle}>连接数据库后将在此显示 SQL 编辑器</span>
+              </div>
             )}
           </section>
           {monitorSupported && showMonitor && (
@@ -1198,6 +1389,16 @@ export function DbWorkbench({ asset, onClose }: { asset: RustAsset; onClose: () 
               <header className={css.ddlHeader}>
                 <span className={css.title}>DDL · {ddl.table}</span>
                 <span className={css.spacer} />
+                <button
+                  type="button"
+                  className={css.ddlCopy}
+                  disabled={ddl.loading === true || ddl.content === ''}
+                  onClick={() =>{
+                    void navigator.clipboard?.writeText(ddl.content)
+                      .then(() =>{  setDdlCopied(true); window.setTimeout(() =>{  setDdlCopied(false) }, 1500) })
+                      .catch(() =>{  setDdlCopied(false) })
+                  }}
+                ><IconCopyOutlineMedium size={12} />{ddlCopied ? '已复制' : '复制'}</button>
                 <button type="button" className={css.closeBtn} onClick={() =>{  setDdl(null) }}>关闭</button>
               </header>
               <pre className={css.ddlBody}>{ddl.loading === true ? '加载中…' : (ddl.content || '')}</pre>
@@ -1247,8 +1448,8 @@ export default DbWorkbench
 
 /**
  * 渲染一次 SQL 执行的原始结果(execute 返回全量 QueryResult),填充底部数据栏:
- * 一行渲染列头,数据行直接展示,NULL 灰显;rowCount 上限防爆。SQL 结果不走
- * 服务端分页(execute 一次性返回),因此不做虚拟滚动。onClose 关闭后回到表数据。
+ * 一行渲染列头,数据行直接展示,NULL 灰显、数字右对齐;rowCount 上限防爆。SQL 结果
+ * 不走服务端分页(execute 一次性返回),因此不做虚拟滚动。onClose 关闭后回到空态。
  */
 function SqlQueryResultView({ result, onClose }: { result: SqlQueryResult; onClose: () => void }) {
   const columns = Array.isArray(result.columns)
@@ -1260,12 +1461,16 @@ function SqlQueryResultView({ result, onClose }: { result: SqlQueryResult; onClo
   return (
     <div className={css.sqlResult}>
       <div className={css.sqlResultBar}>
-        <span>执行结果{columns.length > 0 ? ` · ${columns.length} 列` : ''}{rows.length > 0 ? ` · ${rows.length} 行` : ''}</span>
+        <span>
+          执行结果
+          {columns.length > 0 && <>{` · `}<b>{columns.length}</b>{` 列`}</>}
+          {rows.length > 0 && <>{` · `}<b>{rows.length}</b>{` 行`}</>}
+        </span>
         <span className={css.spacer} />
-        <button type="button" className={css.sqlBarBtn} onClick={onClose} title="关闭执行结果,回到表数据" aria-label="关闭执行结果">返回表数据</button>
+        <button type="button" className={css.sqlBarBtn} onClick={onClose} title="关闭执行结果" aria-label="关闭执行结果">关闭结果</button>
       </div>
       {columns.length === 0 ? (
-        <div className={css.hint}>完成{rows.length > 0 ? `,影响 ${rows.length} 行` : ''}</div>
+        <div className={css.sqlResultDone}>完成{rows.length > 0 ? `,影响 ${rows.length} 行` : ''}</div>
       ) : (
         <div className={css.sqlTableWrap}>
           <table className={css.sqlTable}>
@@ -1276,7 +1481,14 @@ function SqlQueryResultView({ result, onClose }: { result: SqlQueryResult; onClo
               {display.map((row, ri) => (
                 <tr key={ri}>
                   {columns.map((_c, ci) => (
-                    <td key={ci} className={row[ci] === null || row[ci] === undefined ? css.tdNull : undefined}>
+                    <td
+                      key={ci}
+                      className={
+                        row[ci] === null || row[ci] === undefined
+                          ? css.tdNull
+                          : isNumericCell(row[ci]) ? css.tdNum : undefined
+                      }
+                    >
                       {cellText(row[ci])}
                     </td>
                   ))}

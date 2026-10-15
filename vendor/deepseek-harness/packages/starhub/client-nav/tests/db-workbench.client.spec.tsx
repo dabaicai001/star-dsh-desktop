@@ -26,11 +26,14 @@ function stubInvoke(scenario: {
   execute?: unknown
   rowCount?: unknown
   fail?: boolean
+  /** 指定命令拒绝(用于构造树操作失败等局部错误场景)。 */
+  failCmd?: readonly string[]
 }) {
   const calls: Array<[cmd: string, args: Record<string, unknown>]> = []
   const invoke = vi.fn((cmd: string, args?: Record<string, unknown>) => {
     const a = (args ?? {})
     calls.push([cmd, a])
+    if (scenario.failCmd?.includes(cmd) === true) return Promise.reject(new Error(`${cmd} boom`))
     if (scenario.fail) return Promise.reject(new Error('boom'))
     switch (cmd) {
       case 'db_mysql_connect': return Promise.resolve(scenario.connect ?? { connId: 'c1', host: 'h', port: 3306 })
@@ -120,6 +123,10 @@ describe('DbWorkbench', () => {
     const { unmount } = render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
     await waitFor(() =>{  expect(calls.some(([cmd]) => cmd === 'db_mysql_connect')).toBe(true) })
     await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
+    // MySQL 系统库(sys)归入「系统库」折叠组:默认收起,展开组头后才可见。
+    await waitFor(() =>{  expect(screen.getByText('系统库')).toBeTruthy() })
+    expect(screen.queryByTitle('sys')).toBeNull()
+    fireEvent.click(screen.getByText('系统库'))
     await waitFor(() =>{  expect(screen.getByTitle('sys')).toBeTruthy() })
     expect(invoke).toHaveBeenCalledWith('db_mysql_connect', {
       params: { host: '10.0.0.1', port: 3306, username: 'root', password: 'pw' },
@@ -153,7 +160,7 @@ describe('DbWorkbench', () => {
     expect(screen.getByTitle('sys')).toBeTruthy()
     expect(screen.queryByTitle('app')).toBeNull()
     fireEvent.change(search, { target: { value: 'missing' } })
-    expect(screen.getByText('没有匹配的已加载表')).toBeTruthy()
+    expect(screen.getByText('没有匹配的数据库或表')).toBeTruthy()
     expect(calls.some(([cmd]) => cmd === 'db_mysql_list_tables')).toBe(true)
   })
 
@@ -195,6 +202,66 @@ describe('DbWorkbench', () => {
       expect(saved.selected?.table).toBe('users')
       expect(saved.currentDb).toBe('app')
     })
+  })
+
+  it('groups MySQL system databases into a collapsible group, business databases first', async () => {
+    stubInvoke({ databases: ['app', 'information_schema', 'sys'] })
+    render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
+    // 系统库默认收在折叠组里,业务库直接可见。
+    expect(screen.getByText('系统库')).toBeTruthy()
+    expect(screen.queryByTitle('information_schema')).toBeNull()
+    expect(screen.queryByTitle('sys')).toBeNull()
+    // 展开组头 → 系统库可见。
+    fireEvent.click(screen.getByText('系统库'))
+    await waitFor(() =>{  expect(screen.getByTitle('sys')).toBeTruthy() })
+    expect(screen.getByTitle('information_schema')).toBeTruthy()
+    // 搜索态平铺展示(不打组):系统库也能直接命中。
+    const search = screen.getByRole('searchbox', { name: '搜索数据库或表' })
+    fireEvent.change(search, { target: { value: 'sys' } })
+    expect(screen.getByTitle('sys')).toBeTruthy()
+  })
+
+  it('disables run/EXPLAIN and warns until a database is selected', async () => {
+    stubInvoke({})
+    render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
+    // 资产未配默认库 → 未选库:执行/EXPLAIN 禁用,title 指路选库;选择器也是警告态。
+    const run = screen.getByRole('button', { name: '执行 SQL' })
+    expect(run.hasAttribute('disabled')).toBe(true)
+    expect(run.getAttribute('title')).toContain('请先选择数据库')
+    expect(screen.getByRole('button', { name: '执行 EXPLAIN' }).hasAttribute('disabled')).toBe(true)
+    const select = screen.getByRole('combobox', { name: '当前数据库' })
+    expect(select.getAttribute('title')).toContain('未选择数据库')
+    // 选库后警告解除(title 回到空 SQL 提示)。
+    fireEvent.change(select, { target: { value: 'app' } })
+    expect(screen.getByRole('combobox', { name: '当前数据库' }).getAttribute('title')).toBe('执行 SQL 的当前数据库')
+    expect(screen.getByRole('button', { name: '执行 SQL' }).getAttribute('title')).toBe('输入 SQL 后可执行')
+  })
+
+  it('restores the remembered sidebar width from tree memory', async () => {
+    localStorage.setItem('starhub.db.workbench.db1', JSON.stringify({ expanded: [], selected: null, currentDb: 'app', width: 320 }))
+    stubInvoke({})
+    const { container } = render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
+    const tree = container.querySelector('aside')
+    expect((tree as HTMLElement).style.width).toBe('320px')
+  })
+
+  it('surfaces a tree operation failure as a dismissible banner, not a connect error', async () => {
+    stubInvoke({ failCmd: ['db_mysql_drop_table'] })
+    render(<DbWorkbench asset={dbAsset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(screen.getByTitle('app')).toBeTruthy() })
+    fireEvent.click(screen.getByTitle('app'))
+    await waitFor(() =>{  expect(screen.getByText('users')).toBeTruthy() })
+    // 右键表 → 删除表(confirm 已 mock 为 true)→ drop 失败 → 操作错误横幅。
+    fireEvent.contextMenu(screen.getByText('users'))
+    await waitFor(() =>{  expect(screen.getByText('删除表')).toBeTruthy() })
+    fireEvent.click(screen.getByText('删除表'))
+    await waitFor(() =>{  expect(screen.getByText(/删除失败: db_mysql_drop_table boom/)).toBeTruthy() })
+    // 连接与树不受影响(不是连接错误)。
+    expect(screen.getByTitle('app')).toBeTruthy()
+    expect(screen.getByText('users')).toBeTruthy()
   })
 
   it('paginates by the unfiltered row count (get_row_count), not just filtered totals', async () => {

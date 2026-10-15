@@ -1,155 +1,225 @@
+/* StarHub DB 工作台样式(v0.137.0 改版:分层信息架构 + 系统库分组 + 空态引导)。
+   配色全部走 DSW alias token,深浅主题自适应。 */
+
 .backdrop { display: flex; flex: 1; min-width: 0; min-height: 0; background: var(--dsw-alias-bg-layer-1); }
 
 .panel { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
 
-.header { display: flex; min-height: 58px; align-items: center; gap: 12px; padding: 0 18px; border-bottom: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-3); }
-
-.identity { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+/* ─── 头部:状态 chip + 身份 + 动作区 ─── */
+.header { display: flex; min-height: 52px; flex: none; align-items: center; gap: 14px; padding: 0 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-3); }
+.headerStatus { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 7px; border-radius: 999px; font-size: 11px; font-weight: 650; }
+.statusOnline { background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent); color: var(--dsw-alias-state-success-primary); }
+.statusPending { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 14%, transparent); color: var(--dsw-alias-state-warn-primary); }
+.statusDot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
+.statusOnline .statusDot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-success-primary) 22%, transparent); }
+.statusPending .statusDot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-warn-primary) 22%, transparent); }
+.identity { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .title { overflow: hidden; color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 .sub { overflow: hidden; color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.statusOnline, .statusPending { width: 8px; height: 8px; flex: none; border-radius: 50%; }
-.statusOnline { background: var(--dsw-alias-state-success-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-success-primary) 15%, transparent); }
-.statusPending { background: var(--dsw-alias-state-warn-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-warn-primary) 15%, transparent); }
 .spacer { flex: 1; }
-.iconButton { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; font-size: 17px; line-height: 1; }
+.headerActions { display: flex; flex: none; align-items: center; gap: 8px; }
+.iconButton { display: inline-flex; width: 30px; height: 30px; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; line-height: 1; }
 .iconButton:hover { border-color: var(--dsw-alias-border-l3); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
-.closeBtn { border: 1px solid transparent; border-radius: 6px; padding: 6px 10px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; }
+.iconChip { display: inline-flex; height: 28px; align-items: center; gap: 6px; padding: 0 11px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font-size: 12px; }
+.iconChip:hover { border-color: var(--dsw-alias-border-l3); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.monitorActive { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-tertiary); color: var(--dsw-alias-state-business-primary); }
+.closeBtn { display: inline-flex; width: 30px; height: 30px; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; }
 .closeBtn:hover { border-color: var(--dsw-alias-border-l3); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+
+/* ─── 全局错误横幅(连接错误/配置错误;可关闭) ─── */
+.errorBanner { display: flex; flex: none; align-items: center; gap: 8px; padding: 7px 16px; border-bottom: 1px solid var(--dsw-alias-state-error-secondary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent); color: var(--dsw-alias-state-error-primary); font-size: 12px; }
+.errorBannerText { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.errorBannerClose { display: inline-flex; width: 22px; height: 22px; flex: none; align-items: center; justify-content: center; border: 0; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; opacity: 0.75; }
+.errorBannerClose:hover { background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 18%, transparent); opacity: 1; }
 
 .body { display: flex; flex: 1; min-height: 0; background: var(--dsw-alias-bg-layer-1); }
 
-.tree { width: 250px; min-width: 200px; max-width: 360px; overflow-x: hidden; overflow-y: auto; padding: 10px 8px; border-right: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); scrollbar-width: thin; scrollbar-color: var(--dsw-alias-scrollbar-bg-l1) var(--dsw-alias-bg-layer-2); }
-.tree::-webkit-scrollbar { width: 10px; height: 10px; }
-.tree::-webkit-scrollbar-track { background: var(--dsw-alias-bg-layer-2); }
-.tree::-webkit-scrollbar-thumb { border: 3px solid var(--dsw-alias-bg-layer-2); border-radius: 8px; background: var(--dsw-alias-scrollbar-bg-l1); }
-.tree::-webkit-scrollbar-thumb:hover { background: var(--dsw-alias-scrollbar-hover-l1); }
-.treeToolbar { display: flex; height: 32px; align-items: center; gap: 6px; padding: 0 4px; }
-.treeTitle { color: var(--dsw-alias-label-tertiary); font-size: 11px; font-weight: 750; }
-.treeRefresh { display: inline-flex; width: 28px; height: 28px; margin-left: auto; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; font-size: 16px; line-height: 1; }
+/* ─── 左侧库表树 ─── */
+.tree { width: 260px; min-width: 200px; max-width: 420px; flex: none; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); }
+.treeResize { flex: none; width: 5px; margin-left: -5px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
+.treeResize:hover, .treeResize:active { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent); }
+.treeToolbar { display: flex; height: 36px; flex: none; align-items: center; gap: 6px; padding: 0 10px 0 12px; }
+.treeTitle { color: var(--dsw-alias-label-tertiary); font-size: 11px; font-weight: 750; letter-spacing: 0.02em; }
+.treeMeta { color: var(--dsw-alias-label-dimmed); font-size: 10px; font-variant-numeric: tabular-nums; }
+.treeRefresh { display: inline-flex; width: 26px; height: 26px; margin-left: auto; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; line-height: 1; }
 .treeRefresh:hover { border-color: var(--dsw-alias-border-l3); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
-.treeSearch { box-sizing: border-box; width: 100%; height: 30px; margin: 5px 0 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; outline: none; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 0 9px; }
+.treeSearchBox { position: relative; flex: none; padding: 0 10px 8px; }
+.treeSearchIcon { position: absolute; top: 50%; left: 20px; color: var(--dsw-alias-label-tertiary); pointer-events: none; transform: translateY(-60%); }
+.treeSearch { box-sizing: border-box; width: 100%; height: 28px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; outline: none; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 0 9px 0 28px; }
 .treeSearch::placeholder { color: var(--dsw-alias-label-tertiary); }
-.treeSearch:focus { border-color: var(--dsw-alias-state-business-primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 20%, transparent); }
+.treeSearch:focus { border-color: var(--dsw-alias-state-business-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent); }
+.treeScroll { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 0 6px 10px; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-scrollbar-bg-l1) transparent; }
+.treeScroll::-webkit-scrollbar { width: 10px; }
+.treeScroll::-webkit-scrollbar-track { background: transparent; }
+.treeScroll::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 8px; background: var(--dsw-alias-scrollbar-bg-l1); background-clip: padding-box; }
+.treeScroll::-webkit-scrollbar-thumb:hover { background: var(--dsw-alias-scrollbar-hover-l1); background-clip: padding-box; }
 
 .treeList { min-width: 0; list-style: none; margin: 0; padding: 0; }
 .treeList li, .treeNode { min-width: 0; margin: 0; }
 
-.treeRow { display: flex; min-width: 0; align-items: center; gap: 5px; width: 100%; border: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; text-align: left; padding: 5px 8px; border-radius: 6px; cursor: pointer; overflow: hidden; }
+/* 系统库折叠组 */
+.treeGroup { margin-top: 6px; }
+.treeGroupHead { display: flex; width: 100%; align-items: center; gap: 5px; border: 0; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-tertiary); font: inherit; font-size: 11px; font-weight: 750; text-align: left; padding: 5px 8px; cursor: pointer; }
+.treeGroupHead:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); }
+.treeGroupChevron { display: inline-flex; width: 12px; flex: none; align-items: center; justify-content: center; }
+.treeGroupLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.treeGroupCount { flex: none; color: var(--dsw-alias-label-dimmed); font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* 库行:当前库高亮(左色条 + 浅底),表数 badge 在展开后出现。 */
+.treeRow { display: flex; min-width: 0; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; text-align: left; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
+.treeRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.treeRow:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .treeRow > :not(.chevron):not(.nodeIcon) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.treeRow:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
-
-.tableRow { padding-left: 8px; color: var(--dsw-alias-label-tertiary); }
-.tableRow.selected { background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-state-business-primary); box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary); }
-.tableRow.selected .nodeIcon { color: var(--dsw-alias-state-business-primary); }
-/* 表行内嵌字段树切换钮(独立于行选中)。 */
-.tableRowWrap { display: flex; flex-direction: column; }
-.tableRow { display: flex; min-width: 0; align-items: center; gap: 5px; width: 100%; border: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; text-align: left; padding: 5px 8px; border-radius: 6px; cursor: pointer; overflow: hidden; }
-.tableRow:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
-.treeChevron { display: inline-flex; width: 16px; height: 16px; flex: none; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; padding: 0; line-height: 1; }
-.treeChevron:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-state-business-primary); }
-/* 字段树列:类型标签 + 列名(主键标注)。 */
-.columnRow { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 40px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
-.columnType { flex: none; min-width: 16px; text-align: right; color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code); font-size: 10px; }
-.columnName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-primary); }
-.columnPk { margin-left: 2px; color: var(--dsw-alias-state-warn-primary); font-size: 9px; font-weight: 650; }
-
+.dbRowActive { background: var(--dsw-alias-state-business-tertiary); color: var(--dsw-alias-state-business-primary); font-weight: 650; box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary); }
+.dbRowActive .nodeIcon { color: var(--dsw-alias-state-business-primary); }
 .chevron { width: 12px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--dsw-alias-label-tertiary); }
 .nodeIcon { width: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--dsw-alias-state-business-primary); }
+.tableCount { flex: none; margin-left: auto; padding-left: 6px; color: var(--dsw-alias-label-dimmed); font-size: 10px; font-variant-numeric: tabular-nums; }
+.treeSpin { display: inline-flex; flex: none; margin-left: auto; color: var(--dsw-alias-label-tertiary); }
+.treeSpin svg { animation: dbTreeSpin 1s linear infinite; }
+@keyframes dbTreeSpin { to { transform: rotate(360deg); } }
+
+/* 表行 + 行内字段树 */
+.tableRowWrap { display: flex; flex-direction: column; }
+.tableRow { display: flex; min-width: 0; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 12px; text-align: left; padding: 4px 8px 4px 20px; border-radius: 7px; cursor: pointer; }
+.tableRow:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.tableRow:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+.tableRow > :not(.treeChevron):not(.nodeIcon) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tableRow.selected { background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-state-business-primary); font-weight: 650; box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary); }
+.tableRow.selected .nodeIcon { color: var(--dsw-alias-state-business-primary); }
+.treeChevron { display: inline-flex; width: 15px; height: 15px; flex: none; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; padding: 0; line-height: 1; }
+.treeChevron:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-state-business-primary); }
 .tableRow .nodeIcon { color: var(--dsw-alias-label-tertiary); }
+.columnRow { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px 41px; font-size: 11px; }
+.columnType { flex: none; min-width: 18px; text-align: right; color: var(--dsw-alias-label-dimmed); font-family: var(--ds-font-family-code); font-size: 10px; }
+.columnName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-secondary); }
+.columnPk { flex: none; margin-left: 2px; border-radius: 4px; padding: 0 4px; background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 16%, transparent); color: var(--dsw-alias-state-warn-primary); font-size: 9px; font-weight: 700; }
 
-.hint { padding: 5px 8px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
-.error { padding: 8px 12px; border-bottom: 1px solid var(--dsw-alias-state-error-secondary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent); color: var(--dsw-alias-state-error-primary); font-size: 12px; }
+/* 树空态 / 加载骨架 */
+.treeEmpty { padding: 18px 12px; color: var(--dsw-alias-label-tertiary); font-size: 12px; text-align: center; line-height: 1.6; }
+.skeleton { display: flex; flex-direction: column; gap: 8px; padding: 10px 10px 0; }
+.skeletonBar { height: 12px; border-radius: 5px; background: linear-gradient(90deg, var(--dsw-alias-interactive-bg-hover) 25%, color-mix(in srgb, var(--dsw-alias-interactive-bg-hover) 45%, transparent) 50%, var(--dsw-alias-interactive-bg-hover) 75%); background-size: 200% 100%; animation: dbSkeleton 1.2s ease-in-out infinite; }
+@keyframes dbSkeleton { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
-.content { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; color: var(--dsw-alias-label-tertiary); font-size: 13px; padding: 20px; }
+.hint { padding: 4px 8px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 
-.contentGrid { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; gap: 10px; padding: 0 10px 10px; }
-.contentHeader { display: flex; min-height: 42px; align-items: center; gap: 8px; margin: 0 -10px; padding: 0 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); }
-.contentTitle { color: var(--dsw-alias-state-business-primary); font-size: 12px; font-weight: 700; }
-.contentTab, .contentTabActive { border: 0; border-bottom: 2px solid transparent; padding: 0 12px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; font-size: 12px; align-self: stretch; }
-.contentTab:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
-.contentTabActive { border-bottom-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-state-business-primary); font-weight: 700; }
-.contentDetail { margin-left: 4px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
-.monitorActive { border-color: var(--dsw-alias-border-l3); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-state-business-primary); }
+/* ─── 内容区 ─── */
+.contentGrid { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.contentHeader { display: flex; min-height: 40px; flex: none; align-items: center; gap: 8px; padding: 0 12px 0 10px; border-bottom: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); }
 
-/* 监控右栏:侧边栏,独立纵向滚动(深色滚动条);宽度可由左边框拖拽调整。 */
-.monitor { width: 340px; min-width: 280px; max-width: 420px; overflow: hidden; display: flex; flex-direction: column; border-left: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); }
-.monitor > * { flex: 1; min-height: 0; }
-
-/* 监控右栏左边框拖拽把手:细分隔条,横向拖动调整面板宽度。 */
-.monitorResize { flex: none; width: 6px; margin-left: -6px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
-.monitorResize:hover, .monitorResize:active { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent); }
-
-.dbSelect { height: 26px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 0 6px; max-width: 180px; }
-.dbSelect:focus { border-color: var(--dsw-alias-state-business-primary); outline: none; }
-
-.sqlMode { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 0; }
-.sqlPane { display: flex; flex-direction: column; gap: 5px; flex: none; min-height: 160px; overflow: hidden; }
-/* SQL 编辑区与结果区之间的横向可拖拽分隔条。 */
-.sqlResize { flex: none; height: 6px; cursor: row-resize; user-select: none; touch-action: none; margin: 0 -10px; }
-.sqlResize:hover, .sqlResize:active { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent); }
-/* SQL 模式结果区:撑满剩余高度,内部滚动。 */
-.sqlResultArea { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-/* 多语句结果集切换条(单语句时不渲染)。 */
-.resultTabs { display: flex; align-items: center; gap: 6px; padding: 4px 2px 0; overflow-x: auto; }
-.resultTab, .resultTabActive { flex: none; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 4px 9px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 11px; cursor: pointer; }
-.resultTab:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
-.resultTabActive { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-state-business-primary); font-weight: 700; }
-.sqlBar { display: flex; min-height: 34px; align-items: center; gap: 7px; padding: 0 2px; }
-.sqlBarBtn, .sqlRunBtn { border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 5px 10px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 11px; cursor: pointer; }
-.sqlBarBtn:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
-.sqlBarBtn:disabled, .sqlRunBtn:disabled { opacity: 0.45; cursor: default; }
-.sqlRunBtn { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-label-primary-inverted); font-weight: 650; }
-.sqlRunBtn:not(:disabled):hover { filter: brightness(1.08); }
-.sqlBarBtnActive { color: var(--dsw-alias-state-business-primary); border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-tertiary); }
-.historyPanel { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); padding: 6px; max-height: 140px; }
-.historyHeader { display: flex; align-items: center; gap: 8px; }.historyList{ display: flex; flex-direction: column; gap: 2px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-scrollbar-bg-l1) transparent; 
-  /* Elevated scroll container: rebind the scrollbar indirection to the l2 pair. */
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);}
-.historyItem { display: flex; align-items: center; gap: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-primary); font-size: 11px; text-align: left; padding: 4px 8px; cursor: pointer; }
-.historyItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.historySql { font-family: var(--ds-font-family-code); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sqlLabel { font-weight: 600; color: var(--dsw-alias-label-primary); font-size: 12px; }
-
-/* 内容区头部统一 tab 条:查询标签 + 表数据标签混排,超宽横向滚动。
-   「新建查询」钮钉在滚动区外(永不随滚动裁切);滚动区用 4px 细滚动条,避免
-   Chromium 默认滚动条(~12px)挤占 42px 头部、遮挡标签。 */
-.queryTabsRow { display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; padding: 0 2px; align-self: stretch; }
-.queryTabsScroll { display: flex; flex: 1; min-width: 0; align-items: center; gap: 4px; overflow-x: auto; align-self: stretch; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-scrollbar-bg-l1) transparent; }
+/* 统一 tab 条:查询标签 + 表数据标签混排,超宽横向滚动。
+   「新建查询」钮钉在滚动区外(永不随滚动裁切);滚动区用 4px 细滚动条。 */
+.queryTabsRow { display: flex; flex: 1; min-width: 0; align-items: stretch; gap: 6px; }
+.queryTabsScroll { display: flex; flex: 1; min-width: 0; align-items: stretch; gap: 2px; overflow-x: auto; align-self: stretch; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-scrollbar-bg-l1) transparent; }
 .queryTabsScroll::-webkit-scrollbar { height: 4px; }
 .queryTabsScroll::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--dsw-alias-scrollbar-bg-l1); }
 .queryTabsScroll::-webkit-scrollbar-thumb:hover { background: var(--dsw-alias-scrollbar-hover-l1); }
 .queryTabsScroll::-webkit-scrollbar-track { background: transparent; }
-.queryTab { display: inline-flex; flex: none; align-items: center; gap: 2px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 2px 4px 2px 8px; background: transparent; }
-.queryTabActive { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-tertiary); }
+.queryTab { display: inline-flex; flex: none; align-items: center; gap: 5px; border: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; padding: 0 8px; background: transparent; color: var(--dsw-alias-label-tertiary); }
+.queryTab:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); }
+.queryTabActive { border-bottom-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-tertiary); color: var(--dsw-alias-state-business-primary); }
+.queryTabIcon { display: inline-flex; flex: none; align-items: center; opacity: 0.85; }
 /* 长表名限宽省略,避免单个标签挤占整条 tab 条。 */
-.queryTabName { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 11px; cursor: pointer; padding: 2px 0; white-space: nowrap; align-self: center; display: inline-flex; align-items: center; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-.queryTabActive .queryTabName { color: var(--dsw-alias-state-business-primary); font-weight: 650; }
-.queryTabClose { display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1; cursor: pointer; padding: 0; }
-.queryTabClose:hover { color: var(--dsw-alias-state-error-primary); background: var(--dsw-alias-interactive-bg-hover); }
-.queryTabNew { display: inline-flex; flex: none; align-items: center; gap: 4px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 6px; padding: 3px 10px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 11px; cursor: pointer; white-space: nowrap; }
-.queryTabNew:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
+.queryTabName { border: 0; background: transparent; color: inherit; font: inherit; font-size: 11px; cursor: pointer; padding: 0; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.queryTabActive .queryTabName { font-weight: 650; }
+.queryTabDot { width: 5px; height: 5px; flex: none; border-radius: 50%; background: var(--dsw-alias-state-success-primary); }
+.queryTabClose { display: inline-flex; width: 16px; height: 16px; flex: none; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary); line-height: 1; cursor: pointer; padding: 0; }
+.queryTabClose:hover { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent); }
+.queryTabNew { display: inline-flex; flex: none; align-self: center; align-items: center; gap: 4px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 6px; padding: 3px 10px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 11px; cursor: pointer; white-space: nowrap; }
+.queryTabNew:hover { border-color: var(--dsw-alias-state-business-primary); border-style: solid; color: var(--dsw-alias-state-business-primary); }
 
-/* SQL 执行结果填充底部数据栏(flex:1);内部表格区双向滚动,深色滚动条。 */
-.sqlResult { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }
-.sqlResultBar { display: flex; align-items: center; gap: 8px; padding: 4px 10px; color: var(--dsw-alias-label-secondary); font-size: 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+/* 操作错误条(删表/清空/刷新失败等,自动消失) */
+.opError { display: flex; flex: none; align-items: center; gap: 8px; margin: 8px 10px 0; padding: 6px 10px; border: 1px solid var(--dsw-alias-state-error-secondary); border-radius: 7px; background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); color: var(--dsw-alias-state-error-primary); font-size: 12px; }
+.opErrorText { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ─── SQL 模式 ─── */
+.sqlMode { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.sqlPane { position: relative; display: flex; flex-direction: column; gap: 6px; flex: none; min-height: 160px; overflow: visible; }
+/* SQL 编辑区与结果区之间的横向可拖拽分隔条。 */
+.sqlResize { flex: none; height: 6px; cursor: row-resize; user-select: none; touch-action: none; }
+.sqlResize:hover, .sqlResize:active { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent); }
+
+/* SQL 工具栏:左侧库选择,右侧动作按钮组。 */
+.sqlBar { display: flex; min-height: 32px; align-items: center; gap: 8px; padding: 0 2px; }
+.sqlBadge { display: inline-flex; flex: none; align-items: center; height: 20px; padding: 0 7px; border-radius: 5px; background: var(--dsw-alias-state-business-tertiary); color: var(--dsw-alias-state-business-primary); font-size: 10px; font-weight: 800; letter-spacing: 0.04em; }
+.dbSelectWrap { position: relative; display: inline-flex; flex: none; align-items: center; }
+.dbSelectIcon { position: absolute; left: 7px; color: var(--dsw-alias-label-tertiary); pointer-events: none; }
+.dbSelect { height: 26px; max-width: 200px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 0 6px 0 24px; appearance: none; cursor: pointer; }
+.dbSelect:focus { border-color: var(--dsw-alias-state-business-primary); outline: none; }
+.dbSelectWarn { border-color: var(--dsw-alias-state-warn-primary); color: var(--dsw-alias-state-warn-primary); }
+.dbSelectWarn + .dbSelectIcon, .dbSelectWrap:has(.dbSelectWarn) .dbSelectIcon { color: var(--dsw-alias-state-warn-primary); }
+.sqlBarGroup { display: inline-flex; flex: none; align-items: center; gap: 6px; }
+.sqlBarBtn { display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; line-height: 1; }
+.sqlBarBtn:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
+.sqlBarBtn:disabled { opacity: 0.45; cursor: default; }
+.sqlBarBtn:disabled:hover { border-color: var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); }
+.sqlRunBtn { display: inline-flex; height: 28px; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--dsw-alias-state-business-primary); border-radius: 6px; background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-label-primary-inverted); cursor: pointer; font-size: 12px; font-weight: 650; line-height: 1; }
+.sqlRunBtn:not(:disabled):hover { filter: brightness(1.1); }
+.sqlRunBtn:disabled { opacity: 0.45; cursor: default; }
+.sqlBarBtnActive { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-tertiary); color: var(--dsw-alias-state-business-primary); }
+.sqlExecuting { display: inline-flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+/* SQL 执行错误(编辑区下方 / 结果区内)。 */
+.sqlError { display: flex; flex: none; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--dsw-alias-state-error-secondary); border-radius: 7px; background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); color: var(--dsw-alias-state-error-primary); font-size: 12px; }
+.sqlErrorText { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 历史弹层:绝对定位于工具栏下方,不挤压编辑区。 */
+.historyPanel { position: absolute; top: 34px; right: 2px; z-index: 30; display: flex; width: min(420px, 90%); flex-direction: column; gap: 4px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 9px; background: var(--dsw-alias-bg-layer-2); padding: 8px; box-shadow: 0 10px 32px rgb(0 0 0 / 0.28); }
+.historyHeader { display: flex; flex: none; align-items: center; gap: 8px; padding: 0 2px 2px; color: var(--dsw-alias-label-tertiary); font-size: 11px; font-weight: 650; }
+.historyClear { border: 0; border-radius: 5px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; font-size: 11px; padding: 2px 6px; }
+.historyClear:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-state-error-primary); }
+.historyList { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-scrollbar-bg-l1) transparent; }
+.historyItem { display: flex; align-items: center; gap: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-primary); font-size: 11px; text-align: left; padding: 5px 8px; cursor: pointer; }
+.historyItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.historySql { min-width: 0; flex: 1; font-family: var(--ds-font-family-code); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.historyTime { flex: none; color: var(--dsw-alias-label-dimmed); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+/* 结果区:撑满剩余高度,内部滚动。 */
+.sqlResultArea { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* 多语句结果集切换条(单语句时不渲染)。 */
+.resultTabs { display: flex; flex: none; align-items: center; gap: 6px; padding: 8px 2px 6px; overflow-x: auto; scrollbar-width: thin; }
+.resultTab, .resultTabActive { flex: none; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; padding: 3px 10px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 11px; cursor: pointer; }
+.resultTab:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
+.resultTabActive { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-state-business-tertiary); color: var(--dsw-alias-state-business-primary); font-weight: 650; }
+
+/* 空态:图标 + 主文案 + 快捷键说明 + 未选库提醒。 */
+.placeholder { display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 24px; text-align: center; }
+.placeholderIcon { color: var(--dsw-alias-label-dimmed); opacity: 0.8; }
+.placeholderTitle { color: var(--dsw-alias-label-secondary); font-size: 13px; }
+.placeholderHint { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.7; }
+.placeholderWarn { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; border-radius: 999px; padding: 4px 12px; background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 14%, transparent); color: var(--dsw-alias-state-warn-primary); font-size: 11px; }
+
+/* ─── SQL 执行结果 ─── */
+.sqlResult { display: flex; flex-direction: column; gap: 0; flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--dsw-alias-border-l2); border-radius: 9px; background: var(--dsw-alias-bg-layer-1); }
+.sqlResultBar { display: flex; flex: none; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.sqlResultBar b { font-variant-numeric: tabular-nums; }
 .sqlTableWrap { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-scrollbar-bg-l1) transparent; }
 .sqlTableWrap::-webkit-scrollbar { width: 10px; height: 10px; }
 .sqlTableWrap::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: var(--dsw-alias-scrollbar-bg-l1); background-clip: padding-box; }
 .sqlTableWrap::-webkit-scrollbar-thumb:hover { background: var(--dsw-alias-scrollbar-hover-l1); background-clip: padding-box; }
 .sqlTableWrap::-webkit-scrollbar-track, .sqlTableWrap::-webkit-scrollbar-corner { background: transparent; }
-.sqlTable { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
-.sqlTable th, .sqlTable td { border: 1px solid var(--dsw-alias-border-l1); padding: 2px 8px; white-space: nowrap; color: var(--dsw-alias-label-primary); }
-.sqlTable th { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); font-weight: 600; }
-.tdNull { color: var(--dsw-alias-label-tertiary); font-style: italic; }
+.sqlTable { border-collapse: separate; border-spacing: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.sqlTable th, .sqlTable td { border-right: 1px solid var(--dsw-alias-border-l1); border-bottom: 1px solid var(--dsw-alias-border-l1); padding: 4px 10px; white-space: nowrap; color: var(--dsw-alias-label-primary); text-align: left; }
+.sqlTable th { position: sticky; top: 0; z-index: 1; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); font-weight: 650; }
+.sqlTable tbody tr:hover td { background: var(--dsw-alias-interactive-bg-hover); }
+.tdNull { color: var(--dsw-alias-label-dimmed); font-style: italic; }
+.tdNum { text-align: right; }
+.sqlResultDone { padding: 8px 12px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+
+/* ─── 监控右栏 ─── */
+.monitor { width: 340px; min-width: 280px; max-width: 420px; flex: none; overflow: hidden; display: flex; flex-direction: column; border-left: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); }
+.monitor > * { flex: 1; min-height: 0; }
+.monitorResize { flex: none; width: 5px; margin-right: -5px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
+.monitorResize:hover, .monitorResize:active { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent); }
+
+/* ─── DDL 弹层 ─── */
+.ddlBackdrop { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 40px; background: var(--dsw-alias-bg-mask-3); }
+.ddlPanel { display: flex; flex-direction: column; width: min(720px, 90vw); max-height: 80vh; border: 1px solid var(--dsw-alias-border-l3); border-radius: 11px; background: var(--dsw-alias-bg-layer-2); overflow: hidden; box-shadow: 0 18px 60px rgb(0 0 0 / 0.35); }
+.ddlHeader { display: flex; flex: none; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.ddlHeader .title { font-size: 13px; }
+.ddlCopy { display: inline-flex; height: 26px; align-items: center; gap: 5px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font-size: 11px; padding: 0 9px; }
+.ddlCopy:hover { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
+.ddlBody { flex: 1; min-height: 0; overflow: auto; padding: 14px; margin: 0; font-family: var(--ds-font-family-code); font-size: 12px; line-height: 1.7; color: var(--dsw-alias-label-primary); white-space: pre-wrap; word-break: break-all; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-scrollbar-bg-l1) transparent; }
 
 .menuRoot { display: contents; }
-
-.ddlBackdrop { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 40px; background: var(--dsw-alias-bg-mask-3); }
-.ddlPanel { display: flex; flex-direction: column; width: min(760px, 90vw); max-height: 80vh; border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; background: var(--dsw-alias-bg-layer-2); overflow: hidden; }
-.ddlHeader { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
-.ddlBody { flex: 1; min-height: 0; overflow: auto; padding: 14px; margin: 0; font-family: var(--ds-font-family-code); font-size: 12px; color: var(--dsw-alias-label-primary); white-space: pre-wrap; word-break: break-all; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-scrollbar-bg-l1) transparent; }
-
-.placeholder { text-align: center; line-height: 1.7; }
 
 .exportMsg { padding: 6px 10px; color: var(--dsw-alias-state-business-primary); font-size: 12px; }
