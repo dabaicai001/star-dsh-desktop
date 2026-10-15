@@ -42,6 +42,7 @@ import { useTransferTasks } from './use-transfer-tasks.ts'
 import { formatSize } from './sftp-service.ts'
 import { BroadcastDialog, type BroadcastSession } from './BroadcastDialog.tsx'
 import { createQuickCommand, importQuickCommands, loadQuickCommands, saveQuickCommands, type QuickCommand } from './quick-commands.ts'
+import { clampSidePanelWidth, loadSidePanelWidth, saveSidePanelWidth } from './side-panel-width.ts'
 import { loadCommandHistory, pushCommandHistory, reduceInputLine, type CommandHistoryEntry } from './command-history.ts'
 import { findMatches, stepMatchIndex, type FindMatch } from './terminal-find.ts'
 import { CommandPalette, type PaletteAction } from './CommandPalette.tsx'
@@ -238,11 +239,12 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
   /** 连接代次:点「重新连接」+1,重跑建连 effect(会话 id 与终端随之重建)。 */
   const [connectNonce, setConnectNonce] = useState(0)
   const [sidePanel, setSidePanel] = useState<SidePanel>(null)
-  // SFTP / 网页右栏宽度(px):拖左边框调整,夹在 min 与 max 之间;内存态即可。
-  const [sidePanelWidth, setSidePanelWidth] = useState(500)
-  const sidePanelMinWidth = 340
-  const sidePanelMaxWidth = 560
+  // SFTP / 网页右栏宽度(px):拖左边框调整,夹在 min 与 max 之间;宽度记忆在
+  // localStorage(side-panel-width.ts),重开侧栏沿用上次拖好的值。
+  const [sidePanelWidth, setSidePanelWidth] = useState(loadSidePanelWidth)
   const sidePanelResizeRef = useRef(false)
+  // 拖拽中的最新宽度:end 回调读它落盘——useCallback 闭包里的 state 是旧的。
+  const sidePanelWidthRef = useRef(sidePanelWidth)
   const onSidePanelResizeStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()
     sidePanelResizeRef.current = true
@@ -254,13 +256,15 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
     const container = event.currentTarget.parentElement
     if (container === null) return
     const rect = container.getBoundingClientRect()
-    const next = Math.round(rect.right - event.clientX)
-    setSidePanelWidth(Math.max(sidePanelMinWidth, Math.min(sidePanelMaxWidth, next)))
+    const next = clampSidePanelWidth(rect.right - event.clientX)
+    sidePanelWidthRef.current = next
+    setSidePanelWidth(next)
   }, [])
   const onSidePanelResizeEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!sidePanelResizeRef.current) return
     sidePanelResizeRef.current = false
     event.currentTarget.releasePointerCapture(event.pointerId)
+    saveSidePanelWidth(sidePanelWidthRef.current)
   }, [])
   const [sshCwd, setSshCwd] = useState('')
   const [quickCommands, setQuickCommands] = useState<QuickCommand[]>(loadQuickCommands)
@@ -1084,14 +1088,6 @@ export function SshTerminalOverlay({ asset, onClose }: SshTerminalOverlayProps) 
               title="命令广播:把同一命令发送到多个已连接 SSH 会话"
               aria-label="广播"
             ><IconUsersOutlineMedium size={14} /><span>广播</span><span className={css.broadcastDetail}>命令</span></button>
-            <button
-              type="button"
-              className={sidePanel === 'monitor' ? css.headerActionActive : css.headerAction}
-              onClick={() =>{  toggleSidePanel('monitor') }}
-              title="主机监控:负载 / 内存 / 磁盘 / 网络"
-              aria-label="主机监控"
-              aria-pressed={sidePanel === 'monitor'}
-            ><IconGaugeOutlineMedium size={15} /></button>
             <span className={css.settingsAnchor}>
               <button
                 type="button"

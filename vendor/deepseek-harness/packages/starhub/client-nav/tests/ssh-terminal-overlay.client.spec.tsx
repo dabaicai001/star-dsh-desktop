@@ -991,6 +991,38 @@ describe('SshTerminalOverlay', () => {
     unmount()
   })
 
+  it('restores the side panel width from localStorage on open', async () => {
+    localStorage.setItem('starhub:ssh:side-panel-width', '460')
+    const invoke = vi.fn((_command: string) => Promise.resolve(null))
+    stubInternals(invoke)
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
+    const { getByText, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    fireEvent.click(getByText('文件'))
+    const aside = screen.getByLabelText('文件传输')
+    expect(aside.style.getPropertyValue('--side-panel-width')).toBe('460px')
+    unmount()
+  })
+
+  it('persists the dragged side panel width to localStorage on release', async () => {
+    const invoke = vi.fn((_command: string) => Promise.resolve(null))
+    stubInternals(invoke)
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} disconnect() {} }
+    ;(HTMLElement.prototype as { setPointerCapture?: unknown }).setPointerCapture = vi.fn()
+    ;(HTMLElement.prototype as { releasePointerCapture?: unknown }).releasePointerCapture = vi.fn()
+    // 把手按「容器右缘 − 指针 x」反推宽度:钉死容器右缘,拖到 clientX=400 → 600 → 夹取到上限 560。
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ right: 1000 } as DOMRect)
+    const { getByText, unmount } = render(<SshTerminalOverlay asset={asset} onClose={vi.fn()} />)
+    await waitFor(() =>{  expect(invoke).toHaveBeenCalledWith('ssh_connect', expect.any(Object)) })
+    fireEvent.click(getByText('文件'))
+    const separator = screen.getByLabelText('调整侧边栏宽度')
+    fireEvent.pointerDown(separator, { pointerId: 1, clientX: 500 })
+    fireEvent.pointerMove(separator, { pointerId: 1, clientX: 400 })
+    fireEvent.pointerUp(separator, { pointerId: 1 })
+    expect(localStorage.getItem('starhub:ssh:side-panel-width')).toBe('560')
+    unmount()
+  })
+
   it('applies terminal tool buttons: font size, clear, copy and paste', async () => {
     const invoke = vi.fn((_command: string) => Promise.resolve(null))
     stubInternals(invoke)

@@ -9,7 +9,7 @@
 *数据库 · 终端 · 文件 · 容器 · 真机 · AI —— 收进同一个窗口*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.136.2-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.136.3-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20首发%20%7C%20macOS%20%2F%20Linux%20规划中-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/starhub/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -59,10 +59,8 @@
 
 ## 当前版本
 
-### v0.136.2 (2026-10-15)
-- 🐛 🐛 **SSH 侧边栏弹出不再「别扭」**:文件 / AI / 监控侧栏此前点开时是「终端瞬间被压窄 507px + 侧栏 28px 淡入滑入」两个动作硬拼——滑入距离相对 500px 栏宽等于原地淡入,1px 分隔线还与面板边缘脱开,且只有进场没有退场(收起是瞬时卸载),进出观感撕裂。现在侧栏瞬时进出,布局瞬移作为一个连贯动作;拖拽调宽与 `prefers-reduced-motion` 行为不变。
-- 📝 📝 **README 改版**:开头改为痛点叙事(「五六个窗口之间来回切,复制粘贴当集成」),新增「为什么是 StarHub」差异化表(工具多 / 连接碎 / 上下文丢 / AI 只会聊天 / 操作不可追溯 五行);「关于(About)」重写为三条产品原则(一个窗口而不是启动器 / AI 是操作面不是聊天框 / 每一步都有据可查),并修掉信息表里停留在 v0.127.0 的陈旧版本号(→ v0.136.1);平台 badge 改为「Windows 首发 | macOS / Linux 规划中」,与「下载」一节的口径一致。
-- 📝 🔧 **GitHub 仓库更名为 `starhub`**(沿用 v0.96.3 之前的曾用名;去 Tauri 化后 StarHub 不再是「桌面项目」,旧名 `star-dsh-desktop` 名不副实):`git remote`、README 下载/克隆链接、AGENTS.md 仓库信息、docs/纯插件化-适配清单.md 的插件 Release URL 全部切换至新仓库名(旧地址仅剩 GitHub 自动重定向)。
+### v0.136.3 (2026-10-15)
+- 🐛 🐛 **SSH 侧栏入口去重 + 宽度记忆**:头部右上角的「监控」图标按钮与工具栏「监控」页签功能完全重复(而「文件」「AI」都只有工具栏一个入口),删掉头部那个——三个侧栏(文件 / AI / 监控)入口统一收在工具栏页签组,不再让人以为弹出了两层。侧栏宽度改存 localStorage(新模块 `side-panel-width.ts`,key `starhub:ssh:side-panel-width`,夹取 340–560px,加载 / 落盘都过夹取):拖好后重开侧栏、重开 SSH 工作区都沿用上次宽度,不再每次重置回默认 500px;拖拽松手即落盘,存储被禁(隐私模式等)时静默降级为仅本次有效。测试:新纯逻辑套件 `side-panel-width` 10 例,overlay 套件补 2 个回归(记忆加载 / 拖拽落盘)共 36 例全绿。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 
