@@ -7,7 +7,7 @@
 **All-in-One DevOps Desktop Command Center**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.134.2-cyan)]()
+[![Version](https://img.shields.io/badge/version-v0.134.3-cyan)]()
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![Downloads](https://img.shields.io/badge/downloads-GitHub%20Releases-blue)](https://github.com/dabaicai001/star-dsh-desktop/releases)
 [![官网](https://img.shields.io/badge/官网-starthub.waouzzz.cc-cyan)](https://starthub.waouzzz.cc/)
@@ -45,8 +45,9 @@ StarHub 是一个桌面应用,把开发运维每天要用到的工具收进同�
 
 ## 当前版本
 
-### v0.134.2 (2026-10-13)
-- 🐛 🐛 **修 SSH AI 助手「发消息没反应」+ 会话列表出现「未分组/未命名」幽灵会话 + 重开报 `session/not-found`**(三个症状同一根因):助手会话以 `ctx.agents.create()` 建根 Agent 时没打 `meta.cwd`,dsh 会话模型里无 cwd 的会话一是**拼不出系统提示的 `{{cwd}}` 段**(回合在第 1 步装配失败、`turn/end reason.kind=error`,面板又从不渲染这类事件——表现就是「发了没反应」),二是被历史/会话列表按 not-found 拒绝(落进 `_no-cwd/` 桶)。现在创建时恒打 `meta.cwd`(指向插件专属目录 `~/.starhub/ssh-assistant`,新插件 Config 字段 `sessionCwd` 可覆盖,apply 时 mkdir,建不了就 fail loud),并在会话建好后调 `sessionTitle` 服务把显示名钉成**纯服务器名**(user 来源,压住自动标题;服务缺席降级为告警不阻塞)。面板侧同时补上 `turn/end` 错误原因的渲染(按回合号去重,重放不叠加),这类失败从此在面板里可见。宿主侧 fake host 补 `sessionCwd`/`renames` 桩与 cwd/标题断言,组合测试走插件 Config 注入临时目录并断言会话头 cwd 与 rename 接线;客户端 fold 补 turn/end 用例(28 例全绿)。
+### v0.134.3 (2026-10-15)
+- 🐛 🐛 **修 SSH AI 助手面板「连接中断、永远空白」**(消息发得出、主界面会话里也有回复,唯独终端页 AI 面板什么都不显示):SSE 路由 `GET /starhub/api/assistant/stream` 把 `res.writeHead(200, {content-type: text/event-stream, ...})` 排在了 `registry.attach()` **之后**——而 attach 的重放循环在第一帧就同步 `res.write()`,Node 此刻已冲刷隐式响应头(只有 Date/Connection/Transfer-Encoding,**没有 content-type**),随后的 writeHead 既丢头又抛 `ERR_HTTP_HEADERS_SENT`,webserver 兜底只能 destroy 连接。浏览器 EventSource 收到没有 `text/event-stream` 的 200 直接判**致命错误**(不重试)→ 面板 `onDrop` → 「连接中断,重新打开本页签可恢复」+ 空白;POST 路由不走 EventSource 所以照常能发。现在响应头先于任何一帧写出;attach 失败(助手已关闭)时头已发出、状态码改不了,改用 SSE `error` 帧告知面板(折叠成错误项)而不是回 200 JSON。测试侧的假 res 同步升级为 **Node 忠实头语义**(首次 write 冲刷隐式头、其后 writeHead 抛 ERR_HTTP_HEADERS_SENT)——原宽容桩只记录不抛,正是这个 bug 从 28 个测试眼皮下溜过的原因;新增「未知助手 id → SSE 错误帧」与主流程的 content-type 断言(38 例全绿)。
+- 🐛 🐛 **修助手面板快速切走页签时的会话自毁**:boot 竞态路径(面板已卸载而 `openAssistant` 还在飞)在 resolve 后调了 `closeAssistant`——把刚建好、正要被下次挂载按 sshSessionId 复用的助手会话直接销毁,逼下次挂载重建新会话(对话丢失、agent 泄漏)。该路径尚未订阅流,改为直接返回,助手保持可复用。
 
 > 历史版本见 [CHANGELOG.md](./CHANGELOG.md)。
 

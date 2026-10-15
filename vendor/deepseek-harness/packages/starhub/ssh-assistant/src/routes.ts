@@ -256,9 +256,15 @@ export function activeConnsHandler(deps: AssistantRouteDeps) {
 /**
  * `GET .../stream?assistantId=` — the assistant's SSE frame stream.
  *
- * The handler owns the response for the connection's lifetime: it attaches a
- * frame sink to the registry entry (which immediately replays status + model)
- * and detaches on close.
+ * The response head is written before the first frame can leave: the
+ * registry's attach replays its event window synchronously, so a single
+ * `res.write` ahead of `writeHead` would flush Node's implicit head (no
+ * `content-type`) and make the later `writeHead` throw
+ * `ERR_HTTP_HEADERS_SENT`. A browser `EventSource` treats a 200 without
+ * `text/event-stream` as a fatal error — the panel would show a permanently
+ * dropped stream. The handler owns the response for the connection's
+ * lifetime: it attaches a frame sink to the registry entry (which immediately
+ * replays status + model) and detaches on close.
  * @param deps - route dependencies.
  * @returns the request handler.
  */
@@ -273,15 +279,6 @@ export function streamHandler(deps: AssistantRouteDeps) {
       sendJson(res, 400, { ok: false, error: 'assistantId is required' })
       return
     }
-    let detach: () => void
-    try {
-      detach = deps.registry.attach(assistantId, (frame) => {
-        if (!res.writableEnded) res.write(encodeAssistantFrame(frame))
-      })
-    } catch (error) {
-      sendJson(res, 200, { ok: false, error: error instanceof Error ? error.message : String(error) })
-      return
-    }
     res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-transform',
@@ -289,6 +286,22 @@ export function streamHandler(deps: AssistantRouteDeps) {
       'x-accel-buffering': 'no',
     })
     res.write(': starhub assistant connected\n\n')
+    let detach: () => void
+    try {
+      detach = deps.registry.attach(assistantId, (frame) => {
+        if (!res.writableEnded) res.write(encodeAssistantFrame(frame))
+      })
+    } catch (error) {
+      // 响应头已发出:状态码改不了,用 SSE 错误帧告知面板(面板折叠成错误项)。
+      if (!res.writableEnded) {
+        res.write(encodeAssistantFrame({
+          t: 'error',
+          message: error instanceof Error ? error.message : String(error),
+        }))
+        res.end()
+      }
+      return
+    }
     const onClose = (): void => {
       detach()
       if (!res.writableEnded) res.end()

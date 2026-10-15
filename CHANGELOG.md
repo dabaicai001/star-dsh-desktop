@@ -9,6 +9,12 @@
 
 ---
 
+## [0.134.3] - 2026-10-15
+
+### 修复
+- 🐛 **修 SSH AI 助手面板「连接中断、永远空白」**(消息发得出、主界面会话里也有回复,唯独终端页 AI 面板什么都不显示):SSE 路由 `GET /starhub/api/assistant/stream` 把 `res.writeHead(200, {content-type: text/event-stream, ...})` 排在了 `registry.attach()` **之后**——而 attach 的重放循环在第一帧就同步 `res.write()`,Node 此刻已冲刷隐式响应头(只有 Date/Connection/Transfer-Encoding,**没有 content-type**),随后的 writeHead 既丢头又抛 `ERR_HTTP_HEADERS_SENT`,webserver 兜底只能 destroy 连接。浏览器 EventSource 收到没有 `text/event-stream` 的 200 直接判**致命错误**(不重试)→ 面板 `onDrop` → 「连接中断,重新打开本页签可恢复」+ 空白;POST 路由不走 EventSource 所以照常能发。现在响应头先于任何一帧写出;attach 失败(助手已关闭)时头已发出、状态码改不了,改用 SSE `error` 帧告知面板(折叠成错误项)而不是回 200 JSON。测试侧的假 res 同步升级为 **Node 忠实头语义**(首次 write 冲刷隐式头、其后 writeHead 抛 ERR_HTTP_HEADERS_SENT)——原宽容桩只记录不抛,正是这个 bug 从 28 个测试眼皮下溜过的原因;新增「未知助手 id → SSE 错误帧」与主流程的 content-type 断言(38 例全绿)。
+- 🐛 **修助手面板快速切走页签时的会话自毁**:boot 竞态路径(面板已卸载而 `openAssistant` 还在飞)在 resolve 后调了 `closeAssistant`——把刚建好、正要被下次挂载按 sshSessionId 复用的助手会话直接销毁,逼下次挂载重建新会话(对话丢失、agent 泄漏)。该路径尚未订阅流,改为直接返回,助手保持可复用。
+
 ## [0.134.2] - 2026-10-13
 
 ### 修复

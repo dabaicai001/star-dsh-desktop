@@ -319,15 +319,44 @@ function fakeRequest(method: string, url: string, body?: unknown): IncomingMessa
   } as unknown as IncomingMessage
 }
 
-/** 假 res:捕获 writeHead/write/end。 */
-function fakeResponse(): ServerResponse & { body: () => string; frames: () => AssistantFrame[] } {
-  let head = ''
+/**
+ * Node 首次 write/end 时冲刷的隐式响应头:只有 Date/Connection/
+ * Transfer-Encoding,没有 content-type(浏览器 EventSource 因此判致命错误)。
+ */
+const IMPLICIT_HEAD = JSON.stringify({ implicit: true })
+
+/**
+ * 假 res:复刻 Node 的头语义——首次 write/end 冲刷隐式响应头,其后的
+ * writeHead 抛 ERR_HTTP_HEADERS_SENT。宽容桩(只记录不抛)会放掉
+ * 「write 先于 writeHead → content-type 丢失」这类真实故障。
+ */
+function fakeResponse(): ServerResponse & {
+  body: () => string
+  frames: () => AssistantFrame[]
+  headers: () => string
+} {
+  let head: string | null = null
   const chunks: string[] = []
   const res = {
     writableEnded: false,
-    writeHead(_status: number, headers: Record<string, string>) { head = JSON.stringify(headers) },
-    write(chunk: string) { chunks.push(chunk) },
-    end(chunk?: string) { if (chunk !== undefined) chunks.push(chunk) },
+    writeHead(_status: number, headers: Record<string, string>) {
+      if (head !== null) {
+        throw Object.assign(
+          new Error('Cannot render headers after they are sent to the client'),
+          { code: 'ERR_HTTP_HEADERS_SENT' },
+        )
+      }
+      head = JSON.stringify(headers)
+    },
+    write(chunk: string) {
+      head ??= IMPLICIT_HEAD
+      chunks.push(chunk)
+    },
+    end(chunk?: string) {
+      head ??= IMPLICIT_HEAD
+      if (chunk !== undefined) chunks.push(chunk)
+      res.writableEnded = true
+    },
     on() { return this },
     body: () => chunks.join(''),
     frames: () => chunks
@@ -336,9 +365,13 @@ function fakeResponse(): ServerResponse & { body: () => string; frames: () => As
       .filter(block => block.includes('data: '))
       .map(block => decodeAssistantFrame(block.slice(block.indexOf('data: ') + 6).trim()))
       .filter((frame): frame is AssistantFrame => frame !== null),
-    headers: () => head,
+    headers: () => head ?? '',
   }
-  return res as unknown as ServerResponse & { body: () => string; frames: () => AssistantFrame[] }
+  return res as unknown as ServerResponse & {
+    body: () => string
+    frames: () => AssistantFrame[]
+    headers: () => string
+  }
 }
 
 /** 解析路由响应信封;ok:false 时带上 error 抛出(失败可诊断)。 */
@@ -468,7 +501,10 @@ describe('starhub-ssh-assistant composition', () => {
     expect(host.renames).toEqual([[assistantId, 'server']])
 
     // 先挂流客户端(晚到客户端拿重放)。
-    const { frames } = await host.stream(assistantId)
+    const { frames, res } = await host.stream(assistantId)
+    // SSE 响应头必须先于任何一帧写出:晚一步的 writeHead 会丢 content-type,
+    // 浏览器 EventSource 直接判致命错误(面板永久空白)。
+    expect(res.headers()).toContain('text/event-stream')
     const prompt = await host.post('/starhub/api/assistant/prompt', { assistantId, text: '看看磁盘' })
     expect(prompt).toEqual({ accepted: true })
 
@@ -535,6 +571,16 @@ describe('starhub-ssh-assistant composition', () => {
     const closed = await host.post('/starhub/api/assistant/close', { assistantId })
     expect(closed).toEqual({ closed: true })
     expect(host.ctx.agents.get(SessionId(assistantId))).toBeUndefined()
+  })
+
+  it('answers an unknown assistant stream with an SSE error frame, not JSON', async () => {
+    // 回归:attach 失败时曾回 200 + application/json——EventSource 收到非
+    // event-stream 响应直接判死,面板显示「连接中断」且永远空白。现在头已
+    // 先行发出,失败以 SSE 错误帧告知面板(折叠成错误项)。
+    const host = await mounted({ script: () => [[...textResponse('done')]] })
+    const { frames, res } = await host.stream('ssh-assistant-nonexistent')
+    expect(res.headers()).toContain('text/event-stream')
+    expect(frames()).toEqual([{ t: 'error', message: 'AI 助手不存在或已关闭' }])
   })
 
   it('serves the model catalog for the panel picker', async () => {

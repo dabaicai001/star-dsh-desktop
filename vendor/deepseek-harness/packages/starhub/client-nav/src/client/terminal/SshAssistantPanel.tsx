@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { IconSendOutlineMedium, IconSparkleMedium, IconStopFillMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  closeAssistant, fetchAssistantCatalog, openAssistant, promptAssistant, setAssistantModel,
+  fetchAssistantCatalog, openAssistant, promptAssistant, setAssistantModel,
   stopAssistant, submitAssistantApproval, subscribeAssistant,
   type AssistantApprovalOutcome, type AssistantCatalog, type AssistantConnCardFrame, type AssistantFrame,
   type AssistantModelOption, type AssistantProviderOption,
@@ -119,9 +119,9 @@ export function SshAssistantPanel({ sshSessionId, assetId, assetName, onOpened }
       try {
         const opened = await openAssistant({ sshSessionId, assetId, assetName })
         if (disposed) {
-          // 竞态:面板已卸载(快速切走页签)——助手按 sshSessionId 幂等,
-          // 下次进入复用同一会话,这里只需确保不留下孤儿订阅。
-          void closeAssistant(opened.assistantId).catch(() => undefined)
+          // 竞态:面板已卸载(快速切走页签)。助手按 sshSessionId 幂等,下次
+          // 进入复用同一会话——这里不能 close:那会毁掉即将被复用的会话,
+          // 逼下次挂载重建(对话丢失、agent 泄漏)。本路径还没订阅,直接返回。
           return
         }
         setAssistantId(opened.assistantId)
